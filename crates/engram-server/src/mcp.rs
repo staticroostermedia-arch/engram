@@ -35,6 +35,7 @@ use tracing::{debug, error, info, warn};
 
 #[derive(Debug, Deserialize)]
 struct Request {
+    #[allow(dead_code)]
     pub jsonrpc: String,
     pub id: Option<Value>,
     pub method: String,
@@ -560,8 +561,8 @@ fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value {
                 return json!({ "content": [{ "type": "text", "text": "Error: path is required." }], "isError": true });
             }
 
-            // Perform a highly focused query based on the filename/path
-            let results = store.lock().unwrap().recall(&path, 5);
+            // Use the dedicated context_for_file method which enriches queries with language context
+            let results = store.lock().unwrap().context_for_file(&path);
             if results.is_empty() {
                 return json!({ "content": [{ "type": "text", "text": format!("No specific topological memory found for {}", path) }] });
             }
@@ -684,12 +685,15 @@ fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value {
                 return json!({ "content": [{ "type": "text", "text": "Error: namespace is required." }], "isError": true });
             }
             let lock = store.lock().unwrap();
+            let is_sheaf = lock.is_sheaf_mode();
             let ok = lock.set_active_stalk(&namespace);
             if ok {
                 info!("namespace set to: {namespace}");
                 json!({ "content": [{ "type": "text", "text": format!("✓ Active namespace set to '{namespace}'") }] })
+            } else if !is_sheaf {
+                json!({ "content": [{ "type": "text", "text": "Namespaces require sheaf mode. Create ~/.engram/sheaf.toml to enable multi-project namespaces." }], "isError": true })
             } else {
-                json!({ "content": [{ "type": "text", "text": format!("✓ Created and switched to new namespace '{namespace}'") }] })
+                json!({ "content": [{ "type": "text", "text": format!("Namespace '{namespace}' not found in sheaf.toml. Add it to your stalk configuration.") }], "isError": true })
             }
         }
 
@@ -853,7 +857,7 @@ fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value {
             for name in &concepts {
                 if let Some(block) = lock.fetch_block(name.split_once("::").map_or(name.as_str(), |(_, r)| r)) {
                     if block.crs_score >= 1.0 { continue; } // Never evict pinned
-                    let age_ok = older_than_days.map_or(true, |days| {
+                    let age_ok = older_than_days.is_none_or(|days| {
                         now_secs.saturating_sub(block.last_accessed_timestamp) >= days * 86400
                     });
                     if block.crs_score < min_crs && age_ok {

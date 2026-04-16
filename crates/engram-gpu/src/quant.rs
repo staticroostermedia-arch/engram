@@ -11,16 +11,16 @@ const CENTROIDS_B4: [f32; 16] = [
 
 #[inline(always)]
 fn nearest_centroid_b4(val: f32) -> u8 {
-    let mut best_idx = 0;
+    let mut best_idx = 0u8;
     let mut best_d = f32::INFINITY;
-    for i in 0..16 {
-        let d = (val - CENTROIDS_B4[i]).abs();
+    for (i, &centroid) in CENTROIDS_B4.iter().enumerate() {
+        let d = (val - centroid).abs();
         if d < best_d {
             best_d = d;
-            best_idx = i;
+            best_idx = i as u8;
         }
     }
-    best_idx as u8
+    best_idx
 }
 
 /// Compress an 8192-D Complex32 vector into 8192 bytes (2 x 4-bit values per byte, for real and imaginary parts).

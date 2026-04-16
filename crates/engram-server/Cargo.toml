@@ -15,6 +15,8 @@ path = "src/main.rs"
 default = []
 # Enable GPU-accelerated BVH K-NN backend + CUDA cosine kernels
 cuda = ["dep:engram-gpu", "engram-gpu/cuda-kernels"]
+# Enable Metal GPU-accelerated backend on macOS Apple Silicon
+metal = ["dep:engram-gpu"]
 
 [dependencies]
 engram-core  = { path = "../engram-core" }

@@ -10,7 +10,19 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use std::env;
 use std::net::SocketAddr;
+use std::sync::LazyLock;
 use tracing::{info, warn};
+
+// ── Compile PII regexes once at process startup ──────────────────────────
+static SSN_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r"\b\d{3}-\d{2}-\d{4}\b").unwrap()
+});
+static CC_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r"\b(?:\d[ -]*?){13,16}\b").unwrap()
+});
+static EMAIL_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b").unwrap()
+});
 
 // ── Models ─────────────────────────────────────────────────────────────
 
@@ -93,14 +105,10 @@ async fn remember(
             status: "error", message: "concept and text are required".into(),
         }));
     }
-    // ── Phase 8 Moloch Guard: Inline PII Scrubbing ──
-    let ssn_re = regex::Regex::new(r"\b\d{3}-\d{2}-\d{4}\b").unwrap();
-    let cc_re = regex::Regex::new(r"\b(?:\d[ -]*?){13,16}\b").unwrap();
-    let email_re = regex::Regex::new(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b").unwrap();
-
-    let mut sanitized = ssn_re.replace_all(text, "[REDACTED_SSN]").into_owned();
-    sanitized = cc_re.replace_all(&sanitized, "[REDACTED_CC]").into_owned();
-    sanitized = email_re.replace_all(&sanitized, "[REDACTED_EMAIL]").into_owned();
+    // ── Moloch Guard: Inline PII Scrubbing (regexes compiled once at startup) ──
+    let mut sanitized = SSN_RE.replace_all(text, "[REDACTED_SSN]").into_owned();
+    sanitized = CC_RE.replace_all(&sanitized, "[REDACTED_CC]").into_owned();
+    sanitized = EMAIL_RE.replace_all(&sanitized, "[REDACTED_EMAIL]").into_owned();
 
     match store.lock().unwrap().remember(concept, &sanitized) {
         Ok(_) => {
@@ -231,9 +239,11 @@ async fn recent_concepts(
 // ── System Process Management ────────────────────────────────────────────────────
 async fn boot_agent() -> impl IntoResponse {
     use std::process::Command;
+    let agent_cmd = env::var("ENGRAM_AGENT_CMD")
+        .unwrap_or_else(|_| "echo 'ENGRAM_AGENT_CMD not set'".to_string());
     let out = Command::new("sh")
         .arg("-c")
-        .arg("cd /home/a/Documents/CodeLand && mkdir -p data/logs && nohup cargo run --release --bin nemo_agency > data/logs/nemo_agency.log 2>&1 &")
+        .arg(&agent_cmd)
         .spawn();
         
     match out {

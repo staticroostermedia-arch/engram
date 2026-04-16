@@ -328,6 +328,7 @@ impl BvhManifold {
 
     // ── Internal helpers ──────────────────────────────────────────────────────
 
+    #[allow(clippy::type_complexity)]
     fn scan_dir(dir: &Path) -> Option<Vec<(String, PathBuf, Box<[num_complex::Complex32; 8192]>, f32)>> {
         let mut results = Vec::new();
         for entry in fs::read_dir(dir).ok()?.flatten() {

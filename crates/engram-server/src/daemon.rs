@@ -35,6 +35,7 @@ pub fn spawn(store: SharedStore) -> Arc<DaemonControl> {
 
         // Loop checks both incoming watcher events, and periodically runs Garbage Collection
         let mut gc_interval = tokio::time::interval(Duration::from_secs(3600)); // Every hour
+        let mut flush_interval = tokio::time::interval(Duration::from_secs(60)); // Flush access timestamps every 60s
         
         loop {
             if ctrl.shutdown.load(Ordering::Relaxed) {
@@ -50,6 +51,12 @@ pub fn spawn(store: SharedStore) -> Arc<DaemonControl> {
                             info!("Daemon dynamically bound OS watcher to: {}", p.display());
                         }
                     }
+                }
+
+                _ = flush_interval.tick() => {
+                    // Flush hot access timestamps to disk every 60 seconds
+                    let mut lock = store.lock().unwrap();
+                    lock.access_index.flush_if_dirty();
                 }
 
                 _ = gc_interval.tick() => {

@@ -158,7 +158,7 @@ fn main() -> anyhow::Result<()> {
             let q_res = match op.to_uppercase().as_str() {
                 "ADD" => op_add(&q_a, &q_b),
                 "BIND" => op_bind(&q_a, &q_b),
-                "_" | _ => {
+                _ => {
                     eprintln!("Unknown operator {}. Use ADD or BIND.", op);
                     std::process::exit(1);
                 }

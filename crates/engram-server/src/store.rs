@@ -16,10 +16,12 @@
 use engram_core::backend::{CpuBackend, Memory, VsaBackend, SheafBackend};
 #[cfg(feature = "cuda")]
 use engram_gpu::backend::CudaBackend;
+#[cfg(feature = "metal")]
+use engram_gpu::metal_backend::MetalBackend;
 use engram_core::types::{Leg3Pointer, ZEDOS_PRAXIS, ZEDOS_EPISODIC, ZEDOS_RELATION};
 use engram_core::ops::{op_add, op_bind};
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use anyhow::Result;
 
@@ -48,7 +50,7 @@ pub struct AccessIndex {
 }
 
 impl AccessIndex {
-    pub fn load(engram_root: &PathBuf) -> Self {
+    pub fn load(engram_root: &Path) -> Self {
         let path = engram_root.join("access_index.bin");
         let map = if path.exists() {
             std::fs::read(&path)
@@ -116,7 +118,7 @@ pub struct RelationIndex {
 }
 
 impl RelationIndex {
-    pub fn load(engram_root: &PathBuf) -> Self {
+    pub fn load(engram_root: &Path) -> Self {
         let path = engram_root.join("relation_index.json");
         let entries = if path.exists() {
             std::fs::read_to_string(&path)
@@ -146,7 +148,7 @@ impl RelationIndex {
     pub fn query(&self, concept: &str, filter_label: Option<&str>, direction: &str) -> Vec<(String, String)> {
         let mut out = Vec::new();
         for e in &self.entries {
-            let label_ok = filter_label.map_or(true, |l| e.label == l);
+            let label_ok = filter_label.is_none_or(|l| e.label == l);
             if !label_ok { continue; }
             match direction {
                 "from" if e.from == concept => out.push((e.label.clone(), e.to.clone())),
@@ -196,6 +198,8 @@ impl RelationIndex {
 enum Backend {
     #[cfg(feature = "cuda")]
     Gpu(CudaBackend),
+    #[cfg(feature = "metal")]
+    Metal(MetalBackend),
     Single(CpuBackend),
     Sheaf(SheafBackend),
 }
@@ -205,6 +209,8 @@ impl Backend {
         match self {
             #[cfg(feature = "cuda")]
             Backend::Gpu(b) => b.remember(concept, text),
+            #[cfg(feature = "metal")]
+            Backend::Metal(b) => b.remember(concept, text),
             Backend::Single(b) => b.remember(concept, text),
             Backend::Sheaf(b) => b.remember(concept, text),
         }
@@ -213,6 +219,8 @@ impl Backend {
         match self {
             #[cfg(feature = "cuda")]
             Backend::Gpu(b) => b.recall(q, k),
+            #[cfg(feature = "metal")]
+            Backend::Metal(b) => b.recall(q, k),
             Backend::Single(b) => b.recall(q, k),
             Backend::Sheaf(b) => b.recall(q, k),
         }
@@ -221,6 +229,8 @@ impl Backend {
         match self {
             #[cfg(feature = "cuda")]
             Backend::Gpu(b) => b.forget(concept),
+            #[cfg(feature = "metal")]
+            Backend::Metal(b) => b.forget(concept),
             Backend::Single(b) => b.forget(concept),
             Backend::Sheaf(b) => b.forget(concept),
         }
@@ -229,6 +239,8 @@ impl Backend {
         match self {
             #[cfg(feature = "cuda")]
             Backend::Gpu(b) => b.list(),
+            #[cfg(feature = "metal")]
+            Backend::Metal(b) => b.list(),
             Backend::Single(b) => b.list(),
             Backend::Sheaf(b) => b.list(),
         }
@@ -237,6 +249,8 @@ impl Backend {
         match self {
             #[cfg(feature = "cuda")]
             Backend::Gpu(b) => b.fetch_block(concept),
+            #[cfg(feature = "metal")]
+            Backend::Metal(b) => b.fetch_block(concept),
             Backend::Single(b) => b.fetch_block(concept),
             Backend::Sheaf(b) => b.fetch_block(concept),
         }
@@ -245,6 +259,8 @@ impl Backend {
         match self {
             #[cfg(feature = "cuda")]
             Backend::Gpu(b) => b.fetch(concept),
+            #[cfg(feature = "metal")]
+            Backend::Metal(b) => b.fetch(concept),
             Backend::Single(b) => b.fetch(concept),
             Backend::Sheaf(b) => b.fetch(concept),
         }
@@ -253,6 +269,8 @@ impl Backend {
         match self {
             #[cfg(feature = "cuda")]
             Backend::Gpu(b) => b.encode(text),
+            #[cfg(feature = "metal")]
+            Backend::Metal(b) => b.encode(text),
             Backend::Single(b) => b.encode(text),
             Backend::Sheaf(b) => b.encode(text),
         }
@@ -261,6 +279,8 @@ impl Backend {
         match self {
             #[cfg(feature = "cuda")]
             Backend::Gpu(b) => b.query(q, k),
+            #[cfg(feature = "metal")]
+            Backend::Metal(b) => b.query(q, k),
             Backend::Single(b) => b.query(q, k),
             Backend::Sheaf(b) => b.query(q, k),
         }
@@ -269,6 +289,8 @@ impl Backend {
         match self {
             #[cfg(feature = "cuda")]
             Backend::Gpu(b) => b.store(concept, block),
+            #[cfg(feature = "metal")]
+            Backend::Metal(b) => b.store(concept, block),
             Backend::Single(b) => b.store(concept, block),
             Backend::Sheaf(b) => b.store(concept, block),
         }
@@ -277,6 +299,8 @@ impl Backend {
         match self {
             #[cfg(feature = "cuda")]
             Backend::Gpu(_) => false,
+            #[cfg(feature = "metal")]
+            Backend::Metal(_) => false,
             Backend::Single(_) => false,
             Backend::Sheaf(b) => b.set_active_stalk(name),
         }
@@ -285,6 +309,8 @@ impl Backend {
         match self {
             #[cfg(feature = "cuda")]
             Backend::Gpu(_) => vec!["default".to_string()],
+            #[cfg(feature = "metal")]
+            Backend::Metal(_) => vec!["default".to_string()],
             Backend::Single(_) => vec!["default".to_string()],
             Backend::Sheaf(b) => b.stalk_names().into_iter().map(|s| s.to_string()).collect(),
         }
@@ -293,6 +319,8 @@ impl Backend {
         match self {
             #[cfg(feature = "cuda")]
             Backend::Gpu(_) => "default".to_string(),
+            #[cfg(feature = "metal")]
+            Backend::Metal(_) => "default".to_string(),
             Backend::Single(_) => "default".to_string(),
             Backend::Sheaf(b) => b.active_stalk_name().to_string(),
         }
@@ -360,13 +388,18 @@ impl StoreHandle {
                 }
             }
         } else {
-            // Use GPU-accelerated BVH backend when compiled with --features cuda
+            // Use GPU-accelerated backend when compiled with appropriate features
             #[cfg(feature = "cuda")]
             {
                 tracing::info!("engram-gpu: CudaBackend selected (BVH + CUDA cosine kernels)");
                 Backend::Gpu(CudaBackend::new(&expanded))
             }
-            #[cfg(not(feature = "cuda"))]
+            #[cfg(all(feature = "metal", not(feature = "cuda")))]
+            {
+                tracing::info!("engram-gpu: MetalBackend selected (Apple Silicon GPU cosine kernels)");
+                Backend::Metal(MetalBackend::new(&expanded))
+            }
+            #[cfg(not(any(feature = "cuda", feature = "metal")))]
             {
                 Backend::Single(CpuBackend::new(&expanded))
             }
