@@ -30,7 +30,7 @@ inline float gaussian_sample(uint64_t s1, uint64_t s2) {
 kernel void engram_project_8k_to_3d(
     device const float2* tensor [[buffer(0)]],
     device float3* point_out [[buffer(1)]],
-    constant unsigned long long& seed [[buffer(2)]],
+    constant uint64_t& seed [[buffer(2)]],
     uint tid [[thread_position_in_threadgroup]],
     uint blockDim [[threads_per_threadgroup]],
     uint blockIdx [[threadgroup_position_in_grid]]
