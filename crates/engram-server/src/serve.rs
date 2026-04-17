@@ -254,6 +254,101 @@ async fn boot_agent() -> impl IntoResponse {
 
 // ── Server Setup ───────────────────────────────────────────────────────
 
+// ── System Health Monitoring ─────────────────────────────────────────────────
+async fn system_health(State(store): State<SharedStore>) -> impl IntoResponse {
+    use std::process::Command;
+
+    // CPU usage: sum all processes, then normalize by core count
+    let ncpu = Command::new("sysctl").arg("-n").arg("hw.ncpu")
+        .output().ok()
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .and_then(|s| s.trim().parse::<f64>().ok())
+        .unwrap_or(1.0);
+
+    let cpu_raw = Command::new("sh")
+        .arg("-c")
+        .arg("ps -A -o %cpu | awk '{sum+=$1} END {print sum}'")
+        .output()
+        .ok()
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .and_then(|s| s.trim().parse::<f64>().ok())
+        .unwrap_or(0.0);
+
+    let cpu_pct = cpu_raw / ncpu;  // Normalize: 390% on 14 cores → 27.9%
+
+    // Memory via vm_stat — macOS-correct: available = free + inactive + purgeable
+    let (mem_used_mb, mem_total_mb) = {
+        let total = Command::new("sysctl").arg("-n").arg("hw.memsize")
+            .output().ok()
+            .and_then(|o| String::from_utf8(o.stdout).ok())
+            .and_then(|s| s.trim().parse::<u64>().ok())
+            .unwrap_or(0) / (1024 * 1024);
+        // Parse free, inactive, and purgeable pages from vm_stat
+        let vm_out = Command::new("vm_stat")
+            .output().ok()
+            .and_then(|o| String::from_utf8(o.stdout).ok())
+            .unwrap_or_default();
+        let parse_pages = |key: &str| -> u64 {
+            vm_out.lines()
+                .find(|l| l.contains(key))
+                .and_then(|l| l.split_whitespace().last())
+                .and_then(|s| s.trim_end_matches('.').parse::<u64>().ok())
+                .unwrap_or(0)
+        };
+        let pages_free = parse_pages("Pages free");
+        let pages_inactive = parse_pages("Pages inactive");
+        let pages_purgeable = parse_pages("Pages purgeable");
+        let available_mb = ((pages_free + pages_inactive + pages_purgeable) * 16384) / (1024 * 1024);
+        (total.saturating_sub(available_mb), total)
+    };
+
+    let mem_pct = if mem_total_mb > 0 { (mem_used_mb as f64 / mem_total_mb as f64) * 100.0 } else { 0.0 };
+
+    // Engram process stats
+    let pid = std::process::id();
+    let (engram_cpu, engram_mem_mb) = Command::new("ps")
+        .arg("-p").arg(pid.to_string())
+        .arg("-o").arg("%cpu,rss")
+        .output().ok()
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .and_then(|s| {
+            let line = s.lines().nth(1)?;
+            let mut parts = line.split_whitespace();
+            let cpu = parts.next()?.parse::<f64>().ok()?;
+            let rss_kb = parts.next()?.parse::<u64>().ok()?;
+            Some((cpu, rss_kb / 1024))
+        })
+        .unwrap_or((0.0, 0));
+
+    // Manifold stats
+    let manifold_blocks = store.lock().unwrap().list().len();
+
+    // GPU backend
+    let gpu_backend = if cfg!(feature = "metal") { "Metal" }
+        else if cfg!(feature = "cuda") { "CUDA" }
+        else { "CPU" };
+
+    // Uptime
+    let uptime = Command::new("sh")
+        .arg("-c")
+        .arg(format!("ps -p {} -o etime= | awk '{{print $1}}'", pid))
+        .output().ok()
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .map(|s| s.trim().to_string())
+        .unwrap_or_default();
+
+    (StatusCode::OK, Json(serde_json::json!({
+        "cpu_percent": (cpu_pct * 100.0).round() / 100.0,
+        "mem_used_mb": mem_used_mb,
+        "mem_total_mb": mem_total_mb,
+        "mem_percent": (mem_pct * 100.0).round() / 100.0,
+        "engram_cpu": engram_cpu,
+        "engram_mem_mb": engram_mem_mb,
+        "manifold_blocks": manifold_blocks,
+        "gpu_backend": gpu_backend,
+        "uptime": uptime,
+    })))
+}
 
 pub async fn run(store: SharedStore, port: u16) -> anyhow::Result<()> {
     // ── Boot the Background Worker ─────────────────────────────────
@@ -275,6 +370,7 @@ pub async fn run(store: SharedStore, port: u16) -> anyhow::Result<()> {
         .route("/api/recent",   get(recent_concepts))
         // ─ System ─
         .route("/api/boot_agent", post(boot_agent))
+        .route("/api/health",     get(system_health))
         .layer(middleware::from_fn(auth_middleware))
         .layer(tower_http::cors::CorsLayer::permissive())
         .with_state(store.clone());
