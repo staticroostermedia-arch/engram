@@ -368,7 +368,7 @@ function updateHealth(){
     {label:'Memory',value:`${h.mem_percent}% (${h.mem_used_mb}/${h.mem_total_mb} MB)`,thresh:80,critThresh:95,current:h.mem_percent},
     {label:'Engram',value:`${h.engram_mem_mb} MB · ${h.engram_cpu}% CPU`,thresh:500,critThresh:1000,current:h.engram_mem_mb},
     {label:'Manifold',value:`${h.manifold_blocks} blocks`,thresh:1000,critThresh:5000,current:h.manifold_blocks},
-    {label:'GPU',value:`${h.gpu_backend} ✓`,thresh:0,critThresh:0,current:h.gpu_backend==='CPU'?1:0},
+    {label:'GPU',value:`${h.gpu_backend} ✓`,thresh:1,critThresh:2,current:h.gpu_backend==='CPU'?1:-1},
   ];
   const re=el('healthRows');if(!re)return;
   re.innerHTML=rows.map(r=>{
