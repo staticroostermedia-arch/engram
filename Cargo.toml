@@ -43,7 +43,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # Error handling
 anyhow  = "1"
 thiserror = "1"
-reqwest = { version = "0.12", features = ["blocking", "json"] }
+reqwest = { version = "0.13", features = ["blocking", "json"] }
 
 # CLI
 clap        = { version = "4", features = ["derive", "env"] }
