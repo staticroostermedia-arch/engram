@@ -372,3 +372,63 @@ Engram exists partly to prevent context window explosion. Use it for that purpos
 6. **The ki_hijacker bridge.** The context you wake up with was placed there by `ki_hijacker.rs`, not any explicit tool call. It runs unattended every 60 seconds inside the MCP server process. You are never starting from zero.
 
 7. **Scar topology.** Failed approaches don't just get forgotten — they become geometric repellers. Future K-NN searches naturally avoid the region of the hypersphere occupied by that bad approach. Dead ends prevent future dead ends.
+
+---
+
+## 10. If You Are Developing Engram Itself
+
+> **This section is for agents who are modifying the Engram codebase — not just using it.**
+
+Engram uses a two-branch public release model. Understanding this prevents accidentally exposing private configuration publicly.
+
+### The Branch Structure
+
+```
+origin/master                 ← PUBLIC canonical. What users clone. Always sanitized.
+release/public-sanitized      ← Staging. Merge here, then PR → master.
+local/master (or any branch)  ← Private working state. May have local config.
+```
+
+**Never push directly to `origin/master`.** All changes flow through `release/public-sanitized` first so they can be reviewed for privacy leaks.
+
+### Your Workflow When Making Changes
+
+```bash
+# 1. Work locally on master or a feature branch
+git checkout master
+# ... make changes, test, commit ...
+
+# 2. When ready to release publicly: run the privacy audit first
+grep -rn "/home/[a-z]/\|CodeLand\|InternalProjectName" \
+  ./crates/ --include="*.rs" --include="*.json" | grep -v target/
+# → Must return zero results
+
+# 3. Merge to the release branch
+git checkout release/public-sanitized
+git merge master --no-edit
+git push origin release/public-sanitized
+
+# 4. Open a PR on GitHub: release/public-sanitized → master
+# 5. Return to local work
+git checkout master
+```
+
+### What Must Never Reach origin/master
+
+| ❌ Private | ✅ Public Equivalent |
+|---|---|
+| Hardcoded `/home/username/path/` | `ENGRAM_LINKED_WORKSPACE` env var |
+| Internal project name in comments | Generic description |
+| Patent numbers in code/comments | Only in `PATENT-NOTICE.md` |
+| `*.log` runtime files | Listed in `.gitignore` |
+| `.leg3` manifold data | Lives in `~/.engram/`, never in repo |
+
+### When the User Asks You to Push Changes Publicly
+
+1. Run the privacy audit grep above — **do not skip this**
+2. Fix any leaks before staging
+3. Commit to current branch
+4. Merge to `release/public-sanitized`, push
+5. Record in your `session_end` summary that a public push was performed and what was included
+
+See [`integrations/workflows/contributing.md`](integrations/workflows/contributing.md) for the complete contributing workflow and environment variable reference.
