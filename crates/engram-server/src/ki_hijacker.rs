@@ -289,16 +289,16 @@ async fn bake_ki(store: &SharedStore, ki_dir: &PathBuf) -> anyhow::Result<()> {
 
     // ── Section 5: Agent Self-Model (always present) ──────────────────────────
     //
-    // Reads AGENT_SELF_MODEL.md from the Engram repo root and embeds it verbatim.
+    // Reads AGENT_INTEGRATION_GUIDE.md from the Engram repo root and embeds it verbatim.
     // This gives the agent a complete understanding of its own cognitive architecture
     // without any explicit recall calls — it's just always there.
     //
     // If the file doesn't exist yet (first boot), we emit a concise inline summary.
     let self_model_paths = [
         // Wherever the Engram repo lives
-        shellexpand::tilde("~/Documents/Engram/AGENT_SELF_MODEL.md").into_owned(),
+        shellexpand::tilde("~/Documents/Engram/AGENT_INTEGRATION_GUIDE.md").into_owned(),
         // Fallback: search in XDG config
-        shellexpand::tilde("~/.config/engram/AGENT_SELF_MODEL.md").into_owned(),
+        shellexpand::tilde("~/.config/engram/AGENT_INTEGRATION_GUIDE.md").into_owned(),
     ];
 
     let self_model = self_model_paths.iter()
@@ -308,7 +308,7 @@ async fn bake_ki(store: &SharedStore, ki_dir: &PathBuf) -> anyhow::Result<()> {
     if let Some(model_text) = self_model {
         md.push_str(&model_text);
     } else {
-        // Inline fallback if AGENT_SELF_MODEL.md hasn't been written yet
+        // Inline fallback if AGENT_INTEGRATION_GUIDE.md hasn't been written yet
         md.push_str("## 🧠 Agent Self-Model (Inline Fallback)\n\n");
         md.push_str("**I am Antigravity (Gemini) with Engram geometric memory.**\n\n");
         md.push_str("- My memory uses VSA (not neural embeddings). Encoding = Gaussian Compressed Sensing Matrix on 8192D hypersphere.\n");
@@ -317,7 +317,7 @@ async fn bake_ki(store: &SharedStore, ki_dir: &PathBuf) -> anyhow::Result<()> {
         md.push_str("- `remember_solution` → CRS=1.0, immortal. Use for confirmed bug-fix pairs.\n");
         md.push_str("- `watch_workspace` → binds daemon inotify. AST auto-ingest active after this call.\n");
         md.push_str("- `scar` → geometric repeller. Call immediately on dead-end approaches.\n");
-        md.push_str("\nRun `mcp_engram_summarize()` or check your `AGENT_SELF_MODEL.md` for full documentation.\n");
+        md.push_str("\nRun `mcp_engram_summarize()` or check your `AGENT_INTEGRATION_GUIDE.md` for full documentation.\n");
     }
 
     // Write to disk
