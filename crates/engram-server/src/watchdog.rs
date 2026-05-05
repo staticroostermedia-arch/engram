@@ -163,10 +163,21 @@ pub fn is_process_alive(name: &str) -> bool {
             .unwrap_or(true) // if /proc unreadable, assume alive
     }
 
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("pgrep")
+            .args(["-x", name])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(true) // if pgrep itself fails to run, assume alive
+    }
+
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
     {
         let _ = name;
-        true // macOS/Windows: watchdog is a no-op (use launchd/SCM instead)
+        true // Windows/other: watchdog not implemented
     }
 }
 

@@ -356,6 +356,15 @@ impl VsaBackend for MetalBackend {
                             score,
                             crs,
                             provlog,
+                            drift_velocity: block.energetics.dv,
+                            superposition_depth: block.superposition_count,
+                            zedos_tag: block.zedos_tag,
+                            alpha_a: block.energetics.alpha_a,
+                            alpha_d: block.energetics.alpha_d,
+                            aabb_min: block.aabb_min,
+                            aabb_max: block.aabb_max,
+                            explain: format!("Metal GPU cosine: sim={:.4} crs={:.4} → {:.4}", sim, crs, score),
+                            l2_norm_residual: block.l2_norm_residual,
                         }
                     })
                     .collect();
