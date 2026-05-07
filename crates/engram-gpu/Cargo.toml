@@ -25,7 +25,7 @@ libc         = { workspace = true }
 rayon        = { workspace = true }
 # wgpu is always compiled — it's the cross-platform fallback for any GPU without CUDA/ROCm/Metal.
 # On machines with CUDA or ROCm, the GPU kernel path is preferred at runtime.
-wgpu     = "22"
+wgpu     = "29"
 pollster = "0.3"   # sync executor for wgpu init/readback
 bytemuck = "1"     # safe &[u32] ↔ &[u8] casts for GPU buffers
 
