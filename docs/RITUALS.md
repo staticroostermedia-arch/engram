@@ -50,3 +50,25 @@ verify_manifold_integrity, verify_block_lawfulness, genesis, spatial_status, ki 
 See SKILL.md files in .grok/skills/, GITHUB_MVP_PREP_PLAN.md, 2026-06_Substrate_CS_Gap_Closure_Roadmap.md, engram-wake-up/SKILL.md (Phase 1.5), working-memory/SKILL.md (Code Edit + hygiene).
 
 For external agents: follow rituals for lawful use of the substrate.
+
+## Phase 5: Linguistic Rituals (ritual_linguistic_wake + NREM/ego.leg3 for calculus; P5 tomls)
+
+Additive P5 (coord + sub5): `processes/ritual/ritual_linguistic_wake.toml` + extensions in `nrem-consolidation.toml` (and sibling `processes/linguistic/*.toml` for sheaf).
+
+- `agent:engram.ritual.linguistic-wake`: zedos_type=ritual; sheaf_role linguistic wake gluing CRS0.85/homotopy via fibered; h1=OP_GEOMETRIC_PRODUCT; mcp_tools: session_start/context/trace/remember/relate/verify/quick; requires wake+linguistic-calculus; produces: ego.leg3, linguistic_bundle_high_crs, NREM_promoted_linguistic, trace:*_linguistic_wake; invariants: leg3 isomorphism, crs_0.85_for_calculus_ops, fibered_homotopy_coherence, NREM promotion of high-CRS linguistic bundles to ego.leg3, categorical class mixing rules (scar on violation e.g. number/word without geometric_product), lyapunov stable.
+- Integrates NREM (produces ego.leg3 + hot + linguistic crs gate 0.85 + homotopy fibered check) with mcp linguistic calculus surface (P3 compress/de/fibered + P4 calculus ops) + session.
+- load_process_sheaf (mcp.rs) picks "ritual" dir (and linguistic/) at wake; P5 tomls now present + active.
+- Full pipeline survival: Leg3 mint linguistic (P1) → op compress/diff/operad (P3/P4 via mcp_linguistic_calculus etc) → decompress → NREM (toml + promote/records) → ego.leg3 (verify/concept high CRS) with homotopy/text-coeff fidelity >=0.85.
+- Dogfood: traces/relates to goal:mvp_gap_closure_v1; see Phase 6 sub-agent, e2e test in crates/engram-server/src/mcp.rs, MCP_TOOLS_REFERENCE.md, GITHUB_MVP_PREP_PLAN.md.
+
+These close the categorical/linguistic calculus loop for geometric self-model (non-flat).
+
+## Phase 6: Public Polish + Documentation (CATEGORICAL_LINGUISTIC_CALCULUS.md, README, final refs)
+
+Additive Phase 6 (Sub-agent 1, 3-iter loop per handoff): 
+- New public file `docs/CATEGORICAL_LINGUISTIC_CALCULUS.md` (overview of “Calculus over Words”, geometric/sheaf foundation, full P1–P6 surface with exact refs to ZEDOS_LINGUISTIC 0x4C etc/types.rs/ops.rs/processes/linguistic/*.toml + ritual_linguistic_wake.toml, mcp_linguistic_calculus + mixed ops usage exs with CRS 0.85+/0.87, word/number bridging, full NREM/ego.leg3 lifecycle + invariants/CRS gates, “How to Try” with build/MCP/session_start/verify/hygiene + link to examples/hello-engram-agent.py, links to RITUALS §Phase5 / MCP_TOOLS / GEOMETRIC_MEMORY / GITHUB_MVP_PREP_PLAN / AGENTS).
+- README.md: prominent new “Categorical Linguistic Calculus” section placed after Memory Model (~l41) with short mcp ex (differentiate), mixed bridge ex, “How to try the new calculus” (cargo + target/debug/engram --version, MCP wire, session_start, mcp call, extend python ex, verify), link to full doc, note on advancing to geometric *reasoning* substrate + Phase 6 polish complete.
+- Updates to this RITUALS.md (this Phase 6 section), MCP_TOOLS_REFERENCE.md (linguistic section), GITHUB_MVP_PREP_PLAN.md (exec log appends x3 iters with hygiene verbatim, CRS, sub_id 019eb27f-d94f-7ea0-b580-36adb41c19c8, readiness).
+- Full e2e ready (mint mixed → P3 compress → P4 calc/mixed bridges → decompress → P5 NREM/ego promotion CRS0.85+ homotopy/fidelity + class-mix guard), public docs polished, ready for sharing. Hygiene (cargo test -p engram-core -p engram-server, check, target/debug/engram 0.4.0 + ls, mcp verify) + mcp verify at start + end each iter. Dogfood: quick_trace/remember/relate/plan appends to goal:mvp_gap_closure_v1 + prior linguistic traces. Narrow (3 iters, pre context/read/grep, additive only, no core edits). CRS gates passed. Sub calls narrow.
+
+See new CATEGORICAL_LINGUISTIC_CALCULUS.md for public “How to try”. All invariants (.leg3/CRS/p-mom/VSA/sheaf/H¹) preserved. Ready for Sub-agent 2 commit+push.

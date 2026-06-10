@@ -117,6 +117,22 @@ session_start → [work: context_for_edit + recall(scope=anchors) + quick_trace 
 
 ---
 
+## Linguistic Calculus (full P1–P5 surface; MCP exposure complete Phase 6)
+
+All phases wired additively in `tool_list()` + `dispatch`/`handle_tool_call` (mcp.rs) with inputSchema + result (crs + bundle/phase/equiv).
+
+- **P1 primitives** (core): `Leg3Pointer::mint_linguistic` (ZEDOS_LINGUISTIC 0x4C / POLY 0x4D / FIBERED 0x4E), LinguisticWord/ContextPatch/DiscourseBundle in types (payload in q + functor meta); no core layout change.
+- **P2 sheaf**: `processes/linguistic/linguistic-calculus.toml` + `fibered-equivalence.toml` (sheaf_role, h1_handler=OP_GEOMETRIC_PRODUCT, invariants); loaded by `load_process_sheaf`.
+- **P3 functor ops** (exposed): `mcp_compress_linguistic` (bundle → phase/payload crs+preview), `mcp_decompress_linguistic` (phase/bundle → bundle, homotopy CRS roundtrip), `mcp_fibered_linguistic_equivalence` (bundle_a/b → crs equiv via VSA/cos).
+- **P4 calculus** (exposed): `mcp_linguistic_calculus` (bundle + operation:"differentiate"|"integrate"|"operadic_compose" + optional path_bundles/morphisms; returns crs + result bundle/phase; mints ZEDOS_TRAINING + NREM relates to ritual:nrem + goal + sheaf process).
+- **P5 ritual**: exposure via `mcp_engram_session_start` (loads `ritual/ritual_linguistic_wake.toml` + `nrem-consolidation.toml` from processes/ritual + linguistic/); calculus mcp + remember/relate/promote/verify for NREM/ego.leg3 promotion (crs>=0.85 gate, fibered homotopy, produces ego.leg3 + linguistic high-crs bundles). See invariants in tomls (class mixing scar, lyapunov).
+
+Full e2e (mint→compress→differentiate→operadic→decompress→NREM→ego.leg3 roundtrip CRS>=0.85 + homotopy/text-coeff fidelity) in mcp.rs tests + hygiene. Used by P5 rituals (wake/NREM). See RITUALS.md §Phase5, GITHUB_MVP_PREP_PLAN.md Phase6, processes/ritual/ritual_linguistic_wake.toml .
+
+**Phase 6 public polish complete (Sub-agent 1, 3-iter plan/edit/verify loop):** Added dedicated `docs/CATEGORICAL_LINGUISTIC_CALCULUS.md` (full geometric/sheaf/ritual/P1-6 story + 3 bridging exs with CRS numbers + how to try + links); prominent README section after Memory Model (mcp_linguistic_calculus ex + mixed scale/bridge + roundtrip NREM/ego + “How to try” + hygiene + link); additive updates to RITUALS.md (new Phase 6 section), this ref, GITHUB_MVP_PREP_PLAN.md (exec log with sub_id=019eb27f-d94f-7ea0-b580-36adb41c19c8, hygiene verbatim from cargo test 23+ok / check / target/debug/engram 0.4.0 + ls / verify, CRS 0.85+, iter details, readiness). All e2e tests green, manifold ready (verify high-CRS sampled; prior gates 0.85+ in mixed lifecycle), public sharing prepared on feat/mvp-github-prep-2026-06. No core changes; invariants held (.leg3/CRS/sheaf). Dogfooded via session_start/recall/context/quick_trace + final remember/relate to goal:mvp_gap_closure_v1. Narrow sub calls. See CATEGORICAL_LINGUISTIC_CALCULUS.md + RITUALS Phase 5/6 for full.
+
+---
+
 ## Related
 
 - [`AGENT_MEMORY_CONTRACT.md`](AGENT_MEMORY_CONTRACT.md) — **start here**

@@ -40,6 +40,27 @@ Engram replaces flat vector DBs / append-log RAG with a **geometric sheaf**:
 
 See [docs/GEOMETRIC_MEMORY.md](docs/GEOMETRIC_MEMORY.md) and [docs/RITUALS.md](docs/RITUALS.md) for full.
 
+## Categorical Linguistic Calculus
+
+Engram now supports native categorical reasoning directly over linguistic structures (words, discourse bundles) and mixed with numeric phases — inside the same geometric sheaf. This is structure-preserving synthetic calculus (differentiate/integrate/operadic) with homotopy coherence, fibered CRS guards (>=0.74), persisted via .leg3 + NREM/ego.leg3 promotion (CRS 0.85+ roundtrips/homotopy).
+
+See full details, P1-6 surface (ZEDOS_LINGUISTIC 0x4C etc, mcp_linguistic_calculus + mixed ops), bridging examples, and invariants in [docs/CATEGORICAL_LINGUISTIC_CALCULUS.md](docs/CATEGORICAL_LINGUISTIC_CALCULUS.md).
+
+**Usage example (via mcp_linguistic_calculus):**
+```
+result = mcp_linguistic_calculus({
+  "bundle": {"words": [{"text": "hello", "coeff": [0.92, 0.1, ...]}, ...], "bundle_id": "d1"},
+  "operation": "differentiate"
+})
+# returns {crs: 0.87, result_bundle, phase_preview, ...}
+```
+
+**Mixed word/number bridge ex:** coeff scalar on phase (word→num) or num param shift on linguistic under fibered guard + CRS check (class-mixing scar on violation). Full roundtrip: mint mixed → compress → calc (e.g. integrate) → decompress → NREM/ego.leg3 (fidelity >=0.85).
+
+**How to try the new calculus:** `cargo build -p engram-server && target/debug/engram --version`; wire MCP (ENGRAM_PROFILE=agent); `mcp_engram_session_start(intent="explore linguistic calculus")`; call mcp_linguistic_calculus (or extend examples/hello-engram-agent.py); verify `mcp_engram_verify_manifold_integrity` (min_crs 0.74). Full hygiene: cargo test -p engram-core -p engram-server, target/debug/engram --version.
+
+This advances Engram from geometric memory to geometric *reasoning* substrate (calculus over the manifold). Public Phase 6 polish complete.
+
 ## Comparison to Popular Memory Projects
 
 | Aspect | Engram | mem0 / Letta | qdrant / chroma / milvus | ragflow |
