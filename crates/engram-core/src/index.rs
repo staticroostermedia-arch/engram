@@ -127,18 +127,24 @@ fn murmurhash_f32(mut h: u32) -> f32 {
 /// Recursively build a top-down SAH BVH (longest-axis median split).
 /// Returns the node index just pushed into `nodes`.
 fn build_top_down(leaves: &mut [LeafData], nodes: &mut Vec<LBVHNode>, rope: i32) -> i32 {
-    if leaves.is_empty() { return -1; }
+    if leaves.is_empty() {
+        return -1;
+    }
     let idx = nodes.len();
     nodes.push(LBVHNode::default());
 
     if leaves.len() == 1 {
         let c = leaves[0].center;
         nodes[idx].min = [
-            c.x - AABB_RADIUS, c.y - AABB_RADIUS, c.z - AABB_RADIUS,
+            c.x - AABB_RADIUS,
+            c.y - AABB_RADIUS,
+            c.z - AABB_RADIUS,
             f32::from_bits(u32::MAX), // sentinel: left_child == -1 means leaf
         ];
         nodes[idx].max = [
-            c.x + AABB_RADIUS, c.y + AABB_RADIUS, c.z + AABB_RADIUS,
+            c.x + AABB_RADIUS,
+            c.y + AABB_RADIUS,
+            c.z + AABB_RADIUS,
             f32::from_bits(leaves[0].entry_id as u32),
         ];
         nodes[idx].skip_idx = rope;
@@ -148,14 +154,23 @@ fn build_top_down(leaves: &mut [LeafData], nodes: &mut Vec<LBVHNode>, rope: i32)
     // Compute AABB of all centroids
     let (mut lo, mut hi) = ([f32::MAX; 3], [f32::MIN; 3]);
     for l in leaves.iter() {
-        lo[0] = lo[0].min(l.center.x); hi[0] = hi[0].max(l.center.x);
-        lo[1] = lo[1].min(l.center.y); hi[1] = hi[1].max(l.center.y);
-        lo[2] = lo[2].min(l.center.z); hi[2] = hi[2].max(l.center.z);
+        lo[0] = lo[0].min(l.center.x);
+        hi[0] = hi[0].max(l.center.x);
+        lo[1] = lo[1].min(l.center.y);
+        hi[1] = hi[1].max(l.center.y);
+        lo[2] = lo[2].min(l.center.z);
+        hi[2] = hi[2].max(l.center.z);
     }
 
     // Split on longest axis (median)
-    let ext = [hi[0]-lo[0], hi[1]-lo[1], hi[2]-lo[2]];
-    let axis = if ext[1] > ext[0] { 1 } else if ext[2] > ext[0] && ext[2] > ext[1] { 2 } else { 0 };
+    let ext = [hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]];
+    let axis = if ext[1] > ext[0] {
+        1
+    } else if ext[2] > ext[0] && ext[2] > ext[1] {
+        2
+    } else {
+        0
+    };
     let mid = leaves.len() / 2;
     leaves.sort_by(|a, b| {
         let va = [a.center.x, a.center.y, a.center.z][axis];
@@ -164,10 +179,20 @@ fn build_top_down(leaves: &mut [LeafData], nodes: &mut Vec<LBVHNode>, rope: i32)
     });
 
     let right = build_top_down(&mut leaves[mid..], nodes, rope);
-    let left  = build_top_down(&mut leaves[..mid], nodes, right);
+    let left = build_top_down(&mut leaves[..mid], nodes, right);
 
-    nodes[idx].min = [lo[0] - AABB_RADIUS, lo[1] - AABB_RADIUS, lo[2] - AABB_RADIUS, left as f32];
-    nodes[idx].max = [hi[0] + AABB_RADIUS, hi[1] + AABB_RADIUS, hi[2] + AABB_RADIUS, right as f32];
+    nodes[idx].min = [
+        lo[0] - AABB_RADIUS,
+        lo[1] - AABB_RADIUS,
+        lo[2] - AABB_RADIUS,
+        left as f32,
+    ];
+    nodes[idx].max = [
+        hi[0] + AABB_RADIUS,
+        hi[1] + AABB_RADIUS,
+        hi[2] + AABB_RADIUS,
+        right as f32,
+    ];
     nodes[idx].skip_idx = right;
     idx as i32
 }
@@ -181,7 +206,7 @@ fn build_top_down(leaves: &mut [LeafData], nodes: &mut Vec<LBVHNode>, rope: i32)
 pub struct BvhIndex {
     nodes: Vec<LBVHNode>,
     /// Maps 1-based entry_id → concept name string.
-    id_to_concept: Vec<String>,    // index 0 unused (IDs are 1-based)
+    id_to_concept: Vec<String>, // index 0 unused (IDs are 1-based)
     /// Maps concept name → 1-based entry_id.
     concept_to_id: HashMap<String, u64>,
     /// Maps concept name → disk path.
@@ -206,26 +231,34 @@ impl BvhIndex {
 
         for entry in std::fs::read_dir(manifold_dir).ok()?.flatten() {
             let path = entry.path();
-            if path.extension().and_then(|e| e.to_str()) != Some("leg") { continue; }
+            if path.extension().and_then(|e| e.to_str()) != Some("leg") {
+                continue;
+            }
             let concept = path.file_stem()?.to_str()?.to_string();
             let block = crate::storage::read_block(&path).ok()?;
 
             let center = project_to_3d(&block.q);
             let id = id_to_concept.len() as u64; // 1-based
-            leaves.push(LeafData { center, entry_id: id });
+            leaves.push(LeafData {
+                center,
+                entry_id: id,
+            });
             id_to_concept.push(concept.clone());
             concept_to_id.insert(concept.clone(), id);
             concept_to_path.insert(concept, path);
         }
 
-        if leaves.is_empty() { return None; }
+        if leaves.is_empty() {
+            return None;
+        }
 
         let mut nodes = Vec::with_capacity(leaves.len() * 2);
         build_top_down(&mut leaves, &mut nodes, -1);
 
         tracing::info!(
             "[BVH] Built LBVH: {} nodes, {} concepts, {:.1} KB RAM",
-            nodes.len(), id_to_concept.len() - 1,
+            nodes.len(),
+            id_to_concept.len() - 1,
             (nodes.len() * 32) as f32 / 1024.0
         );
 
@@ -248,13 +281,19 @@ impl BvhIndex {
         stack.push(0);
 
         while let Some(idx) = stack.pop() {
-            if idx < 0 || idx as usize >= self.nodes.len() { continue; }
+            if idx < 0 || idx as usize >= self.nodes.len() {
+                continue;
+            }
             let n = &self.nodes[idx as usize];
 
             // AABB miss → follow rope (skip pointer)
-            if pos.x < n.min[0] || pos.x > n.max[0]
-            || pos.y < n.min[1] || pos.y > n.max[1]
-            || pos.z < n.min[2] || pos.z > n.max[2] {
+            if pos.x < n.min[0]
+                || pos.x > n.max[0]
+                || pos.y < n.min[1]
+                || pos.y > n.max[1]
+                || pos.z < n.min[2]
+                || pos.z > n.max[2]
+            {
                 continue;
             }
 
@@ -262,8 +301,12 @@ impl BvhIndex {
             if left_child == -1 {
                 // Leaf node
                 let id = n.max[3].to_bits() as u64;
-                if id > 0 { hits.push(id); }
-                if hits.len() >= k { break; }
+                if id > 0 {
+                    hits.push(id);
+                }
+                if hits.len() >= k {
+                    break;
+                }
             } else {
                 // Interior: push right then left (left processed first)
                 let right_child = n.max[3].to_bits() as i32;
@@ -291,7 +334,8 @@ impl BvhIndex {
         let pos = project_to_3d(query_vec);
         let ids = self.filter(pos, KNN_FILTER_CANDIDATES);
 
-        let names: Vec<String> = ids.iter()
+        let names: Vec<String> = ids
+            .iter()
             .filter_map(|&id| self.id_to_concept.get(id as usize).cloned())
             .collect();
 
@@ -299,7 +343,9 @@ impl BvhIndex {
         if let Ok(mut cache) = self.query_cache.write() {
             cache.insert(qhash, names.clone());
             // Simple eviction: if cache exceeds 512 entries, clear
-            if cache.len() > 512 { cache.clear(); }
+            if cache.len() > 512 {
+                cache.clear();
+            }
         }
 
         names[..names.len().min(k)].to_vec()
@@ -312,7 +358,9 @@ impl BvhIndex {
     /// works correctly after a `build()` rebuild. For production use, rebuild
     /// the full BVH after every ~1000 new entries.
     pub fn register(&mut self, concept: &str, path: PathBuf, q: &[Complex32; 8192]) {
-        if self.concept_to_id.contains_key(concept) { return; }
+        if self.concept_to_id.contains_key(concept) {
+            return;
+        }
         let id = self.id_to_concept.len() as u64;
         self.id_to_concept.push(concept.to_string());
         self.concept_to_id.insert(concept.to_string(), id);
@@ -320,17 +368,26 @@ impl BvhIndex {
         // Add a leaf to the node list so filter() can return it on rebuild
         let center = project_to_3d(q);
         let mut nodes_single = Vec::new();
-        let mut leaves_single = vec![LeafData { center, entry_id: id }];
+        let mut leaves_single = vec![LeafData {
+            center,
+            entry_id: id,
+        }];
         build_top_down(&mut leaves_single, &mut nodes_single, -1);
         self.nodes.extend_from_slice(&nodes_single);
     }
 
     /// Returns true if the index has been built and is non-empty.
-    pub fn is_ready(&self) -> bool { !self.nodes.is_empty() }
+    pub fn is_ready(&self) -> bool {
+        !self.nodes.is_empty()
+    }
 
     /// Number of indexed concepts.
-    pub fn len(&self) -> usize { self.id_to_concept.len().saturating_sub(1) }
-    pub fn is_empty(&self) -> bool { self.len() == 0 }
+    pub fn len(&self) -> usize {
+        self.id_to_concept.len().saturating_sub(1)
+    }
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 
     /// Persist the BVH to a small binary file (nodes + concept map).
     ///
@@ -348,9 +405,8 @@ impl BvhIndex {
         // Write node slab
         f.write_all(&(self.nodes.len() as u64).to_le_bytes())?;
         for n in &self.nodes {
-            let bytes = unsafe {
-                std::slice::from_raw_parts(n as *const LBVHNode as *const u8, 32)
-            };
+            let bytes =
+                unsafe { std::slice::from_raw_parts(n as *const LBVHNode as *const u8, 32) };
             f.write_all(bytes)?;
         }
 
@@ -358,7 +414,8 @@ impl BvhIndex {
         let concepts = &self.id_to_concept[1..];
         f.write_all(&(concepts.len() as u64).to_le_bytes())?;
         for concept in concepts {
-            let path_str = self.concept_to_path
+            let path_str = self
+                .concept_to_path
                 .get(concept)
                 .map(|p| p.to_string_lossy().into_owned())
                 .unwrap_or_default();
@@ -416,7 +473,11 @@ impl BvhIndex {
             concept_to_path.insert(concept, PathBuf::from(path_str));
         }
 
-        tracing::info!("[BVH] Loaded index: {} nodes, {} concepts", nodes.len(), concept_count);
+        tracing::info!(
+            "[BVH] Loaded index: {} nodes, {} concepts",
+            nodes.len(),
+            concept_count
+        );
 
         Ok(Self {
             nodes,

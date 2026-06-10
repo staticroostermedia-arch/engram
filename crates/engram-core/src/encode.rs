@@ -11,9 +11,9 @@
 //! 4. Normalize to the unit hypersphere |z| = 1.0
 //! 5. Pack into a `HolographicBlock` with the source text in the ProvLog
 
-use crate::types::{Leg3Pointer, ZEDOS_DECLARATIVE, ZEDOS_POINTER, DIMENSION};
 use crate::ops::normalize;
 use crate::storage::write_provlog;
+use crate::types::{Leg3Pointer, DIMENSION, ZEDOS_DECLARATIVE, ZEDOS_POINTER};
 use num_complex::Complex32;
 
 /// Encode free-form text into a `HolographicBlock` using Pure Logophysical Phase Accumulation.
@@ -27,7 +27,7 @@ pub fn from_text(text: &str) -> Leg3Pointer {
     // Structural Anchor (Method A) - Native Logophysical HRR accumulation
     let mut q = [Complex32::default(); DIMENSION];
     let tokens: Vec<&str> = text.split_whitespace().collect();
-    
+
     for token in &tokens {
         let seed_hash = blake3::hash(token.to_lowercase().as_bytes());
         let mut xof = blake3::Hasher::new();
@@ -36,13 +36,13 @@ pub fn from_text(text: &str) -> Leg3Pointer {
         xof.finalize_xof().fill(&mut phase_bytes);
 
         for i in 0..DIMENSION {
-            let b0 = phase_bytes[i * 4]     as f32;
+            let b0 = phase_bytes[i * 4] as f32;
             let b1 = phase_bytes[i * 4 + 1] as f32;
             let b2 = phase_bytes[i * 4 + 2] as f32;
             let b3 = phase_bytes[i * 4 + 3] as f32;
             let theta_re = (b0 * 256.0 + b1) / 65535.0 * std::f32::consts::TAU;
             let theta_im = (b2 * 256.0 + b3) / 65535.0 * std::f32::consts::TAU;
-            
+
             // Vector Superposition (Accumulate pure token phases)
             q[i] += Complex32::new(theta_re.cos(), theta_im.sin());
         }
@@ -88,14 +88,14 @@ pub fn from_text_with_crs(text: &str, crs: f32) -> Leg3Pointer {
 ///
 /// Designed for data >256KB payload limit. The block itself is a lightweight,
 /// Merkle-strong, geometrically fingerprinted reference descriptor.
-/// 
+///
 /// - Payload holds structured EXTERNAL_POINTER_V1 descriptor (text/JSON hybrid for readability + parse).
 /// - Strong integrity: content_hash (blake3 of external), block's native sig_0-5 + merkle_sub_root.
 /// - Lazy: materialization hints + chunk ranges (on-demand fetch ranges, no auto-load).
 /// - Geometric: q/p encodes descriptor fingerprint (searchable); payload + aabb hold spatial chunk refs + momentum proxies.
 /// - Thought Tile integration: create tile that relates to the pointer_concept or embeds its key in payload.
 /// - Guardrail: NO layout, tensor, or alignment changes. All extra data in existing payload region.
-/// 
+///
 /// Example usage (MCP / core consumer):
 ///   let ptr = mint_external_pointer("file:///data/large.pt", &blake3_hash, 12_000_000, r#"{"mime":"application/octet-stream","chunks":[{"id":0,"offset":0,"len":4096,"spatial":"region:0-100"}]}"# );
 ///   backend.store("pointer:large_model_weights_v2", ptr);
@@ -103,7 +103,7 @@ pub fn mint_external_pointer(
     external_uri: &str,
     content_hash: &[u8; 32],
     size_bytes: u64,
-    extra_metadata_json: &str,  // e.g. chunks, spatial, lazy hints as JSON string
+    extra_metadata_json: &str, // e.g. chunks, spatial, lazy hints as JSON string
 ) -> Leg3Pointer {
     // Build human + machine readable descriptor (fits easily in 122KB payload)
     let hash_hex: String = content_hash.iter().map(|b| format!("{:02x}", b)).collect();
@@ -162,7 +162,11 @@ pub fn mint_html_visualization_payload(
 ) -> String {
     let mut html = String::new();
 
-    let safe_title = title.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;");
+    let safe_title = title
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;");
     html.push_str(&format!(
         r#"<!DOCTYPE html>
 <html>
@@ -193,7 +197,10 @@ pub fn mint_html_visualization_payload(
 
     // s-summary
     html.push_str("  <section class=\"s-summary\">\n");
-    html.push_str(&format!("    <p>{}</p>\n", summary.replace('&', "&amp;").replace('<', "&lt;")));
+    html.push_str(&format!(
+        "    <p>{}</p>\n",
+        summary.replace('&', "&amp;").replace('<', "&lt;")
+    ));
     html.push_str("  </section>\n");
 
     // s-data (machine readable)
@@ -227,7 +234,10 @@ pub fn mint_html_visualization_payload(
     // s-notes
     if let Some(notes_text) = notes {
         html.push_str("  <section class=\"s-notes\">\n");
-        html.push_str(&format!("    <div class=\"agent-note\">{}</div>\n", notes_text.replace('&', "&amp;").replace('<', "&lt;")));
+        html.push_str(&format!(
+            "    <div class=\"agent-note\">{}</div>\n",
+            notes_text.replace('&', "&amp;").replace('<', "&lt;")
+        ));
         html.push_str("  </section>\n");
     }
 
@@ -246,7 +256,10 @@ mod tests {
         let a = from_text("hello world");
         let b = from_text("hello world");
         let sim = cosine_similarity(&a.q, &b.q);
-        assert!((sim - 1.0).abs() < 1e-5, "encoding is not deterministic: {sim}");
+        assert!(
+            (sim - 1.0).abs() < 1e-5,
+            "encoding is not deterministic: {sim}"
+        );
     }
 
     #[test]

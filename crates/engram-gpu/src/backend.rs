@@ -5,13 +5,13 @@
 //! `recall()` uses the linear CPU scan.
 
 use crate::bvh::BvhManifold;
+use anyhow::Result;
 use engram_core::backend::{CpuBackend, Memory, VsaBackend};
 use engram_core::mmap::LegView;
 use engram_core::types::{Leg3Pointer, SymplecticState};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
-use anyhow::Result;
 
 /// Tier 3 scaffolding: Represents a buffer that can be resident directly on the GPU.
 /// When the "device_residency" feature is enabled, hot items from high_priority_cache
@@ -107,9 +107,8 @@ impl CudaBackend {
     /// fall back to the CPU linear scan. The BVH is typically ready within
     /// a few seconds for manifolds < 10K blocks.
     pub fn new(path: impl AsRef<Path>) -> Self {
-        let path = shellexpand::tilde(
-            path.as_ref().to_str().unwrap_or("~/.engram/manifold")
-        ).into_owned();
+        let path =
+            shellexpand::tilde(path.as_ref().to_str().unwrap_or("~/.engram/manifold")).into_owned();
         std::fs::create_dir_all(&path).ok();
 
         let gpu_available = Self::probe_cuda();
@@ -148,8 +147,11 @@ impl CudaBackend {
                     if let Ok(mut guard) = bvh.write() {
                         let n = new_bvh.as_ref().map_or(0, |b| b.len());
                         *guard = new_bvh;
-                        eprintln!("[BVH] ✓ Background build complete: {} concepts in {:.1}s",
-                            n, t0.elapsed().as_secs_f32());
+                        eprintln!(
+                            "[BVH] ✓ Background build complete: {} concepts in {:.1}s",
+                            n,
+                            t0.elapsed().as_secs_f32()
+                        );
                     }
                 })
                 .ok();
@@ -214,12 +216,7 @@ impl CudaBackend {
         std::fs::read_dir(&self.store_path)
             .map(|rd| {
                 rd.filter_map(|e| e.ok())
-                    .filter(|e| {
-                        e.path()
-                            .extension()
-                            .and_then(|x| x.to_str())
-                            == Some("leg")
-                    })
+                    .filter(|e| e.path().extension().and_then(|x| x.to_str()) == Some("leg"))
                     .count()
             })
             .unwrap_or(0)
@@ -238,11 +235,11 @@ impl CudaBackend {
         #[cfg(target_os = "linux")]
         {
             unsafe {
-                let lib = libc::dlopen(
-                    c"libcuda.so.1".as_ptr(),
-                    libc::RTLD_NOW | libc::RTLD_GLOBAL,
-                );
-                if lib.is_null() { return false; }
+                let lib =
+                    libc::dlopen(c"libcuda.so.1".as_ptr(), libc::RTLD_NOW | libc::RTLD_GLOBAL);
+                if lib.is_null() {
+                    return false;
+                }
 
                 // Step 1: cuInit(0) — mandatory before any other driver API call.
                 let init_sym = libc::dlsym(lib, c"cuInit".as_ptr());
@@ -271,7 +268,9 @@ impl CudaBackend {
             }
         }
         #[cfg(not(target_os = "linux"))]
-        { false }
+        {
+            false
+        }
     }
 
     /// Ensure the BVH is populated, building it synchronously if needed.
@@ -280,7 +279,9 @@ impl CudaBackend {
     #[allow(dead_code)] // cfg-gated (CUDA/OptiX/Metal builds); not referenced on CPU-only or other cfgs
     fn ensure_bvh(&self) {
         if let Ok(guard) = self.bvh.read() {
-            if guard.is_some() { return; }
+            if guard.is_some() {
+                return;
+            }
         }
         // Background build hasn't finished yet — build synchronously
         eprintln!("[BVH] Synchronous build (background thread not yet done)…");
@@ -348,7 +349,8 @@ impl VsaBackend for CudaBackend {
         } else {
             tracing::debug!(
                 "[CudaBackend] BVH best score {:.4} < {:.3} — falling back to CPU linear scan",
-                best_bvh_score, BVH_FALLBACK_THRESHOLD
+                best_bvh_score,
+                BVH_FALLBACK_THRESHOLD
             );
             self.cpu.query(q, k)
         }
@@ -369,7 +371,9 @@ impl VsaBackend for CudaBackend {
                 .name("engram-bvh-rebuild".to_string())
                 .spawn(move || {
                     let new_bvh = BvhManifold::build_from_dir(&path_clone);
-                    if let Ok(mut guard) = bvh_arc.write() { *guard = new_bvh; }
+                    if let Ok(mut guard) = bvh_arc.write() {
+                        *guard = new_bvh;
+                    }
                 })
                 .ok();
         }
@@ -439,7 +443,7 @@ impl CudaBackend {
 
     /// Mark a block (especially new structured Thought Tiles) as high-priority.
     /// Stores the full block in the in-memory cache so future high_priority
-    /// fetches are fast (RAM instead of O_DIRECT). 
+    /// fetches are fast (RAM instead of O_DIRECT).
     /// Also touches AccessIndex for recency (so hot items stay "recent" too)
     /// and applies simple size limit + basic eviction.
     /// Promotes a block to the high-priority cache, with optional recency hint
@@ -449,7 +453,11 @@ impl CudaBackend {
     /// for the initial block data when the .leg exists — expanding zero-copy usage
     /// to the promotion site (Tier 2 item under Maximum Engram Speed Roadmap).
     /// Falls back to fetch_block (storage read path) for compatibility.
-    pub fn promote_to_high_priority(&self, concept: &str, last_accessed: Option<u64>) -> Option<Leg3Pointer> {
+    pub fn promote_to_high_priority(
+        &self,
+        concept: &str,
+        last_accessed: Option<u64>,
+    ) -> Option<Leg3Pointer> {
         // Tier 2 expansion: attempt LegView + to_leg3_pointer first for zero-copy
         // origin even on promote (not just subsequent hot fetches). This ensures
         // the block entering high_priority_cache originates from mmap when possible.
@@ -473,7 +481,8 @@ impl CudaBackend {
                 //   - CRS (higher CRS = much higher score = protected)
                 //   - Age (older = lower score = evicted first)
                 //   - Type protection bonus for core continuity artifacts
-                if let Some(old_key) = cache.iter()
+                if let Some(old_key) = cache
+                    .iter()
                     .min_by(|a, b| {
                         let a_block = &a.1;
                         let b_block = &b.1;
@@ -482,7 +491,9 @@ impl CudaBackend {
                         let score_a = compute_eviction_score(&a.0, a_block, last_accessed);
                         let score_b = compute_eviction_score(&b.0, b_block, last_accessed);
 
-                        score_a.partial_cmp(&score_b).unwrap_or(std::cmp::Ordering::Equal)
+                        score_a
+                            .partial_cmp(&score_b)
+                            .unwrap_or(std::cmp::Ordering::Equal)
                     })
                     .map(|(k, _)| k.clone())
                 {
@@ -495,7 +506,10 @@ impl CudaBackend {
                     if let Ok(mut dev_map) = self.device_resident_buffers.write() {
                         if let Some(old_buf) = dev_map.remove(&old_key) {
                             crate::cuda_dispatch::free_device_ptr(old_buf.gpu_ptr);
-                            tracing::debug!("[device-residency] evicted device buffer for {}", old_key);
+                            tracing::debug!(
+                                "[device-residency] evicted device buffer for {}",
+                                old_key
+                            );
                         }
                     }
                 }
@@ -549,7 +563,10 @@ impl CudaBackend {
                 }
             }
             cache.insert(name.to_string(), state.clone());
-            tracing::debug!("[high-priority][geo] promoted SymplecticState snapshot {}", name);
+            tracing::debug!(
+                "[high-priority][geo] promoted SymplecticState snapshot {}",
+                name
+            );
         }
         // Also ensure bvh lens is hot-synced for framed filtering/scoring under this geo state
         if let Ok(guard) = self.bvh.read() {
@@ -617,7 +634,10 @@ impl CudaBackend {
             if gpu_ptr != 0 {
                 crate::cuda_dispatch::free_device_ptr(gpu_ptr);
             }
-            tracing::warn!("[device-residency] failed to acquire device map write lock for {}", concept);
+            tracing::warn!(
+                "[device-residency] failed to acquire device map write lock for {}",
+                concept
+            );
             false
         }
     }
@@ -690,7 +710,11 @@ impl CudaBackend {
 /// Shared with MetalBackend for hot-path symmetry (WS1-C embodiment hardening).
 /// Used exclusively by the high-priority fast paths which explicitly bypass
 /// the O_DIRECT read_block path (storage.rs) in favor of LegView mmap + RAM cache.
-pub(crate) fn compute_eviction_score(key: &str, block: &Leg3Pointer, last_accessed_hint: Option<u64>) -> f64 {
+pub(crate) fn compute_eviction_score(
+    key: &str,
+    block: &Leg3Pointer,
+    last_accessed_hint: Option<u64>,
+) -> f64 {
     let crs = block.crs_score as f64;
 
     // Age factor: older items get lower score (more evictable)
@@ -701,7 +725,7 @@ pub(crate) fn compute_eviction_score(key: &str, block: &Leg3Pointer, last_access
             .unwrap_or_default()
             .as_secs();
         let age = now.saturating_sub(ts) as f64;
-        1.0 / (age + 1.0)   // older → smaller factor
+        1.0 / (age + 1.0) // older → smaller factor
     } else {
         // Fallback: weak lexical proxy (worse than real timestamps)
         0.5 + (key.len() as f64 % 10.0) / 20.0
@@ -721,5 +745,3 @@ pub(crate) fn compute_eviction_score(key: &str, block: &Leg3Pointer, last_access
     // Composite score: higher = safer from eviction
     crs * 0.55 + age_factor * 0.35 + protection
 }
-
-

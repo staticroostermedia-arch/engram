@@ -1,8 +1,9 @@
 #![recursion_limit = "512"]
-#![allow(unused_mut)]                 // many guard bindings from short-lock refactor are read-only after acquire; harmless, silences the bulk of the "does not need to be mutable" warnings
-#![allow(clippy::unnecessary_parens)] // tuple returns in Err arms and a few exprs are idiomatic; keeps code clear
-#![allow(clippy::type_complexity)]    // complex tuple types in KI bake (pinned + weighted) are inherent to the geometric payload; documented
-#![allow(clippy::ptr_arg)]            // &PathBuf in bake_ki is fine for the ki_dir usage; changing would cascade to callers
+#![allow(unused_mut)]
+// many guard bindings from short-lock refactor are read-only after acquire; harmless, silences the bulk of the "does not need to be mutable" warnings
+#![allow(clippy::type_complexity)]
+// complex tuple types in KI bake (pinned + weighted) are inherent to the geometric payload; documented
+#![allow(clippy::ptr_arg)] // &PathBuf in bake_ki is fine for the ki_dir usage; changing would cascade to callers
 
 //! Engram server — MCP + REST memory backend for AI agents.
 //!
@@ -25,16 +26,16 @@
 //!   --light     : Force CPU backend (ENGRAM_FORCE_CPU_BACKEND), skips CUDA/Metal/BVH heavy init for fast non-GPU startup during UI testing.
 //!   --no-scout  : Skip scout_daemon supervisor (avoids port 8088 contention/spam when only using /api/* for dynamic views).
 
+pub mod daemon;
+pub mod ki_hijacker;
 mod mcp;
 mod mcp_lock;
 mod profile;
-mod serve;
-mod store;
-pub mod daemon;
-pub mod ki_hijacker;
-pub mod watchdog;
 pub mod scout;
 pub mod scout_supervisor;
+mod serve;
+mod store;
+pub mod watchdog;
 
 use clap::{Parser, Subcommand};
 // open_store is now called inside the command arms (fast path for MCP, full for Serve)
@@ -49,7 +50,12 @@ use tracing_subscriber::{fmt, EnvFilter};
 )]
 struct Cli {
     /// Directory to store .leg memory blocks
-    #[arg(long, global = true, default_value = "~/.engram/manifold", env = "ENGRAM_STORE")]
+    #[arg(
+        long,
+        global = true,
+        default_value = "~/.engram/manifold",
+        env = "ENGRAM_STORE"
+    )]
     store: String,
 
     #[command(subcommand)]
@@ -96,8 +102,7 @@ fn main() -> anyhow::Result<()> {
     // Log to stderr so stdout stays clean for MCP protocol
     fmt()
         .with_env_filter(
-            EnvFilter::try_from_env("ENGRAM_LOG")
-                .unwrap_or_else(|_| EnvFilter::new("engram=info")),
+            EnvFilter::try_from_env("ENGRAM_LOG").unwrap_or_else(|_| EnvFilter::new("engram=info")),
         )
         .with_writer(std::io::stderr)
         .without_time()
@@ -142,8 +147,8 @@ fn main() -> anyhow::Result<()> {
             if !no_genesis {
                 // Genesis seeding is cheap enough to do even on the placeholder path.
                 match store.lock().unwrap().seed_genesis() {
-                    Ok(msg)  => tracing::info!("{msg}"),
-                    Err(e)   => tracing::warn!("Genesis seed failed: {e}"),
+                    Ok(msg) => tracing::info!("{msg}"),
+                    Err(e) => tracing::warn!("Genesis seed failed: {e}"),
                 }
             }
 
@@ -177,8 +182,8 @@ fn main() -> anyhow::Result<()> {
 
                 if !no_genesis {
                     match full.seed_genesis() {
-                        Ok(msg)  => tracing::info!("[MCP-FAST] {msg}"),
-                        Err(e)   => tracing::warn!("[MCP-FAST] Genesis seed failed: {e}"),
+                        Ok(msg) => tracing::info!("[MCP-FAST] {msg}"),
+                        Err(e) => tracing::warn!("[MCP-FAST] Genesis seed failed: {e}"),
                     }
                 }
 
@@ -192,7 +197,9 @@ fn main() -> anyhow::Result<()> {
                 store::StoreHandle::boot_daemon(store_for_upgrade.clone());
                 let _hijacker = ki_hijacker::spawn(store_for_upgrade.clone());
 
-                tracing::info!("[MCP-FAST] Full initialization complete — MCP tools now use real backend.");
+                tracing::info!(
+                    "[MCP-FAST] Full initialization complete — MCP tools now use real backend."
+                );
 
                 // Keep the runtime alive for the background work.
                 std::mem::forget(rt);
@@ -203,7 +210,13 @@ fn main() -> anyhow::Result<()> {
 
             mcp::run(store)?;
         }
-        Commands::Serve { port, no_genesis, light, no_scout: _, mcp_http } => {
+        Commands::Serve {
+            port,
+            no_genesis,
+            light,
+            no_scout: _,
+            mcp_http,
+        } => {
             // Serve mode (HTTP) — stabilized for leg-browser dynamic GUI (parent goal:1780106168_make-the-leg-browser-a-seamless--truly-dynamic-g ; sub0:1780106172).
             if light {
                 if std::env::var("ENGRAM_PROFILE").is_err() {
@@ -218,8 +231,8 @@ fn main() -> anyhow::Result<()> {
 
             if !no_genesis {
                 match store.lock().unwrap().seed_genesis() {
-                    Ok(msg)  => tracing::info!("{msg}"),
-                    Err(e)   => tracing::warn!("Genesis seed failed: {e}"),
+                    Ok(msg) => tracing::info!("{msg}"),
+                    Err(e) => tracing::warn!("Genesis seed failed: {e}"),
                 }
             }
 
@@ -250,12 +263,7 @@ fn maybe_defer_bvh_for_large_store(path: &str) {
     let count = std::fs::read_dir(&expanded)
         .map(|rd| {
             rd.filter_map(|e| e.ok())
-                .filter(|e| {
-                    e.path()
-                        .extension()
-                        .and_then(|x| x.to_str())
-                        == Some("leg")
-                })
+                .filter(|e| e.path().extension().and_then(|x| x.to_str()) == Some("leg"))
                 .count()
         })
         .unwrap_or(0);
@@ -276,19 +284,35 @@ fn maybe_defer_bvh_for_large_store(path: &str) {
 /// We set soft to 64k (or hard if lower); hard is typically 1M+ from OS.
 fn raise_fd_limit() {
     unsafe {
-        let mut rlim = libc::rlimit { rlim_cur: 0, rlim_max: 0 };
+        let mut rlim = libc::rlimit {
+            rlim_cur: 0,
+            rlim_max: 0,
+        };
         if libc::getrlimit(libc::RLIMIT_NOFILE, &mut rlim) == 0 {
             let target: libc::rlim_t = 65536;
             if rlim.rlim_cur < target {
-                let new_cur = if rlim.rlim_max > 0 { target.min(rlim.rlim_max) } else { target };
+                let new_cur = if rlim.rlim_max > 0 {
+                    target.min(rlim.rlim_max)
+                } else {
+                    target
+                };
                 rlim.rlim_cur = new_cur;
                 if libc::setrlimit(libc::RLIMIT_NOFILE, &rlim) == 0 {
-                    tracing::info!("[FD] Raised RLIMIT_NOFILE soft limit to {} (was {}; hard {})", new_cur, rlim.rlim_cur, rlim.rlim_max);
+                    tracing::info!(
+                        "[FD] Raised RLIMIT_NOFILE soft limit to {} (was {}; hard {})",
+                        new_cur,
+                        rlim.rlim_cur,
+                        rlim.rlim_max
+                    );
                 } else {
                     tracing::warn!("[FD] Failed to raise RLIMIT_NOFILE (errno {}) — large store bvh/spatial may hit EMFILE", std::io::Error::last_os_error().raw_os_error().unwrap_or(0));
                 }
             } else {
-                tracing::info!("[FD] RLIMIT_NOFILE already >= {} (cur {})", target, rlim.rlim_cur);
+                tracing::info!(
+                    "[FD] RLIMIT_NOFILE already >= {} (cur {})",
+                    target,
+                    rlim.rlim_cur
+                );
             }
         }
     }

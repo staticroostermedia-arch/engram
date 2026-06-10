@@ -15,17 +15,25 @@ use tracing::{debug, error, info};
 /// Load a 768-dim shadow genesis vector from disk.
 /// Path: ~/.engram/genesis_shadow/{concept}.bin  (768 × f32 LE bytes)
 fn load_shadow_vector(concept: &str) -> Option<Vec<f32>> {
-    let path = std::env::var("HOME").ok()
-        .map(|h| PathBuf::from(h)
+    let path = std::env::var("HOME").ok().map(|h| {
+        PathBuf::from(h)
             .join(".engram")
             .join("genesis_shadow")
-            .join(format!("{}.bin", concept)))?;
+            .join(format!("{}.bin", concept))
+    })?;
     let bytes = std::fs::read(&path).ok()?;
-    if bytes.len() % 4 != 0 { return None; }
-    let vec: Vec<f32> = bytes.chunks_exact(4)
+    if bytes.len() % 4 != 0 {
+        return None;
+    }
+    let vec: Vec<f32> = bytes
+        .chunks_exact(4)
         .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
         .collect();
-    if vec.is_empty() { None } else { Some(vec) }
+    if vec.is_empty() {
+        None
+    } else {
+        Some(vec)
+    }
 }
 
 /// OP_ADD(block.q, shadow) → L2 normalize — anchors an 8192-dim block to the genesis basis.
@@ -33,13 +41,21 @@ fn load_shadow_vector(concept: &str) -> Option<Vec<f32>> {
 /// This biases the block's semantic position toward the genesis pillar in the real subspace.
 fn apply_shadow_anchor(block: &mut engram_core::types::HolographicBlock, shadow: &[f32]) {
     let len = shadow.len().min(block.q.len());
-    for i in 0..len {
-        block.q[i].re += shadow[i];
+    for (i, &shadow_val) in shadow.iter().enumerate().take(len) {
+        block.q[i].re += shadow_val;
     }
     // L2 normalize the full 8192-dim q after anchoring
-    let norm: f32 = block.q.iter().map(|c| c.re * c.re + c.im * c.im).sum::<f32>().sqrt();
+    let norm: f32 = block
+        .q
+        .iter()
+        .map(|c| c.re * c.re + c.im * c.im)
+        .sum::<f32>()
+        .sqrt();
     if norm > f32::EPSILON {
-        block.q.iter_mut().for_each(|c| { c.re /= norm; c.im /= norm; });
+        block.q.iter_mut().for_each(|c| {
+            c.re /= norm;
+            c.im /= norm;
+        });
     }
 }
 
@@ -51,7 +67,11 @@ fn load_engramignore() -> Vec<String> {
 
     // ~/.engram/.engramignore — user-level global ignore list
     if let Ok(home) = std::env::var("HOME") {
-        candidates.push(std::path::PathBuf::from(&home).join(".engram").join(".engramignore"));
+        candidates.push(
+            std::path::PathBuf::from(&home)
+                .join(".engram")
+                .join(".engramignore"),
+        );
     }
 
     // $ENGRAM_LINKED_WORKSPACE/.engramignore — project-level ignore list
@@ -79,7 +99,12 @@ fn load_engramignore() -> Vec<String> {
         }
     }
     // Built-in defaults (supplement .engramignore) to keep passive ingest clean
-    for def in ["node_modules/", "extensions/vscode/node_modules/", "/dist/", "/build/"] {
+    for def in [
+        "node_modules/",
+        "extensions/vscode/node_modules/",
+        "/dist/",
+        "/build/",
+    ] {
         if !ignored.iter().any(|p| p.contains(def)) {
             ignored.push(def.to_string());
         }
@@ -103,7 +128,10 @@ pub fn spawn(store: SharedStore) -> Arc<DaemonControl> {
     }
     let engramignore = load_engramignore();
     if !engramignore.is_empty() {
-        info!("[.engramignore] Excluding {} path patterns from watch", engramignore.len());
+        info!(
+            "[.engramignore] Excluding {} path patterns from watch",
+            engramignore.len()
+        );
     }
 
     // ── Load health watchdog config (~/.engram/watchdog.toml) ────────────────
@@ -114,8 +142,11 @@ pub fn spawn(store: SharedStore) -> Arc<DaemonControl> {
     if watchdog_cfg.watch.is_empty() {
         info!("[Watchdog] No processes configured — health watchdog is a no-op.");
     } else {
-        info!("[Watchdog] Monitoring {} process(es). Proposals → {}",
-            watchdog_cfg.watch.len(), watchdog_proposals_path.display());
+        info!(
+            "[Watchdog] Monitoring {} process(es). Proposals → {}",
+            watchdog_cfg.watch.len(),
+            watchdog_proposals_path.display()
+        );
     }
 
     let (watch_tx, watch_rx) = flume::unbounded::<PathBuf>();
@@ -137,7 +168,8 @@ pub fn spawn(store: SharedStore) -> Arc<DaemonControl> {
                     let _ = tx.send(e);
                 }
             }
-        }).unwrap();
+        })
+        .unwrap();
 
         info!("Agentic Daemon (Phase 7) online. Autophagy GC DISABLED — watcher only.");
 
@@ -167,7 +199,9 @@ pub fn spawn(store: SharedStore) -> Arc<DaemonControl> {
             .map(|h| PathBuf::from(h).join(".engram").join("ego.leg3"))
             .unwrap_or_default();
         if !ego_path.exists() {
-            info!("[NREM] ego.leg3 missing on startup — triggering immediate genesis consolidation.");
+            info!(
+                "[NREM] ego.leg3 missing on startup — triggering immediate genesis consolidation."
+            );
             run_nrem_consolidation(&store);
         }
 
@@ -512,6 +546,7 @@ const NREM_GOAL_BIASED_MASS_CAP: f32 = 0.40;
 
 /// Bias factor for ZEDOS_TRAINING-tagged blocks (WS2-B / Phase 2 execution plan tile + child goal:1780165889_substrate-cs--richer-cls-8-property-trai_sub1)
 /// + Phase 2.5 432Hz Symplectic (goal:1780185084..._sub4).
+///
 /// TRAINING + harmonic-rich blocks (now 8+1 prop with 432Hz phase relations / sacred freq multiples in payload + energetics advisory)
 /// receive elevated weight (2.0 * 1.15 for harmonic) during NREM so superior harmonic-rich training data preferentially shapes
 /// ego.leg3 trajectories / persistent self-model as recursive LoRA medium. Coordinates 2.1 geo + 2.3 hot residency.
@@ -531,9 +566,13 @@ fn run_nrem_consolidation(store: &crate::store::SharedStore) {
     // Collect active goals + the traces that serve them via explicit "serves" relations.
     // This is the authoritative, relation-driven set (much stronger than payload scanning).
     // Performed once at the start of the infrequent NREM pass.
-    let (active_goal_concepts, serving_trace_concepts): (std::collections::HashSet<String>, std::collections::HashSet<String>) = {
+    let (active_goal_concepts, serving_trace_concepts): (
+        std::collections::HashSet<String>,
+        std::collections::HashSet<String>,
+    ) = {
         let mut lock = store.lock().unwrap();
-        let active_goals: Vec<String> = lock.recall("goal:", 30)
+        let active_goals: Vec<String> = lock
+            .recall("goal:", 30)
             .into_iter()
             .filter(|m| crate::store::goal_status_is_active(&m.provlog))
             .map(|m| m.concept)
@@ -546,10 +585,7 @@ fn run_nrem_consolidation(store: &crate::store::SharedStore) {
                 serving.insert(trace_concept);
             }
         }
-        (
-            active_goals.into_iter().collect(),
-            serving
-        )
+        (active_goals.into_iter().collect(), serving)
     };
     // Note: recency weighting is implicit — only high-momentum/recently active serving traces stay high-CRS enough to be selected in recall + relations.
     // A future pass can add explicit timestamp / recent_access filtering on the serving set.
@@ -560,7 +596,11 @@ fn run_nrem_consolidation(store: &crate::store::SharedStore) {
     let (nrem_geo_origin, nrem_geo_step, nrem_geo_has_lens) = {
         let l = store.lock().unwrap();
         if let Some(state) = l.current_geosphere_state() {
-            (state.frame_origin.unwrap_or_else(|| "native".to_string()), state.frame_step, state.current_lens.is_some())
+            (
+                state.frame_origin.unwrap_or_else(|| "native".to_string()),
+                state.frame_step,
+                state.current_lens.is_some(),
+            )
         } else {
             ("native".to_string(), 0, false)
         }
@@ -570,7 +610,12 @@ fn run_nrem_consolidation(store: &crate::store::SharedStore) {
     // Uses storage::read_block (O_DIRECT capable) for previous HolographicBlock to obtain prev_q (reference),
     // prev_p (momentum base), prev_step/prev_h for full Logenergetics evolution + provenance.
     // Zero/identity safe for genesis. Never mutates candidates. Preserves all invariants.
-    let (reference_ego, prev_p, prev_step, prev_h_out): ([engram_core::Complex32; 8192], [engram_core::Complex32; 8192], u32, f32) = {
+    let (reference_ego, prev_p, prev_step, prev_h_out): (
+        [engram_core::Complex32; 8192],
+        [engram_core::Complex32; 8192],
+        u32,
+        f32,
+    ) = {
         let ego_path = std::env::var("HOME")
             .map(|h| std::path::PathBuf::from(h).join(".engram").join("ego.leg3"))
             .unwrap_or_default();
@@ -607,7 +652,9 @@ fn run_nrem_consolidation(store: &crate::store::SharedStore) {
 
     for concept in &concepts {
         // Skip internal bookkeeping concepts.
-        if concept.starts_with('_') { continue; }
+        if concept.starts_with('_') {
+            continue;
+        }
 
         let block_opt: Option<engram_core::types::Leg3Pointer> = {
             let lock = store.lock().unwrap();
@@ -629,20 +676,24 @@ fn run_nrem_consolidation(store: &crate::store::SharedStore) {
                 // Phase 2.5 harmonic-rich detection (lightweight, payload marker from enriched TRAINING/ego emissions)
                 // + sacred 432Hz (genesis/ops) for NREM bias preference + hot residency (2.3). No layout impact.
                 let block_payload_text = String::from_utf8_lossy(&block.payload);
-                let is_harmonic_rich = is_training || block_payload_text.contains("harmonic_432hz") || block_payload_text.contains("432Hz") || block_payload_text.contains("sacred_freq=432");
+                let is_harmonic_rich = is_training
+                    || block_payload_text.contains("harmonic_432hz")
+                    || block_payload_text.contains("432Hz")
+                    || block_payload_text.contains("sacred_freq=432");
 
                 // WS1-B + Phase 2.5 (charter from tile:formal_spec_substrate-phase2-execution-plan-v1 + child goals incl. 1780185084..._sub4):
                 // Systematically populate hot_set and call promote (via mark_hot) for high-CRS substrate artifacts
                 // (tiles, rich traces, high-value relations/goal-serving participants, TRAINING blocks, harmonic-rich).
                 // This ensures canonical fast path ... + harmonic-rich for 2.3 hot residency of 432Hz symplectic blocks.
                 // No HolographicBlock layout changes.
-                if concept.starts_with("tile:") ||
-                   concept.starts_with("trace:") ||
-                   concept.starts_with("goal:") ||
-                   is_active_goal ||
-                   is_serving ||
-                   is_training ||
-                   is_harmonic_rich {
+                if concept.starts_with("tile:")
+                    || concept.starts_with("trace:")
+                    || concept.starts_with("goal:")
+                    || is_active_goal
+                    || is_serving
+                    || is_training
+                    || is_harmonic_rich
+                {
                     let h = store.lock().unwrap();
                     h.mark_hot(concept);
                     debug!("[NREM][WS1-B+2.5][geo:{}@step={} lens={}] promoted high-CRS substrate artifact to hot_set: {} (crs={:.2}, goal/serving={}, training={}, harmonic={})",
@@ -655,7 +706,8 @@ fn run_nrem_consolidation(store: &crate::store::SharedStore) {
                     biased_mass += block_mass * weight;
                 }
                 if is_training || is_harmonic_rich {
-                    weight = NREM_TRAINING_BIAS_FACTOR * if is_harmonic_rich { 1.15 } else { 1.0 }; // extra preference for harmonic-rich (Phase 2.5)
+                    weight = NREM_TRAINING_BIAS_FACTOR * if is_harmonic_rich { 1.15 } else { 1.0 };
+                    // extra preference for harmonic-rich (Phase 2.5)
                 }
                 let cap_mass = NREM_GOAL_BIASED_MASS_CAP * 8192.0 * 2.0;
                 if (is_active_goal || is_serving) && biased_mass > cap_mass {
@@ -668,7 +720,11 @@ fn run_nrem_consolidation(store: &crate::store::SharedStore) {
                 if is_friction {
                     friction_encountered = true;
                     let (reconciled, crs_p, dl) = engram_core::ops::abbreviated_adr_kdk_reconcile(
-                        &block.q, &reference_ego, 12, 0.30, 0.10
+                        &block.q,
+                        &reference_ego,
+                        12,
+                        0.30,
+                        0.10,
                     );
                     // Strict Tier5: only commit if Kepler-like gate + non-divergent dl (never pollute raw)
                     if crs_p >= 0.74 && dl > -0.01 {
@@ -683,9 +739,13 @@ fn run_nrem_consolidation(store: &crate::store::SharedStore) {
                     }
                 } else {
                     // Resonant path: geodesic pre-evolution toward current acc/ego for manifold fidelity
-                    let pre_target = if contributors > 0 { &accumulator } else { &reference_ego };
+                    let pre_target = if contributors > 0 {
+                        &accumulator
+                    } else {
+                        &reference_ego
+                    };
                     let evolved = engram_core::ops::riemannian_nrem_pre_step(
-                        &block.q, pre_target, 4, 0.1_f32, 0.4_f32
+                        &block.q, pre_target, 4, 0.1_f32, 0.4_f32,
                     );
                     // Polysemy curvature detection for special handling (split to SYNTH if high conflict)
                     let curv = engram_core::ops::polysemy_curvature(&evolved, &block.q, pre_target);
@@ -741,7 +801,11 @@ fn run_nrem_consolidation(store: &crate::store::SharedStore) {
         delta[i].re = accumulator[i].re - reference_ego[i].re;
         delta[i].im = accumulator[i].im - reference_ego[i].im;
     }
-    let dnorm: f32 = delta.iter().map(|c| c.re * c.re + c.im * c.im).sum::<f32>().sqrt();
+    let dnorm: f32 = delta
+        .iter()
+        .map(|c| c.re * c.re + c.im * c.im)
+        .sum::<f32>()
+        .sqrt();
     if dnorm > 1e-8 {
         let idn = 0.25 / dnorm; // conservative kick; keeps p evolution stable on manifold
         for c in &mut delta {
@@ -754,7 +818,11 @@ fn run_nrem_consolidation(store: &crate::store::SharedStore) {
         new_p[i].re = prev_p[i].re * 0.82 + delta[i].re; // momentum persistence + velocity from q-delta
         new_p[i].im = prev_p[i].im * 0.82 + delta[i].im;
     }
-    let pnorm: f32 = new_p.iter().map(|c| c.re * c.re + c.im * c.im).sum::<f32>().sqrt();
+    let pnorm: f32 = new_p
+        .iter()
+        .map(|c| c.re * c.re + c.im * c.im)
+        .sum::<f32>()
+        .sqrt();
     if pnorm > f32::EPSILON {
         let ip = 1.0 / pnorm;
         for c in &mut new_p {
@@ -795,7 +863,8 @@ fn run_nrem_consolidation(store: &crate::store::SharedStore) {
         ego_block.energetics.alpha_a = 0.8;
     }
     ego_block.energetics.crs = 1.0;
-    ego_block.energetics.dv = (1.0 - engram_core::ops::cosine_similarity(&accumulator, &reference_ego)).max(0.0);
+    ego_block.energetics.dv =
+        (1.0 - engram_core::ops::cosine_similarity(&accumulator, &reference_ego)).max(0.0);
     ego_block.energetics.control_action = if friction_encountered { 0x02 } else { 0x01 }; // recon vs direct
     ego_block.energetics.tau = if friction_encountered { 0.17 } else { 0.025 }; // torsion proxy from polysemy/friction
     ego_block.energetics.zpl_state = 0;
@@ -865,10 +934,7 @@ fn run_nrem_consolidation(store: &crate::store::SharedStore) {
 //
 // Called every 5 minutes from the daemon select! loop.
 
-fn run_health_watchdog(
-    cfg: &crate::watchdog::WatchdogConfig,
-    proposals_path: &std::path::Path,
-) {
+fn run_health_watchdog(cfg: &crate::watchdog::WatchdogConfig, proposals_path: &std::path::Path) {
     if cfg.watch.is_empty() {
         return; // no-op — watchdog.toml absent or empty
     }
@@ -885,7 +951,6 @@ fn run_health_watchdog(
         }
     }
 }
-
 
 pub struct DaemonControl {
     pub active_watch: Arc<tokio::sync::RwLock<Option<PathBuf>>>,

@@ -18,7 +18,12 @@ fn main() {
     println!("Query: {}", query);
     let res = engram_core::VsaBackend::recall(&backend, &query, 5);
     for r in res {
-        println!("[{}] (crs={:.3}) -> {}", r.concept, r.score, &r.provlog.replace("\n", " ")[..std::cmp::min(100, r.provlog.len())]);
+        println!(
+            "[{}] (crs={:.3}) -> {}",
+            r.concept,
+            r.score,
+            &r.provlog.replace("\n", " ")[..std::cmp::min(100, r.provlog.len())]
+        );
         if explain {
             println!("   ↳ EXPLAIN: {}", r.explain);
         }

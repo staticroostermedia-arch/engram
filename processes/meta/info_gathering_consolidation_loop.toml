@@ -1,0 +1,42 @@
+[workflow]
+name = "info_gathering_consolidation_loop"
+description = "Dedicated loop for JIT information gathering (web searches, resources, sources via tools) and systematic consolidation into Enram manifold as tiles/concepts with relations. Avoids duplicate work by pre-recall for similar queries, post-store with relates to goal/query/previous, consolidate via update/promote/NREM. Launched as sub-loop from consciousness inner_reflect on threshold. Composes with main loops. Subvisor oversight. Part of AI consciousness for reliable perception without flat duplication."
+primary_goal = "goal:engram_consciousness_loop_v1"
+max_iterations = 3
+
+[wake]
+ritual = "engram-wake-up"
+tools = ["mcp_engram_session_start", "mcp_engram_recall", "mcp_engram_get_backend_readiness", "mcp_engram_verify_manifold_integrity"]
+
+[execute]
+steps = [
+  { name = "pre_audit_and_threshold", desc = "Recall anchors for similar queries/goals (prefix tile:info_gather or consciousness). If match >0.7 CRS, reuse/consolidate instead of gather. Check uncertainty threshold from parent (e.g., low CRS in perception). Record via quick_trace.", subagent = "gather_auditor" },
+  { name = "gather", desc = "If needed: use tools (web_search, etc.) for JIT resources/sources. For each, mcp_engram_remember or batch_remember as 'tile:info_gather_<query>_<ts>' with payload {query, results, sources, timestamp, parent_goal}. Use mcp_engram_context_for_edit if code-related. Sub-agent narrow one-shot.", subagent = "info_gatherer" },
+  { name = "store_and_relate", desc = "For each gathered: mcp_engram_remember as concept, then mcp_engram_relate to goal, to previous similar, to query. Promote_hot high-value. Tile as research_offload or formal_spec. Record trace.", subagent = "storer" },
+  { name = "consolidate", desc = "Run memory_consolidation sub-steps: promote hot, update related, NREM-like in handoff. Use aliveness_metrics. If low value, scar. Subvisor check before forget.", subagent = "consolidator" },
+  { name = "lawfulness_and_handoff", desc = "verify_manifold + subvisor gate. outer_feedback to parent loop with gathered tiles. Handoff with session_end + tile write + COMPRESS if stable.", subagent = "lawfulness_checker" }
+]
+subvisor = "consciousness_loop"  # reuse/extend, or new info_gathering.subvisor.toml
+
+[trace]
+at = ["every step", "threshold decisions", "gather results", "consolidation"]
+tools = ["mcp_engram_quick_trace", "mcp_engram_remember", "mcp_engram_update", "mcp_engram_scar", "mcp_engram_relate"]
+
+[spatial]
+on = ["code or resource files gathered"]
+tools = ["mcp_engram_context_for_edit"]
+
+[thought-tiles]
+create = { title = "Info Gathering Consolidation Arc", type = "research_offload", goal_context = "goal:engram_consciousness_loop_v1" }
+write_results = true
+
+[handoff]
+ritual = "engram-session-end"
+tools = ["mcp_engram_session_end", "mcp_engram_thought_tile_write_result", "mcp_engram_promote_hot"]
+prepare_compression = true
+
+[update]
+description = "mcp_engram_update for consolidating gathered into stronger concepts/ego. Use in loop for evolution."
+
+[subvisor_extension]
+note = "Extend consciousness_loop.subvisor.toml or create info_gathering.subvisor.toml (H1 on gather/consolidate steps; invariants: pre-recall before gather to avoid dup, relate all to goal, crs>=0.74 on stored, no unconsolidated dups; kill: dup_work_detected, low_crs_gather). Monitored: gather, store_and_relate, consolidate."

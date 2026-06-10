@@ -15,12 +15,10 @@ use std::sync::LazyLock;
 use tracing::{info, warn};
 
 // ── Compile PII regexes once at process startup ──────────────────────────
-static SSN_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
-    regex::Regex::new(r"\b\d{3}-\d{2}-\d{4}\b").unwrap()
-});
-static CC_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
-    regex::Regex::new(r"\b(?:\d[ -]*?){13,16}\b").unwrap()
-});
+static SSN_RE: LazyLock<regex::Regex> =
+    LazyLock::new(|| regex::Regex::new(r"\b\d{3}-\d{2}-\d{4}\b").unwrap());
+static CC_RE: LazyLock<regex::Regex> =
+    LazyLock::new(|| regex::Regex::new(r"\b(?:\d[ -]*?){13,16}\b").unwrap());
 static EMAIL_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
     regex::Regex::new(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b").unwrap()
 });
@@ -41,7 +39,9 @@ struct RecallReq {
     #[serde(default)]
     explain: bool,
 }
-fn default_k() -> usize { 5 }
+fn default_k() -> usize {
+    5
+}
 
 #[derive(Deserialize)]
 struct ForgetReq {
@@ -58,7 +58,9 @@ struct TraceReq {
     #[serde(default = "default_k")]
     k: usize,
 }
-fn default_op() -> String { "ADD".to_string() }
+fn default_op() -> String {
+    "ADD".to_string()
+}
 
 #[derive(Deserialize)]
 struct RelateReq {
@@ -85,9 +87,14 @@ struct GenericRes {
 
 // ── Middleware ─────────────────────────────────────────────────────────
 
-async fn auth_middleware(req: Request<axum::body::Body>, next: Next) -> Result<Response, StatusCode> {
+async fn auth_middleware(
+    req: Request<axum::body::Body>,
+    next: Next,
+) -> Result<Response, StatusCode> {
     if let Ok(key) = env::var("ENGRAM_API_KEY") {
-        if key.trim().is_empty() { return Ok(next.run(req).await); }
+        if key.trim().is_empty() {
+            return Ok(next.run(req).await);
+        }
 
         let auth_header = req
             .headers()
@@ -116,25 +123,39 @@ async fn remember(
     let concept = payload.concept.trim();
     let text = payload.text.trim();
     if concept.is_empty() || text.is_empty() {
-        return (StatusCode::BAD_REQUEST, Json(GenericRes {
-            status: "error", message: "concept and text are required".into(),
-        }));
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(GenericRes {
+                status: "error",
+                message: "concept and text are required".into(),
+            }),
+        );
     }
     // ── Moloch Guard: Inline PII Scrubbing (regexes compiled once at startup) ──
     let mut sanitized = SSN_RE.replace_all(text, "[REDACTED_SSN]").into_owned();
     sanitized = CC_RE.replace_all(&sanitized, "[REDACTED_CC]").into_owned();
-    sanitized = EMAIL_RE.replace_all(&sanitized, "[REDACTED_EMAIL]").into_owned();
+    sanitized = EMAIL_RE
+        .replace_all(&sanitized, "[REDACTED_EMAIL]")
+        .into_owned();
 
     match store.lock().unwrap().remember(concept, &sanitized) {
         Ok(_) => {
             info!("rest: remembered {concept}");
-            (StatusCode::OK, Json(GenericRes {
-                status: "success", message: format!("Stored '{concept}'"),
-            }))
+            (
+                StatusCode::OK,
+                Json(GenericRes {
+                    status: "success",
+                    message: format!("Stored '{concept}'"),
+                }),
+            )
         }
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(GenericRes {
-            status: "error", message: e.to_string(),
-        })),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(GenericRes {
+                status: "error",
+                message: e.to_string(),
+            }),
+        ),
     }
 }
 
@@ -149,14 +170,21 @@ async fn recall(
 
     let k = payload.k.clamp(1, 20);
     let results = store.lock().unwrap().recall(query, k);
-    
-    let res: Vec<MemoryRes> = results.into_iter().map(|m| MemoryRes {
-        concept: m.concept,
-        score: m.score,
-        crs: m.crs,
-        text: m.provlog,
-        explain: if payload.explain { Some(m.explain) } else { None },
-    }).collect();
+
+    let res: Vec<MemoryRes> = results
+        .into_iter()
+        .map(|m| MemoryRes {
+            concept: m.concept,
+            score: m.score,
+            crs: m.crs,
+            text: m.provlog,
+            explain: if payload.explain {
+                Some(m.explain)
+            } else {
+                None
+            },
+        })
+        .collect();
 
     (StatusCode::OK, Json(res))
 }
@@ -167,21 +195,33 @@ async fn forget(
 ) -> impl IntoResponse {
     let concept = payload.concept.trim();
     if concept.is_empty() {
-        return (StatusCode::BAD_REQUEST, Json(GenericRes {
-            status: "error", message: "concept required".into(),
-        }));
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(GenericRes {
+                status: "error",
+                message: "concept required".into(),
+            }),
+        );
     }
 
     match store.lock().unwrap().forget(concept) {
         Ok(_) => {
             info!("rest: forgot {concept}");
-            (StatusCode::OK, Json(GenericRes {
-                status: "success", message: format!("Deleted '{concept}'"),
-            }))
+            (
+                StatusCode::OK,
+                Json(GenericRes {
+                    status: "success",
+                    message: format!("Deleted '{concept}'"),
+                }),
+            )
         }
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(GenericRes {
-            status: "error", message: e.to_string(),
-        })),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(GenericRes {
+                status: "error",
+                message: e.to_string(),
+            }),
+        ),
     }
 }
 
@@ -190,7 +230,7 @@ async fn trace(
     Json(payload): Json<TraceReq>,
 ) -> impl IntoResponse {
     use engram_core::ops::{op_add, op_bind};
-    
+
     let term_a = payload.term_a.trim();
     let term_b = payload.term_b.trim();
     let op = payload.op.trim().to_uppercase();
@@ -201,8 +241,12 @@ async fn trace(
     }
 
     let mut lock = store.lock().unwrap();
-    let q_a = lock.fetch(term_a).unwrap_or_else(|| Box::new(lock.encode(term_a).q));
-    let q_b = lock.fetch(term_b).unwrap_or_else(|| Box::new(lock.encode(term_b).q));
+    let q_a = lock
+        .fetch(term_a)
+        .unwrap_or_else(|| Box::new(lock.encode(term_a).q));
+    let q_b = lock
+        .fetch(term_b)
+        .unwrap_or_else(|| Box::new(lock.encode(term_b).q));
 
     let q_res = match op.as_str() {
         "ADD" => op_add(&q_a, &q_b),
@@ -211,13 +255,16 @@ async fn trace(
     };
 
     let results = lock.query(&q_res, k);
-    let res: Vec<MemoryRes> = results.into_iter().map(|m| MemoryRes {
-        concept: m.concept,
-        score: m.score,
-        crs: m.crs,
-        text: m.provlog,
-        explain: Some(m.explain),
-    }).collect();
+    let res: Vec<MemoryRes> = results
+        .into_iter()
+        .map(|m| MemoryRes {
+            concept: m.concept,
+            score: m.score,
+            crs: m.crs,
+            text: m.provlog,
+            explain: Some(m.explain),
+        })
+        .collect();
 
     (StatusCode::OK, Json(res))
 }
@@ -236,18 +283,32 @@ async fn relate(
     let b = payload.concept_b.trim();
     let label = payload.label.trim();
     if a.is_empty() || b.is_empty() || label.is_empty() {
-        return (StatusCode::BAD_REQUEST, Json(GenericRes {
-            status: "error", message: "concept_a, concept_b, and label are required".into(),
-        }));
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(GenericRes {
+                status: "error",
+                message: "concept_a, concept_b, and label are required".into(),
+            }),
+        );
     }
     match store.lock().unwrap().relate(a, b, label) {
         Ok(msg) => {
             info!("rest: related {a} --[{label}]--> {b}");
-            (StatusCode::OK, Json(GenericRes { status: "success", message: msg }))
+            (
+                StatusCode::OK,
+                Json(GenericRes {
+                    status: "success",
+                    message: msg,
+                }),
+            )
         }
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(GenericRes {
-            status: "error", message: e.to_string(),
-        })),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(GenericRes {
+                status: "error",
+                message: e.to_string(),
+            }),
+        ),
     }
 }
 
@@ -262,16 +323,22 @@ async fn recent_concepts(
     State(store): State<SharedStore>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> impl IntoResponse {
-    let n = params.get("n")
+    let n = params
+        .get("n")
         .and_then(|v| v.parse::<usize>().ok())
         .unwrap_or(10)
         .min(100);
     let mut entries = store.lock().unwrap().recent(n * 2); // overfetch slightly for curation
-    // Minimal high-impact bias (linked to sub-goal): high-value goal-serving types first
+                                                           // Minimal high-impact bias (linked to sub-goal): high-value goal-serving types first
     let is_high_value = |c: &str| -> bool {
-        c.starts_with("tile:") || c.starts_with("trace:") || c.starts_with("handoff:")
-            || c.starts_with("session_end_") || c.starts_with("compression_intent_")
-            || c.starts_with("goal:") || c == "primary_goal" || c.contains("ritual:")
+        c.starts_with("tile:")
+            || c.starts_with("trace:")
+            || c.starts_with("handoff:")
+            || c.starts_with("session_end_")
+            || c.starts_with("compression_intent_")
+            || c.starts_with("goal:")
+            || c == "primary_goal"
+            || c.contains("ritual:")
     };
     entries.sort_by(|a, b| {
         let va = is_high_value(&a.0) as i32;
@@ -284,13 +351,20 @@ async fn recent_concepts(
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs();
-    let res: Vec<serde_json::Value> = entries.into_iter().map(|(concept, ts)| {
-        let secs_ago = now.saturating_sub(ts);
-        let ago = if secs_ago < 60 { format!("{}s ago", secs_ago) }
-            else if secs_ago < 3600 { format!("{}m ago", secs_ago / 60) }
-            else { format!("{}h ago", secs_ago / 3600) };
-        serde_json::json!({ "concept": concept, "last_accessed": ts, "ago": ago })
-    }).collect();
+    let res: Vec<serde_json::Value> = entries
+        .into_iter()
+        .map(|(concept, ts)| {
+            let secs_ago = now.saturating_sub(ts);
+            let ago = if secs_ago < 60 {
+                format!("{}s ago", secs_ago)
+            } else if secs_ago < 3600 {
+                format!("{}m ago", secs_ago / 60)
+            } else {
+                format!("{}h ago", secs_ago / 3600)
+            };
+            serde_json::json!({ "concept": concept, "last_accessed": ts, "ago": ago })
+        })
+        .collect();
     (StatusCode::OK, Json(res))
 }
 
@@ -309,10 +383,13 @@ async fn get_block(
     let block = match lock.fetch_block_high_priority(&concept) {
         Some(b) => b,
         None => {
-            return (StatusCode::NOT_FOUND, Json(serde_json::json!({
-                "error": "concept not found",
-                "concept": concept
-            })));
+            return (
+                StatusCode::NOT_FOUND,
+                Json(serde_json::json!({
+                    "error": "concept not found",
+                    "concept": concept
+                })),
+            );
         }
     };
 
@@ -326,7 +403,10 @@ async fn get_block(
         "Reasoning Trace"
     } else if concept.starts_with("goal:") {
         "Goal"
-    } else if concept.starts_with("handoff:") || concept.starts_with("session_end_") || concept.starts_with("compression_intent_") {
+    } else if concept.starts_with("handoff:")
+        || concept.starts_with("session_end_")
+        || concept.starts_with("compression_intent_")
+    {
         "Handoff Delta / Provenance Surface"
     } else if concept.starts_with("praxis__") {
         "Praxis / Solution"
@@ -343,7 +423,9 @@ async fn get_block(
     let incoming = lock.search_relations(&concept, None, "to");
 
     // Metadata from Leg3Pointer + hot indexes (all O(1) or index scan, geometric)
-    let last_accessed = lock.access_index.last_accessed(&concept)
+    let last_accessed = lock
+        .access_index
+        .last_accessed(&concept)
         .or(Some(block.last_accessed_timestamp))
         .unwrap_or(0);
     let now = std::time::SystemTime::now()
@@ -351,21 +433,26 @@ async fn get_block(
         .unwrap_or_default()
         .as_secs();
     let secs_ago = now.saturating_sub(last_accessed);
-    let ago = if secs_ago < 60 { format!("{}s ago", secs_ago) }
-        else if secs_ago < 3600 { format!("{}m ago", secs_ago / 60) }
-        else if secs_ago < 86400 { format!("{}h ago", secs_ago / 3600) }
-        else { format!("{}d ago", secs_ago / 86400) };
+    let ago = if secs_ago < 60 {
+        format!("{}s ago", secs_ago)
+    } else if secs_ago < 3600 {
+        format!("{}m ago", secs_ago / 60)
+    } else if secs_ago < 86400 {
+        format!("{}h ago", secs_ago / 3600)
+    } else {
+        format!("{}d ago", secs_ago / 86400)
+    };
 
     let zedos_tag = match block.zedos_tag {
-        0xD  => "DECLARATIVE",
-        0xA  => "EPISODIC",
+        0xD => "DECLARATIVE",
+        0xA => "EPISODIC",
         0x52 => "OPERATIONAL",
         0xB0 => "BODY",
         0xB1 => "VERBATIM",
         0x50 => "PRAXIS",
         0xBE => "RELATION",
         0xFF => "PINNED_GENESIS",
-        _    => "UNKNOWN",
+        _ => "UNKNOWN",
     };
 
     let has_spatial = block.aabb_max[0] > 0.0 || block.aabb_max[1] > 0.0;
@@ -374,39 +461,44 @@ async fn get_block(
             "aabb_min": [block.aabb_min[0], block.aabb_min[1]],
             "aabb_max": [block.aabb_max[0], block.aabb_max[1]]
         })
-    } else { serde_json::json!(null) };
+    } else {
+        serde_json::json!(null)
+    };
 
     // (Read path: no touch here to avoid &mut on shared guard; callers that want recency bump use recall/recent paths which do touch.)
 
-    (StatusCode::OK, Json(serde_json::json!({
-        "concept": concept,
-        "crs": crs,
-        "type": block_type,
-        "text": text,
-        "provlog_len": text.len(),
-        "relations": {
-            "outgoing": outgoing.into_iter().map(|(label, other)| {
-                serde_json::json!({ "label": label, "to": other })
-            }).collect::<Vec<_>>(),
-            "incoming": incoming.into_iter().map(|(label, other)| {
-                serde_json::json!({ "label": label, "from": other })
-            }).collect::<Vec<_>>()
-        },
-        "metadata": {
-            "zedos_tag": zedos_tag,
-            "superposition_count": block.superposition_count,
-            "last_accessed": last_accessed,
-            "ago": ago,
-            "spatial_aabb": spatial,
-            "energetics": {
-                "crs": block.energetics.crs,
-                "dv": block.energetics.dv,
-                "heat_dissipated": block.energetics.heat_dissipated,
-                "step": block.energetics.step
-            }
-        },
-        "note": "Full tensors (q/p) + header/footer via MCP fetch_block or low-level tools. This is the canonical rich block view for UI."
-    })))
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({
+            "concept": concept,
+            "crs": crs,
+            "type": block_type,
+            "text": text,
+            "provlog_len": text.len(),
+            "relations": {
+                "outgoing": outgoing.into_iter().map(|(label, other)| {
+                    serde_json::json!({ "label": label, "to": other })
+                }).collect::<Vec<_>>(),
+                "incoming": incoming.into_iter().map(|(label, other)| {
+                    serde_json::json!({ "label": label, "from": other })
+                }).collect::<Vec<_>>()
+            },
+            "metadata": {
+                "zedos_tag": zedos_tag,
+                "superposition_count": block.superposition_count,
+                "last_accessed": last_accessed,
+                "ago": ago,
+                "spatial_aabb": spatial,
+                "energetics": {
+                    "crs": block.energetics.crs,
+                    "dv": block.energetics.dv,
+                    "heat_dissipated": block.energetics.heat_dissipated,
+                    "step": block.energetics.step
+                }
+            },
+            "note": "Full tensors (q/p) + header/footer via MCP fetch_block or low-level tools. This is the canonical rich block view for UI."
+        })),
+    )
 }
 
 /// GET /api/graph?seed=...&depth=...
@@ -416,11 +508,18 @@ async fn get_graph(
     State(store): State<SharedStore>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> impl IntoResponse {
-    let seed = params.get("seed").map(|s| s.trim().to_string()).unwrap_or_default();
+    let seed = params
+        .get("seed")
+        .map(|s| s.trim().to_string())
+        .unwrap_or_default();
     if seed.is_empty() {
-        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({ "error": "seed param required" })));
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": "seed param required" })),
+        );
     }
-    let depth = params.get("depth")
+    let depth = params
+        .get("depth")
         .and_then(|v| v.parse::<usize>().ok())
         .unwrap_or(2)
         .clamp(1, 5);
@@ -438,10 +537,15 @@ async fn get_graph(
         for name in [&e.from, &e.to] {
             if !node_meta.contains_key(name) {
                 let meta = if let Some(b) = lock.fetch_block_high_priority(name) {
-                    let ntype = if name.starts_with("tile:") { "Thought Tile" }
-                        else if name.starts_with("goal:") { "Goal" }
-                        else if name.starts_with("trace:") { "Trace" }
-                        else { "Memory" };
+                    let ntype = if name.starts_with("tile:") {
+                        "Thought Tile"
+                    } else if name.starts_with("goal:") {
+                        "Goal"
+                    } else if name.starts_with("trace:") {
+                        "Trace"
+                    } else {
+                        "Memory"
+                    };
                     serde_json::json!({
                         "crs": b.crs_score,
                         "type": ntype,
@@ -459,18 +563,22 @@ async fn get_graph(
         serde_json::json!({ "id": name, "crs": meta["crs"], "type": meta["type"], "has_spatial": meta["has_spatial"] })
     }).collect();
 
-    let edges_json: Vec<serde_json::Value> = edges.into_iter().map(|e| {
-        serde_json::json!({ "from": e.from, "label": e.label, "to": e.to })
-    }).collect();
+    let edges_json: Vec<serde_json::Value> = edges
+        .into_iter()
+        .map(|e| serde_json::json!({ "from": e.from, "label": e.label, "to": e.to }))
+        .collect();
 
-    (StatusCode::OK, Json(serde_json::json!({
-        "seed": seed,
-        "depth": depth,
-        "mermaid": mermaid,
-        "nodes": nodes,
-        "edges": edges_json,
-        "note": "Mermaid suitable for direct render; nodes/edges for force-directed / Obsidian graph view. Uses only cheap index + high_priority fetches."
-    })))
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({
+            "seed": seed,
+            "depth": depth,
+            "mermaid": mermaid,
+            "nodes": nodes,
+            "edges": edges_json,
+            "note": "Mermaid suitable for direct render; nodes/edges for force-directed / Obsidian graph view. Uses only cheap index + high_priority fetches."
+        })),
+    )
 }
 
 // ── Phase 2: /api/hydrate ────────────────────────────────────────────────────
@@ -506,7 +614,11 @@ async fn hydrate(State(store): State<SharedStore>) -> impl IntoResponse {
     let recent = lock.access_index.recent(30);
     let mut active_artifacts = Vec::new();
     for (c, _ts) in recent.into_iter().take(12) {
-        if c.starts_with("tile:") || c.starts_with("trace:") || c.starts_with("goal:") || c == "primary_goal" {
+        if c.starts_with("tile:")
+            || c.starts_with("trace:")
+            || c.starts_with("goal:")
+            || c == "primary_goal"
+        {
             if let Some(b) = lock.fetch_block_high_priority(&c) {
                 active_artifacts.push(serde_json::json!({
                     "concept": c,
@@ -525,9 +637,19 @@ async fn hydrate(State(store): State<SharedStore>) -> impl IntoResponse {
         let _ = pri; // already fetched above for primary_intent
         let serving = lock.search_relations("primary_goal", Some("serves"), "to");
         for (c, _lab) in serving.into_iter().take(6) {
-            if active_artifacts.iter().any(|a| a.get("concept").and_then(|v| v.as_str()) == Some(c.as_str())) { continue; }
+            if active_artifacts
+                .iter()
+                .any(|a| a.get("concept").and_then(|v| v.as_str()) == Some(c.as_str()))
+            {
+                continue;
+            }
             if let Some(b) = lock.fetch_block_high_priority(&c) {
-                if c.starts_with("tile:") || c.starts_with("trace:") || c.starts_with("handoff") || c.starts_with("session_end_") || c.starts_with("compression") {
+                if c.starts_with("tile:")
+                    || c.starts_with("trace:")
+                    || c.starts_with("handoff")
+                    || c.starts_with("session_end_")
+                    || c.starts_with("compression")
+                {
                     active_artifacts.push(serde_json::json!({
                         "concept": c,
                         "crs": b.crs_score,
@@ -548,24 +670,44 @@ async fn hydrate(State(store): State<SharedStore>) -> impl IntoResponse {
         "note": "Fruits = coherence(reconcile) + lineage(codeland/trace/tile) + handoff_quality. Bias active in ki_hijacker."
     });
     {
-        let mut scored: Vec<_> = active_artifacts.iter().filter_map(|a| {
-            let c = a.get("concept").and_then(|v| v.as_str()).unwrap_or("");
-            if let Some(b) = lock.fetch_block_high_priority(c) {
-                let text = String::from_utf8_lossy(&b.payload).to_lowercase();
-                let mut f: f32 = 0.5;
-                let rec = text.matches("reconcile:").count() as f32;
-                f += rec * 0.16;
-                if text.contains("affirm:") { f += 0.05; }
-                if text.contains("deny:") { f += 0.05; }
-                if text.contains("codeland") || text.contains("handoff:codeland") || c.contains("178009") { f += 0.18; }
-                if c.starts_with("trace:") || c.starts_with("tile:") || c.starts_with("goal:") { f += 0.08; }
-                Some((c.to_string(), f.min(0.96)))
-            } else { None }
-        }).collect();
-        scored.sort_by(|a,b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-        let high = scored.iter().filter(|(_,f)| *f > 0.70).count();
-        let avg = if !scored.is_empty() { scored.iter().map(|(_,f)| *f).sum::<f32>() / scored.len() as f32 } else { 0.5 };
-        let top: Vec<String> = scored.iter().take(4).map(|(c,_)| c.clone()).collect();
+        let mut scored: Vec<_> = active_artifacts
+            .iter()
+            .filter_map(|a| {
+                let c = a.get("concept").and_then(|v| v.as_str()).unwrap_or("");
+                if let Some(b) = lock.fetch_block_high_priority(c) {
+                    let text = String::from_utf8_lossy(&b.payload).to_lowercase();
+                    let mut f: f32 = 0.5;
+                    let rec = text.matches("reconcile:").count() as f32;
+                    f += rec * 0.16;
+                    if text.contains("affirm:") {
+                        f += 0.05;
+                    }
+                    if text.contains("deny:") {
+                        f += 0.05;
+                    }
+                    if text.contains("codeland")
+                        || text.contains("handoff:codeland")
+                        || c.contains("178009")
+                    {
+                        f += 0.18;
+                    }
+                    if c.starts_with("trace:") || c.starts_with("tile:") || c.starts_with("goal:") {
+                        f += 0.08;
+                    }
+                    Some((c.to_string(), f.min(0.96)))
+                } else {
+                    None
+                }
+            })
+            .collect();
+        scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        let high = scored.iter().filter(|(_, f)| *f > 0.70).count();
+        let avg = if !scored.is_empty() {
+            scored.iter().map(|(_, f)| *f).sum::<f32>() / scored.len() as f32
+        } else {
+            0.5
+        };
+        let top: Vec<String> = scored.iter().take(4).map(|(c, _)| c.clone()).collect();
         fruits_summary = serde_json::json!({
             "high_fruit_count": high,
             "avg_fruit": avg,
@@ -576,12 +718,18 @@ async fn hydrate(State(store): State<SharedStore>) -> impl IntoResponse {
     payload["fruits"] = fruits_summary;
 
     let genesis_loaded = payload["stats"]["genesis_loaded"].as_u64().unwrap_or(0);
-    let total          = payload["total_memories"].as_u64().unwrap_or(0);
-    let session_count  = payload["stats"]["session_count"].as_u64().unwrap_or(0);
+    let total = payload["total_memories"].as_u64().unwrap_or(0);
+    let session_count = payload["stats"]["session_count"].as_u64().unwrap_or(0);
     info!(
         "rest: /api/hydrate — {} memories | {}/5 genesis | {} session records | primary={}",
-        total, genesis_loaded, session_count,
-        if payload.get("primary_intent").is_some() { "yes" } else { "no" }
+        total,
+        genesis_loaded,
+        session_count,
+        if payload.get("primary_intent").is_some() {
+            "yes"
+        } else {
+            "no"
+        }
     );
     (StatusCode::OK, Json(payload))
 }
@@ -610,36 +758,53 @@ async fn active_context(State(store): State<SharedStore>) -> impl IntoResponse {
     let mut goals = Vec::new();
     for (c, ts) in recent {
         if let Some(b) = lock.fetch_block_high_priority(&c) {
-            let entry = serde_json::json!({ "concept": c, "crs": b.crs_score, "last_accessed": ts });
-            if c.starts_with("tile:") { tiles.push(entry); }
-            else if c.starts_with("trace:") { traces.push(entry); }
-            else if c.starts_with("goal:") || c == "primary_goal" { goals.push(entry); }
+            let entry =
+                serde_json::json!({ "concept": c, "crs": b.crs_score, "last_accessed": ts });
+            if c.starts_with("tile:") {
+                tiles.push(entry);
+            } else if c.starts_with("trace:") {
+                traces.push(entry);
+            } else if c.starts_with("goal:") || c == "primary_goal" {
+                goals.push(entry);
+            }
         }
     }
     // (goal:1780106172 + parent 1780106168): Supplement with serves-relations to primary
     // so new Thought Tiles + handoff/provenance work created this wave (that auto-wire
     // "serves" at creation) appear in /api/active-context for leg-browser sidebar/canvas
     // without requiring extra recent accesses. Mirrors ki_hijacker but exposed for live GUI.
-    if let Some(_) = &primary {
+    if primary.is_some() {
         let serving = lock.search_relations("primary_goal", Some("serves"), "to");
         for (c, _lab) in serving.into_iter().take(5) {
-            if tiles.iter().any(|e| e["concept"] == c) || traces.iter().any(|e| e["concept"] == c) || goals.iter().any(|e| e["concept"] == c) { continue; }
+            if tiles.iter().any(|e| e["concept"] == c)
+                || traces.iter().any(|e| e["concept"] == c)
+                || goals.iter().any(|e| e["concept"] == c)
+            {
+                continue;
+            }
             if let Some(b) = lock.fetch_block_high_priority(&c) {
                 let entry = serde_json::json!({ "concept": c, "crs": b.crs_score, "last_accessed": b.last_accessed_timestamp });
-                if c.starts_with("tile:") { tiles.push(entry); }
-                else if c.starts_with("trace:") { traces.push(entry); }
-                else if c.starts_with("goal:") { goals.push(entry); }
+                if c.starts_with("tile:") {
+                    tiles.push(entry);
+                } else if c.starts_with("trace:") {
+                    traces.push(entry);
+                } else if c.starts_with("goal:") {
+                    goals.push(entry);
+                }
             }
         }
     }
 
-    (StatusCode::OK, Json(serde_json::json!({
-        "primary_intent": primary,
-        "recent_tiles": tiles,
-        "recent_traces": traces,
-        "recent_goals": goals,
-        "note": "All data from hot AccessIndex + high_priority fetches + serves relations (goal-serving bias per sub-goal 1780106172). Updates to intent set ki_rebake_needed for responsive hijacker."
-    })))
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({
+            "primary_intent": primary,
+            "recent_tiles": tiles,
+            "recent_traces": traces,
+            "recent_goals": goals,
+            "note": "All data from hot AccessIndex + high_priority fetches + serves relations (goal-serving bias per sub-goal 1780106172). Updates to intent set ki_rebake_needed for responsive hijacker."
+        })),
+    )
 }
 
 // ── Phase 4: POST /api/scout ──────────────────────────────────────────────────
@@ -656,7 +821,9 @@ struct ScoutReq {
     #[serde(default = "default_scout_max")]
     max_results: usize,
 }
-fn default_scout_max() -> usize { 5 }
+fn default_scout_max() -> usize {
+    5
+}
 
 async fn scout_handler(
     State(store): State<SharedStore>,
@@ -712,11 +879,13 @@ async fn mcp_http(
 
     let raw = match std::str::from_utf8(&body) {
         Ok(s) => s,
-        Err(_) => return (
-            StatusCode::BAD_REQUEST,
-            [(header::CONTENT_TYPE, "application/json")],
-            axum::body::Body::from(r#"{"error":"Invalid UTF-8 body"}"#),
-        ),
+        Err(_) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                [(header::CONTENT_TYPE, "application/json")],
+                axum::body::Body::from(r#"{"error":"Invalid UTF-8 body"}"#),
+            )
+        }
     };
 
     // Dispatch through the exact same handler as stdio MCP — zero duplication
@@ -724,7 +893,8 @@ async fn mcp_http(
 
     match response_value {
         Some(val) => {
-            let out = serde_json::to_vec(&val).unwrap_or_else(|_| br#"{"error":"serialization error"}"#.to_vec());
+            let out = serde_json::to_vec(&val)
+                .unwrap_or_else(|_| br#"{"error":"serialization error"}"#.to_vec());
             (
                 StatusCode::OK,
                 [(header::CONTENT_TYPE, "application/json")],
@@ -745,14 +915,17 @@ async fn boot_agent() -> impl IntoResponse {
     use std::process::Command;
     let agent_cmd = env::var("ENGRAM_AGENT_CMD")
         .unwrap_or_else(|_| "echo 'ENGRAM_AGENT_CMD not set'".to_string());
-    let out = Command::new("sh")
-        .arg("-c")
-        .arg(&agent_cmd)
-        .spawn();
-        
+    let out = Command::new("sh").arg("-c").arg(&agent_cmd).spawn();
+
     match out {
-        Ok(_) => (StatusCode::OK, Json(serde_json::json!({"status": "booting"}))),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e.to_string()}))),
+        Ok(_) => (
+            StatusCode::OK,
+            Json(serde_json::json!({"status": "booting"})),
+        ),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": e.to_string()})),
+        ),
     }
 }
 
@@ -802,27 +975,30 @@ pub async fn run(store: SharedStore, port: u16, mcp_http_enabled: bool) -> anyho
     let app = Router::new()
         // ─ Memory API ─
         .route("/api/remember", post(remember))
-        .route("/api/recall",   post(recall))
-        .route("/api/forget",   post(forget))
-        .route("/api/relate",   post(relate))
-        .route("/api/trace",    post(trace))
-        .route("/api/list",     get(list_concepts))
-        .route("/api/recent",   get(recent_concepts))
+        .route("/api/recall", post(recall))
+        .route("/api/forget", post(forget))
+        .route("/api/relate", post(relate))
+        .route("/api/trace", post(trace))
+        .route("/api/list", get(list_concepts))
+        .route("/api/recent", get(recent_concepts))
         .route("/api/block/:concept", get(get_block))
-        .route("/api/graph",    get(get_graph))
+        .route("/api/graph", get(get_graph))
         // ─ Agent Hydration (Phase 2) ─
-        .route("/api/hydrate",  get(hydrate))
+        .route("/api/hydrate", get(hydrate))
         .route("/api/active-context", get(active_context))
         // ─ Scout Pipeline (Phase 4) ─
-        .route("/api/scout",    post(scout_handler))
+        .route("/api/scout", post(scout_handler))
         // ─ System ─
         .route("/api/boot_agent", post(boot_agent))
-        .route("/health", get(|| async {
-            Json(serde_json::json!({
-                "status": "ok",
-                "version": env!("CARGO_PKG_VERSION")
-            }))
-        }));
+        .route(
+            "/health",
+            get(|| async {
+                Json(serde_json::json!({
+                    "status": "ok",
+                    "version": env!("CARGO_PKG_VERSION")
+                }))
+            }),
+        );
 
     // ─ HTTP MCP Transport (conditional on --mcp-http flag) ─
     let app = if mcp_http_enabled {

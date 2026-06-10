@@ -33,8 +33,8 @@
 
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use engram_core::ops::{
-    apply_srht, check_euler_characteristic, cosine_similarity, flatten_complex_q,
-    normalize, op_bind, StabilityTracker,
+    apply_srht, check_euler_characteristic, cosine_similarity, flatten_complex_q, normalize,
+    op_bind, StabilityTracker,
 };
 use num_complex::Complex32;
 
@@ -51,8 +51,14 @@ fn make_vector(seed: u64) -> Box<[Complex32; 8192]> {
     let mut buf = vec![0u8; 8192 * 8];
     hasher.finalize_xof().fill(&mut buf);
     for i in 0..8192 {
-        let re_bits = u32::from_le_bytes([buf[i*8], buf[i*8+1], buf[i*8+2], buf[i*8+3]]);
-        let im_bits = u32::from_le_bytes([buf[i*8+4], buf[i*8+5], buf[i*8+6], buf[i*8+7]]);
+        let re_bits =
+            u32::from_le_bytes([buf[i * 8], buf[i * 8 + 1], buf[i * 8 + 2], buf[i * 8 + 3]]);
+        let im_bits = u32::from_le_bytes([
+            buf[i * 8 + 4],
+            buf[i * 8 + 5],
+            buf[i * 8 + 6],
+            buf[i * 8 + 7],
+        ]);
         v[i].re = ((re_bits as f32) / u32::MAX as f32) * 2.0 - 1.0;
         v[i].im = ((im_bits as f32) / u32::MAX as f32) * 2.0 - 1.0;
     }
@@ -74,9 +80,7 @@ fn bench_cosine_similarity(c: &mut Criterion) {
     let b = make_vector(0xC0FF_EE00);
 
     c.bench_function("cosine_similarity/single_pair", |bencher| {
-        bencher.iter(|| {
-            black_box(cosine_similarity(black_box(&*a), black_box(&*b)))
-        });
+        bencher.iter(|| black_box(cosine_similarity(black_box(&*a), black_box(&*b))));
     });
 }
 
@@ -108,9 +112,7 @@ fn bench_euler_gate(c: &mut Criterion) {
     let q = make_vector(0xABCD_1234);
 
     c.bench_function("euler_gate/valid_vector", |bencher| {
-        bencher.iter(|| {
-            black_box(check_euler_characteristic(black_box(&*q)))
-        });
+        bencher.iter(|| black_box(check_euler_characteristic(black_box(&*q))));
     });
 }
 
@@ -120,8 +122,8 @@ fn bench_stability_tracker(c: &mut Criterion) {
     c.bench_function("stability_tracker/update", |bencher| {
         bencher.iter(|| {
             black_box(tracker.update(
-                black_box(0.15),  // gradient_mag (cosine distance)
-                black_box(0.08),  // drift_mag
+                black_box(0.15), // gradient_mag (cosine distance)
+                black_box(0.08), // drift_mag
             ))
         });
     });
@@ -140,20 +142,18 @@ fn bench_linear_scan_cpu(c: &mut Criterion) {
         let query = make_vector(0xFFFF_0000);
 
         group.throughput(Throughput::Elements(n as u64));
-        group.bench_with_input(
-            BenchmarkId::from_parameter(n),
-            &n,
-            |bencher, _| {
-                bencher.iter(|| {
-                    let mut best = f32::NEG_INFINITY;
-                    for v in corpus.iter() {
-                        let s = cosine_similarity(black_box(&*query), black_box(&**v));
-                        if s > best { best = s; }
+        group.bench_with_input(BenchmarkId::from_parameter(n), &n, |bencher, _| {
+            bencher.iter(|| {
+                let mut best = f32::NEG_INFINITY;
+                for v in corpus.iter() {
+                    let s = cosine_similarity(black_box(&*query), black_box(&**v));
+                    if s > best {
+                        best = s;
                     }
-                    black_box(best)
-                });
-            },
-        );
+                }
+                black_box(best)
+            });
+        });
     }
     group.finish();
 }
@@ -162,7 +162,7 @@ fn bench_linear_scan_cpu(c: &mut Criterion) {
 /// Simulates the in-memory scoring of 128 LBVH candidates (no disk I/O).
 fn bench_turbo_quant_candidates(c: &mut Criterion) {
     let corpus = make_corpus(128);
-    let query  = make_vector(0xCAFE_BABE);
+    let query = make_vector(0xCAFE_BABE);
     let mut flat_q = flatten_complex_q(&*query);
     apply_srht(&mut flat_q, 0x454E_4752_0000_0000);
 
@@ -174,7 +174,9 @@ fn bench_turbo_quant_candidates(c: &mut Criterion) {
                 let mut flat_v = flatten_complex_q(black_box(&**v));
                 apply_srht(&mut flat_v, 0x454E_4752_0000_0000);
                 let dot: f32 = flat_q.iter().zip(flat_v.iter()).map(|(a, b)| a * b).sum();
-                if dot > best { best = dot; }
+                if dot > best {
+                    best = dot;
+                }
             }
             black_box(best)
         });

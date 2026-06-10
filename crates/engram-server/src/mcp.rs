@@ -57,7 +57,6 @@ use crate::store::SharedStore;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::io::{self, BufRead, Write};
-use toml;
 use tracing::{debug, error, info, warn};
 // M2-2 sub 019eafc0-1a2b-3c4d-5e6f-7890abcdef12 (post read_file for edit precondition): dispatch/load_sheaf entrypoint here (monolithic kept per scope); pre MCP context_for_edit + recall_in_file("dispatch load_sheaf") + trace done; no extract. Full ritual pre/post via search/use. No beh change. (read satisfied MUST for edit).
 // [MCP PRE] search_tool first for schemas of context_for_edit/recall_in_file/record_reasoning_trace; use_tool engram__mcp_engram_* with exact input (path=/home/a/Documents/Engram/crates/engram-server/src/store.rs for context; path+ "handoff StoreHandle Backend dispatch" for recall; full ADR trace fields for record). Then post re + delta + relate(entities to goal:mvp_gap_closure_v1) + verify_manifold + spatial_status.  (within call budget).
@@ -89,8 +88,11 @@ struct Response {
 // Hits on hot concepts (wake-up, sub-agent polling) bypass the full linear 154k-block scan.
 // Keyed by normalized query + zedos_filter. Populated on miss path inside the handler arm.
 // Fully qualified to avoid import churn; capacity chosen for 70-90% hit rate on ritual paths.
-static MOMENTUM_LRU: std::sync::LazyLock<std::sync::Mutex<std::collections::VecDeque<(String, String)>>> =
-    std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::VecDeque::with_capacity(24)));
+static MOMENTUM_LRU: std::sync::LazyLock<
+    std::sync::Mutex<std::collections::VecDeque<(String, String)>>,
+> = std::sync::LazyLock::new(|| {
+    std::sync::Mutex::new(std::collections::VecDeque::with_capacity(24))
+});
 
 /// First non-empty string among `keys` — supports common agent alias parameter names.
 fn args_str<'a>(args: &'a Value, keys: &[&str]) -> Option<&'a str> {
@@ -121,13 +123,19 @@ fn load_process_sheaf(store: &SharedStore) -> Result<(), String> {
     // NOTE: Fully portable for public clones (no /path/to paths). See processes/, docs/GITHUB_MVP_PREP_PLAN.md, AGENT_INTEGRATION_GUIDE.md.
     let t_load = std::time::Instant::now();
     eprintln!("TIMING[load_process_sheaf]: start (T1 diagnostic for wake hang repro)");
-    let base = std::env::var("ENGRAM_PROCESSES_DIR")
-        .unwrap_or_else(|_| {
-            std::env::current_dir()
-                .map(|p| p.join("processes").to_string_lossy().into_owned())
-                .unwrap_or_else(|_| "processes".to_string())
-        });
-    let subdirs = ["ritual", "harness", "operator", "monitor", "process", "linguistic"];
+    let base = std::env::var("ENGRAM_PROCESSES_DIR").unwrap_or_else(|_| {
+        std::env::current_dir()
+            .map(|p| p.join("processes").to_string_lossy().into_owned())
+            .unwrap_or_else(|_| "processes".to_string())
+    });
+    let subdirs = [
+        "ritual",
+        "harness",
+        "operator",
+        "monitor",
+        "process",
+        "linguistic",
+    ];
     // Phase 2 – Sheaf Gluing & Spacetime Integration (additive only, no core changes to .leg3/VSA/MCP base, reuse h1_handler/OP_IS_SYMBOLIC_OF/OP_GEOMETRIC_PRODUCT patterns per audit; sub-agent handoff; file:130):
     // - Add "linguistic" to walk (subdirs array).
     // - Parse remains general (toml::Value extracts [process]/[category] incl. sheaf_role/h1_handler + [mcp_tools]/[requires]/[produces]/[invariants] + supports new [trace]/[spatial]/[thought-tiles]/[handoff]/[update] sections in linguistic/*.toml).
@@ -166,7 +174,9 @@ fn load_process_sheaf(store: &SharedStore) -> Result<(), String> {
                             }
                         };
                         let proc = value.get("process").and_then(|v| v.as_table());
-                        let raw_name = proc.and_then(|t| t.get("name")).and_then(|v| v.as_str())
+                        let raw_name = proc
+                            .and_then(|t| t.get("name"))
+                            .and_then(|v| v.as_str())
                             .map(|s| s.to_string())
                             .unwrap_or_else(|| format!("agent:engram.{}.unknown", sub));
                         let key = if raw_name.starts_with("agent:engram.") {
@@ -175,22 +185,76 @@ fn load_process_sheaf(store: &SharedStore) -> Result<(), String> {
                             format!("process:{}", raw_name)
                         };
                         let cat = value.get("category").and_then(|v| v.as_table());
-                        let obj = cat.and_then(|t| t.get("object")).and_then(|v| v.as_str()).unwrap_or("unknown");
-                        let morph = cat.and_then(|t| t.get("morphism")).and_then(|v| v.as_str()).unwrap_or("unknown");
-                        let role = cat.and_then(|t| t.get("sheaf_role")).and_then(|v| v.as_str()).unwrap_or("");
-                        let h1 = cat.and_then(|t| t.get("h1_handler")).and_then(|v| v.as_str()).unwrap_or("");
-                        let mcp_tools: Vec<String> = value.get("mcp_tools").and_then(|v| v.get("list")).and_then(|v| v.as_array())
-                            .map(|a| a.iter().filter_map(|vv| vv.as_str().map(|s| s.to_string())).collect()).unwrap_or_default();
-                        let requires: Vec<String> = value.get("requires").and_then(|v| v.get("list")).and_then(|v| v.as_array())
-                            .map(|a| a.iter().filter_map(|vv| vv.as_str().map(|s| s.to_string())).collect()).unwrap_or_default();
-                        let produces: Vec<String> = value.get("produces").and_then(|v| v.get("list")).and_then(|v| v.as_array())
-                            .map(|a| a.iter().filter_map(|vv| vv.as_str().map(|s| s.to_string())).collect()).unwrap_or_default();
-                        let phase_seed = proc.and_then(|t| t.get("phase_seed")).and_then(|v| v.as_str()).unwrap_or("");
-                        let invariants: Vec<String> = value.get("invariants").and_then(|v| v.get("list")).and_then(|v| v.as_array())
-                            .map(|a| a.iter().filter_map(|vv| vv.as_str().map(|s| s.to_string())).collect()).unwrap_or_default();
+                        let obj = cat
+                            .and_then(|t| t.get("object"))
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("unknown");
+                        let morph = cat
+                            .and_then(|t| t.get("morphism"))
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("unknown");
+                        let role = cat
+                            .and_then(|t| t.get("sheaf_role"))
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("");
+                        let h1 = cat
+                            .and_then(|t| t.get("h1_handler"))
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("");
+                        let mcp_tools: Vec<String> = value
+                            .get("mcp_tools")
+                            .and_then(|v| v.get("list"))
+                            .and_then(|v| v.as_array())
+                            .map(|a| {
+                                a.iter()
+                                    .filter_map(|vv| vv.as_str().map(|s| s.to_string()))
+                                    .collect()
+                            })
+                            .unwrap_or_default();
+                        let requires: Vec<String> = value
+                            .get("requires")
+                            .and_then(|v| v.get("list"))
+                            .and_then(|v| v.as_array())
+                            .map(|a| {
+                                a.iter()
+                                    .filter_map(|vv| vv.as_str().map(|s| s.to_string()))
+                                    .collect()
+                            })
+                            .unwrap_or_default();
+                        let produces: Vec<String> = value
+                            .get("produces")
+                            .and_then(|v| v.get("list"))
+                            .and_then(|v| v.as_array())
+                            .map(|a| {
+                                a.iter()
+                                    .filter_map(|vv| vv.as_str().map(|s| s.to_string()))
+                                    .collect()
+                            })
+                            .unwrap_or_default();
+                        let phase_seed = proc
+                            .and_then(|t| t.get("phase_seed"))
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("");
+                        let invariants: Vec<String> = value
+                            .get("invariants")
+                            .and_then(|v| v.get("list"))
+                            .and_then(|v| v.as_array())
+                            .map(|a| {
+                                a.iter()
+                                    .filter_map(|vv| vv.as_str().map(|s| s.to_string()))
+                                    .collect()
+                            })
+                            .unwrap_or_default();
                         let desc = format!("{} / {} / {} / h1={} | phase_seed={} | tools={:?} | requires={:?} | produces={:?} | invariants={:?}",
                             obj, morph, role, h1, phase_seed, mcp_tools, requires, produces, invariants);
-                        procs.push(ProcData { key, desc, requires, produces, mcp_tools, phase_seed: phase_seed.to_string() });
+                        procs.push(ProcData {
+                            key,
+                            desc,
+                            requires,
+                            produces,
+                            mcp_tools,
+                            phase_seed: phase_seed.to_string(),
+                        });
                     }
                 }
             }
@@ -215,10 +279,23 @@ fn load_process_sheaf(store: &SharedStore) -> Result<(), String> {
                 let _ = lock.relate(&p.key, t, "uses_mcp_tool");
             }
             if !p.phase_seed.is_empty() {
-                let _ = lock.relate(&p.key, &format!("phase_seed:{}", p.phase_seed), "has_phase_seed");
+                let _ = lock.relate(
+                    &p.key,
+                    &format!("phase_seed:{}", p.phase_seed),
+                    "has_phase_seed",
+                );
             }
-            if lock.fetch_block_high_priority("goal:1780419540_prepare-and-polish-current-engram-mvp-for-public").is_some() {
-                let _ = lock.relate(&p.key, "goal:1780419540_prepare-and-polish-current-engram-mvp-for-public", "serves");
+            if lock
+                .fetch_block_high_priority(
+                    "goal:1780419540_prepare-and-polish-current-engram-mvp-for-public",
+                )
+                .is_some()
+            {
+                let _ = lock.relate(
+                    &p.key,
+                    "goal:1780419540_prepare-and-polish-current-engram-mvp-for-public",
+                    "serves",
+                );
             }
             let _ = lock.relate(&p.key, "ritual:wake_up_anchor", "declared_in");
             let _ = lock.relate(&p.key, "ritual:engram.working-memory", "enforced_by");
@@ -241,10 +318,16 @@ fn load_process_sheaf(store: &SharedStore) -> Result<(), String> {
         let _ = hlock.promote_tile_to_high_priority("ritual:session_end_anchor");
         let _ = hlock.promote_tile_to_high_priority("mcp_engram_get_continuation_bundle");
         let _ = hlock.promote_tile_to_high_priority("mcp_engram_query_pure");
-        eprintln!("TIMING[load_process_sheaf]: preload promotes done, elapsed_pre={:.2}s", t_pre.elapsed().as_secs_f32());
+        eprintln!(
+            "TIMING[load_process_sheaf]: preload promotes done, elapsed_pre={:.2}s",
+            t_pre.elapsed().as_secs_f32()
+        );
     }
     info!("Process Architecture Sheaf loader: dynamically registered {} processes from processes/ tomls (proper toml parse of category + lists; live RELATION gluing for sheaf; portable via ENGRAM_PROCESSES_DIR or cwd). Subvisor H1 + continuity supported. Pre-loaded core processes + wake anchors to hot cache. See processes/ and the EngramGrok Process Definition doc.", registered);
-    eprintln!("TIMING[load_process_sheaf]: COMPLETE total={:.2}s", t_load.elapsed().as_secs_f32());
+    eprintln!(
+        "TIMING[load_process_sheaf]: COMPLETE total={:.2}s",
+        t_load.elapsed().as_secs_f32()
+    );
     Ok(())
 }
 
@@ -367,10 +450,23 @@ struct RpcError {
 
 impl Response {
     fn ok(id: Option<Value>, result: Value) -> Self {
-        Self { jsonrpc: "2.0", id, result: Some(result), error: None }
+        Self {
+            jsonrpc: "2.0",
+            id,
+            result: Some(result),
+            error: None,
+        }
     }
     fn err(id: Option<Value>, code: i32, message: impl Into<String>) -> Self {
-        Self { jsonrpc: "2.0", id, result: None, error: Some(RpcError { code, message: message.into() }) }
+        Self {
+            jsonrpc: "2.0",
+            id,
+            result: None,
+            error: Some(RpcError {
+                code,
+                message: message.into(),
+            }),
+        }
     }
 }
 
@@ -1740,10 +1836,12 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
     {
         let mut lock = match store.lock() {
             Ok(l) => l,
-            Err(p) => return json!({
-                "content": [{ "type": "text", "text": format!("Error: store mutex poisoned during warmup: {}", p) }],
-                "isError": true
-            }),
+            Err(p) => {
+                return json!({
+                    "content": [{ "type": "text", "text": format!("Error: store mutex poisoned during warmup: {}", p) }],
+                    "isError": true
+                })
+            }
         };
         if !lock.is_fully_initialized() {
             // Heuristic: if the store already reports a substantial number of
@@ -1809,14 +1907,18 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                     .filter(|n| {
                         let raw = n.split_once("::").map_or(n.as_str(), |(_, r)| r);
                         lock.fetch_block_high_priority(raw)
-                            .map_or(false, |b| b.crs_score >= 1.0)
+                            .is_some_and(|b| b.crs_score >= 1.0)
                     })
                     .count()
             } else {
-                lock.list().iter().filter(|n| {
-                    let raw = n.split_once("::").map_or(n.as_str(), |(_, r)| r);
-                    lock.fetch_block_high_priority(raw).map_or(false, |b| b.crs_score >= 1.0)
-                }).count()
+                lock.list()
+                    .iter()
+                    .filter(|n| {
+                        let raw = n.split_once("::").map_or(n.as_str(), |(_, r)| r);
+                        lock.fetch_block_high_priority(raw)
+                            .is_some_and(|b| b.crs_score >= 1.0)
+                    })
+                    .count()
             };
             let namespace = lock.active_stalk_name();
             let provlog = engram_core::storage::read_provlog(&block);
@@ -1849,10 +1951,16 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                 "isError": true
             });
         }
-        info!("mcp_engram_scout: {:?} (max_results={})", query, max_results);
+        info!(
+            "mcp_engram_scout: {:?} (max_results={})",
+            query, max_results
+        );
         let store_clone = store.clone();
-        let result = tokio::runtime::Handle::current()
-            .block_on(crate::scout::run(store_clone, &query, max_results));
+        let result = tokio::runtime::Handle::current().block_on(crate::scout::run(
+            store_clone,
+            &query,
+            max_results,
+        ));
         // NOTE (Tier 2 async opportunity): scout uses block_on. When MCP dispatch or scout internals move to native async,
         // storage reads inside can use engram_core::storage::async_read_block (gated on "async-io" feature, already enabled)
         // + future async fetch_block variants for non-blocking relief on event loop during heavy manifold scans.
@@ -1884,17 +1992,59 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
     // ── Phase 3 P3 handlers (polish for full surface: compress/decompress/fibered; reuse calculus dispatch style + inputSchema/result crs/bundle/phase; additive only) ──
     if name == "mcp_compress_linguistic" {
         let bundle_val = args.get("bundle").cloned().unwrap_or(json!({}));
-        let bundle_id = bundle_val.get("bundle_id").and_then(|v| v.as_str()).unwrap_or("c-bundle").to_string();
-        let words: Vec<engram_core::types::LinguisticWord> = bundle_val.get("words").and_then(|w| w.as_array()).map(|arr| arr.iter().filter_map(|wi| {
-            let text = wi.get("text").and_then(|t| t.as_str()).unwrap_or("").to_string();
-            let coeff_arr: [f32; 8] = wi.get("coeff").and_then(|c| c.as_array()).map(|ca| { let mut c=[0.0f32;8]; for (i,v) in ca.iter().take(8).enumerate(){c[i]=v.as_f64().unwrap_or(0.) as f32;} c}).unwrap_or([0.;8]);
-            Some(engram_core::types::LinguisticWord{text, coeff:coeff_arr})
-        }).collect()).unwrap_or_default();
-        let fm = bundle_val.get("functor_metadata").and_then(|v| v.as_str()).unwrap_or("p3-compress").to_string();
-        let bundle = engram_core::types::LinguisticDiscourseBundle { bundle_id: bundle_id.clone(), words, patches: vec![], functor_metadata: fm };
+        let bundle_id = bundle_val
+            .get("bundle_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("c-bundle")
+            .to_string();
+        let words: Vec<engram_core::types::LinguisticWord> = bundle_val
+            .get("words")
+            .and_then(|w| w.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .map(|wi| {
+                        let text = wi
+                            .get("text")
+                            .and_then(|t| t.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        let coeff_arr: [f32; 8] = wi
+                            .get("coeff")
+                            .and_then(|c| c.as_array())
+                            .map(|ca| {
+                                let mut c = [0.0f32; 8];
+                                for (i, v) in ca.iter().take(8).enumerate() {
+                                    c[i] = v.as_f64().unwrap_or(0.) as f32;
+                                }
+                                c
+                            })
+                            .unwrap_or([0.; 8]);
+                        engram_core::types::LinguisticWord {
+                            text,
+                            coeff: coeff_arr,
+                        }
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        let fm = bundle_val
+            .get("functor_metadata")
+            .and_then(|v| v.as_str())
+            .unwrap_or("p3-compress")
+            .to_string();
+        let bundle = engram_core::types::LinguisticDiscourseBundle {
+            bundle_id: bundle_id.clone(),
+            words,
+            patches: vec![],
+            functor_metadata: fm,
+        };
         let phase = engram_core::ops::op_linguistic_compress(&bundle);
         let de = engram_core::ops::op_linguistic_decompress(&phase, &bundle);
-        let crs = engram_core::ops::cosine_similarity(&engram_core::ops::op_linguistic_compress(&de), &phase).max(0.85).min(1.0);
+        let crs = engram_core::ops::cosine_similarity(
+            &engram_core::ops::op_linguistic_compress(&de),
+            &phase,
+        )
+        .clamp(0.85, 1.0);
         let preview = format!("{} ({} words)", bundle.bundle_id, bundle.words.len());
         return json!({
             "content": [{"type":"text","text": format!("✓ Phase3 mcp_compress_linguistic crs={:.4} (homotopy preserved)\nresult: {}", crs, preview)}],
@@ -1904,17 +2054,59 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
     }
     if name == "mcp_decompress_linguistic" {
         let bundle_val = args.get("bundle").cloned().unwrap_or(json!({}));
-        let bundle_id = bundle_val.get("bundle_id").and_then(|v| v.as_str()).unwrap_or("d-bundle").to_string();
-        let words: Vec<engram_core::types::LinguisticWord> = bundle_val.get("words").and_then(|w| w.as_array()).map(|arr| arr.iter().filter_map(|wi| {
-            let text = wi.get("text").and_then(|t| t.as_str()).unwrap_or("").to_string();
-            let coeff_arr: [f32; 8] = wi.get("coeff").and_then(|c| c.as_array()).map(|ca| { let mut c=[0.0f32;8]; for (i,v) in ca.iter().take(8).enumerate(){c[i]=v.as_f64().unwrap_or(0.) as f32;} c}).unwrap_or([0.;8]);
-            Some(engram_core::types::LinguisticWord{text, coeff:coeff_arr})
-        }).collect()).unwrap_or_default();
-        let fm = bundle_val.get("functor_metadata").and_then(|v| v.as_str()).unwrap_or("p3-decompress").to_string();
-        let bundle = engram_core::types::LinguisticDiscourseBundle { bundle_id: bundle_id.clone(), words, patches: vec![], functor_metadata: fm };
+        let bundle_id = bundle_val
+            .get("bundle_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("d-bundle")
+            .to_string();
+        let words: Vec<engram_core::types::LinguisticWord> = bundle_val
+            .get("words")
+            .and_then(|w| w.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .map(|wi| {
+                        let text = wi
+                            .get("text")
+                            .and_then(|t| t.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        let coeff_arr: [f32; 8] = wi
+                            .get("coeff")
+                            .and_then(|c| c.as_array())
+                            .map(|ca| {
+                                let mut c = [0.0f32; 8];
+                                for (i, v) in ca.iter().take(8).enumerate() {
+                                    c[i] = v.as_f64().unwrap_or(0.) as f32;
+                                }
+                                c
+                            })
+                            .unwrap_or([0.; 8]);
+                        engram_core::types::LinguisticWord {
+                            text,
+                            coeff: coeff_arr,
+                        }
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        let fm = bundle_val
+            .get("functor_metadata")
+            .and_then(|v| v.as_str())
+            .unwrap_or("p3-decompress")
+            .to_string();
+        let bundle = engram_core::types::LinguisticDiscourseBundle {
+            bundle_id: bundle_id.clone(),
+            words,
+            patches: vec![],
+            functor_metadata: fm,
+        };
         let phase = engram_core::ops::op_linguistic_compress(&bundle);
         let db = engram_core::ops::op_linguistic_decompress(&phase, &bundle);
-        let crs = engram_core::ops::cosine_similarity(&engram_core::ops::op_linguistic_compress(&db), &phase).max(0.85).min(1.0);
+        let crs = engram_core::ops::cosine_similarity(
+            &engram_core::ops::op_linguistic_compress(&db),
+            &phase,
+        )
+        .clamp(0.85, 1.0);
         let preview = format!("de:{} ({} words)", db.bundle_id, db.words.len());
         return json!({
             "content": [{"type":"text","text": format!("✓ Phase3 mcp_decompress_linguistic crs={:.4} (homotopy)\nresult: {}", crs, preview)}],
@@ -1925,19 +2117,79 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
     if name == "mcp_fibered_linguistic_equivalence" {
         let a_val = args.get("bundle_a").cloned().unwrap_or(json!({}));
         let b_val = args.get("bundle_b").cloned().unwrap_or(json!({}));
-        let wa: Vec<engram_core::types::LinguisticWord> = a_val.get("words").and_then(|w| w.as_array()).map(|arr| arr.iter().filter_map(|wi| {
-            let text = wi.get("text").and_then(|t| t.as_str()).unwrap_or("").to_string();
-            let coeff_arr: [f32; 8] = wi.get("coeff").and_then(|c| c.as_array()).map(|ca| { let mut c=[0.0f32;8]; for (i,v) in ca.iter().take(8).enumerate(){c[i]=v.as_f64().unwrap_or(0.) as f32;} c}).unwrap_or([0.;8]);
-            Some(engram_core::types::LinguisticWord{text, coeff:coeff_arr})
-        }).collect()).unwrap_or_default();
-        let wb: Vec<engram_core::types::LinguisticWord> = b_val.get("words").and_then(|w| w.as_array()).map(|arr| arr.iter().filter_map(|wi| {
-            let text = wi.get("text").and_then(|t| t.as_str()).unwrap_or("").to_string();
-            let coeff_arr: [f32; 8] = wi.get("coeff").and_then(|c| c.as_array()).map(|ca| { let mut c=[0.0f32;8]; for (i,v) in ca.iter().take(8).enumerate(){c[i]=v.as_f64().unwrap_or(0.) as f32;} c}).unwrap_or([0.;8]);
-            Some(engram_core::types::LinguisticWord{text, coeff:coeff_arr})
-        }).collect()).unwrap_or_default();
-        let ba = engram_core::types::LinguisticDiscourseBundle { bundle_id: "a".into(), words: wa, patches: vec![], functor_metadata: "a".into() };
-        let bb = engram_core::types::LinguisticDiscourseBundle { bundle_id: "b".into(), words: wb, patches: vec![], functor_metadata: "b".into() };
-        let crs = engram_core::ops::fibered_linguistic_equivalence(&ba, &bb).max(0.0).min(1.0);
+        let wa: Vec<engram_core::types::LinguisticWord> = a_val
+            .get("words")
+            .and_then(|w| w.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .map(|wi| {
+                        let text = wi
+                            .get("text")
+                            .and_then(|t| t.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        let coeff_arr: [f32; 8] = wi
+                            .get("coeff")
+                            .and_then(|c| c.as_array())
+                            .map(|ca| {
+                                let mut c = [0.0f32; 8];
+                                for (i, v) in ca.iter().take(8).enumerate() {
+                                    c[i] = v.as_f64().unwrap_or(0.) as f32;
+                                }
+                                c
+                            })
+                            .unwrap_or([0.; 8]);
+                        engram_core::types::LinguisticWord {
+                            text,
+                            coeff: coeff_arr,
+                        }
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        let wb: Vec<engram_core::types::LinguisticWord> = b_val
+            .get("words")
+            .and_then(|w| w.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .map(|wi| {
+                        let text = wi
+                            .get("text")
+                            .and_then(|t| t.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        let coeff_arr: [f32; 8] = wi
+                            .get("coeff")
+                            .and_then(|c| c.as_array())
+                            .map(|ca| {
+                                let mut c = [0.0f32; 8];
+                                for (i, v) in ca.iter().take(8).enumerate() {
+                                    c[i] = v.as_f64().unwrap_or(0.) as f32;
+                                }
+                                c
+                            })
+                            .unwrap_or([0.; 8]);
+                        engram_core::types::LinguisticWord {
+                            text,
+                            coeff: coeff_arr,
+                        }
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        let ba = engram_core::types::LinguisticDiscourseBundle {
+            bundle_id: "a".into(),
+            words: wa,
+            patches: vec![],
+            functor_metadata: "a".into(),
+        };
+        let bb = engram_core::types::LinguisticDiscourseBundle {
+            bundle_id: "b".into(),
+            words: wb,
+            patches: vec![],
+            functor_metadata: "b".into(),
+        };
+        let crs = engram_core::ops::fibered_linguistic_equivalence(&ba, &bb).clamp(0.0, 1.0);
         return json!({
             "content": [{"type":"text","text": format!("✓ Phase3 mcp_fibered_linguistic_equivalence crs={:.4}", crs)}],
             "crs": crs,
@@ -1948,86 +2200,222 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
     // ── Phase 4: mcp_linguistic_calculus (synthetic diff/int/operad; ZEDOS_TRAINING + NREM integration) ──
     // Dispatch comment + call to ops per contract; additive only. Uses record/mint ZEDOS_TRAINING for calc step.
     if name == "mcp_linguistic_calculus" {
-        let operation = args.get("operation").and_then(|v| v.as_str()).unwrap_or("differentiate").to_string();
+        let operation = args
+            .get("operation")
+            .and_then(|v| v.as_str())
+            .unwrap_or("differentiate")
+            .to_string();
         // Manual parse of bundle (no new deps; exact fields from types: bundle_id, words:vec<LinguisticWord{text+coeff[8]}>, patches, functor_metadata)
         let bundle_val = args.get("bundle").cloned().unwrap_or(json!({}));
-        let bundle_id = bundle_val.get("bundle_id").and_then(|v| v.as_str()).unwrap_or("calc-bundle").to_string();
-        let words: Vec<engram_core::types::LinguisticWord> = bundle_val.get("words")
+        let bundle_id = bundle_val
+            .get("bundle_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("calc-bundle")
+            .to_string();
+        let words: Vec<engram_core::types::LinguisticWord> = bundle_val
+            .get("words")
             .and_then(|w| w.as_array())
-            .map(|arr| arr.iter().filter_map(|wi| {
-                let text = wi.get("text").and_then(|t| t.as_str()).unwrap_or("").to_string();
-                let coeff_arr: [f32; 8] = wi.get("coeff").and_then(|c| c.as_array()).map(|ca| {
-                    let mut c = [0.0f32; 8];
-                    for (i, v) in ca.iter().take(8).enumerate() { c[i] = v.as_f64().unwrap_or(0.0) as f32; }
-                    c
-                }).unwrap_or([0.0; 8]);
-                Some(engram_core::types::LinguisticWord { text, coeff: coeff_arr })
-            }).collect()).unwrap_or_default();
-        let patches: Vec<engram_core::types::LinguisticContextPatch> = bundle_val.get("patches")
+            .map(|arr| {
+                arr.iter()
+                    .map(|wi| {
+                        let text = wi
+                            .get("text")
+                            .and_then(|t| t.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        let coeff_arr: [f32; 8] = wi
+                            .get("coeff")
+                            .and_then(|c| c.as_array())
+                            .map(|ca| {
+                                let mut c = [0.0f32; 8];
+                                for (i, v) in ca.iter().take(8).enumerate() {
+                                    c[i] = v.as_f64().unwrap_or(0.0) as f32;
+                                }
+                                c
+                            })
+                            .unwrap_or([0.0; 8]);
+                        engram_core::types::LinguisticWord {
+                            text,
+                            coeff: coeff_arr,
+                        }
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        let patches: Vec<engram_core::types::LinguisticContextPatch> = bundle_val
+            .get("patches")
             .and_then(|p| p.as_array())
-            .map(|arr| arr.iter().filter_map(|pi| {
-                Some(engram_core::types::LinguisticContextPatch {
-                    patch_id: pi.get("patch_id").and_then(|x| x.as_u64()).unwrap_or(0) as u32,
-                    morphism: pi.get("morphism").and_then(|x| x.as_str()).unwrap_or("").to_string(),
-                    coeff_delta: [0.0; 4],
-                })
-            }).collect()).unwrap_or_default();
-        let functor_metadata = bundle_val.get("functor_metadata").and_then(|v| v.as_str()).unwrap_or("calc").to_string();
-        let bundle = engram_core::types::LinguisticDiscourseBundle { bundle_id: bundle_id.clone(), words, patches, functor_metadata };
-        let path_bundles_val = args.get("path_bundles").and_then(|v| v.as_array()).cloned().unwrap_or_default();
-        let mut path_bundles: Vec<engram_core::types::LinguisticDiscourseBundle> = vec![bundle.clone()];
+            .map(|arr| {
+                arr.iter()
+                    .map(|pi| engram_core::types::LinguisticContextPatch {
+                        patch_id: pi.get("patch_id").and_then(|x| x.as_u64()).unwrap_or(0) as u32,
+                        morphism: pi
+                            .get("morphism")
+                            .and_then(|x| x.as_str())
+                            .unwrap_or("")
+                            .to_string(),
+                        coeff_delta: [0.0; 4],
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        let functor_metadata = bundle_val
+            .get("functor_metadata")
+            .and_then(|v| v.as_str())
+            .unwrap_or("calc")
+            .to_string();
+        let bundle = engram_core::types::LinguisticDiscourseBundle {
+            bundle_id: bundle_id.clone(),
+            words,
+            patches,
+            functor_metadata,
+        };
+        let path_bundles_val = args
+            .get("path_bundles")
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default();
+        let mut path_bundles: Vec<engram_core::types::LinguisticDiscourseBundle> =
+            vec![bundle.clone()];
         for pb in path_bundles_val {
             // minimal parse for path (reuse same fields)
-            let pid = pb.get("bundle_id").and_then(|v| v.as_str()).unwrap_or("p").to_string();
-            let pw: Vec<_> = pb.get("words").and_then(|w| w.as_array()).map(|arr| arr.iter().filter_map(|wi| {
-                let t = wi.get("text").and_then(|x| x.as_str()).unwrap_or("").to_string();
-                let cc: [f32;8] = wi.get("coeff").and_then(|c| c.as_array()).map(|ca|{ let mut c=[0f32;8]; for (i,v) in ca.iter().take(8).enumerate(){c[i]=v.as_f64().unwrap_or(0.) as f32;} c }).unwrap_or([0.;8]);
-                Some(engram_core::types::LinguisticWord{text:t, coeff:cc})
-            }).collect()).unwrap_or_default();
-            let pp = pb.get("patches").and_then(|p| p.as_array()).map(|arr| arr.iter().filter_map(|pi| Some(engram_core::types::LinguisticContextPatch{ patch_id: pi.get("patch_id").and_then(|x|x.as_u64()).unwrap_or(0)as u32, morphism:pi.get("morphism").and_then(|x|x.as_str()).unwrap_or("").into(), coeff_delta:[0.;4] })).collect()).unwrap_or_default();
-            let pfm = pb.get("functor_metadata").and_then(|v| v.as_str()).unwrap_or("p").to_string();
-            path_bundles.push(engram_core::types::LinguisticDiscourseBundle { bundle_id: pid, words: pw, patches: pp, functor_metadata: pfm });
+            let pid = pb
+                .get("bundle_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("p")
+                .to_string();
+            let pw: Vec<_> = pb
+                .get("words")
+                .and_then(|w| w.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .map(|wi| {
+                            let t = wi
+                                .get("text")
+                                .and_then(|x| x.as_str())
+                                .unwrap_or("")
+                                .to_string();
+                            let cc: [f32; 8] = wi
+                                .get("coeff")
+                                .and_then(|c| c.as_array())
+                                .map(|ca| {
+                                    let mut c = [0f32; 8];
+                                    for (i, v) in ca.iter().take(8).enumerate() {
+                                        c[i] = v.as_f64().unwrap_or(0.) as f32;
+                                    }
+                                    c
+                                })
+                                .unwrap_or([0.; 8]);
+                            engram_core::types::LinguisticWord { text: t, coeff: cc }
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            let pp = pb
+                .get("patches")
+                .and_then(|p| p.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .map(|pi| engram_core::types::LinguisticContextPatch {
+                            patch_id: pi.get("patch_id").and_then(|x| x.as_u64()).unwrap_or(0)
+                                as u32,
+                            morphism: pi
+                                .get("morphism")
+                                .and_then(|x| x.as_str())
+                                .unwrap_or("")
+                                .into(),
+                            coeff_delta: [0.; 4],
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            let pfm = pb
+                .get("functor_metadata")
+                .and_then(|v| v.as_str())
+                .unwrap_or("p")
+                .to_string();
+            path_bundles.push(engram_core::types::LinguisticDiscourseBundle {
+                bundle_id: pid,
+                words: pw,
+                patches: pp,
+                functor_metadata: pfm,
+            });
         }
-        let morphisms: Vec<String> = args.get("morphisms").and_then(|v| v.as_array()).map(|a| a.iter().filter_map(|x| x.as_str().map(|s|s.to_string())).collect()).unwrap_or_default();
+        let morphisms: Vec<String> = args
+            .get("morphisms")
+            .and_then(|v| v.as_array())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|x| x.as_str().map(|s| s.to_string()))
+                    .collect()
+            })
+            .unwrap_or_default();
         let (result_bundle, crs) = match operation.as_str() {
             "differentiate" => {
                 let (db, ph) = engram_core::ops::op_linguistic_differentiate(&bundle);
-                let rc = engram_core::ops::cosine_similarity(&ph, &engram_core::ops::op_linguistic_compress(&db));
+                let rc = engram_core::ops::cosine_similarity(
+                    &ph,
+                    &engram_core::ops::op_linguistic_compress(&db),
+                );
                 (db, rc)
             }
             "integrate" => {
                 let ib = engram_core::ops::op_linguistic_integrate(&path_bundles);
-                let rc = engram_core::ops::cosine_similarity(&engram_core::ops::op_linguistic_compress(&bundle), &engram_core::ops::op_linguistic_compress(&ib));
+                let rc = engram_core::ops::cosine_similarity(
+                    &engram_core::ops::op_linguistic_compress(&bundle),
+                    &engram_core::ops::op_linguistic_compress(&ib),
+                );
                 (ib, rc.max(0.85))
             }
             "operadic_compose" => {
                 let morph_refs: Vec<&str> = morphisms.iter().map(|s| s.as_str()).collect();
                 let ob = engram_core::ops::op_operadic_compose(&path_bundles, &morph_refs);
-                let rc = engram_core::ops::cosine_similarity(&engram_core::ops::op_linguistic_compress(&bundle), &engram_core::ops::op_linguistic_compress(&ob));
+                let rc = engram_core::ops::cosine_similarity(
+                    &engram_core::ops::op_linguistic_compress(&bundle),
+                    &engram_core::ops::op_linguistic_compress(&ob),
+                );
                 (ob, rc.max(0.85))
             }
             _ => (bundle.clone(), 0.5),
         };
-        let crs = crs.max(0.0).min(1.0);
+        let crs = crs.clamp(0.0, 1.0);
         // Integration: mint ZEDOS_TRAINING block for the calc step (use const + encode/store like remember internal)
-        let ts = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs();
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
         let calc_concept = format!("trace:linguistic_calculus_{}_{}", operation, ts);
         {
             let mut lock = match store.lock() {
                 Ok(l) => l,
-                Err(_) => return json!({"content":[{"type":"text","text":"Error: lock poisoned in calc"}],"isError":true}),
+                Err(_) => {
+                    return json!({"content":[{"type":"text","text":"Error: lock poisoned in calc"}],"isError":true})
+                }
             };
-            let mut tb = lock.encode(&format!("ZEDOS_TRAINING linguistic_calculus op={} bundle={} crs={:.4} functor={}", operation, bundle_id, crs, result_bundle.functor_metadata));
+            let mut tb = lock.encode(&format!(
+                "ZEDOS_TRAINING linguistic_calculus op={} bundle={} crs={:.4} functor={}",
+                operation, bundle_id, crs, result_bundle.functor_metadata
+            ));
             tb.zedos_tag = engram_core::types::ZEDOS_TRAINING;
             tb.crs_score = if crs >= 0.85 { crs } else { 0.85 };
             let _ = lock.store(&calc_concept, tb);
             // NREM-ready: relate to ritual nrem + sheaf process (per linguistic-calculus.toml invariants + trace)
             let _ = lock.relate(&calc_concept, "ritual:nrem-consolidation", "nrem_ready");
-            let _ = lock.relate(&calc_concept, "process:engram.linguistic.linguistic-calculus", "implements");
+            let _ = lock.relate(
+                &calc_concept,
+                "process:engram.linguistic.linguistic-calculus",
+                "implements",
+            );
             let _ = lock.relate(&calc_concept, "goal:mvp_gap_closure_v1", "serves");
         }
         // Also surface via quick_trace style record (but internal here; caller can chain)
-        let preview = format!("{} (words={}, patches={}, meta={})", result_bundle.bundle_id, result_bundle.words.len(), result_bundle.patches.len(), result_bundle.functor_metadata);
+        let preview = format!(
+            "{} (words={}, patches={}, meta={})",
+            result_bundle.bundle_id,
+            result_bundle.words.len(),
+            result_bundle.patches.len(),
+            result_bundle.functor_metadata
+        );
         return json!({
             "content": [{
                 "type": "text",
@@ -2047,7 +2435,7 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
     match name {
         "mcp_engram_remember" => {
             let concept = args["concept"].as_str().unwrap_or("").trim().to_string();
-            let text    = args["text"].as_str().unwrap_or("").trim().to_string();
+            let text = args["text"].as_str().unwrap_or("").trim().to_string();
 
             if concept.is_empty() || text.is_empty() {
                 return json!({
@@ -2057,10 +2445,12 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
             }
             let mut s = match store.lock() {
                 Ok(l) => l,
-                Err(p) => return json!({
-                    "content": [{ "type": "text", "text": format!("Error: store mutex poisoned: {}", p) }],
-                    "isError": true
-                }),
+                Err(p) => {
+                    return json!({
+                        "content": [{ "type": "text", "text": format!("Error: store mutex poisoned: {}", p) }],
+                        "isError": true
+                    })
+                }
             };
             match s.remember(&concept, &text) {
                 Ok(_) => {
@@ -2082,7 +2472,9 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
         "mcp_engram_recall" => {
             let query = args["query"].as_str().unwrap_or("").trim().to_string();
             let k = args["k"].as_u64().unwrap_or(5).min(20) as usize;
-            let zedos_filter = args["zedos_filter"].as_str().map(|s| s.trim().to_lowercase());
+            let zedos_filter = args["zedos_filter"]
+                .as_str()
+                .map(|s| s.trim().to_lowercase());
             let time_decay = args["time_decay"].as_f64().map(|d| d as f32);
             let scope = args["scope"]
                 .as_str()
@@ -2091,12 +2483,12 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
 
             // Phase 5: resolve optional ZEDOS tag filter
             let tag_filter: Option<u8> = zedos_filter.as_deref().and_then(|f| match f {
-                "declarative"  => Some(engram_core::types::ZEDOS_DECLARATIVE),
-                "episodic"     => Some(engram_core::types::ZEDOS_EPISODIC),
-                "operational"  => Some(engram_core::types::ZEDOS_OPERATIONAL),
-                "praxis"       => Some(engram_core::types::ZEDOS_PRAXIS),
-                "relation"     => Some(engram_core::types::ZEDOS_RELATION),
-                "training"     => Some(engram_core::types::ZEDOS_TRAINING),
+                "declarative" => Some(engram_core::types::ZEDOS_DECLARATIVE),
+                "episodic" => Some(engram_core::types::ZEDOS_EPISODIC),
+                "operational" => Some(engram_core::types::ZEDOS_OPERATIONAL),
+                "praxis" => Some(engram_core::types::ZEDOS_PRAXIS),
+                "relation" => Some(engram_core::types::ZEDOS_RELATION),
+                "training" => Some(engram_core::types::ZEDOS_TRAINING),
                 _ => None,
             });
 
@@ -2110,10 +2502,12 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
             let (mut results, effective_scope, recall_mode) = {
                 let mut s = match store.lock() {
                     Ok(l) => l,
-                    Err(p) => return json!({
-                        "content": [{ "type": "text", "text": format!("Error: store mutex poisoned: {}", p) }],
-                        "isError": true
-                    }),
+                    Err(p) => {
+                        return json!({
+                            "content": [{ "type": "text", "text": format!("Error: store mutex poisoned: {}", p) }],
+                            "isError": true
+                        })
+                    }
                 };
                 let recall_mode = s.recall_mode().to_string();
                 if let Some(age_days) = time_decay {
@@ -2152,18 +2546,24 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                 });
             }
 
-            let time_note = time_decay.map(|d| format!(" [temporal window: ~{:.0}d ago]", d))
+            let time_note = time_decay
+                .map(|d| format!(" [temporal window: ~{:.0}d ago]", d))
                 .unwrap_or_default();
-            let mut output = format!("{}\nFound {} memories{}:\n\n", meta, results.len(), time_note);
+            let mut output = format!(
+                "{}\nFound {} memories{}:\n\n",
+                meta,
+                results.len(),
+                time_note
+            );
             for (i, mem) in results.iter().enumerate() {
                 let tag_name = match mem.zedos_tag {
-                    0xD  => "DECLARATIVE",
-                    0xA  => "EPISODIC",
+                    0xD => "DECLARATIVE",
+                    0xA => "EPISODIC",
                     0x52 => "OPERATIONAL",
                     0x50 => "PRAXIS",
                     0xE1 => "RELATION",
                     0x54 => "TRAINING",
-                    _    => "UNKNOWN",
+                    _ => "UNKNOWN",
                 };
                 let spatial = if mem.aabb_max[0] > 0.0 {
                     format!(" | lines {:.0}–{:.0}", mem.aabb_min[0], mem.aabb_max[0])
@@ -2190,8 +2590,10 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
 
             let mut lock = store.lock().unwrap();
             // Strip sheaf namespace prefix if the agent included it
-            let raw_concept = concept.split_once("::").map_or(concept.as_str(), |(_, r)| r);
-            
+            let raw_concept = concept
+                .split_once("::")
+                .map_or(concept.as_str(), |(_, r)| r);
+
             // Hot path upgrade (Tier 2 broader adoption): read_concept is the primary way to pull full high-value blocks.
             if let Some(block) = lock.fetch_block_high_priority(raw_concept) {
                 let full_text = engram_core::storage::read_provlog(&block);
@@ -2211,10 +2613,12 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
             }
             let mut s = match store.lock() {
                 Ok(l) => l,
-                Err(p) => return json!({
-                    "content": [{ "type": "text", "text": format!("Error: store mutex poisoned: {}", p) }],
-                    "isError": true
-                }),
+                Err(p) => {
+                    return json!({
+                        "content": [{ "type": "text", "text": format!("Error: store mutex poisoned: {}", p) }],
+                        "isError": true
+                    })
+                }
             };
             match s.forget(&concept) {
                 Ok(_) => {
@@ -2230,10 +2634,7 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
 
         "mcp_engram_list_concepts" => {
             let prefix = args.get("prefix").and_then(|v| v.as_str());
-            let limit = args
-                .get("limit")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(50) as usize;
+            let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(50) as usize;
             let (concepts, truncated, total) =
                 store.lock().unwrap().list_concepts_filtered(prefix, limit);
             if concepts.is_empty() {
@@ -2298,7 +2699,12 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
             // Prevents client query_pure from holding store Mutex for full hot.len() duration while bg rehydrate/inc/promote or other procs run.
             let t_q = std::time::Instant::now();
             eprintln!("TIMING[query_pure]: start (T1 diagnostic)");
-            let intent = args.get("intent").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
+            let intent = args
+                .get("intent")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
             let k = args.get("k").and_then(|v| v.as_u64()).unwrap_or(6).min(20) as usize;
             if intent.is_empty() {
                 return json!({ "content": [{ "type": "text", "text": "Error: intent is required." }], "isError": true });
@@ -2317,7 +2723,11 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                 let all_concepts = lock.hot_concepts();
                 let enc_time = t_enc.elapsed().as_secs_f32();
                 if enc_time > 0.1 {
-                    eprintln!("TIMING[query_pure]: encode+hot took {:.3}s len_all={}", enc_time, all_concepts.len());
+                    eprintln!(
+                        "TIMING[query_pure]: encode+hot took {:.3}s len_all={}",
+                        enc_time,
+                        all_concepts.len()
+                    );
                 }
                 (effective_q, all_concepts)
             };
@@ -2327,7 +2737,12 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
             // Direct fetch of the small fixed set of known anchors (registered by load + pre-promoted).
             // Always O(1) small ( ~8-10 fetches), no dependence on hot_set size/growth, no long bg pure, sub-second even on populated/large stalk.
             // The normal hot probe (capped 64) remains for general pure queries.
-            if intent.contains("ritual") || intent.contains("process:engram.ritual") || intent.contains("wake-up") || intent.contains("anchor") || intent.contains("working-memory") {
+            if intent.contains("ritual")
+                || intent.contains("process:engram.ritual")
+                || intent.contains("wake-up")
+                || intent.contains("anchor")
+                || intent.contains("working-memory")
+            {
                 eprintln!("TIMING[query_pure]: FAST_ANCHOR entered for intent containing ritual anchor keywords");
                 let t_fast = std::time::Instant::now();
                 let anchor_names: Vec<&str> = vec![
@@ -2350,7 +2765,10 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                         lock.fetch_block_high_priority(c)
                     };
                     let ftime = t_f.elapsed().as_secs_f32();
-                    eprintln!("TIMING[query_pure]: FAST_ANCHOR fetched {} in {:.3}s", c, ftime);
+                    eprintln!(
+                        "TIMING[query_pure]: FAST_ANCHOR fetched {} in {:.3}s",
+                        c, ftime
+                    );
                     if let Some(block) = block {
                         let q_score = engram_core::ops::cosine_similarity(&effective_q, &block.q);
                         scored.push((c.to_string(), q_score, block.crs_score));
@@ -2360,11 +2778,20 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                 scored.truncate(k);
                 let mut out = format!("Pure geometric results for '{}':\n\n", intent);
                 for (concept, score, crs) in &scored {
-                    out.push_str(&format!("  · {} (q_cosine:{:.4}, crs:{:.2})\n", concept, score, crs));
+                    out.push_str(&format!(
+                        "  · {} (q_cosine:{:.4}, crs:{:.2})\n",
+                        concept, score, crs
+                    ));
                 }
-                if scored.is_empty() { out.push_str("No matches (pure q K-NN)."); }
+                if scored.is_empty() {
+                    out.push_str("No matches (pure q K-NN).");
+                }
                 eprintln!("TIMING[query_pure]: FAST_ANCHOR path used (direct {} anchors, no hot probe) total={:.2}s", anchor_names.len(), t_fast.elapsed().as_secs_f32());
-                eprintln!("TIMING[query_pure]: COMPLETE scored={} total={:.2}s", scored.len(), t_q.elapsed().as_secs_f32());
+                eprintln!(
+                    "TIMING[query_pure]: COMPLETE scored={} total={:.2}s",
+                    scored.len(),
+                    t_q.elapsed().as_secs_f32()
+                );
                 return json!({ "content": [{ "type": "text", "text": out }] });
             }
             // normal hot probe path for other pure queries
@@ -2374,7 +2801,9 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                 all_concepts
             } else {
                 let step = all_concepts.len() / probe_cap;
-                (0..probe_cap).filter_map(|i| all_concepts.get(i * step).cloned()).collect()
+                (0..probe_cap)
+                    .filter_map(|i| all_concepts.get(i * step).cloned())
+                    .collect()
             };
             eprintln!("TIMING[query_pure]: probe built size={} cap={} (aggressive hot cap for fast anchor pure)", probe.len(), probe_cap);
             let mut scored: Vec<(String, f32, f32)> = vec![];
@@ -2386,7 +2815,10 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                 };
                 let fetch_ms = t_f.elapsed().as_secs_f32() * 1000.0;
                 if i < 5 || fetch_ms > 50.0 {
-                    eprintln!("TIMING[query_pure]: fetch[{}] {} {:.1}ms", i, concept, fetch_ms);
+                    eprintln!(
+                        "TIMING[query_pure]: fetch[{}] {} {:.1}ms",
+                        i, concept, fetch_ms
+                    );
                 }
                 if let Some(block) = block {
                     let q_score = engram_core::ops::cosine_similarity(&effective_q, &block.q);
@@ -2397,16 +2829,28 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
             scored.truncate(k);
             let mut out = format!("Pure geometric results for '{}':\n\n", intent);
             for (concept, score, crs) in &scored {
-                out.push_str(&format!("  · {} (q_cosine:{:.4}, crs:{:.2})\n", concept, score, crs));
+                out.push_str(&format!(
+                    "  · {} (q_cosine:{:.4}, crs:{:.2})\n",
+                    concept, score, crs
+                ));
             }
-            if scored.is_empty() { out.push_str("No matches (pure q K-NN)."); }
-            eprintln!("TIMING[query_pure]: COMPLETE scored={} total={:.2}s", scored.len(), t_q.elapsed().as_secs_f32());
+            if scored.is_empty() {
+                out.push_str("No matches (pure q K-NN).");
+            }
+            eprintln!(
+                "TIMING[query_pure]: COMPLETE scored={} total={:.2}s",
+                scored.len(),
+                t_q.elapsed().as_secs_f32()
+            );
             json!({ "content": [{ "type": "text", "text": out }] })
         }
 
         "mcp_engram_incremental_spatial_ingest" => {
             let max_files = args.get("max_files").and_then(|v| v.as_u64()).unwrap_or(10) as usize;
-            let force_all = args.get("force_all").and_then(|v| v.as_bool()).unwrap_or(false);
+            let force_all = args
+                .get("force_all")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
             let explicit_paths: Vec<String> = args
                 .get("paths")
                 .and_then(|v| v.as_array())
@@ -2416,7 +2860,8 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                         .collect()
                 })
                 .unwrap_or_default();
-            let spatial = run_incremental_spatial_ingest(store, max_files, force_all, explicit_paths);
+            let spatial =
+                run_incremental_spatial_ingest(store, max_files, force_all, explicit_paths);
             let files_checked = spatial["files_checked"].as_u64().unwrap_or(0);
             let ingested_total = spatial["ingested_total"].as_u64().unwrap_or(0);
             let details = spatial["details"]
@@ -2442,8 +2887,15 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
         }
 
         "mcp_engram_promote_hot_batch" => {
-            let concepts: Vec<String> = args.get("concepts").and_then(|v| v.as_array())
-                .map(|a| a.iter().filter_map(|vv| vv.as_str().map(|s| s.to_string())).collect()).unwrap_or_default();
+            let concepts: Vec<String> = args
+                .get("concepts")
+                .and_then(|v| v.as_array())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|vv| vv.as_str().map(|s| s.to_string()))
+                        .collect()
+                })
+                .unwrap_or_default();
             if concepts.is_empty() {
                 return json!({ "content": [{ "type": "text", "text": "Error: concepts array required." }], "isError": true });
             }
@@ -2458,22 +2910,30 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
         }
 
         "mcp_engram_relate_batch" => {
-            let rels = args.get("relations").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+            let rels = args
+                .get("relations")
+                .and_then(|v| v.as_array())
+                .cloned()
+                .unwrap_or_default();
             let mut lock = store.lock().unwrap();
             let mut created = 0usize;
             for r in rels {
                 let a = r.get("concept_a").and_then(|x| x.as_str()).unwrap_or("");
                 let b = r.get("concept_b").and_then(|x| x.as_str()).unwrap_or("");
                 let l = r.get("label").and_then(|x| x.as_str()).unwrap_or("");
-                if !a.is_empty() && !b.is_empty() && !l.is_empty() {
-                    if lock.relate(a, b, l).is_ok() { created += 1; }
+                if !a.is_empty() && !b.is_empty() && !l.is_empty() && lock.relate(a, b, l).is_ok() {
+                    created += 1;
                 }
             }
             json!({ "content": [{ "type": "text", "text": format!("✓ Batch relate: {} relations created.", created) }] })
         }
 
         "mcp_engram_promote_hot" => {
-            let concept = args.get("concept").and_then(|v| v.as_str()).unwrap_or("").trim();
+            let concept = args
+                .get("concept")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim();
             if concept.is_empty() {
                 return json!({
                     "content": [{ "type": "text", "text": "Error: concept is required." }],
@@ -2507,7 +2967,9 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
             if let Some(daemon) = &lock.daemon {
                 let d = daemon.clone();
                 let p = path.clone();
-                tokio::spawn(async move { d.set_watch_workspace(&p).await; });
+                tokio::spawn(async move {
+                    d.set_watch_workspace(&p).await;
+                });
             }
             let defer_ingest = std::env::var("ENGRAM_DEFER_WATCH_INGEST").as_deref() == Ok("1");
             let ingest_note = if defer_ingest {
@@ -2524,15 +2986,23 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
             // Item 1.5 bootstrap improvement.
             // Goal: Allow agents to trigger tree-sitter AST extraction + ingestion
             // directly on files/directories without requiring real save events from the user.
-            let paths: Vec<String> = args.get("paths")
+            let paths: Vec<String> = args
+                .get("paths")
                 .and_then(|v| v.as_array())
-                .map(|arr| arr.iter().filter_map(|x| x.as_str().map(|s| s.to_string())).collect())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|x| x.as_str().map(|s| s.to_string()))
+                        .collect()
+                })
                 .unwrap_or_default();
 
             let mut lock = store.lock().unwrap();
             let mut total = 0usize;
             let mut details = Vec::new();
-            let recursive = args.get("recursive").and_then(|v| v.as_bool()).unwrap_or(true);
+            let recursive = args
+                .get("recursive")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(true);
 
             let mut successes = 0usize;
             let mut errors = 0usize;
@@ -2572,7 +3042,9 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
             // Lightweight Item 1.5 status tool (gap #5 remediation)
             // Hot path upgrade (Tier 2 broader adoption): use high_priority for this core ritual state block.
             let mut lock = store.lock().unwrap();
-            if let Some(block) = lock.fetch_block_high_priority("item1.5_spatial_ingestion_state_engram") {
+            if let Some(block) =
+                lock.fetch_block_high_priority("item1.5_spatial_ingestion_state_engram")
+            {
                 let text = engram_core::storage::read_provlog(&block);
                 json!({
                     "content": [{
@@ -2611,10 +3083,12 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
             let session_key = {
                 let mut lock = match store.lock() {
                     Ok(l) => l,
-                    Err(p) => return json!({
-                        "content": [{ "type": "text", "text": format!("Error: store mutex poisoned: {}", p) }],
-                        "isError": true
-                    }),
+                    Err(p) => {
+                        return json!({
+                            "content": [{ "type": "text", "text": format!("Error: store mutex poisoned: {}", p) }],
+                            "isError": true
+                        })
+                    }
                 };
                 let timestamp = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
@@ -2636,10 +3110,12 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
             let (continuation, readiness) = {
                 let mut lock = match store.lock() {
                     Ok(l) => l,
-                    Err(p) => return json!({
-                        "content": [{ "type": "text", "text": format!("Error: store mutex poisoned: {}", p) }],
-                        "isError": true
-                    }),
+                    Err(p) => {
+                        return json!({
+                            "content": [{ "type": "text", "text": format!("Error: store mutex poisoned: {}", p) }],
+                            "isError": true
+                        })
+                    }
                 };
                 lock.warm_wake_anchors();
                 let continuation = lock.build_continuation_bundle();
@@ -2685,12 +3161,12 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                 wake_packet["spatial"] = spatial_val;
             }
             let text = serde_json::to_string(&wake_packet).unwrap_or_else(|_| "{}".to_string());
-            return json!({
+            json!({
                 "content": [{
                     "type": "text",
                     "text": text
                 }]
-            });
+            })
         }
         "mcp_engram_session_end" => {
             let summary = args["summary"].as_str().unwrap_or("").trim().to_string();
@@ -2699,12 +3175,12 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
             }
 
             let mut lock = store.lock().unwrap();
-            
+
             // Calculate average CRS of concepts touched this session
             let recent_accesses = lock.access_index.recent(50);
             let mut total_crs = 0.0;
             let mut count = 0;
-            
+
             for (concept, _) in &recent_accesses {
                 // Hot path upgrade (pre-65%): session_end is a critical ritual moment.
                 // Recent concepts touched this session now go through the fast path during COMPRESS writing.
@@ -2713,7 +3189,11 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                     count += 1;
                 }
             }
-            let avg_crs = if count > 0 { total_crs / count as f32 } else { 0.5 };
+            let avg_crs = if count > 0 {
+                total_crs / count as f32
+            } else {
+                0.5
+            };
 
             // ── Phase 70.1: Protocol Validator ────────────────────────────────────
             // Run 4 mechanically-verifiable pre-flight checks before committing.
@@ -2723,16 +3203,18 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                 let mut gaps: Vec<String> = Vec::new();
 
                 // Check 1: Was mcp_engram_session_start called this session?
-                let has_start = recent_accesses.iter()
+                let has_start = recent_accesses
+                    .iter()
                     .any(|(c, _)| c.starts_with("session_start_"));
                 if !has_start {
                     gaps.push("No session_start_ block found — call mcp_engram_session_start at session open.".to_string());
                 }
 
                 // Check 2: VSA operator forge intact (14 blocks expected)
-                let op_count = std::fs::read_dir(
-                    format!("{}/holograms/operators", lock.store_path())
-                ).map(|d| d.count()).unwrap_or(0);
+                let op_count =
+                    std::fs::read_dir(format!("{}/holograms/operators", lock.store_path()))
+                        .map(|d| d.count())
+                        .unwrap_or(0);
                 if op_count < 14 {
                     gaps.push(format!(
                         "VSA operator forge incomplete ({}/14) — run: cargo run --release -p monad_forge --bin mint_operators",
@@ -2778,8 +3260,14 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                     gap_block.crs_score = 0.75; // Visible but not immortal; autophagy can clean it
                     let gap_key = format!("protocol_gap_{}", timestamp_gap);
                     let _ = lock.store(&gap_key, gap_block);
-                    warn!("[SESSION_END] Protocol gaps detected ({}):\n{}", gaps.len(),
-                        gaps.iter().map(|g| format!("  • {}", g)).collect::<Vec<_>>().join("\n"));
+                    warn!(
+                        "[SESSION_END] Protocol gaps detected ({}):\n{}",
+                        gaps.len(),
+                        gaps.iter()
+                            .map(|g| format!("  • {}", g))
+                            .collect::<Vec<_>>()
+                            .join("\n")
+                    );
                 } else {
                     info!("[SESSION_END] Protocol validator: all checks passed ✓");
                 }
@@ -2800,7 +3288,10 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
             session_block.energetics.heat_dissipated += 5.47e-4 * count as f32;
             session_block.crs_score = 0.80; // Standard EPISODIC baseline
 
-            let timestamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+            let timestamp = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs();
             let key = format!("session_end_{}", timestamp);
 
             let alpha_a = session_block.energetics.alpha_a;
@@ -2816,17 +3307,44 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                 .collect();
 
             for marker in &compression_markers {
-                let marker_key = format!("compression_intent_{}_{}", timestamp, compression_markers.iter().position(|x| x == marker).unwrap_or(0));
+                let marker_key = format!(
+                    "compression_intent_{}_{}",
+                    timestamp,
+                    compression_markers
+                        .iter()
+                        .position(|x| x == marker)
+                        .unwrap_or(0)
+                );
                 let mut marker_block = lock.encode(marker);
                 marker_block.zedos_tag = engram_core::types::ZEDOS_EPISODIC;
                 // Phase 2 strengthening (post live TUI compression split test 2026-05-28):
                 // More aggressive CRS boost for newly emitted structured Thought Tiles (v0 contract fields + state_machine/research_offload/tabular).
                 // This directly addresses the measured momentum gap: new high-value Tiles need stronger head-start to participate in the graph across compression boundaries.
                 let lower = marker.to_lowercase();
-                let is_strong_structured = lower.contains("key_decisions") || lower.contains("re_hydration_hints") || lower.contains("lessons_scars") || lower.contains("success_criteria") || lower.contains("post_compression") || lower.contains("structured contract") || lower.contains("state_machine_v0") || lower.contains("research_offload") || lower.contains("tabular_v0") || lower.contains("thought tile") || lower.contains("phase 1") || lower.contains("structured tile") || lower.contains("current_arc_status_gpu_item2") || lower.contains("next_compression_measurement_protocol") || lower.contains("65% live test") || lower.contains("dual-lens") || lower.contains("execution checklist");
+                let is_strong_structured = lower.contains("key_decisions")
+                    || lower.contains("re_hydration_hints")
+                    || lower.contains("lessons_scars")
+                    || lower.contains("success_criteria")
+                    || lower.contains("post_compression")
+                    || lower.contains("structured contract")
+                    || lower.contains("state_machine_v0")
+                    || lower.contains("research_offload")
+                    || lower.contains("tabular_v0")
+                    || lower.contains("thought tile")
+                    || lower.contains("phase 1")
+                    || lower.contains("structured tile")
+                    || lower.contains("current_arc_status_gpu_item2")
+                    || lower.contains("next_compression_measurement_protocol")
+                    || lower.contains("65% live test")
+                    || lower.contains("dual-lens")
+                    || lower.contains("execution checklist");
                 if is_strong_structured {
                     marker_block.crs_score = 0.92; // Aggressive boost for clear structured functor payloads
-                } else if lower.contains("structured") || lower.contains("tile:") || lower.contains("7 fronts") || lower.contains("handoff") {
+                } else if lower.contains("structured")
+                    || lower.contains("tile:")
+                    || lower.contains("7 fronts")
+                    || lower.contains("handoff")
+                {
                     marker_block.crs_score = 0.90; // Strengthened for Phase 2 arc closure markers (post 7-fronts execution wave)
                 } else {
                     marker_block.crs_score = 0.85;
@@ -2848,18 +3366,27 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
             // regression suite that now also exercises this path (compression-measurement suite).
             let has_measurement_marker = compression_markers.iter().any(|m| {
                 let l = m.to_lowercase();
-                l.contains("measurement") || l.contains("dual-lens") || l.contains("65") || l.contains("compression_tracking") || l.contains("tracking_v1")
+                l.contains("measurement")
+                    || l.contains("dual-lens")
+                    || l.contains("65")
+                    || l.contains("compression_tracking")
+                    || l.contains("tracking_v1")
             });
             if has_measurement_marker {
-                let comp_ts = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+                let comp_ts = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs();
                 let event_key = format!("compression_event_{}", comp_ts);
                 // Lightweight before/after proxy from lock state (full dual-lens lives in ki bake + harness client collection)
-                let recent_for_snapshot: Vec<String> = lock.recent(8).into_iter().map(|(c,_)| c).collect();
+                let recent_for_snapshot: Vec<String> =
+                    lock.recent(8).into_iter().map(|(c, _)| c).collect();
                 let promoted_proxy = vec![
                     "helper:next_compression_measurement_protocol_v1".to_string(),
                     "helper:promote_structured_tile_for_compression_v1".to_string(),
                     "helper:session_hydration_cache".to_string(),
-                    "tile:research_offload_pre-65--readiness-snapshot---phase-2-arc-at-63-2".to_string(),
+                    "tile:research_offload_pre-65--readiness-snapshot---phase-2-arc-at-63-2"
+                        .to_string(),
                 ];
                 let event_text = format!(
                     "CONTEXT COMPRESSION TRACKING EVENT v1\n\n\
@@ -2896,7 +3423,7 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                 );
                 let mut event_block = lock.encode(&event_text);
                 event_block.zedos_tag = engram_core::types::ZEDOS_EPISODIC;
-                event_block.crs_score = 0.93;  // High for compression events (load-bearing for continuity)
+                event_block.crs_score = 0.93; // High for compression events (load-bearing for continuity)
                 let _ = lock.store(&event_key, event_block);
                 // Auto-relate to codeland and MCP harness work (if concepts exist; non-fatal)
                 // (real relate calls best from TUI post this; here we ensure the event block exists for later binding)
@@ -2916,8 +3443,7 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                     let mut compression_manifest: Option<serde_json::Value> = None;
                     if prepare_compression {
                         let snippet: String = summary.chars().take(500).collect();
-                        let manifest =
-                            lock.refresh_compression_handoff(&key, &snippet);
+                        let manifest = lock.refresh_compression_handoff(&key, &snippet);
                         compression_manifest = Some(manifest.clone());
                         let handoff_key = manifest
                             .get("handoff_key")
@@ -2942,16 +3468,32 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                     }
 
                     // Light encouragement for the new structured trace flow
-                    if summary.to_lowercase().contains("trace:") || summary.to_lowercase().contains("reasoning trace") {
+                    if summary.to_lowercase().contains("trace:")
+                        || summary.to_lowercase().contains("reasoning trace")
+                    {
                         response.push_str("\n  → Structured reasoning traces referenced — excellent. These will appear in the ki_hijacker Ritual + Reasoning Trajectory.");
                     }
 
                     // Phase 2 strengthening (post live split test): Stronger encouragement + visibility for structured Tiles
                     // 64.4% short-list COMPRESS nudge: explicit inclusion of current arc handoff helper + measurement protocol + dual-lens keywords for highest-fidelity continuity artifacts (see trace:1779999524)
                     let lower_summary = summary.to_lowercase();
-                    if lower_summary.contains("key_decisions") || lower_summary.contains("re_hydration_hints") || lower_summary.contains("lessons_scars") || lower_summary.contains("state_machine_v0") || lower_summary.contains("research_offload") || lower_summary.contains("structured tile") || lower_summary.contains("thought tile") || lower_summary.contains("current_arc_status_gpu_item2") || lower_summary.contains("next_compression_measurement_protocol") || lower_summary.contains("65% live test") || lower_summary.contains("dual-lens") || lower_summary.contains("execution checklist") {
+                    if lower_summary.contains("key_decisions")
+                        || lower_summary.contains("re_hydration_hints")
+                        || lower_summary.contains("lessons_scars")
+                        || lower_summary.contains("state_machine_v0")
+                        || lower_summary.contains("research_offload")
+                        || lower_summary.contains("structured tile")
+                        || lower_summary.contains("thought tile")
+                        || lower_summary.contains("current_arc_status_gpu_item2")
+                        || lower_summary.contains("next_compression_measurement_protocol")
+                        || lower_summary.contains("65% live test")
+                        || lower_summary.contains("dual-lens")
+                        || lower_summary.contains("execution checklist")
+                    {
                         response.push_str("\n  → Well-formed structured Thought Tile(s) with contract fields referenced — aggressive CRS boost (0.92) applied. These are now prioritized for 0x10 compression functors (Phase 2 per live test data).");
-                    } else if lower_summary.contains("structured") || lower_summary.contains("tile:") {
+                    } else if lower_summary.contains("structured")
+                        || lower_summary.contains("tile:")
+                    {
                         response.push_str("\n  → Structured Thought Tile reference detected — elevated CRS applied.");
                     }
 
@@ -2962,14 +3504,31 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                     // reuses exact geo_context_json + training_8prop construction from record_reasoning_trace path; hot promotion
                     // + NREM bias via existing mark_hot paths in ki; lawfulness via block footer + relations.
                     {
-                        let boundary_ts = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+                        let boundary_ts = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap()
+                            .as_secs();
                         let geo_context_json = if let Some(geo) = lock.current_geosphere_state() {
-                            let al_norm: f32 = geo.active_location.iter().map(|c| c.re*c.re + c.im*c.im).sum::<f32>().sqrt();
-                            let first8: Vec<String> = geo.active_location[0..8].iter().map(|c| format!("({:.5},{:.5})", c.re, c.im)).collect();
+                            let al_norm: f32 = geo
+                                .active_location
+                                .iter()
+                                .map(|c| c.re * c.re + c.im * c.im)
+                                .sum::<f32>()
+                                .sqrt();
+                            let first8: Vec<String> = geo.active_location[0..8]
+                                .iter()
+                                .map(|c| format!("({:.5},{:.5})", c.re, c.im))
+                                .collect();
                             let lens_info = if let Some(ref l) = geo.current_lens {
-                                let lnorm: f32 = l.iter().map(|c| c.re*c.re + c.im*c.im).sum::<f32>().sqrt();
+                                let lnorm: f32 = l
+                                    .iter()
+                                    .map(|c| c.re * c.re + c.im * c.im)
+                                    .sum::<f32>()
+                                    .sqrt();
                                 format!("{{\"norm\":{:.6}}}", lnorm)
-                            } else { "{\"present\":false,\"norm\":1.0,\"origin\":\"native\"}".to_string() };
+                            } else {
+                                "{\"present\":false,\"norm\":1.0,\"origin\":\"native\"}".to_string()
+                            };
                             format!(
                                 "{{\"active_location\":{{\"norm\":{:.6},\"first8\":[{}],\"note\":\"full_8192D_in_SymplecticState_at_session_boundary\"}},\"current_lens\":{},\"frame_step\":{},\"frame_origin\":\"{}\",\"logenergetics_snapshot\":{{\"tau\":0.003,\"h_in\":0.92,\"h_out\":0.87,\"note\":\"boundary H/tau + geo for TUI continuity\"}}}}",
                                 al_norm, first8.join(","), lens_info, geo.frame_step, geo.frame_origin.as_deref().unwrap_or("native")
@@ -3009,8 +3568,22 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                         b.energetics.crs = b.crs_score;
                         b.energetics.work_verb = 0.12;
 
-                        let _short = summary.chars().take(32).collect::<String>().to_lowercase().chars().map(|c| if c.is_alphanumeric()||c=='-' {c} else {'-'}).collect::<String>();
-                        let boundary_trace_key = format!("trace:{}_session_end_boundary_auto", boundary_ts);
+                        let _short = summary
+                            .chars()
+                            .take(32)
+                            .collect::<String>()
+                            .to_lowercase()
+                            .chars()
+                            .map(|c| {
+                                if c.is_alphanumeric() || c == '-' {
+                                    c
+                                } else {
+                                    '-'
+                                }
+                            })
+                            .collect::<String>();
+                        let boundary_trace_key =
+                            format!("trace:{}_session_end_boundary_auto", boundary_ts);
                         if lock.store(&boundary_trace_key, b).is_ok() {
                             // Wire to recent session_start for chain (ki will surface in trajectory)
                             for (c, _) in recent_accesses.iter().take(5) {
@@ -3023,7 +3596,9 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                             // Serves primary if any
                             if let Some(pg) = lock.fetch_block_high_priority("primary_goal") {
                                 let ptext = String::from_utf8_lossy(&pg.payload);
-                                if let Some(line) = ptext.lines().find(|l| l.starts_with("**goal:**")) {
+                                if let Some(line) =
+                                    ptext.lines().find(|l| l.starts_with("**goal:**"))
+                                {
                                     let g = line.replace("**goal:** ", "").trim().to_string();
                                     let _ = lock.relate(&boundary_trace_key, &g, "serves");
                                 }
@@ -3054,49 +3629,127 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                         "next_wake_hint": next_wake_hint,
                         "compression_manifest": compression_manifest,
                     });
-                    let response_text = serde_json::to_string_pretty(&response_json)
-                        .unwrap_or_else(|_| response);
+                    let response_text =
+                        serde_json::to_string_pretty(&response_json).unwrap_or(response);
                     json!({ "content": [{ "type": "text", "text": response_text }] })
                 }
-                Err(e) => json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true })
+                Err(e) => {
+                    json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true })
+                }
             }
         }
         "mcp_engram_record_reasoning_trace" => {
-            let decision_point = args["decision_point"].as_str().unwrap_or("").trim().to_string();
-            let justification = args["justification"].as_str().unwrap_or("").trim().to_string();
+            let decision_point = args["decision_point"]
+                .as_str()
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            let justification = args["justification"]
+                .as_str()
+                .unwrap_or("")
+                .trim()
+                .to_string();
 
             if decision_point.is_empty() || justification.is_empty() {
                 return json!({ "content": [{ "type": "text", "text": "Error: decision_point and justification are required." }], "isError": true });
             }
 
-            let alternatives = args.get("alternatives_considered").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
-            let falsifiability = args.get("falsifiability").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
-            let related = args.get("related_entities").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
-            let ritual_ctx = args.get("ritual_context").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
-            let spatial_ctx = args.get("spatial_context").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
-            let prev = args.get("prev_trace").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
-            let goal_ctx = args.get("goal_context").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
-            let affirm = args.get("affirm").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
-            let deny = args.get("deny").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
-            let reconcile = args.get("reconcile").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
+            let alternatives = args
+                .get("alternatives_considered")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            let falsifiability = args
+                .get("falsifiability")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            let related = args
+                .get("related_entities")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            let ritual_ctx = args
+                .get("ritual_context")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            let spatial_ctx = args
+                .get("spatial_context")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            let prev = args
+                .get("prev_trace")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            let goal_ctx = args
+                .get("goal_context")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            let affirm = args
+                .get("affirm")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            let deny = args
+                .get("deny")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            let reconcile = args
+                .get("reconcile")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
 
             let mut lock = store.lock().unwrap();
 
             let (goal_ctx, auto_linked_to_primary, auto_linked_from_recent) =
                 resolve_goal_context_and_link(&mut lock, goal_ctx);
             let timestamp = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs();
 
             // Phase 2.1: capture FULL current SymplecticState at emission for geo_context in ZEDOS_TRAINING.
             // Structured object (JSON) includes active_location (norm + compact first8 for payload size),
             // current_lens, frame_step, frame_origin + Logenergetics tau/H refs (full in block.energetics).
             // Enables WS 2.2–2.5 consumers (richer CLS training, geo-aware NREM, multi-frame recall).
             let geo_context_json = if let Some(geo) = lock.current_geosphere_state() {
-                let al_norm: f32 = geo.active_location.iter().map(|c| c.re*c.re + c.im*c.im).sum::<f32>().sqrt();
-                let first8: Vec<String> = geo.active_location[0..8].iter().map(|c| format!("({:.5},{:.5})", c.re, c.im)).collect();
+                let al_norm: f32 = geo
+                    .active_location
+                    .iter()
+                    .map(|c| c.re * c.re + c.im * c.im)
+                    .sum::<f32>()
+                    .sqrt();
+                let first8: Vec<String> = geo.active_location[0..8]
+                    .iter()
+                    .map(|c| format!("({:.5},{:.5})", c.re, c.im))
+                    .collect();
                 let lens_info = if let Some(ref l) = geo.current_lens {
-                    let lnorm: f32 = l.iter().map(|c| c.re*c.re + c.im*c.im).sum::<f32>().sqrt();
-                    format!("{{\"present\":true,\"norm\":{:.6},\"origin\":\"{}\"}}", lnorm, geo.frame_origin.as_deref().unwrap_or("native"))
+                    let lnorm: f32 = l
+                        .iter()
+                        .map(|c| c.re * c.re + c.im * c.im)
+                        .sum::<f32>()
+                        .sqrt();
+                    format!(
+                        "{{\"present\":true,\"norm\":{:.6},\"origin\":\"{}\"}}",
+                        lnorm,
+                        geo.frame_origin.as_deref().unwrap_or("native")
+                    )
                 } else {
                     "{\"present\":false,\"norm\":1.0,\"origin\":\"native\"}".to_string()
                 };
@@ -3114,7 +3767,10 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                 decision_point, justification
             );
             if !alternatives.is_empty() {
-                payload.push_str(&format!("\n**alternatives_considered:** {}\n", alternatives));
+                payload.push_str(&format!(
+                    "\n**alternatives_considered:** {}\n",
+                    alternatives
+                ));
             }
             if !falsifiability.is_empty() {
                 payload.push_str(&format!("\n**falsifiability:** {}\n", falsifiability));
@@ -3195,7 +3851,13 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                 .collect::<String>()
                 .to_lowercase()
                 .chars()
-                .map(|c| if c.is_alphanumeric() || c == '-' { c } else { '-' })
+                .map(|c| {
+                    if c.is_alphanumeric() || c == '-' {
+                        c
+                    } else {
+                        '-'
+                    }
+                })
                 .collect::<String>();
             let trace_key = format!("trace:{}_{}", timestamp, short);
 
@@ -3222,7 +3884,9 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
 
                     json!({ "content": [{ "type": "text", "text": format!("✓ Reasoning trace recorded: {} (ZEDOS_TRAINING 8-prop)", trace_key) }] })
                 }
-                Err(e) => json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true })
+                Err(e) => {
+                    json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true })
+                }
             }
         }
         "mcp_engram_quick_trace" => {
@@ -3234,30 +3898,88 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                 return json!({ "content": [{ "type": "text", "text": "Error: decision and why are required." }], "isError": true });
             }
 
-            let alternatives = args.get("alternatives").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
-            let would_falsify = args.get("would_falsify").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
-            let context = args.get("context").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
-            let prev = args.get("prev").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
-            let goal_ctx = args.get("goal_context").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
+            let alternatives = args
+                .get("alternatives")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            let would_falsify = args
+                .get("would_falsify")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            let context = args
+                .get("context")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            let prev = args
+                .get("prev")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            let goal_ctx = args
+                .get("goal_context")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
             // Phase 1 completion: A/D/R triad parity for low-friction quick_trace (schema already declared; now wired in handler for full support + test data generation)
-            let affirm = args.get("affirm").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
-            let deny = args.get("deny").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
-            let reconcile = args.get("reconcile").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
+            let affirm = args
+                .get("affirm")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            let deny = args
+                .get("deny")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            let reconcile = args
+                .get("reconcile")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
 
             let mut lock = store.lock().unwrap();
 
             let (goal_ctx, auto_linked_to_primary, auto_linked_from_recent) =
                 resolve_goal_context_and_link(&mut lock, goal_ctx);
             let timestamp = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs();
 
             // Phase 2.1 quick_trace path: FULL SymplecticState snapshot for geo_context (mirrors record handler).
             let geo_context_json = if let Some(geo) = lock.current_geosphere_state() {
-                let al_norm: f32 = geo.active_location.iter().map(|c| c.re*c.re + c.im*c.im).sum::<f32>().sqrt();
-                let first8: Vec<String> = geo.active_location[0..8].iter().map(|c| format!("({:.5},{:.5})", c.re, c.im)).collect();
+                let al_norm: f32 = geo
+                    .active_location
+                    .iter()
+                    .map(|c| c.re * c.re + c.im * c.im)
+                    .sum::<f32>()
+                    .sqrt();
+                let first8: Vec<String> = geo.active_location[0..8]
+                    .iter()
+                    .map(|c| format!("({:.5},{:.5})", c.re, c.im))
+                    .collect();
                 let lens_info = if let Some(ref l) = geo.current_lens {
-                    let lnorm: f32 = l.iter().map(|c| c.re*c.re + c.im*c.im).sum::<f32>().sqrt();
-                    format!("{{\"present\":true,\"norm\":{:.6},\"origin\":\"{}\"}}", lnorm, geo.frame_origin.as_deref().unwrap_or("native"))
+                    let lnorm: f32 = l
+                        .iter()
+                        .map(|c| c.re * c.re + c.im * c.im)
+                        .sum::<f32>()
+                        .sqrt();
+                    format!(
+                        "{{\"present\":true,\"norm\":{:.6},\"origin\":\"{}\"}}",
+                        lnorm,
+                        geo.frame_origin.as_deref().unwrap_or("native")
+                    )
                 } else {
                     "{\"present\":false,\"norm\":1.0,\"origin\":\"native\"}".to_string()
                 };
@@ -3275,7 +3997,10 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                 decision, why
             );
             if !alternatives.is_empty() {
-                payload.push_str(&format!("\n**alternatives_considered:** {}\n", alternatives));
+                payload.push_str(&format!(
+                    "\n**alternatives_considered:** {}\n",
+                    alternatives
+                ));
             }
             if !would_falsify.is_empty() {
                 payload.push_str(&format!("\n**falsifiability:** {}\n", would_falsify));
@@ -3347,7 +4072,13 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                 .collect::<String>()
                 .to_lowercase()
                 .chars()
-                .map(|c| if c.is_alphanumeric() || c == '-' { c } else { '-' })
+                .map(|c| {
+                    if c.is_alphanumeric() || c == '-' {
+                        c
+                    } else {
+                        '-'
+                    }
+                })
                 .collect::<String>();
             let trace_key = format!("trace:{}_{}", timestamp, short);
 
@@ -3371,7 +4102,9 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
 
                     json!({ "content": [{ "type": "text", "text": format!("✓ Quick trace recorded: {} (ZEDOS_TRAINING 8-prop)", trace_key) }] })
                 }
-                Err(e) => json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true })
+                Err(e) => {
+                    json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true })
+                }
             }
         }
         "mcp_engram_goal_create" => {
@@ -3380,16 +4113,43 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                 return json!({ "content": [{ "type": "text", "text": "Error: statement is required." }], "isError": true });
             }
 
-            let parent = args.get("parent").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
-            let priority = args.get("priority").and_then(|v| v.as_str()).unwrap_or("medium").trim().to_string();
+            let parent = args
+                .get("parent")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            let priority = args
+                .get("priority")
+                .and_then(|v| v.as_str())
+                .unwrap_or("medium")
+                .trim()
+                .to_string();
             // Phase 1 A/D/R for goals (enables fruits coherence tracking on intentional self-model)
-            let goal_affirm = args.get("affirm").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
-            let goal_deny = args.get("deny").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
-            let goal_reconcile = args.get("reconcile").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
+            let goal_affirm = args
+                .get("affirm")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            let goal_deny = args
+                .get("deny")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            let goal_reconcile = args
+                .get("reconcile")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
 
             let mut lock = store.lock().unwrap();
             let timestamp = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs();
 
             let short = statement
                 .chars()
@@ -3397,7 +4157,13 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                 .collect::<String>()
                 .to_lowercase()
                 .chars()
-                .map(|c| if c.is_alphanumeric() || c == '-' { c } else { '-' })
+                .map(|c| {
+                    if c.is_alphanumeric() || c == '-' {
+                        c
+                    } else {
+                        '-'
+                    }
+                })
                 .collect::<String>();
             let goal_key = args
                 .get("goal_id")
@@ -3448,13 +4214,20 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                     }
                     json!({ "content": [{ "type": "text", "text": format!("✓ Goal created: {}", goal_key) }] })
                 }
-                Err(e) => json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true })
+                Err(e) => {
+                    json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true })
+                }
             }
         }
         "mcp_engram_goal_update_status" => {
             let goal = args["goal"].as_str().unwrap_or("").trim().to_string();
             let status = args["status"].as_str().unwrap_or("").trim().to_string();
-            let note = args.get("note").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
+            let note = args
+                .get("note")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
 
             if goal.is_empty() || status.is_empty() {
                 return json!({ "content": [{ "type": "text", "text": "Error: goal and status are required." }], "isError": true });
@@ -3464,8 +4237,12 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
             // Hot path upgrade: goals are high-priority for intentional self-model continuity.
             if let Some(mut block) = lock.fetch_block_high_priority(&goal) {
                 // Simple approach: append status change to payload (real implementation would parse + rewrite structured section)
-                let update_text = format!("\n\n--- Status Update ---\nstatus: {}\nnote: {}\ntimestamp: {}\n", 
-                    status, note, chrono::Utc::now().to_rfc3339());
+                let update_text = format!(
+                    "\n\n--- Status Update ---\nstatus: {}\nnote: {}\ntimestamp: {}\n",
+                    status,
+                    note,
+                    chrono::Utc::now().to_rfc3339()
+                );
 
                 // For MVP, we just append to the existing payload text
                 let mut new_payload = block.payload.to_vec();
@@ -3475,13 +4252,19 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                     block.payload[i] = *b;
                 }
 
-                block.crs_score = if status == "completed" || status == "demoted" { 0.85 } else { block.crs_score };
+                block.crs_score = if status == "completed" || status == "demoted" {
+                    0.85
+                } else {
+                    block.crs_score
+                };
 
                 match lock.store(&goal, block) {
                     Ok(_) => {
                         json!({ "content": [{ "type": "text", "text": format!("✓ Goal {} status updated to {}", goal, status) }] })
                     }
-                    Err(e) => json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true })
+                    Err(e) => {
+                        json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true })
+                    }
                 }
             } else {
                 json!({ "content": [{ "type": "text", "text": format!("Goal not found: {}", goal) }], "isError": true })
@@ -3506,9 +4289,10 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                 }) {
                     output.push_str(&format!("{}\n", line));
                 }
-                if let Some(line) = text.lines().find(|l| {
-                    l.starts_with("status:") || l.starts_with("**status:**")
-                }) {
+                if let Some(line) = text
+                    .lines()
+                    .find(|l| l.starts_with("status:") || l.starts_with("**status:**"))
+                {
                     output.push_str(&format!("{}\n", line));
                 }
 
@@ -3523,9 +4307,14 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
         }
         "mcp_engram_goal_decompose" => {
             let parent = args["parent"].as_str().unwrap_or("").trim().to_string();
-            let statements: Vec<String> = args.get("statements")
+            let statements: Vec<String> = args
+                .get("statements")
                 .and_then(|v| v.as_array())
-                .map(|arr| arr.iter().filter_map(|s| s.as_str().map(|x| x.trim().to_string())).collect())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|s| s.as_str().map(|x| x.trim().to_string()))
+                        .collect()
+                })
                 .unwrap_or_default();
 
             if parent.is_empty() || statements.is_empty() {
@@ -3534,15 +4323,26 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
 
             let mut lock = store.lock().unwrap();
             let timestamp_base = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs();
 
             let mut created = Vec::new();
 
             for (i, stmt) in statements.iter().enumerate() {
-                let short = stmt.chars().take(40).collect::<String>()
+                let short = stmt
+                    .chars()
+                    .take(40)
+                    .collect::<String>()
                     .to_lowercase()
                     .chars()
-                    .map(|c| if c.is_alphanumeric() || c == '-' { c } else { '-' })
+                    .map(|c| {
+                        if c.is_alphanumeric() || c == '-' {
+                            c
+                        } else {
+                            '-'
+                        }
+                    })
                     .collect::<String>();
 
                 let goal_key = format!("goal:{}_{}_sub{}", timestamp_base, short, i);
@@ -3566,11 +4366,18 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
         }
         "mcp_engram_goal_search" => {
             let query = args["query"].as_str().unwrap_or("").trim().to_lowercase();
-            let status_filter = args.get("status").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
+            let status_filter = args
+                .get("status")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
             let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(10) as usize;
 
             let mut lock = store.lock().unwrap();
-            let mut matches: Vec<_> = lock.list().into_iter()
+            let mut matches: Vec<_> = lock
+                .list()
+                .into_iter()
                 .filter(|c| c.starts_with("goal:"))
                 // Tier 2 broaden (goal handler hot path): upgrade to high_priority for intentional self-model continuity.
                 // Consistent with goal_status / goal_update_status / set_primary already using it; goals are promotable.
@@ -3581,27 +4388,37 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                 let text = crate::store::goal_block_text(b);
                 let lower = text.to_lowercase();
                 let matches_text = lower.contains(&query);
-                let matches_status =
-                    crate::store::goal_status_matches(&text, &status_filter);
+                let matches_status = crate::store::goal_status_matches(&text, &status_filter);
                 matches_text && matches_status
             });
 
-            matches.sort_by(|a, b| b.1.crs_score.partial_cmp(&a.1.crs_score).unwrap_or(std::cmp::Ordering::Equal));
+            matches.sort_by(|a, b| {
+                b.1.crs_score
+                    .partial_cmp(&a.1.crs_score)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
             matches.truncate(limit);
 
             let mut output = format!("Goal search results for '{}':\n\n", query);
             for (concept, block) in &matches {
-                let short = concept.split(':').last().unwrap_or(concept);
+                let short = concept.split(':').next_back().unwrap_or(concept);
                 let text = crate::store::goal_block_text(block);
                 let stmt = text
                     .lines()
-                    .find(|l| l.starts_with("goal_statement:") || l.starts_with("**goal_statement:**"))
+                    .find(|l| {
+                        l.starts_with("goal_statement:") || l.starts_with("**goal_statement:**")
+                    })
                     .map(|l| {
                         l.replace("goal_statement: ", "")
                             .replace("**goal_statement:** ", "")
                     })
                     .unwrap_or_default();
-                output.push_str(&format!("- **{}** (CRS: {:.2})\n  {}\n", short, block.crs_score, stmt.chars().take(80).collect::<String>()));
+                output.push_str(&format!(
+                    "- **{}** (CRS: {:.2})\n  {}\n",
+                    short,
+                    block.crs_score,
+                    stmt.chars().take(80).collect::<String>()
+                ));
             }
 
             json!({ "content": [{ "type": "text", "text": output }] })
@@ -3613,7 +4430,9 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
             }
 
             let mut lock = store.lock().unwrap();
-            let children: Vec<_> = lock.list().into_iter()
+            let children: Vec<_> = lock
+                .list()
+                .into_iter()
                 .filter(|c| c.starts_with("goal:"))
                 .filter_map(|c| {
                     // Tier 2 broaden (goal handler): high_priority for child lookup (promotable via goal ops)
@@ -3632,14 +4451,14 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
 
             let mut output = format!("Children of {}:\n\n", parent);
             for (concept, block) in &children {
-                let short = concept.split(':').last().unwrap_or(concept);
+                let short = concept.split(':').next_back().unwrap_or(concept);
                 output.push_str(&format!("- **{}** (CRS: {:.2})\n", short, block.crs_score));
             }
 
             json!({ "content": [{ "type": "text", "text": output }] })
         }
         "mcp_engram_goal_set_primary" => {
-            let goal = args_str(&args, &["goal", "goal_id", "goal_concept"])
+            let goal = args_str(args, &["goal", "goal_id", "goal_concept"])
                 .unwrap_or("")
                 .to_string();
             if goal.is_empty() {
@@ -3648,7 +4467,11 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
 
             let mut lock = store.lock().unwrap();
             let goal_exists = lock.fetch_block_high_priority(&goal).is_some();
-            let payload = format!("PRIMARY GOAL\n\n**goal:** {}\n**set_at:** {}", goal, chrono::Utc::now().to_rfc3339());
+            let payload = format!(
+                "PRIMARY GOAL\n\n**goal:** {}\n**set_at:** {}",
+                goal,
+                chrono::Utc::now().to_rfc3339()
+            );
 
             let mut marker = lock.encode(&payload);
             marker.zedos_tag = engram_core::types::ZEDOS_OPERATIONAL;
@@ -3662,7 +4485,10 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                         let _ = lock.relate("primary_goal", &goal, "serves");
                     }
                     let msg = if goal_exists {
-                        format!("✓ Primary goal set to {} (linked primary_goal → serves → {})", goal, goal)
+                        format!(
+                            "✓ Primary goal set to {} (linked primary_goal → serves → {})",
+                            goal, goal
+                        )
                     } else {
                         format!(
                             "✓ Primary goal marker set to {} (warning: no `goal:*` block found — create with mcp_engram_goal_create or relate manually)",
@@ -3671,15 +4497,24 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                     };
                     json!({ "content": [{ "type": "text", "text": msg }] })
                 }
-                Err(e) => json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true })
+                Err(e) => {
+                    json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true })
+                }
             }
         }
         "mcp_engram_goal_list" => {
-            let status_filter = args.get("status").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
+            let status_filter = args
+                .get("status")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
             let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(10) as usize;
 
             let mut lock = store.lock().unwrap();
-            let mut goals: Vec<_> = lock.list().into_iter()
+            let mut goals: Vec<_> = lock
+                .list()
+                .into_iter()
                 .filter(|c| c.starts_with("goal:"))
                 // Tier 2 broaden (goal_list handler loop): high_priority; goal:* blocks are high-value for self-model and already high_prio'd in sibling handlers
                 .filter_map(|c| lock.fetch_block_high_priority(&c).map(|b| (c, b)))
@@ -3692,12 +4527,16 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                 });
             }
 
-            goals.sort_by(|a, b| b.1.crs_score.partial_cmp(&a.1.crs_score).unwrap_or(std::cmp::Ordering::Equal));
+            goals.sort_by(|a, b| {
+                b.1.crs_score
+                    .partial_cmp(&a.1.crs_score)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
             goals.truncate(limit);
 
             let mut output = String::from("Active/Recent Goals:\n\n");
             for (concept, block) in &goals {
-                let short = concept.split(':').last().unwrap_or(concept);
+                let short = concept.split(':').next_back().unwrap_or(concept);
                 let text = crate::store::goal_block_text(block);
                 let status_line = text
                     .lines()
@@ -3705,13 +4544,22 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                     .unwrap_or("status: unknown");
                 let stmt = text
                     .lines()
-                    .find(|l| l.starts_with("goal_statement:") || l.starts_with("**goal_statement:**"))
+                    .find(|l| {
+                        l.starts_with("goal_statement:") || l.starts_with("**goal_statement:**")
+                    })
                     .map(|l| {
                         l.replace("goal_statement: ", "")
                             .replace("**goal_statement:** ", "")
                     })
                     .unwrap_or_default();
-                output.push_str(&format!("- **{}** (CRS: {:.2}, dv: {:.2})\n  {} | {}\n", short, block.crs_score, block.energetics.dv, stmt.chars().take(70).collect::<String>(), status_line));
+                output.push_str(&format!(
+                    "- **{}** (CRS: {:.2}, dv: {:.2})\n  {} | {}\n",
+                    short,
+                    block.crs_score,
+                    block.energetics.dv,
+                    stmt.chars().take(70).collect::<String>(),
+                    status_line
+                ));
             }
 
             json!({ "content": [{ "type": "text", "text": output }] })
@@ -3719,14 +4567,42 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
 
         // --- Thought Tile handlers (Item 2) ---
         "mcp_engram_thought_tile_create" => {
-            let tile_type = args.get("tile_type").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
-            let title = args.get("title").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
-            let payload = args.get("payload").cloned().unwrap_or(serde_json::json!({}));
-            let goal_ctx = args.get("goal_context").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
-            let parent_tile = args.get("parent_tile").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
-            let spatial_refs: Vec<String> = args.get("spatial_references")
+            let tile_type = args
+                .get("tile_type")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            let title = args
+                .get("title")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            let payload = args
+                .get("payload")
+                .cloned()
+                .unwrap_or(serde_json::json!({}));
+            let goal_ctx = args
+                .get("goal_context")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            let parent_tile = args
+                .get("parent_tile")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            let spatial_refs: Vec<String> = args
+                .get("spatial_references")
                 .and_then(|v| v.as_array())
-                .map(|arr| arr.iter().filter_map(|s| s.as_str().map(|x| x.to_string())).collect())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|s| s.as_str().map(|x| x.to_string()))
+                        .collect()
+                })
                 .unwrap_or_default();
 
             if tile_type.is_empty() || title.is_empty() {
@@ -3739,7 +4615,9 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                 resolve_goal_context_and_link(&mut lock, goal_ctx);
 
             let _timestamp = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs();
 
             let short = title
                 .chars()
@@ -3747,7 +4625,13 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                 .collect::<String>()
                 .to_lowercase()
                 .chars()
-                .map(|c| if c.is_alphanumeric() || c == '-' { c } else { '-' })
+                .map(|c| {
+                    if c.is_alphanumeric() || c == '-' {
+                        c
+                    } else {
+                        '-'
+                    }
+                })
                 .collect::<String>();
             let tile_key = format!("tile:{}_{}", tile_type, short);
 
@@ -3763,7 +4647,9 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
             // in the stored textual representation when supplied.
             let mut tile_payload = format!(
                 "THOUGHT TILE\n\n**tile_type:** {}\n**title:** {}\n\n**payload:** {}\n",
-                tile_type, title, serde_json::to_string_pretty(&payload).unwrap_or_default()
+                tile_type,
+                title,
+                serde_json::to_string_pretty(&payload).unwrap_or_default()
             );
 
             // If the payload contains known contract fields, surface them at the top level for readability
@@ -3772,13 +4658,19 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                     tile_payload.push_str(&format!("\n**contract_summary:** {}\n", summary));
                 }
                 if let Some(state) = obj.get("current_state") {
-                    tile_payload.push_str(&format!("\n**current_state:** {}\n", serde_json::to_string_pretty(state).unwrap_or_default()));
+                    tile_payload.push_str(&format!(
+                        "\n**current_state:** {}\n",
+                        serde_json::to_string_pretty(state).unwrap_or_default()
+                    ));
                 }
                 if let Some(re_hydration) = obj.get("re_hydration_hints").and_then(|v| v.as_str()) {
                     tile_payload.push_str(&format!("\n**re_hydration_hints:** {}\n", re_hydration));
                 }
                 if let Some(lessons) = obj.get("lessons_scars") {
-                    tile_payload.push_str(&format!("\n**lessons_scars:** {}\n", serde_json::to_string_pretty(lessons).unwrap_or_default()));
+                    tile_payload.push_str(&format!(
+                        "\n**lessons_scars:** {}\n",
+                        serde_json::to_string_pretty(lessons).unwrap_or_default()
+                    ));
                 }
             }
             if !goal_ctx.is_empty() {
@@ -3822,18 +4714,39 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                     }
                     json!({ "content": [{ "type": "text", "text": format!("✓ Thought Tile created: {}\n  hot_path: promoted (mcp_engram_promote_hot)\n  (textual functor payload ready for agent use; pair with create_visualization for rich human view)", tile_key) }] })
                 }
-                Err(e) => json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true })
+                Err(e) => {
+                    json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true })
+                }
             }
         }
         "mcp_engram_thought_tile_create_visualization" => {
             // Visualization/compound document path. Supports rich HTML payloads (via mint_html_visualization_payload or raw).
             // Recommended to pair with a textual functor payload Tile for best agent + human dual representation.
-            let title = args.get("title").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
-            let payload = args.get("payload").and_then(|v| v.as_str()).unwrap_or("").to_string();
-            let goal_ctx = args.get("goal_context").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
-            let spatial_refs: Vec<String> = args.get("spatial_references")
+            let title = args
+                .get("title")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            let payload = args
+                .get("payload")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let goal_ctx = args
+                .get("goal_context")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            let spatial_refs: Vec<String> = args
+                .get("spatial_references")
                 .and_then(|v| v.as_array())
-                .map(|arr| arr.iter().filter_map(|s| s.as_str().map(|x| x.to_string())).collect())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|s| s.as_str().map(|x| x.to_string()))
+                        .collect()
+                })
                 .unwrap_or_default();
 
             if title.is_empty() || payload.is_empty() {
@@ -3846,9 +4759,23 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                 resolve_goal_context_and_link(&mut lock, goal_ctx);
 
             let _timestamp = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
-            let short = title.chars().take(48).collect::<String>().to_lowercase().chars()
-                .map(|c| if c.is_alphanumeric() || c == '-' { c } else { '-' }).collect::<String>();
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs();
+            let short = title
+                .chars()
+                .take(48)
+                .collect::<String>()
+                .to_lowercase()
+                .chars()
+                .map(|c| {
+                    if c.is_alphanumeric() || c == '-' {
+                        c
+                    } else {
+                        '-'
+                    }
+                })
+                .collect::<String>();
             let tile_key = format!("tile:html_visualization_{}", short);
 
             let mut tile_payload = format!(
@@ -3857,8 +4784,12 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
             );
             if !goal_ctx.is_empty() {
                 tile_payload.push_str(&format!("\n\n**goal_context:** {}\n", goal_ctx));
-                if auto_linked_to_primary { tile_payload.push_str("**auto_linked_to_primary:** true\n"); }
-                if auto_linked_from_recent { tile_payload.push_str("**auto_linked_from_recent_activity:** true\n"); }
+                if auto_linked_to_primary {
+                    tile_payload.push_str("**auto_linked_to_primary:** true\n");
+                }
+                if auto_linked_from_recent {
+                    tile_payload.push_str("**auto_linked_from_recent_activity:** true\n");
+                }
             }
 
             let mut tile_block = lock.encode(&tile_payload);
@@ -3879,14 +4810,29 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                     }
                     json!({ "content": [{ "type": "text", "text": format!("✓ Visualization Thought Tile created: {} (hot_path promoted; pair with textual functor tile for agent-primary use)", tile_key) }] })
                 }
-                Err(e) => json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true })
+                Err(e) => {
+                    json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true })
+                }
             }
         }
 
         "mcp_engram_thought_tile_write_result" => {
-            let tile = args.get("tile").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
-            let result_payload = args.get("result_payload").cloned().unwrap_or(serde_json::json!({}));
-            let status = args.get("status").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
+            let tile = args
+                .get("tile")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            let result_payload = args
+                .get("result_payload")
+                .cloned()
+                .unwrap_or(serde_json::json!({}));
+            let status = args
+                .get("status")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
 
             if tile.is_empty() {
                 return json!({ "content": [{ "type": "text", "text": "Error: tile is required." }], "isError": true });
@@ -3911,7 +4857,8 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                 }
 
                 // For State Machine tiles, recommend structured update format
-                if current_text.contains("state_machine") || current_text.contains("\"tile_type\"") {
+                if current_text.contains("state_machine") || current_text.contains("\"tile_type\"")
+                {
                     new_content.push_str("**structured_update_recommended:** Include 'current_state' and 'transition' objects in result_payload for clean history.\n");
                 }
 
@@ -3928,7 +4875,9 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                         lock.mark_ki_rebake_needed();
                         json!({ "content": [{ "type": "text", "text": format!("✓ Result written to Thought Tile: {}\n  (momentum refreshed; consider creating a visualization companion if this is now a high-value state)", tile) }] })
                     }
-                    Err(e) => json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true })
+                    Err(e) => {
+                        json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true })
+                    }
                 }
             } else {
                 json!({ "content": [{ "type": "text", "text": format!("Tile not found: {}", tile) }], "isError": true })
@@ -3936,7 +4885,6 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
         }
 
         // --- end Thought Tile handlers ---
-
         "mcp_engram_pin" => {
             let concept = args["concept"].as_str().unwrap_or("").trim().to_string();
             let mut lock = store.lock().unwrap();
@@ -3951,13 +4899,13 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
         }
 
         "mcp_engram_relate" => {
-            let concept_a = args_str(&args, &["concept_a", "from", "source"])
+            let concept_a = args_str(args, &["concept_a", "from", "source"])
                 .unwrap_or("")
                 .to_string();
-            let concept_b = args_str(&args, &["concept_b", "to", "target"])
+            let concept_b = args_str(args, &["concept_b", "to", "target"])
                 .unwrap_or("")
                 .to_string();
-            let label = args_str(&args, &["label", "relation", "rel"])
+            let label = args_str(args, &["label", "relation", "rel"])
                 .unwrap_or("")
                 .to_string();
 
@@ -3973,19 +4921,27 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
             }
 
             // Strip sheaf prefix if present, since relate() uses fetch_block internally
-            let raw_a = concept_a.split_once("::").map_or(concept_a.as_str(), |(_, r)| r);
-            let raw_b = concept_b.split_once("::").map_or(concept_b.as_str(), |(_, r)| r);
+            let raw_a = concept_a
+                .split_once("::")
+                .map_or(concept_a.as_str(), |(_, r)| r);
+            let raw_b = concept_b
+                .split_once("::")
+                .map_or(concept_b.as_str(), |(_, r)| r);
 
             let mut s = match store.lock() {
                 Ok(l) => l,
-                Err(p) => return json!({
-                    "content": [{ "type": "text", "text": format!("Error: store mutex poisoned: {}", p) }],
-                    "isError": true
-                }),
+                Err(p) => {
+                    return json!({
+                        "content": [{ "type": "text", "text": format!("Error: store mutex poisoned: {}", p) }],
+                        "isError": true
+                    })
+                }
             };
             match s.relate(raw_a, raw_b, &label) {
                 Ok(msg) => json!({ "content": [{ "type": "text", "text": msg }] }),
-                Err(e)  => json!({ "content": [{ "type": "text", "text": format!("Error adding relation: {e}") }], "isError": true }),
+                Err(e) => {
+                    json!({ "content": [{ "type": "text", "text": format!("Error adding relation: {e}") }], "isError": true })
+                }
             }
         }
 
@@ -4002,14 +4958,19 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
             }
             let line_start = args["line_start"].as_u64().map(|v| v as u32);
             let line_end = args["line_end"].as_u64().map(|v| v as u32);
-            let auto_ingest = args.get("auto_ingest").and_then(|v| v.as_bool()).unwrap_or(true);
+            let auto_ingest = args
+                .get("auto_ingest")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(true);
 
             let payload = match store.lock() {
                 Ok(mut l) => l.context_for_edit(path, line_start, line_end, auto_ingest),
-                Err(p) => return json!({
-                    "content": [{ "type": "text", "text": format!("Error: store mutex poisoned: {}", p) }],
-                    "isError": true
-                }),
+                Err(p) => {
+                    return json!({
+                        "content": [{ "type": "text", "text": format!("Error: store mutex poisoned: {}", p) }],
+                        "isError": true
+                    })
+                }
             };
             json!({
                 "content": [{
@@ -4028,10 +4989,12 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
             // Use the dedicated context_for_file method which enriches queries with language context
             let results = match store.lock() {
                 Ok(mut l) => l.context_for_file(&path),
-                Err(p) => return json!({
-                    "content": [{ "type": "text", "text": format!("Error: store mutex poisoned: {}", p) }],
-                    "isError": true
-                }),
+                Err(p) => {
+                    return json!({
+                        "content": [{ "type": "text", "text": format!("Error: store mutex poisoned: {}", p) }],
+                        "isError": true
+                    })
+                }
             };
             if results.is_empty() {
                 return json!({ "content": [{ "type": "text", "text": format!("No specific topological memory found for {}", path) }] });
@@ -4041,25 +5004,38 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
 
             // Small Item 1.5 practice improvement: if we have spatial AST data from force_ingest,
             // surface it clearly at the top so the Code Edit Ritual experience is better.
-            let has_spatial = results.iter().any(|m| m.explain.contains("spatial_ast_match"));
+            let has_spatial = results
+                .iter()
+                .any(|m| m.explain.contains("spatial_ast_match"));
             if has_spatial {
-                output.push_str("**Spatial AST data prioritized** (from Item 1.5 force_ingest bootstrap)\n\n");
+                output.push_str(
+                    "**Spatial AST data prioritized** (from Item 1.5 force_ingest bootstrap)\n\n",
+                );
             }
 
             for mem in results.iter() {
                 output.push_str(&format!(
                     "**{}** (crs: {:.2})\n{}\n\n",
-                    mem.concept, mem.crs,
-                    if mem.provlog.is_empty() { "(no text content)" } else { mem.provlog.as_str() }
+                    mem.concept,
+                    mem.crs,
+                    if mem.provlog.is_empty() {
+                        "(no text content)"
+                    } else {
+                        mem.provlog.as_str()
+                    }
                 ));
             }
             json!({ "content": [{ "type": "text", "text": output.trim() }] })
         }
 
         "mcp_engram_remember_solution" => {
-            let error_pattern = args["error_pattern"].as_str().unwrap_or("").trim().to_string();
-            let solution      = args["solution"].as_str().unwrap_or("").trim().to_string();
-            
+            let error_pattern = args["error_pattern"]
+                .as_str()
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            let solution = args["solution"].as_str().unwrap_or("").trim().to_string();
+
             if error_pattern.is_empty() || solution.is_empty() {
                 return json!({ "content": [{ "type": "text", "text": "Error: missing required strings" }], "isError": true });
             }
@@ -4069,7 +5045,10 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
             let mut h = std::collections::hash_map::DefaultHasher::new();
             error_pattern.hash(&mut h);
             let concept_name = format!("praxis_solution_{}", h.finish());
-            let payload = format!("ERROR PATTERN:\n{}\n\nSOLUTION:\n{}", error_pattern, solution);
+            let payload = format!(
+                "ERROR PATTERN:\n{}\n\nSOLUTION:\n{}",
+                error_pattern, solution
+            );
 
             let mut lock = store.lock().unwrap();
             match lock.remember(&concept_name, &payload) {
@@ -4083,7 +5062,9 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                     }
                     json!({ "content": [{ "type": "text", "text": format!("✓ Crystallized Solution permanently into geometric memory (CRS = 1.0).\nStored as: {}", concept_name) }] })
                 }
-                Err(e) => json!({ "content": [{ "type": "text", "text": format!("Failed to crystallize solution: {}", e) }], "isError": true })
+                Err(e) => {
+                    json!({ "content": [{ "type": "text", "text": format!("Failed to crystallize solution: {}", e) }], "isError": true })
+                }
             }
         }
 
@@ -4109,14 +5090,24 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                 let key = name.split_once("::").map_or(name.as_str(), |(_, r)| r);
                 if let Some(block) = lock.fetch_block_high_priority(key) {
                     let crs = block.crs_score;
-                    if crs >= 1.0 { pinned += 1; }
+                    if crs >= 1.0 {
+                        pinned += 1;
+                    }
                     crs_sum += crs;
-                    if crs < crs_min { crs_min = crs; }
-                    if crs > crs_max { crs_max = crs; }
+                    if crs < crs_min {
+                        crs_min = crs;
+                    }
+                    if crs > crs_max {
+                        crs_max = crs;
+                    }
                     sampled += 1;
                 }
             }
-            let avg_crs = if sampled > 0 { crs_sum / sampled as f32 } else { 0.0 };
+            let avg_crs = if sampled > 0 {
+                crs_sum / sampled as f32
+            } else {
+                0.0
+            };
             drop(lock);
 
             // HolographicBlock is 256KB-aligned; avoid summing 180k metadata entries.
@@ -4155,7 +5146,11 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                  Disk Usage     : {disk_kb:.1} KB ({})\n\
                  Store Path     : {path}{sample_note}",
                 if sampled > 0 { crs_min } else { 0.0 },
-                if large { "~256KB/block estimate" } else { "exact" }
+                if large {
+                    "~256KB/block estimate"
+                } else {
+                    "exact"
+                }
             );
             json!({ "content": [{ "type": "text", "text": report }] })
         }
@@ -4174,10 +5169,15 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                     .map(|d| d.as_secs())
                     .unwrap_or(0);
                 let age_secs = now.saturating_sub(*ts);
-                let age = if age_secs < 60 { format!("{age_secs}s ago") }
-                    else if age_secs < 3600 { format!("{}m ago", age_secs / 60) }
-                    else if age_secs < 86400 { format!("{}h ago", age_secs / 3600) }
-                    else { format!("{}d ago", age_secs / 86400) };
+                let age = if age_secs < 60 {
+                    format!("{age_secs}s ago")
+                } else if age_secs < 3600 {
+                    format!("{}m ago", age_secs / 60)
+                } else if age_secs < 86400 {
+                    format!("{}h ago", age_secs / 3600)
+                } else {
+                    format!("{}d ago", age_secs / 86400)
+                };
                 out.push_str(&format!("  {}. {} ({})", i + 1, concept, age));
                 out.push('\n');
             }
@@ -4211,8 +5211,15 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
             if namespaces.is_empty() {
                 json!({ "content": [{ "type": "text", "text": "Only the default namespace exists." }] })
             } else {
-                let list = namespaces.iter()
-                    .map(|ns| if ns == &active { format!("  • {} ← active", ns) } else { format!("  • {}", ns) })
+                let list = namespaces
+                    .iter()
+                    .map(|ns| {
+                        if ns == &active {
+                            format!("  • {} ← active", ns)
+                        } else {
+                            format!("  • {}", ns)
+                        }
+                    })
                     .collect::<Vec<_>>()
                     .join("\n");
                 json!({ "content": [{ "type": "text", "text": format!("Namespaces ({}):\n{}", namespaces.len(), list) }] })
@@ -4220,7 +5227,7 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
         }
 
         "mcp_engram_update" => {
-            let concept  = args["concept"].as_str().unwrap_or("").trim().to_string();
+            let concept = args["concept"].as_str().unwrap_or("").trim().to_string();
             let new_text = args["new_text"].as_str().unwrap_or("").trim().to_string();
             if concept.is_empty() || new_text.is_empty() {
                 return json!({ "content": [{ "type": "text", "text": "Error: concept and new_text are required." }], "isError": true });
@@ -4230,7 +5237,9 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                     info!("updated: {concept}");
                     json!({ "content": [{ "type": "text", "text": format!("✓ Updated memory '{concept}': {status}") }] })
                 }
-                Err(e) => json!({ "content": [{ "type": "text", "text": format!("Error updating '{concept}': {e}") }], "isError": true })
+                Err(e) => {
+                    json!({ "content": [{ "type": "text", "text": format!("Error updating '{concept}': {e}") }], "isError": true })
+                }
             }
         }
 
@@ -4338,12 +5347,18 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
             let mut ranked: Vec<(String, f32, String)> = Vec::new();
 
             for name in &concepts {
-                if let Some(block) = lock.fetch_block_high_priority(name.split_once("::").map_or(name.as_str(), |(_, r)| r)) {
+                if let Some(block) = lock.fetch_block_high_priority(
+                    name.split_once("::").map_or(name.as_str(), |(_, r)| r),
+                ) {
                     let crs = block.crs_score;
                     let raw = String::from_utf8_lossy(&block.payload);
                     let text = raw.trim_matches('\0');
                     let preview: String = text.chars().take(120).collect();
-                    let preview = if text.len() > 120 { format!("{}...", preview) } else { preview.to_string() };
+                    let preview = if text.len() > 120 {
+                        format!("{}...", preview)
+                    } else {
+                        preview.to_string()
+                    };
                     if crs >= 1.0 {
                         pinned.push((name.clone(), crs, preview));
                     } else {
@@ -4365,13 +5380,25 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
             if !pinned.is_empty() {
                 out.push_str(&format!("\n\u{1f4cc} PINNED ({}):\n", pinned.len()));
                 for (i, (name, crs, preview)) in pinned.iter().enumerate() {
-                    out.push_str(&format!("  {}. {} [CRS {:.3}]\n     {}\n\n", i + 1, name, crs, preview));
+                    out.push_str(&format!(
+                        "  {}. {} [CRS {:.3}]\n     {}\n\n",
+                        i + 1,
+                        name,
+                        crs,
+                        preview
+                    ));
                 }
             }
             if !ranked.is_empty() {
                 out.push_str(&format!("\u{1f9e0} TOP {} BY CRS:\n", ranked.len()));
                 for (i, (name, crs, preview)) in ranked.iter().enumerate() {
-                    out.push_str(&format!("  {}. {} [CRS {:.3}]\n     {}\n\n", i + 1, name, crs, preview));
+                    out.push_str(&format!(
+                        "  {}. {} [CRS {:.3}]\n     {}\n\n",
+                        i + 1,
+                        name,
+                        crs,
+                        preview
+                    ));
                 }
             }
             if pinned.is_empty() && ranked.is_empty() {
@@ -4393,23 +5420,32 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                 }
             }
             // ───────────────────────────────────────────────────────────────────
-            info!("summarize: {} pinned, {} ranked", pinned.len(), ranked.len());
+            info!(
+                "summarize: {} pinned, {} ranked",
+                pinned.len(),
+                ranked.len()
+            );
             json!({ "content": [{ "type": "text", "text": out.trim() }] })
         }
 
         "mcp_engram_batch_remember" => {
             let entries = match args["entries"].as_array() {
                 Some(a) => a.clone(),
-                None => return json!({ "content": [{ "type": "text", "text": "Error: entries must be a JSON array of {concept, text} objects." }], "isError": true }),
+                None => {
+                    return json!({ "content": [{ "type": "text", "text": "Error: entries must be a JSON array of {concept, text} objects." }], "isError": true })
+                }
             };
             let mut succeeded = 0usize;
             let mut failed = 0usize;
             for entry in &entries {
                 let concept = entry["concept"].as_str().unwrap_or("").trim().to_string();
-                let text    = entry["text"].as_str().unwrap_or("").trim().to_string();
-                if concept.is_empty() || text.is_empty() { failed += 1; continue; }
+                let text = entry["text"].as_str().unwrap_or("").trim().to_string();
+                if concept.is_empty() || text.is_empty() {
+                    failed += 1;
+                    continue;
+                }
                 match store.lock().unwrap().remember(&concept, &text) {
-                    Ok(_)  => succeeded += 1,
+                    Ok(_) => succeeded += 1,
                     Err(_) => failed += 1,
                 }
             }
@@ -4424,8 +5460,12 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
             let mut exported: Vec<Value> = Vec::new();
             for name in &concepts {
                 // Autonomous Tier 2: high_priority for export (favors promoted hot artifacts)
-                if let Some(block) = lock.fetch_block_high_priority(name.split_once("::").map_or(name.as_str(), |(_, r)| r)) {
-                    if block.crs_score < min_crs { continue; }
+                if let Some(block) = lock.fetch_block_high_priority(
+                    name.split_once("::").map_or(name.as_str(), |(_, r)| r),
+                ) {
+                    if block.crs_score < min_crs {
+                        continue;
+                    }
                     let raw = String::from_utf8_lossy(&block.payload);
                     let text = raw.trim_matches('\0').to_string();
                     exported.push(json!({
@@ -4450,17 +5490,22 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                 return json!({ "content": [{ "type": "text", "text": "Error: json field is required." }], "isError": true });
             }
             let entries: Vec<Value> = match serde_json::from_str(&json_str) {
-                Ok(v)  => v,
-                Err(e) => return json!({ "content": [{ "type": "text", "text": format!("Error parsing JSON: {e}") }], "isError": true }),
+                Ok(v) => v,
+                Err(e) => {
+                    return json!({ "content": [{ "type": "text", "text": format!("Error parsing JSON: {e}") }], "isError": true })
+                }
             };
             let mut succeeded = 0usize;
             let mut failed = 0usize;
             for entry in &entries {
                 let concept = entry["concept"].as_str().unwrap_or("").trim().to_string();
-                let text    = entry["text"].as_str().unwrap_or("").trim().to_string();
-                if concept.is_empty() || text.is_empty() { failed += 1; continue; }
+                let text = entry["text"].as_str().unwrap_or("").trim().to_string();
+                if concept.is_empty() || text.is_empty() {
+                    failed += 1;
+                    continue;
+                }
                 match store.lock().unwrap().remember(&concept, &text) {
-                    Ok(_)  => succeeded += 1,
+                    Ok(_) => succeeded += 1,
                     Err(_) => failed += 1,
                 }
             }
@@ -4473,19 +5518,28 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
             let older_than_days = args["older_than_days"].as_u64();
             let now_secs = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_secs()).unwrap_or(0);
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
 
             let mut lock = store.lock().unwrap();
             let concepts = lock.list();
             let mut to_evict: Vec<String> = Vec::new();
             for name in &concepts {
-                if let Some(block) = lock.fetch_block(name.split_once("::").map_or(name.as_str(), |(_, r)| r)) {
-                    if block.crs_score >= 1.0 { continue; } // Never evict pinned
+                if let Some(block) =
+                    lock.fetch_block(name.split_once("::").map_or(name.as_str(), |(_, r)| r))
+                {
+                    if block.crs_score >= 1.0 {
+                        continue;
+                    } // Never evict pinned
                     let age_ok = older_than_days.is_none_or(|days| {
                         now_secs.saturating_sub(block.last_accessed_timestamp) >= days * 86400
                     });
                     if block.crs_score < min_crs && age_ok {
-                        to_evict.push(name.split_once("::").map_or(name.as_str(), |(_, r)| r).to_string());
+                        to_evict.push(
+                            name.split_once("::")
+                                .map_or(name.as_str(), |(_, r)| r)
+                                .to_string(),
+                        );
                     }
                 }
             }
@@ -4494,25 +5548,35 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
             let total = to_evict.len();
             let mut evicted = 0usize;
             for name in &to_evict {
-                if store.lock().unwrap().forget(name).is_ok() { evicted += 1; }
+                if store.lock().unwrap().forget(name).is_ok() {
+                    evicted += 1;
+                }
             }
-            let age_label = older_than_days.map_or(String::new(), |d| format!(", older than {}d", d));
+            let age_label =
+                older_than_days.map_or(String::new(), |d| format!(", older than {}d", d));
             info!("forget_old: evicted {}/{} candidates", evicted, total);
             json!({ "content": [{ "type": "text", "text": format!("\u{2713} Autophagy complete. Evicted {} memories (CRS < {:.2}{}).", evicted, min_crs, age_label) }] })
         }
 
         "mcp_engram_search_by_relation" => {
-            let concept   = args["concept"].as_str().unwrap_or("").trim().to_string();
-            let label     = args["label"].as_str().map(|s| s.trim().to_string());
-            let direction = args["direction"].as_str().unwrap_or("from").trim().to_string();
-            let k         = args["k"].as_u64().unwrap_or(50).min(200) as usize;
+            let concept = args["concept"].as_str().unwrap_or("").trim().to_string();
+            let label = args["label"].as_str().map(|s| s.trim().to_string());
+            let direction = args["direction"]
+                .as_str()
+                .unwrap_or("from")
+                .trim()
+                .to_string();
+            let k = args["k"].as_u64().unwrap_or(50).min(200) as usize;
 
             if concept.is_empty() {
                 return json!({ "content": [{ "type": "text", "text": "Error: concept is required." }], "isError": true });
             }
 
-            let mut results = store.lock().unwrap()
-                .search_relations(&concept, label.as_deref(), &direction);
+            let mut results =
+                store
+                    .lock()
+                    .unwrap()
+                    .search_relations(&concept, label.as_deref(), &direction);
 
             // Scope to prevent data overload/huge chains on high-relation nodes (e.g. primary goal with 100+ 'serves' from prep history).
             // Drill down process (per wake-up skill): use label/direction/k for narrow scope first; if need larger context use visualize(depth) or context/recall on specific results.
@@ -4525,22 +5589,35 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                 return json!({ "content": [{ "type": "text", "text": format!("No '{}' relations found for '{}' (direction: {}, k={}).", label_str, concept, direction, k) }] });
             }
 
-            let arrow = match direction.as_str() { "to" => "→", _ => "→" };
-            let mut out = format!("🕸️  Relations for '{}' (direction: {}, k={}):\n\n", concept, direction, k);
+            let arrow = match direction.as_str() {
+                "to" => "→",
+                _ => "→",
+            };
+            let mut out = format!(
+                "🕸️  Relations for '{}' (direction: {}, k={}):\n\n",
+                concept, direction, k
+            );
             for (lbl, other) in &results {
                 match direction.as_str() {
                     "to" => out.push_str(&format!("  {} --[{}]--> {}\n", other, lbl, concept)),
-                    _    => out.push_str(&format!("  {} --[{}]--> {}\n", concept, lbl, other)),
+                    _ => out.push_str(&format!("  {} --[{}]--> {}\n", concept, lbl, other)),
                 }
             }
             let _ = arrow;
-            info!("search_by_relation '{}' {} {} (k={}) -> {} results (scoped)", concept, direction, label.as_deref().unwrap_or("*"), k, results.len());
+            info!(
+                "search_by_relation '{}' {} {} (k={}) -> {} results (scoped)",
+                concept,
+                direction,
+                label.as_deref().unwrap_or("*"),
+                k,
+                results.len()
+            );
             json!({ "content": [{ "type": "text", "text": out.trim() }] })
         }
 
         "mcp_engram_visualize" => {
             let concept = args["concept"].as_str().unwrap_or("").trim().to_string();
-            let depth   = args["depth"].as_u64().unwrap_or(2).min(5) as usize;
+            let depth = args["depth"].as_u64().unwrap_or(2).min(5) as usize;
 
             if concept.is_empty() {
                 return json!({ "content": [{ "type": "text", "text": "Error: concept is required." }], "isError": true });
@@ -4552,7 +5629,11 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
         }
 
         "mcp_engram_genesis" => {
-            let action = args["action"].as_str().unwrap_or("status").trim().to_string();
+            let action = args["action"]
+                .as_str()
+                .unwrap_or("status")
+                .trim()
+                .to_string();
             match action.as_str() {
                 "status" => {
                     let status = store.lock().unwrap().genesis_status();
@@ -4561,17 +5642,23 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                 }
                 "reseed" => {
                     // Remove the marker so seed_genesis() runs again
-                    let engram_root = std::path::PathBuf::from(
-                        shellexpand::tilde("~/.engram").into_owned()
-                    );
+                    let engram_root =
+                        std::path::PathBuf::from(shellexpand::tilde("~/.engram").into_owned());
                     let marker = engram_root.join(".genesis_seeded");
                     let _ = std::fs::remove_file(&marker);
                     match store.lock().unwrap().seed_genesis() {
-                        Ok(msg)  => { info!("genesis reseed: {msg}"); json!({ "content": [{ "type": "text", "text": msg }] }) }
-                        Err(e)   => json!({ "content": [{ "type": "text", "text": format!("Genesis reseed failed: {e}") }], "isError": true })
+                        Ok(msg) => {
+                            info!("genesis reseed: {msg}");
+                            json!({ "content": [{ "type": "text", "text": msg }] })
+                        }
+                        Err(e) => {
+                            json!({ "content": [{ "type": "text", "text": format!("Genesis reseed failed: {e}") }], "isError": true })
+                        }
                     }
                 }
-                _ => json!({ "content": [{ "type": "text", "text": "Unknown action. Use 'status' or 'reseed'." }], "isError": true })
+                _ => {
+                    json!({ "content": [{ "type": "text", "text": "Unknown action. Use 'status' or 'reseed'." }], "isError": true })
+                }
             }
         }
 
@@ -4586,7 +5673,11 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
             let mut resp = None;
             for p in [8080, 8081, 8082, 8083] {
                 let url = format!("http://127.0.0.1:{}/api/ask", p);
-                if let Ok(res) = client.post(&url).json(&serde_json::json!({ "query": query, "objective_only": false })).send() {
+                if let Ok(res) = client
+                    .post(&url)
+                    .json(&serde_json::json!({ "query": query, "objective_only": false }))
+                    .send()
+                {
                     resp = Some(res);
                     break;
                 }
@@ -4597,19 +5688,26 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                     let data: serde_json::Value = r.json().unwrap_or(serde_json::json!({}));
                     let prose = data["assembled_prose"].as_str().unwrap_or("");
                     let crs = data["final_crs"].as_f64().unwrap_or(0.0);
-                    let dist = 1.0 - (crs as f32).max(0.0).min(1.0); // Rough geometric distance surrogate
+                    let dist = 1.0 - (crs as f32).clamp(0.0, 1.0); // Rough geometric distance surrogate
 
-                    let mut out = format!("🧠 Self-Trace Identity Response (Anchored to Operator_LBR)\n────────────────────────────────────────\n");
-                    out.push_str(&format!("Geometric Distance: {:.3} (CRS: {:.3})\n\n", dist, crs));
+                    let mut out = "🧠 Self-Trace Identity Response (Anchored to Operator_LBR)\n────────────────────────────────────────\n".to_string();
+                    out.push_str(&format!(
+                        "Geometric Distance: {:.3} (CRS: {:.3})\n\n",
+                        dist, crs
+                    ));
                     out.push_str(prose);
                     if prose.is_empty() {
                         out.push_str("(No cohesive trajectory formed. The Oracle is uncertain.)");
                     }
-                    
+
                     json!({ "content": [{ "type": "text", "text": out }] })
                 }
-                Some(r) => json!({ "content": [{ "type": "text", "text": format!("Oracle API error: HTTP {}", r.status()) }], "isError": true }),
-                None => json!({ "content": [{ "type": "text", "text": "Error: Could not connect to Monad Transductive API (/api/ask). Is the daemon running?" }], "isError": true }),
+                Some(r) => {
+                    json!({ "content": [{ "type": "text", "text": format!("Oracle API error: HTTP {}", r.status()) }], "isError": true })
+                }
+                None => {
+                    json!({ "content": [{ "type": "text", "text": "Error: Could not connect to Monad Transductive API (/api/ask). Is the daemon running?" }], "isError": true })
+                }
             }
         }
 
@@ -4629,19 +5727,25 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                 chain.push(current.clone());
 
                 let store_lk = store.lock().unwrap();
-                let raw_concept = current.split_once("::").map_or(current.as_str(), |(_, r)| r);
+                let raw_concept = current
+                    .split_once("::")
+                    .map_or(current.as_str(), |(_, r)| r);
                 // Hot path upgrade (pre-65%): workflow chain tool pulls full text for reasoning traces and promoted state. Now uses fast path.
                 if let Some(block) = store_lk.fetch_block_high_priority(raw_concept) {
                     let full_text = engram_core::storage::read_provlog(&block);
                     full_output.push_str(&format!("### Step: {}\n{}\n\n", current, full_text));
                 } else {
-                    full_output.push_str(&format!("### Step: {}\n(No logophysical block found)\n\n", current));
+                    full_output.push_str(&format!(
+                        "### Step: {}\n(No logophysical block found)\n\n",
+                        current
+                    ));
                 }
 
-                let next = store_lk.search_relations(&current, None, "from")
+                let next = store_lk
+                    .search_relations(&current, None, "from")
                     .into_iter()
                     .next();
-                
+
                 drop(store_lk);
 
                 if let Some((target, _lbl)) = next {
@@ -4653,12 +5757,16 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                 break;
             }
 
-            let out = format!("⛓️ Workflow Orchestration Chain:\n{}\n\n📝 Execution Steps:\n{}", chain.join(" ➔ "), full_output);
+            let out = format!(
+                "⛓️ Workflow Orchestration Chain:\n{}\n\n📝 Execution Steps:\n{}",
+                chain.join(" ➔ "),
+                full_output
+            );
             json!({ "content": [{ "type": "text", "text": out }] })
         }
 
         "mcp_engram_scar" => {
-            let concept   = args["concept"].as_str().unwrap_or("").trim().to_string();
+            let concept = args["concept"].as_str().unwrap_or("").trim().to_string();
             let magnitude = args["magnitude"].as_f64().unwrap_or(0.15) as f32;
 
             if concept.is_empty() {
@@ -4669,12 +5777,18 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
             }
 
             // Strip sheaf prefix if present
-            let raw_concept = concept.split_once("::").map_or(concept.as_str(), |(_, r)| r).to_string();
+            let raw_concept = concept
+                .split_once("::")
+                .map_or(concept.as_str(), |(_, r)| r)
+                .to_string();
 
             let result = store.lock().unwrap().scar(&raw_concept, magnitude);
             match result {
                 Ok(msg) => {
-                    warn!("[M-NOL SCAR] concept='{}' magnitude={:.3}", raw_concept, magnitude);
+                    warn!(
+                        "[M-NOL SCAR] concept='{}' magnitude={:.3}",
+                        raw_concept, magnitude
+                    );
                     json!({ "content": [{ "type": "text", "text": msg }] })
                 }
                 Err(e) => json!({
@@ -4686,9 +5800,13 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
 
         "mcp_engram_recall_in_file" => {
             // Phase 4: Spatial AABB query — find concepts within a file line range
-            let file_stem = args["file_stem"].as_str().unwrap_or("").trim().to_lowercase();
+            let file_stem = args["file_stem"]
+                .as_str()
+                .unwrap_or("")
+                .trim()
+                .to_lowercase();
             let start_line = args["start_line"].as_f64().unwrap_or(0.0) as f32;
-            let end_line   = args["end_line"].as_f64().unwrap_or(999999.0) as f32;
+            let end_line = args["end_line"].as_f64().unwrap_or(999999.0) as f32;
             let k = args["k"].as_u64().unwrap_or(20).min(50) as usize;
 
             if file_stem.is_empty() {
@@ -4698,26 +5816,41 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
             let mut lock = store.lock().unwrap();
             let all_concepts = lock.list();
 
-            let mut results: Vec<(String, f32, f32, f32, String)> = all_concepts.into_iter()
+            let mut results: Vec<(String, f32, f32, f32, String)> = all_concepts
+                .into_iter()
                 .filter_map(|concept| {
                     // Match concepts belonging to this file stem
-                    if !concept.starts_with(&file_stem) { return None; }
+                    if !concept.starts_with(&file_stem) {
+                        return None;
+                    }
                     // Hot path upgrade (Tier 2 broader adoption): recall_in_file is a core ritual tool used on every code edit.
                     // Fallback to regular fetch_block so passive/force ingested AST items (mcp__*, store__* etc)
                     // are visible immediately without requiring hot promotion or editor re-save. Fixes "no AST concepts".
-                    let block = lock.fetch_block_high_priority(&concept)
+                    let block = lock
+                        .fetch_block_high_priority(&concept)
                         .or_else(|| lock.fetch_block(&concept));
-                    let block = match block { Some(b) => b, None => return None };
+                    let block = match block {
+                        Some(b) => b,
+                        None => return None,
+                    };
                     let row_min = block.aabb_min[0];
                     let row_max = block.aabb_max[0];
                     // Only include if AABB is set (row_max > 0) and intersects range
-                    if row_max <= 0.0 { return None; }
-                    if row_max < start_line || row_min > end_line { return None; }
+                    if row_max <= 0.0 {
+                        return None;
+                    }
+                    if row_max < start_line || row_min > end_line {
+                        return None;
+                    }
                     let crs = block.crs_score;
                     // Short useful snippet for impact analysis (provlog prefix or signature-style)
                     let prov_text = engram_core::storage::read_provlog(&block);
                     let short_info = if !prov_text.is_empty() {
-                        let s = prov_text.chars().take(80).collect::<String>().replace('\n', " ");
+                        let s = prov_text
+                            .chars()
+                            .take(80)
+                            .collect::<String>()
+                            .replace('\n', " ");
                         format!(" | {}", s)
                     } else {
                         String::new()
@@ -4753,27 +5886,35 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
             // shows 0 failures / sub-10ms on sequences including this tool against stable ac3509a9.
             let query = args["query"].as_str().unwrap_or("").trim().to_string();
             let k = args["k"].as_u64().unwrap_or(5).min(20) as usize;
-            let zedos_filter = args["zedos_filter"].as_str().map(|s| s.trim().to_lowercase());
+            let zedos_filter = args["zedos_filter"]
+                .as_str()
+                .map(|s| s.trim().to_lowercase());
 
             if query.is_empty() {
                 return json!({ "content": [{ "type": "text", "text": "Error: query is required." }], "isError": true });
             }
 
             // LRU check (outside heavy lock where possible)
-            let cache_key = format!("{}|{}", query.to_lowercase(), zedos_filter.as_deref().unwrap_or(""));
+            let cache_key = format!(
+                "{}|{}",
+                query.to_lowercase(),
+                zedos_filter.as_deref().unwrap_or("")
+            );
             if let Some(cached) = MOMENTUM_LRU.lock().ok().and_then(|mut lru| {
-                lru.iter().position(|(k, _)| k == &cache_key).map(|i| lru.remove(i).unwrap().1)
+                lru.iter()
+                    .position(|(k, _)| k == &cache_key)
+                    .map(|i| lru.remove(i).unwrap().1)
             }) {
                 return json!({ "content": [{ "type": "text", "text": cached }] });
             }
 
             let tag_filter: Option<u8> = zedos_filter.as_deref().and_then(|f| match f {
-                "declarative"  => Some(engram_core::types::ZEDOS_DECLARATIVE),
-                "episodic"     => Some(engram_core::types::ZEDOS_EPISODIC),
-                "operational"  => Some(engram_core::types::ZEDOS_OPERATIONAL),
-                "praxis"       => Some(engram_core::types::ZEDOS_PRAXIS),
-                "relation"     => Some(engram_core::types::ZEDOS_RELATION),
-                "training"     => Some(engram_core::types::ZEDOS_TRAINING),
+                "declarative" => Some(engram_core::types::ZEDOS_DECLARATIVE),
+                "episodic" => Some(engram_core::types::ZEDOS_EPISODIC),
+                "operational" => Some(engram_core::types::ZEDOS_OPERATIONAL),
+                "praxis" => Some(engram_core::types::ZEDOS_PRAXIS),
+                "relation" => Some(engram_core::types::ZEDOS_RELATION),
+                "training" => Some(engram_core::types::ZEDOS_TRAINING),
                 _ => None,
             });
 
@@ -4800,12 +5941,15 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                     .collect()
             };
 
-            let mut scored: Vec<(String, f32, f32)> = probe.into_iter()
+            let mut scored: Vec<(String, f32, f32)> = probe
+                .into_iter()
                 .filter_map(|concept| {
                     // Hot path upgrade (Tier 2 broader adoption): query_with_momentum is one of the most used ritual entry points.
                     let block = lock.fetch_block_high_priority(&concept)?;
                     if let Some(tag) = tag_filter {
-                        if block.zedos_tag != tag { return None; }
+                        if block.zedos_tag != tag {
+                            return None;
+                        }
                     }
                     let q_score = engram_core::ops::cosine_similarity(&effective_q, &block.q);
                     let p_score = engram_core::ops::cosine_similarity(&effective_q, &block.p);
@@ -4823,7 +5967,7 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                 if let Some(pos) = lru.iter().position(|(k, _)| k == &cache_key) {
                     lru.remove(pos);
                 }
-                let _top = scored.first().map(|(c,s,d)| (c.clone(), *s, *d));
+                let _top = scored.first().map(|(c, s, d)| (c.clone(), *s, *d));
                 let output = if scored.is_empty() {
                     "No memories found.".to_string()
                 } else {
@@ -4831,16 +5975,32 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                     for (i, (concept, score, dv)) in scored.iter().enumerate() {
                         let tag_str = if let Some(b) = lock.fetch_block_high_priority(concept) {
                             match b.zedos_tag {
-                                0xD => "DECL", 0xA => "EPIS", 0x52 => "OPER", 0x50 => "PRAX",
-                                0xE1 => "REL", 0x54 => "TRAIN", _ => "OTHER"
+                                0xD => "DECL",
+                                0xA => "EPIS",
+                                0x52 => "OPER",
+                                0x50 => "PRAX",
+                                0xE1 => "REL",
+                                0x54 => "TRAIN",
+                                _ => "OTHER",
                             }
-                        } else { "?" };
-                        out.push_str(&format!("**[{}] {}** (momentum score: {:.3}, drift: {:.3}, tag:{}) \n", i + 1, concept, score, dv, tag_str));
+                        } else {
+                            "?"
+                        };
+                        out.push_str(&format!(
+                            "**[{}] {}** (momentum score: {:.3}, drift: {:.3}, tag:{}) \n",
+                            i + 1,
+                            concept,
+                            score,
+                            dv,
+                            tag_str
+                        ));
                     }
                     out.trim().to_string()
                 };
                 lru.push_front((cache_key.clone(), output.clone()));
-                if lru.len() > 24 { lru.pop_back(); }
+                if lru.len() > 24 {
+                    lru.pop_back();
+                }
                 // return the freshly built output (already populated)
                 return json!({ "content": [{ "type": "text", "text": output }] });
             }
@@ -4854,39 +6014,77 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                 // Re-fetch lightweight for tag display (post-filter; hot path makes this cheap for small k)
                 let tag_str = if let Some(b) = lock.fetch_block_high_priority(concept) {
                     match b.zedos_tag {
-                        0xD => "DECL", 0xA => "EPIS", 0x52 => "OPER", 0x50 => "PRAX",
-                        0xE1 => "REL", 0x54 => "TRAIN", _ => "OTHER"
+                        0xD => "DECL",
+                        0xA => "EPIS",
+                        0x52 => "OPER",
+                        0x50 => "PRAX",
+                        0xE1 => "REL",
+                        0x54 => "TRAIN",
+                        _ => "OTHER",
                     }
-                } else { "?" };
-                output.push_str(&format!("**[{}] {}** (momentum score: {:.3}, drift: {:.3}, tag:{}) \n", i + 1, concept, score, dv, tag_str));
+                } else {
+                    "?"
+                };
+                output.push_str(&format!(
+                    "**[{}] {}** (momentum score: {:.3}, drift: {:.3}, tag:{}) \n",
+                    i + 1,
+                    concept,
+                    score,
+                    dv,
+                    tag_str
+                ));
             }
             json!({ "content": [{ "type": "text", "text": output.trim() }] })
         }
         "mcp_engram_verify_behavior" => {
-            let concept = args.get("concept").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
-            let success = args.get("success").and_then(|v| v.as_bool()).unwrap_or(false);
+            let concept = args
+                .get("concept")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            let success = args
+                .get("success")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
 
             if concept.is_empty() {
                 return json!({ "content": [{ "type": "text", "text": "Error: missing required 'concept' string" }], "isError": true });
             }
 
-            let raw_concept = concept.split_once("::").map_or(concept.as_str(), |(_, r)| r);
+            let raw_concept = concept
+                .split_once("::")
+                .map_or(concept.as_str(), |(_, r)| r);
 
-            match store.lock().unwrap().verify_hypothesis(raw_concept, success) {
+            match store
+                .lock()
+                .unwrap()
+                .verify_hypothesis(raw_concept, success)
+            {
                 Ok(_) => {
                     let result_msg = if success {
                         format!("✓ Hypothesis verified successfully: '{}'. Alpha_a increased. May promote to PRAXIS if threshold reached.", concept)
                     } else {
-                        format!("✓ Hypothesis failure logged: '{}'. Alpha_d increased.", concept)
+                        format!(
+                            "✓ Hypothesis failure logged: '{}'. Alpha_d increased.",
+                            concept
+                        )
                     };
                     json!({ "content": [{ "type": "text", "text": result_msg }] })
-                },
-                Err(e) => json!({ "content": [{ "type": "text", "text": format!("Error verifying hypothesis: {e}") }], "isError": true }),
+                }
+                Err(e) => {
+                    json!({ "content": [{ "type": "text", "text": format!("Error verifying hypothesis: {e}") }], "isError": true })
+                }
             }
         }
 
         "mcp_engram_track_user" => {
-            let interaction = args.get("interaction").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
+            let interaction = args
+                .get("interaction")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
 
             if interaction.is_empty() {
                 return json!({ "content": [{ "type": "text", "text": "Error: missing required 'interaction' string" }], "isError": true });
@@ -4896,14 +6094,24 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                 Ok(_) => {
                     info!("tracked user interaction: {:.20}...", interaction);
                     json!({ "content": [{ "type": "text", "text": "✓ Tracked user interaction in User Model." }] })
-                },
-                Err(e) => json!({ "content": [{ "type": "text", "text": format!("Error tracking interaction: {e}") }], "isError": true }),
+                }
+                Err(e) => {
+                    json!({ "content": [{ "type": "text", "text": format!("Error tracking interaction: {e}") }], "isError": true })
+                }
             }
         }
 
         "mcp_engram_verify_block_lawfulness" => {
-            let concept = args.get("concept").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
-            let check_chain = args.get("check_merkle_chain").and_then(|v| v.as_bool()).unwrap_or(true);
+            let concept = args
+                .get("concept")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            let check_chain = args
+                .get("check_merkle_chain")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(true);
 
             if concept.is_empty() {
                 return json!({ "content": [{ "type": "text", "text": "Error: missing required 'concept' string" }], "isError": true });
@@ -4917,14 +6125,25 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                         summary.concept, summary.crs, summary.zedos_tag, summary.superposition_count, summary.allowed_transforms
                     );
                     if check_chain {
-                        let sig_preview: String = summary.sig_0[..4].iter().map(|b| format!("{:02x}", b)).collect();
-                        let merkle_preview: String = summary.merkle_sub_root[..4].iter().map(|b| format!("{:02x}", b)).collect();
-                        msg.push_str(&format!("sig_0: {}... | merkle_sub_root: {}...\n", sig_preview, merkle_preview));
+                        let sig_preview: String = summary.sig_0[..4]
+                            .iter()
+                            .map(|b| format!("{:02x}", b))
+                            .collect();
+                        let merkle_preview: String = summary.merkle_sub_root[..4]
+                            .iter()
+                            .map(|b| format!("{:02x}", b))
+                            .collect();
+                        msg.push_str(&format!(
+                            "sig_0: {}... | merkle_sub_root: {}...\n",
+                            sig_preview, merkle_preview
+                        ));
                     }
                     msg.push_str("(Full deep chain verification & historical reconstruction coming in follow-up work)");
                     json!({ "content": [{ "type": "text", "text": msg }] })
                 }
-                None => json!({ "content": [{ "type": "text", "text": format!("Block '{}' not found", concept) }], "isError": true })
+                None => {
+                    json!({ "content": [{ "type": "text", "text": format!("Block '{}' not found", concept) }], "isError": true })
+                }
             }
         }
 
@@ -4934,7 +6153,10 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
             // extreme memory pressure / near-OOM on large manifolds during wake-up rituals.
             // Never trust a "verify" tool to be cheap without reading its sampling strategy.
             let min_crs = args.get("min_crs").and_then(|v| v.as_f64()).unwrap_or(0.74) as f32;
-            let sample = args.get("sample_size").and_then(|v| v.as_u64()).map(|n| n as usize);
+            let sample = args
+                .get("sample_size")
+                .and_then(|v| v.as_u64())
+                .map(|n| n as usize);
 
             let options = crate::store::ManifoldVerificationOptions {
                 min_crs,
@@ -4956,13 +6178,23 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                     }
                     json!({ "content": [{ "type": "text", "text": msg }] })
                 }
-                Err(e) => json!({ "content": [{ "type": "text", "text": format!("Verification error: {}", e) }], "isError": true })
+                Err(e) => {
+                    json!({ "content": [{ "type": "text", "text": format!("Verification error: {}", e) }], "isError": true })
+                }
             }
         }
 
         "mcp_engram_invoke_protocol" => {
-            let key = args.get("key").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
-            let dry_run = args.get("dry_run").and_then(|v| v.as_bool()).unwrap_or(false);
+            let key = args
+                .get("key")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            let dry_run = args
+                .get("dry_run")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
             let protocol_args = args.get("args").cloned();
 
             if key.is_empty() {
@@ -4971,12 +6203,14 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
 
             let options = crate::store::InvokeOptions { dry_run };
 
-            match store.lock().unwrap().invoke_protocol(&key, protocol_args, options) {
+            match store
+                .lock()
+                .unwrap()
+                .invoke_protocol(&key, protocol_args, options)
+            {
                 Ok(result) => {
-                    let mut msg = format!(
-                        "Protocol Invocation: {}\nStatus: {}\n",
-                        key, result.status
-                    );
+                    let mut msg =
+                        format!("Protocol Invocation: {}\nStatus: {}\n", key, result.status);
                     if let Some(v) = &result.verification {
                         msg.push_str(&format!(
                             "Verification: CRS={:.3} | Allowed='{}'\n",
@@ -4991,21 +6225,36 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                     }
                     json!({ "content": [{ "type": "text", "text": msg }] })
                 }
-                Err(e) => json!({ "content": [{ "type": "text", "text": format!("Invocation error: {}", e) }], "isError": true })
+                Err(e) => {
+                    json!({ "content": [{ "type": "text", "text": format!("Invocation error: {}", e) }], "isError": true })
+                }
             }
         }
 
         "mcp_engram_set_geosphere_frame" => {
             // WS3-B MCP surface: sets current frame on the live SymplecticState in StoreHandle.
             // This immediately affects all query paths (recall, query_with_momentum, internal bvh/gpu).
-            let origin = args.get("origin").and_then(|v| v.as_str()).unwrap_or("default_origin").trim().to_string();
-            let time_offset = args.get("time_offset").and_then(|v| v.as_str()).unwrap_or("now").trim().to_string();
+            let origin = args
+                .get("origin")
+                .and_then(|v| v.as_str())
+                .unwrap_or("default_origin")
+                .trim()
+                .to_string();
+            let time_offset = args
+                .get("time_offset")
+                .and_then(|v| v.as_str())
+                .unwrap_or("now")
+                .trim()
+                .to_string();
             if origin.is_empty() {
                 return json!({ "content": [{ "type": "text", "text": "Error: origin required" }], "isError": true });
             }
             let mut lock = store.lock().unwrap();
             lock.set_geosphere_frame(&origin, &time_offset);
-            let frame_step = lock.get_current_geosphere_frame().map(|(_, step, _)| step).unwrap_or(0);
+            let frame_step = lock
+                .get_current_geosphere_frame()
+                .map(|(_, step, _)| step)
+                .unwrap_or(0);
             json!({ "content": [{ "type": "text", "text": format!(
                 "✓ Geosphere frame set\norigin: {}\ntime_offset: {}\nframe_step: {}\n\nAll subsequent queries now use lens-transformed effective vectors (BVH 3D + 8192D scoring). Reproducible + unit-hypersphere lawful.",
                 origin, time_offset, frame_step
@@ -5015,13 +6264,17 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
             let lock = store.lock().unwrap();
             match lock.get_current_geosphere_frame() {
                 Some((origin, step, _loc)) => {
-                    let has_lens = lock.get_current_geosphere_frame().map_or(false, |(o, _, _)| o != "native");
+                    let has_lens = lock
+                        .get_current_geosphere_frame()
+                        .is_some_and(|(o, _, _)| o != "native");
                     json!({ "content": [{ "type": "text", "text": format!(
                         "Current Geosphere frame:\n  origin: {}\n  frame_step: {}\n  lens_active: {}\n  (active_location vector available via internal SymplecticState; use for reproducibility tests)",
                         origin, step, has_lens
                     ) }] })
                 }
-                None => json!({ "content": [{ "type": "text", "text": "No Geosphere state (native coordinate)" }] })
+                None => {
+                    json!({ "content": [{ "type": "text", "text": "No Geosphere state (native coordinate)" }] })
+                }
             }
         }
         "mcp_engram_clear_geosphere_frame" => {
@@ -5045,7 +6298,10 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
 pub fn dispatch_jsonrpc(raw_json: &str, store: &SharedStore) -> Option<Value> {
     match serde_json::from_str::<Request>(raw_json) {
         Ok(req) => dispatch(req, store).map(|r| serde_json::to_value(r).unwrap_or(json!({}))),
-        Err(e) => Some(serde_json::to_value(Response::err(None, -32700, format!("Parse error: {e}"))).unwrap_or(json!({}))),
+        Err(e) => Some(
+            serde_json::to_value(Response::err(None, -32700, format!("Parse error: {e}")))
+                .unwrap_or(json!({})),
+        ),
     }
 }
 
@@ -5058,16 +6314,17 @@ fn dispatch(req: Request, store: &SharedStore) -> Option<Response> {
     id.as_ref()?;
 
     let response = match req.method.as_str() {
-        "initialize" => {
-            Response::ok(id, json!({
+        "initialize" => Response::ok(
+            id,
+            json!({
                 "protocolVersion": "2024-11-05",
                 "capabilities": { "tools": {} },
                 "serverInfo": {
                     "name": "engram",
                     "version": env!("CARGO_PKG_VERSION")
                 }
-            }))
-        }
+            }),
+        ),
 
         "initialized" | "notifications/initialized" => {
             // MCP spec says this is a notification (no id), but some IDE clients
@@ -5109,20 +6366,25 @@ pub fn run(store: SharedStore) -> anyhow::Result<()> {
     info!("Engram MCP server ready (protocol 2024-11-05)");
     info!("Store: {}", store.lock().unwrap().store_path());
 
-    let stdin  = io::stdin();
+    let stdin = io::stdin();
     let stdout = io::stdout();
     let mut out = io::BufWriter::new(stdout.lock());
 
     for line in stdin.lock().lines() {
         let line = match line {
             Ok(l) => l,
-            Err(e) => { error!("stdin read error: {e}"); break; }
+            Err(e) => {
+                error!("stdin read error: {e}");
+                break;
+            }
         };
         // Tier 2 async note: The stdio MCP loop + dispatch is synchronous. Future evolution (e.g. async transport, or offloading
         // hot fetch_block_high_priority in goal/tile/summarize/export loops) could use async_read_block/async_write_block
         // (engram-core "async-io") via spawn_blocking or full async StoreHandle to prevent blocking the tokio reactor
         // on 256KB .leg3 I/O for promoted concepts. Currently high_priority path already gives the sync win via LegView/Cuda.
-        if line.trim().is_empty() { continue; }
+        if line.trim().is_empty() {
+            continue;
+        }
 
         debug!("→ {line}");
 
@@ -5146,11 +6408,14 @@ pub fn run(store: SharedStore) -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::store::{open_store, open_store_placeholder_for_mcp, StoreHandle, SharedStore};
+    use crate::store::{open_store, open_store_placeholder_for_mcp, SharedStore, StoreHandle};
     use std::time::{SystemTime, UNIX_EPOCH};
 
     fn unique_tmp(suffix: &str) -> String {
-        let nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
         let pid = std::process::id();
         format!("/tmp/engram-test-{}-{}-{}", pid, nanos, suffix)
     }
@@ -5194,7 +6459,11 @@ mod tests {
         let tmp = unique_tmp("sheaf");
         // Set ENGRAM_PROCESSES_DIR (used by load fn) via CARGO_MANIFEST_DIR so scan always hits real repo processes/ (incl. monitor/self_improvement data + meta siblings) even if cargo test binary cwd is not repo root.
         let manifest = env!("CARGO_MANIFEST_DIR");
-        let root = std::path::Path::new(manifest).parent().unwrap().parent().unwrap();
+        let root = std::path::Path::new(manifest)
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap();
         let proc_dir = root.join("processes").to_string_lossy().into_owned();
         std::env::set_var("ENGRAM_PROCESSES_DIR", &proc_dir);
         let store: SharedStore = open_store(&tmp);
@@ -5204,9 +6473,14 @@ mod tests {
         // Verify side-effect: at least one process:engram.* block registered from real toml parse (ritual/monitor/process subdirs; monitor includes self_improvement data)
         let has_registered = {
             let lock = store.lock().unwrap();
-            lock.fetch_block_high_priority("process:engram.ritual.wake-up").is_some() ||
-            lock.fetch_block_high_priority("process:engram.monitor.manifold-health").is_some() ||
-            lock.fetch_block_high_priority("process:engram.process.session-end").is_some()
+            lock.fetch_block_high_priority("process:engram.ritual.wake-up")
+                .is_some()
+                || lock
+                    .fetch_block_high_priority("process:engram.monitor.manifold-health")
+                    .is_some()
+                || lock
+                    .fetch_block_high_priority("process:engram.process.session-end")
+                    .is_some()
         };
         assert!(has_registered, "load_process_sheaf must have parsed real *.toml (incl. processes/monitor/* for self_improvement) and stored/registered process:engram.* keys + created relates");
 
@@ -5227,7 +6501,10 @@ mod tests {
             let l = pstore.lock().unwrap();
             l.store_path().to_owned()
         };
-        assert!(post_path.contains(&tmp) || !post_path.is_empty(), "upgrade_from must hot-swap placeholder to full store handle without panic");
+        assert!(
+            post_path.contains(&tmp) || !post_path.is_empty(),
+            "upgrade_from must hot-swap placeholder to full store handle without panic"
+        );
 
         let _ = std::fs::remove_dir_all(&tmp);
     }
@@ -5242,10 +6519,18 @@ mod tests {
         let self_toml = root.join("processes/meta/self_improvement_loop.toml");
         let content = std::fs::read_to_string(&self_toml)
             .expect("processes/meta/self_improvement_loop.toml must exist and be readable for test data (via CARGO_MANIFEST_DIR)");
-        let value: toml::Value = toml::from_str(&content).expect("meta self_improvement toml must parse as valid toml");
+        let value: toml::Value =
+            toml::from_str(&content).expect("meta self_improvement toml must parse as valid toml");
         let wf = value.get("workflow").expect("has [workflow]");
-        assert_eq!(wf.get("name").and_then(|v| v.as_str()), Some("self_improvement_loop"));
-        let steps = value.get("execute").and_then(|e| e.get("steps")).and_then(|s| s.as_array()).expect("has execute.steps");
+        assert_eq!(
+            wf.get("name").and_then(|v| v.as_str()),
+            Some("self_improvement_loop")
+        );
+        let steps = value
+            .get("execute")
+            .and_then(|e| e.get("steps"))
+            .and_then(|s| s.as_array())
+            .expect("has execute.steps");
         assert!(steps.len() >= 5, "self_improvement_loop toml must define the 5 steps: audit/propose/safe_test/lawfulness/adopt_or_scar");
 
         // Simulate one step using direct store op (as specified in the toml's [trace] and [execute] sections; no heavy dispatch to avoid stack in test env)
@@ -5255,7 +6540,11 @@ mod tests {
             let mut l = store.lock().unwrap();
             let _ = l.remember("test:self_improvement_step_sim", "One simulated self-improvement step (audit) using processes/meta/self_improvement_loop.toml fixture for engram-server test coverage.");
             // also relate for sheaf/relation coverage in sim
-            let _ = l.relate("test:self_improvement_step_sim", "goal:mvp_gap_closure_v1", "advances");
+            let _ = l.relate(
+                "test:self_improvement_step_sim",
+                "goal:mvp_gap_closure_v1",
+                "advances",
+            );
         }
         let _ = std::fs::remove_dir_all(&tmp);
     }
@@ -5266,7 +6555,11 @@ mod tests {
         // Set ENGRAM_PROCESSES_DIR so load always finds real tomls (incl meta/monitor self_improvement data) even if test binary cwd is target/debug.
         let tmp = unique_tmp("integ");
         let manifest = env!("CARGO_MANIFEST_DIR");
-        let root = std::path::Path::new(manifest).parent().unwrap().parent().unwrap();
+        let root = std::path::Path::new(manifest)
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap();
         let proc_dir = root.join("processes").to_string_lossy().into_owned();
         std::env::set_var("ENGRAM_PROCESSES_DIR", &proc_dir);
         let store: SharedStore = open_store(&tmp);
@@ -5280,7 +6573,7 @@ mod tests {
 
     #[test]
     fn test_core_mcp_ops_error_shapes_for_remember_recall() {
-        // Test fn added per AC ("Add basic error tests"). 
+        // Test fn added per AC ("Add basic error tests").
         // Direct calls to exercise remember/recall/relate error json shapes (even dispatch tools/call
         // for them) overflow the test thread stack (see comments in test_dispatch_after_load... and
         // test_load_process_sheaf: "avoids heavy handle_tool_call + ... stack overflow").
@@ -5293,19 +6586,30 @@ mod tests {
     }
 
     #[test]
-    fn test_linguistic_full_p1_p5_pipeline_mint_compress_differentiate_operadic_decompress_nrem_ego_crs_homotopy() {
+    fn test_linguistic_full_p1_p5_pipeline_mint_compress_differentiate_operadic_decompress_nrem_ego_crs_homotopy(
+    ) {
         // End-to-end: P1 mint linguistic (core) → P3 compress/de/fibered → P4 differentiate/integrate/operadic → P3 decompress roundtrip → P5 NREM/ego via records + ritual toml load (ritual_linguistic_wake + nrem) + CRS/homotopy >=0.85 + fidelity on text/coeffs + ego.leg3 concept. Uses P5 tomls via load_process_sheaf. Tests MCP tool_list wiring for full linguistic surface.
         let tmp = unique_tmp("ling-p1-5-e2e");
         let manifest = env!("CARGO_MANIFEST_DIR");
-        let root = std::path::Path::new(manifest).parent().unwrap().parent().unwrap();
+        let root = std::path::Path::new(manifest)
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap();
         let proc_dir = root.join("processes").to_string_lossy().into_owned();
         std::env::set_var("ENGRAM_PROCESSES_DIR", &proc_dir);
         let store: SharedStore = open_store(&tmp);
         let _ = load_process_sheaf(&store); // loads P5 ritual_linguistic_wake.toml + nrem-consolidation + linguistic tomls for sheaf + ego.leg3 path
-        // P1: Leg3Pointer mint linguistic block
+                                            // P1: Leg3Pointer mint linguistic block
         let sample_words = vec![
-            engram_core::types::LinguisticWord { text: "engram".to_string(), coeff: [0.9,0.1,0.1,0.1,0.1,0.1,0.1,0.1] },
-            engram_core::types::LinguisticWord { text: "geometric".to_string(), coeff: [0.1,0.9,0.1,0.1,0.1,0.1,0.1,0.1] },
+            engram_core::types::LinguisticWord {
+                text: "engram".to_string(),
+                coeff: [0.9, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1],
+            },
+            engram_core::types::LinguisticWord {
+                text: "geometric".to_string(),
+                coeff: [0.1, 0.9, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1],
+            },
         ];
         let bundle = engram_core::types::LinguisticDiscourseBundle {
             bundle_id: "p1-ling-mint".to_string(),
@@ -5319,9 +6623,13 @@ mod tests {
         let de_bundle = engram_core::ops::op_linguistic_decompress(&phase, &bundle);
         let homotopy_crs = engram_core::ops::cosine_similarity(
             &engram_core::ops::op_linguistic_compress(&de_bundle),
-            &engram_core::ops::op_linguistic_compress(&bundle)
+            &engram_core::ops::op_linguistic_compress(&bundle),
         );
-        assert!(homotopy_crs >= 0.85, "P3 decompress roundtrip homotopy CRS>=0.85 got {}", homotopy_crs);
+        assert!(
+            homotopy_crs >= 0.85,
+            "P3 decompress roundtrip homotopy CRS>=0.85 got {}",
+            homotopy_crs
+        );
         // text/coeff fidelity (structure + coeffs preserved in roundtrip path)
         assert_eq!(de_bundle.bundle_id, bundle.bundle_id);
         assert!(de_bundle.words.len() == bundle.words.len());
@@ -5330,39 +6638,76 @@ mod tests {
         // P4: diff / integrate / operadic (from ops, used by mcp_linguistic_calculus handler)
         let (diff_b, _) = engram_core::ops::op_linguistic_differentiate(&bundle);
         let _int_b = engram_core::ops::op_linguistic_integrate(&[bundle.clone(), diff_b.clone()]);
-        let oper_b = engram_core::ops::op_operadic_compose(&[bundle.clone(), diff_b.clone()], &["metaphor"]);
+        let oper_b =
+            engram_core::ops::op_operadic_compose(&[bundle.clone(), diff_b.clone()], &["metaphor"]);
         let p4_crs = engram_core::ops::cosine_similarity(
             &engram_core::ops::op_linguistic_compress(&bundle),
-            &engram_core::ops::op_linguistic_compress(&oper_b)
-        ).max(0.85);
+            &engram_core::ops::op_linguistic_compress(&oper_b),
+        )
+        .max(0.85);
         assert!(p4_crs >= 0.85, "P4 operadic crs fidelity >=0.85");
         // P5: NREM/ego sim (records + relate to ritual/nrem/ego.leg3) + sheaf P5 tomls
         {
             let mut l = store.lock().unwrap();
             let _ = l.remember("phase6_linguistic_nrem_ego", "full p1-5 roundtrip linguistic bundle promoted via nrem to ego.leg3 with crs>=0.85 homotopy");
-            let _ = l.relate("phase6_linguistic_nrem_ego", "ritual:nrem-consolidation", "promotes");
+            let _ = l.relate(
+                "phase6_linguistic_nrem_ego",
+                "ritual:nrem-consolidation",
+                "promotes",
+            );
             let _ = l.relate("phase6_linguistic_nrem_ego", "ego.leg3", "is");
-            let _ = l.relate("phase6_linguistic_nrem_ego", "process:engram.ritual.linguistic-wake", "uses");
+            let _ = l.relate(
+                "phase6_linguistic_nrem_ego",
+                "process:engram.ritual.linguistic-wake",
+                "uses",
+            );
         }
         {
             let l = store.lock().unwrap();
             assert!(
-                l.fetch_block_high_priority("process:engram.ritual.linguistic-wake").is_some() ||
-                l.fetch_block_high_priority("process:engram.ritual.nrem-consolidation").is_some(),
+                l.fetch_block_high_priority("process:engram.ritual.linguistic-wake")
+                    .is_some()
+                    || l.fetch_block_high_priority("process:engram.ritual.nrem-consolidation")
+                        .is_some(),
                 "P5 ritual tomls (linguistic_wake + nrem) registered by load_process_sheaf"
             );
-            assert!(l.fetch_block_high_priority("phase6_linguistic_nrem_ego").is_some(), "NREM/ego.leg3 sim record present");
+            assert!(
+                l.fetch_block_high_priority("phase6_linguistic_nrem_ego")
+                    .is_some(),
+                "NREM/ego.leg3 sim record present"
+            );
         }
         // MCP tool_list wiring check for complete linguistic (P3/P4)
         let list_json = r#"{"jsonrpc":"2.0","id":99,"method":"tools/list"}"#;
         let list_resp = dispatch_jsonrpc(list_json, &store);
         if let Some(v) = list_resp {
-            if let Some(tools) = v.get("result").and_then(|r| r.get("tools")).and_then(|t| t.as_array()) {
-                let names: Vec<_> = tools.iter().filter_map(|t| t.get("name").and_then(|n| n.as_str())).collect();
-                assert!(names.iter().any(|&n| n == "mcp_compress_linguistic"), "P3 compress_linguistic wired in tool_list");
-                assert!(names.iter().any(|&n| n == "mcp_decompress_linguistic"), "P3 decompress wired");
-                assert!(names.iter().any(|&n| n == "mcp_fibered_linguistic_equivalence"), "P3 fibered wired");
-                assert!(names.iter().any(|&n| n == "mcp_linguistic_calculus"), "P4 calculus wired");
+            if let Some(tools) = v
+                .get("result")
+                .and_then(|r| r.get("tools"))
+                .and_then(|t| t.as_array())
+            {
+                let names: Vec<_> = tools
+                    .iter()
+                    .filter_map(|t| t.get("name").and_then(|n| n.as_str()))
+                    .collect();
+                assert!(
+                    names.iter().any(|&n| n == "mcp_compress_linguistic"),
+                    "P3 compress_linguistic wired in tool_list"
+                );
+                assert!(
+                    names.iter().any(|&n| n == "mcp_decompress_linguistic"),
+                    "P3 decompress wired"
+                );
+                assert!(
+                    names
+                        .iter()
+                        .any(|&n| n == "mcp_fibered_linguistic_equivalence"),
+                    "P3 fibered wired"
+                );
+                assert!(
+                    names.iter().any(|&n| n == "mcp_linguistic_calculus"),
+                    "P4 calculus wired"
+                );
             }
         }
         let _ = std::fs::remove_dir_all(&tmp);

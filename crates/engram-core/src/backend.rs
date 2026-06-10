@@ -3,10 +3,10 @@
 //! Implement this trait to add a new hardware backend (CPU, CUDA, ROCm, Vulkan).
 //! The rest of the Engram stack (server, CLI, MCP) is backend-agnostic.
 
-use crate::types::Leg3Pointer;
 use crate::ops::cosine_similarity;
-use num_complex::Complex32;
+use crate::types::Leg3Pointer;
 use anyhow::Result;
+use num_complex::Complex32;
 
 /// A retrieved memory with its concept name and similarity score.
 #[derive(Debug, Clone, Default)]
@@ -60,7 +60,6 @@ pub enum SearchMode {
     /// 170× fewer bytes per block; requires the `wgpu-backend` feature on `engram-gpu`.
     Int8Poincare,
 }
-
 
 /// Swappable VSA compute backend.
 ///
@@ -142,7 +141,8 @@ pub trait VsaBackend: Send + Sync {
         let mut block = self.encode(text);
 
         // Compute element-wise residual: actual_q − prior_q
-        let l2_sq: f32 = block.q
+        let l2_sq: f32 = block
+            .q
             .iter()
             .zip(prior_q.iter())
             .map(|(q, p)| (*q - *p).norm_sqr())
@@ -160,13 +160,19 @@ pub trait VsaBackend: Send + Sync {
     /// Formally verify a behavioral hypothesis (ZEDOS_HYPOTHESIS).
     /// If it succeeds consistently, it automatically promotes to ZEDOS_PRAXIS.
     fn verify_hypothesis(&self, concept: &str, success: bool) -> Result<()> {
-        let mut block_ptr = self.fetch_block(concept)
+        let mut block_ptr = self
+            .fetch_block(concept)
             .ok_or_else(|| anyhow::anyhow!("Concept '{}' not found", concept))?;
-        
-        if block_ptr.zedos_tag != crate::types::ZEDOS_HYPOTHESIS && block_ptr.zedos_tag != crate::types::ZEDOS_PRAXIS {
-            return Err(anyhow::anyhow!("Concept is not a hypothesis or praxis block. Found tag: {}", block_ptr.zedos_tag));
+
+        if block_ptr.zedos_tag != crate::types::ZEDOS_HYPOTHESIS
+            && block_ptr.zedos_tag != crate::types::ZEDOS_PRAXIS
+        {
+            return Err(anyhow::anyhow!(
+                "Concept is not a hypothesis or praxis block. Found tag: {}",
+                block_ptr.zedos_tag
+            ));
         }
-        
+
         if success {
             block_ptr.energetics.alpha_a = (block_ptr.energetics.alpha_a + 0.25).min(2.0);
             block_ptr.fail_streak = 0;
@@ -174,12 +180,12 @@ pub trait VsaBackend: Send + Sync {
             block_ptr.energetics.alpha_d = (block_ptr.energetics.alpha_d + 0.25).min(2.0);
             block_ptr.fail_streak = block_ptr.fail_streak.saturating_add(1);
         }
-        
+
         // Promote to Praxis if sufficiently verified
         if block_ptr.energetics.alpha_a - block_ptr.energetics.alpha_d >= 1.0 {
             block_ptr.zedos_tag = crate::types::ZEDOS_PRAXIS;
         }
-        
+
         self.store(concept, block_ptr)
     }
 
@@ -213,7 +219,7 @@ pub trait VsaBackend: Send + Sync {
         // OP_ADD superposition: 80% prior belief + 20% new evidence
         // This preserves the accumulated geometric identity while integrating new data.
         const PRIOR_WEIGHT: f32 = 0.80;
-        const NEW_WEIGHT:   f32 = 0.20;
+        const NEW_WEIGHT: f32 = 0.20;
         let mut norm_sq = 0.0f32;
         for i in 0..crate::types::DIMENSION {
             let blended = existing.q[i] * PRIOR_WEIGHT + new_block.q[i] * NEW_WEIGHT;
@@ -259,7 +265,7 @@ pub trait VsaBackend: Send + Sync {
     fn track_user_centroid(&self, interaction_text: &str) -> Result<()> {
         let centroid_concept = "_user_centroid";
         let new_block = self.encode(interaction_text);
-        
+
         let centroid = if let Some(mut existing) = self.fetch_block(centroid_concept) {
             let mut norm_sq = 0.0f32;
             for i in 0..crate::types::DIMENSION {
@@ -272,7 +278,7 @@ pub trait VsaBackend: Send + Sync {
                 existing.q[i] /= norm;
             }
             existing.superposition_count = existing.superposition_count.saturating_add(1);
-            
+
             // Update payload with latest interaction for visibility
             let text_bytes = interaction_text.as_bytes();
             let copy_len = text_bytes.len().min(existing.payload.len());
@@ -280,7 +286,7 @@ pub trait VsaBackend: Send + Sync {
             if copy_len < existing.payload.len() {
                 existing.payload[copy_len..].fill(0);
             }
-            
+
             existing
         } else {
             let mut fresh = new_block;
@@ -288,11 +294,10 @@ pub trait VsaBackend: Send + Sync {
             fresh.crs_score = 0.74; // Grounded-tier default; Ego gate will adjust at store time
             fresh
         };
-        
+
         self.store(centroid_concept, centroid)
     }
 }
-
 
 // ── CPU Backend (always compiled) ────────────────────────────────────────────
 
@@ -317,7 +322,10 @@ pub struct CpuBackend {
 impl CpuBackend {
     /// Create a backend without an LBVH index (linear scan mode).
     pub fn new(manifold_dir: impl Into<std::path::PathBuf>) -> Self {
-        Self { manifold_dir: manifold_dir.into(), bvh: None }
+        Self {
+            manifold_dir: manifold_dir.into(),
+            bvh: None,
+        }
     }
 
     /// Create a backend and attempt to load the LBVH index from the default
@@ -331,7 +339,10 @@ impl CpuBackend {
         } else {
             tracing::debug!("[BVH] No index found — using O_DIRECT linear scan");
         }
-        Self { manifold_dir: dir, bvh }
+        Self {
+            manifold_dir: dir,
+            bvh,
+        }
     }
 }
 
@@ -366,8 +377,11 @@ impl VsaBackend for CpuBackend {
                         Some(score_block(concept.clone(), query, &block, None))
                     })
                     .collect();
-                scored.sort_by(|a, b|
-                    b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+                scored.sort_by(|a, b| {
+                    b.score
+                        .partial_cmp(&a.score)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                });
                 scored.truncate(k);
                 return scored;
             }
@@ -382,17 +396,24 @@ impl VsaBackend for CpuBackend {
             Err(_) => return Vec::new(),
         };
 
-        let mut scored: Vec<Memory> = entries.par_iter()
+        let mut scored: Vec<Memory> = entries
+            .par_iter()
             .filter_map(|entry| {
                 let path = entry.path();
-                if path.extension().and_then(|e| e.to_str()) != Some("leg") { return None; }
+                if path.extension().and_then(|e| e.to_str()) != Some("leg") {
+                    return None;
+                }
                 let concept = path.file_stem()?.to_str()?.to_string();
                 let block = crate::storage::read_block(&path).ok()?;
                 Some(score_block(concept, query, &block, None))
             })
             .collect();
 
-        scored.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        scored.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         scored.truncate(k);
         scored
     }
@@ -406,17 +427,22 @@ impl VsaBackend for CpuBackend {
 
     fn forget(&self, concept: &str) -> Result<()> {
         let path = self.manifold_dir.join(format!("{}.leg", concept));
-        if path.exists() { std::fs::remove_file(path)?; }
+        if path.exists() {
+            std::fs::remove_file(path)?;
+        }
         Ok(())
     }
 
     fn list(&self) -> Vec<String> {
         std::fs::read_dir(&self.manifold_dir)
             .map(|entries| {
-                entries.flatten()
+                entries
+                    .flatten()
                     .filter_map(|e| {
                         let p = e.path();
-                        if p.extension().and_then(|x| x.to_str()) != Some("leg") { return None; }
+                        if p.extension().and_then(|x| x.to_str()) != Some("leg") {
+                            return None;
+                        }
                         p.file_stem()?.to_str().map(|s| s.to_string())
                     })
                     .collect()
@@ -450,13 +476,19 @@ impl SheafBackend {
                 (name, b)
             })
             .collect();
-        Self { stalks, active: std::sync::atomic::AtomicUsize::new(0) }
+        Self {
+            stalks,
+            active: std::sync::atomic::AtomicUsize::new(0),
+        }
     }
 
     /// Create with pre-built backend instances per stalk.
     /// Use this to pass `CudaBackend` or any other `VsaBackend` implementor.
     pub fn new_boxed(stalks: Vec<(String, Box<dyn VsaBackend + Send + Sync>)>) -> Self {
-        Self { stalks, active: std::sync::atomic::AtomicUsize::new(0) }
+        Self {
+            stalks,
+            active: std::sync::atomic::AtomicUsize::new(0),
+        }
     }
 
     pub fn set_active_stalk(&self, name: &str) -> bool {
@@ -479,7 +511,9 @@ impl SheafBackend {
 }
 
 impl VsaBackend for SheafBackend {
-    fn encode(&self, text: &str) -> Leg3Pointer { crate::encode::from_text(text) }
+    fn encode(&self, text: &str) -> Leg3Pointer {
+        crate::encode::from_text(text)
+    }
 
     fn fetch(&self, concept: &str) -> Option<Box<[Complex32; 8192]>> {
         self.stalks.iter().find_map(|(_, s)| s.fetch(concept))
@@ -491,7 +525,8 @@ impl VsaBackend for SheafBackend {
 
     fn query(&self, query: &[Complex32; 8192], k: usize) -> Vec<Memory> {
         use rayon::prelude::*;
-        let mut all: Vec<Memory> = self.stalks
+        let mut all: Vec<Memory> = self
+            .stalks
             .par_iter()
             .flat_map_iter(|(stalk_name, backend)| {
                 let name = stalk_name.clone();
@@ -501,7 +536,11 @@ impl VsaBackend for SheafBackend {
                 })
             })
             .collect();
-        all.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        all.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         all.truncate(k);
         all
     }
@@ -513,15 +552,21 @@ impl VsaBackend for SheafBackend {
 
     fn forget(&self, concept: &str) -> anyhow::Result<()> {
         for (_, stalk) in &self.stalks {
-            if stalk.fetch(concept).is_some() { return stalk.forget(concept); }
+            if stalk.fetch(concept).is_some() {
+                return stalk.forget(concept);
+            }
         }
         Ok(())
     }
 
     fn list(&self) -> Vec<String> {
-        self.stalks.iter()
+        self.stalks
+            .iter()
             .flat_map(|(name, stalk)| {
-                stalk.list().into_iter().map(move |c| format!("{}::{}", name, c))
+                stalk
+                    .list()
+                    .into_iter()
+                    .map(move |c| format!("{}::{}", name, c))
             })
             .collect()
     }
@@ -559,12 +604,12 @@ fn score_block(
     ego_q: Option<&[Complex32; 8192]>,
 ) -> Memory {
     let base_sim = cosine_similarity(query, &block.q);
-    
+
     // Normalize factors to [0.0, 1.0] for Dirichlet convex combination
-    let base_sim_norm = (base_sim + 1.0) / 2.0; 
-    let crs_norm       = block.crs_score.clamp(0.0, 1.0);
+    let base_sim_norm = (base_sim + 1.0) / 2.0;
+    let crs_norm = block.crs_score.clamp(0.0, 1.0);
     let stability_norm = (1.0 - block.energetics.dv).clamp(0.0, 1.0);
-    let depth_norm     = (block.superposition_count.min(10) as f32 / 10.0).clamp(0.0, 1.0);
+    let depth_norm = (block.superposition_count.min(10) as f32 / 10.0).clamp(0.0, 1.0);
 
     // Phase 88-Engram Bridge: Ego recognition term
     // ego_norm ∈ [0,1]: how much does the living Ego recognize this block?
@@ -595,17 +640,21 @@ fn score_block(
     };
 
     let score = (base_sim_norm * D1) + (crs_norm * D2) + (d3_value * D3) + (depth_norm * D4);
-    
+
     let provlog_full = crate::storage::read_provlog(block);
     let provlog = provlog_full.chars().take(512).collect();
-    
-    let explain = format!(
+
+    let explain =
+        format!(
         "Dirichlet[ego={}]: sim={:.3}*{} + crs={:.3}*{} + frame={:.3}*{} + mass={:.3}*{} => {:.4}",
         ego_q.is_some(),
         base_sim_norm, D1, crs_norm, D2, d3_value, D3, depth_norm, D4, score
     );
     Memory {
-        concept, score, crs: block.crs_score, provlog,
+        concept,
+        score,
+        crs: block.crs_score,
+        provlog,
         drift_velocity: block.energetics.dv,
         superposition_depth: block.superposition_count,
         zedos_tag: block.zedos_tag,
@@ -627,7 +676,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let backend = CpuBackend::new(dir.path());
         let concept = "test_hyp";
-        
+
         let mut block = backend.encode("testing");
         block.zedos_tag = crate::types::ZEDOS_HYPOTHESIS;
         backend.store(concept, block).unwrap();
@@ -646,6 +695,10 @@ mod tests {
         backend.verify_hypothesis(concept, true).unwrap();
 
         let b2 = backend.fetch_block(concept).unwrap();
-        assert_eq!(b2.zedos_tag, crate::types::ZEDOS_PRAXIS, "Should have promoted to PRAXIS");
+        assert_eq!(
+            b2.zedos_tag,
+            crate::types::ZEDOS_PRAXIS,
+            "Should have promoted to PRAXIS"
+        );
     }
 }
