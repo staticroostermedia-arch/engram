@@ -31,23 +31,23 @@ pub const BLOCK_SIZE: usize = 262_144;
 // Stored in `HolographicBlock::zedos_tag`.
 
 /// Declarative memory: facts, definitions, universal claims.
-pub const ZEDOS_DECLARATIVE: u8  = 0xD;
+pub const ZEDOS_DECLARATIVE: u8 = 0xD;
 /// Episodic memory: conversation turns, experiential context.
-pub const ZEDOS_EPISODIC: u8     = 0xA;
+pub const ZEDOS_EPISODIC: u8 = 0xA;
 /// Operational memory: tools, executables, code.
-pub const ZEDOS_OPERATIONAL: u8  = 0x52;
+pub const ZEDOS_OPERATIONAL: u8 = 0x52;
 /// Raw body chunk: unstructured payload.
-pub const ZEDOS_BODY: u8         = 0xB0;
+pub const ZEDOS_BODY: u8 = 0xB0;
 /// Verbatim text: lossless source material.
-pub const ZEDOS_VERBATIM: u8     = 0xB1;
+pub const ZEDOS_VERBATIM: u8 = 0xB1;
 /// Praxis memory: crystallized learned procedures.
-pub const ZEDOS_PRAXIS: u8       = 0x50;
+pub const ZEDOS_PRAXIS: u8 = 0x50;
 /// Hypothesis memory: aspirational/unverified claims pending behavioral validation.
-pub const ZEDOS_HYPOTHESIS: u8   = 0xAA;
+pub const ZEDOS_HYPOTHESIS: u8 = 0xAA;
 /// Phase M: Relation block — links two concepts via OP_BIND (Merkle-chained).
-pub const ZEDOS_RELATION: u8     = 0xE1;
+pub const ZEDOS_RELATION: u8 = 0xE1;
 /// Phase E.4: User Model block — tracks persistent centroid of user interaction.
-pub const ZEDOS_USER_MODEL: u8   = 0xC0;
+pub const ZEDOS_USER_MODEL: u8 = 0xC0;
 
 /// Tier 5 subjective NREM centroid delta (CodeLand port for resonant path).
 /// Strict routing: never back-propagates to raw objective/oracle candidate pool.
@@ -76,11 +76,11 @@ pub const ZEDOS_POINTER: u8 = 0x2F;
 /// Zero layout impact to BLOCK_SIZE / q / p / crs_score / Merkle / AABB / base ZEDOS.
 /// New tags for analytic-polynomial linguistic data (semantic coeffs carried in phase tensor q
 /// and/or functor metadata; primary serialization to payload JSON + AABB spatial for edits).
-pub const ZEDOS_LINGUISTIC: u8      = 0x4C;
+pub const ZEDOS_LINGUISTIC: u8 = 0x4C;
 /// Linguistic polynomial/functorial (operadic/morphism metadata).
 pub const ZEDOS_LINGUISTIC_POLY: u8 = 0x4D;
 /// Fibered/sheaf category extension (0x4E per NREM_CENTROID value alias ok for extension; fibered linguistic bundles).
-pub const ZEDOS_FIBERED: u8         = 0x4E;
+pub const ZEDOS_FIBERED: u8 = 0x4E;
 
 /// Payload JSON schema (v1) for ZEDOS_LINGUISTIC / LINGUISTIC_POLY / FIBERED blocks:
 /// {
@@ -121,15 +121,23 @@ mod phase1_linguistic_tests {
         assert!(lp.crs_score >= 0.85, "CRS {} < 0.85", lp.crs_score);
         let pstr = std::str::from_utf8(&lp.payload[..256]).unwrap_or("");
         assert!(pstr.contains("linguistic/v1"), "payload schema missing");
-        assert!(pstr.contains("phase1-discourse"), "bundle_id not in payload");
-        assert!(pstr.contains("engram"), "word text not preserved in payload");
+        assert!(
+            pstr.contains("phase1-discourse"),
+            "bundle_id not in payload"
+        );
+        assert!(
+            pstr.contains("engram"),
+            "word text not preserved in payload"
+        );
         assert!(pstr.contains("operadic"), "functor_metadata not in payload");
         // q phase embed check (coeffs in leading q)
         assert!((lp.q[0].re - 0.1).abs() < 1e-6);
         // roundtrip via extract (payload data preserved)
-        let rt = lp.extract_linguistic_bundle().expect("roundtrip extract failed");
+        let rt = lp
+            .extract_linguistic_bundle()
+            .expect("roundtrip extract failed");
         assert_eq!(rt.bundle_id, "roundtrip"); // sentinel confirms tag+crs+schema path
-        // full data roundtrip demonstrated by payload contains + tag/crs/q
+                                               // full data roundtrip demonstrated by payload contains + tag/crs/q
     }
 }
 
@@ -284,25 +292,24 @@ pub struct HolographicBlock {
     // ── Prediction error residual at 0x21040 ─────────────────────────────────
     // Carved from the former _pad_energetics region. Backwards compatible:
     // old blocks have this region zeroed, which is the valid "no residual" sentinel.
-
     /// First 16 complex dimensions of (actual_q − prior_q) computed at JIT learning time.
     /// Captures the geometric *direction* of the prediction error in the FHRR subspace.
     /// Zero-filled for blocks minted without residual computation (pre-Phase E.1).
-    pub err_residual_16d: [Complex32; 16],      // 128 bytes
+    pub err_residual_16d: [Complex32; 16], // 128 bytes
 
     /// L2-norm of the full 8192D residual vector (actual_q − prior_q).
     /// Scalar "surprise magnitude" in the original high-dimensional space.
     /// Used by M-NOL as a weighting factor: `repulsion = cos_sim_16d × l2_norm_residual`.
     /// Zero = block predates this feature or no prior knowledge existed.
-    pub l2_norm_residual: f32,                  // 4 bytes
+    pub l2_norm_residual: f32, // 4 bytes
 
     /// Number of meaningful dimensions stored in `err_residual_16d`.
     /// Currently always 16 (or 0 if no residual). Reserved for future adaptive
     /// PCA compression where only the top-k principal components are retained.
-    pub residual_dims_used: u8,                 // 1 byte
-    pub _pad_residual_align: [u8; 3],           // 3 bytes — align to 4-byte boundary
+    pub residual_dims_used: u8, // 1 byte
+    pub _pad_residual_align: [u8; 3], // 3 bytes — align to 4-byte boundary
 
-    pub _pad_energetics: [u8; 3896],            // remaining dead pad (4032 − 136)
+    pub _pad_energetics: [u8; 3896], // remaining dead pad (4032 − 136)
 
     // ── Payload region at 0x22000 ─────────────────────────────────────────────
     /// Wikidata Q-ID or relation anchor (32 bytes).
@@ -360,26 +367,45 @@ impl Leg3Pointer {
     /// q/p/CRS/Merkle/BLOCK core untouched.
     pub fn mint_linguistic(bundle: &LinguisticDiscourseBundle, use_poly: bool) -> Self {
         let mut lp = Self::mint();
-        lp.zedos_tag = if use_poly { ZEDOS_LINGUISTIC_POLY } else { ZEDOS_LINGUISTIC };
+        lp.zedos_tag = if use_poly {
+            ZEDOS_LINGUISTIC_POLY
+        } else {
+            ZEDOS_LINGUISTIC
+        };
         // manual JSON to payload (UTF8, per schema in comments at ZEDOS)
         let mut json = String::from("{\"schema\":\"linguistic/v1\",\"bundle_id\":\"");
         json.push_str(&bundle.bundle_id.replace('"', "\\\""));
         json.push_str("\",\"words\":[");
         for (i, w) in bundle.words.iter().enumerate() {
-            if i > 0 { json.push(','); }
-            json.push_str(&format!("{{\"text\":\"{}\",\"coeff\":[", w.text.replace('"', "\\\"")));
+            if i > 0 {
+                json.push(',');
+            }
+            json.push_str(&format!(
+                "{{\"text\":\"{}\",\"coeff\":[",
+                w.text.replace('"', "\\\"")
+            ));
             for (j, c) in w.coeff.iter().enumerate() {
-                if j > 0 { json.push(','); }
+                if j > 0 {
+                    json.push(',');
+                }
                 json.push_str(&format!("{}", c));
             }
             json.push_str("]}");
         }
         json.push_str("],\"patches\":[");
         for (i, p) in bundle.patches.iter().enumerate() {
-            if i > 0 { json.push(','); }
-            json.push_str(&format!("{{\"patch_id\":{},\"morphism\":\"{}\",\"coeff_delta\":[", p.patch_id, p.morphism.replace('"', "\\\"")));
+            if i > 0 {
+                json.push(',');
+            }
+            json.push_str(&format!(
+                "{{\"patch_id\":{},\"morphism\":\"{}\",\"coeff_delta\":[",
+                p.patch_id,
+                p.morphism.replace('"', "\\\"")
+            ));
             for (j, c) in p.coeff_delta.iter().enumerate() {
-                if j > 0 { json.push(','); }
+                if j > 0 {
+                    json.push(',');
+                }
                 json.push_str(&format!("{}", c));
             }
             json.push_str("]}");
@@ -402,13 +428,20 @@ impl Leg3Pointer {
 
     /// Roundtrip helper: extract/validate linguistic from payload (preserves for test).
     pub fn extract_linguistic_bundle(&self) -> Option<LinguisticDiscourseBundle> {
-        if self.zedos_tag != ZEDOS_LINGUISTIC && self.zedos_tag != ZEDOS_LINGUISTIC_POLY { return None; }
+        if self.zedos_tag != ZEDOS_LINGUISTIC && self.zedos_tag != ZEDOS_LINGUISTIC_POLY {
+            return None;
+        }
         let pstr = std::str::from_utf8(&self.payload).unwrap_or("");
-        if !pstr.contains("linguistic/v1") { return None; }
+        if !pstr.contains("linguistic/v1") {
+            return None;
+        }
         // sentinel for minimal roundtrip (full data in payload bytes preserved; test asserts contains)
         Some(LinguisticDiscourseBundle {
             bundle_id: "roundtrip".into(),
-            words: vec![LinguisticWord { text: "roundtrip".into(), coeff: [0.0; 8] }],
+            words: vec![LinguisticWord {
+                text: "roundtrip".into(),
+                coeff: [0.0; 8],
+            }],
             patches: vec![],
             functor_metadata: "roundtrip".into(),
         })
@@ -416,30 +449,42 @@ impl Leg3Pointer {
 
     /// Wrap an existing boxed block.
     #[inline(always)]
-    pub fn from_boxed(b: Box<HolographicBlock>) -> Self { Self(b) }
+    pub fn from_boxed(b: Box<HolographicBlock>) -> Self {
+        Self(b)
+    }
 
     /// Unwrap into the owned `Box<HolographicBlock>`.
     #[inline(always)]
-    pub fn into_inner(self) -> Box<HolographicBlock> { self.0 }
+    pub fn into_inner(self) -> Box<HolographicBlock> {
+        self.0
+    }
 
     /// Raw const pointer for CUDA DMA.
     #[inline(always)]
-    pub fn as_raw_ptr(&self) -> *const HolographicBlock { &*self.0 }
+    pub fn as_raw_ptr(&self) -> *const HolographicBlock {
+        &*self.0
+    }
 
     /// Raw mut pointer for CUDA DMA.
     #[inline(always)]
-    pub fn as_raw_mut_ptr(&mut self) -> *mut HolographicBlock { &mut *self.0 }
+    pub fn as_raw_mut_ptr(&mut self) -> *mut HolographicBlock {
+        &mut *self.0
+    }
 }
 
 impl std::ops::Deref for Leg3Pointer {
     type Target = HolographicBlock;
     #[inline(always)]
-    fn deref(&self) -> &HolographicBlock { &self.0 }
+    fn deref(&self) -> &HolographicBlock {
+        &self.0
+    }
 }
 
 impl std::ops::DerefMut for Leg3Pointer {
     #[inline(always)]
-    fn deref_mut(&mut self) -> &mut HolographicBlock { &mut self.0 }
+    fn deref_mut(&mut self) -> &mut HolographicBlock {
+        &mut self.0
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -592,17 +637,20 @@ mod tests {
 
     #[test]
     fn stride_boundaries_exact() {
-        assert_eq!(offset_of!(HolographicBlock, q),              0x00000);
-        assert_eq!(offset_of!(HolographicBlock, p),              0x10000);
-        assert_eq!(offset_of!(HolographicBlock, magic),          0x20000);
-        assert_eq!(offset_of!(HolographicBlock, energetics),     0x21000);
+        assert_eq!(offset_of!(HolographicBlock, q), 0x00000);
+        assert_eq!(offset_of!(HolographicBlock, p), 0x10000);
+        assert_eq!(offset_of!(HolographicBlock, magic), 0x20000);
+        assert_eq!(offset_of!(HolographicBlock, energetics), 0x21000);
         // Residual fields immediately follow the 64-byte Logenergetics struct
-        assert_eq!(offset_of!(HolographicBlock, err_residual_16d), 0x21040,
-            "err_residual_16d must start at 0x21040 (Logenergetics end)");
+        assert_eq!(
+            offset_of!(HolographicBlock, err_residual_16d),
+            0x21040,
+            "err_residual_16d must start at 0x21040 (Logenergetics end)"
+        );
         // Payload region must not move
-        assert_eq!(offset_of!(HolographicBlock, concept_ref),    0x22000);
-        assert_eq!(offset_of!(HolographicBlock, payload),        0x22028);
-        assert_eq!(offset_of!(HolographicBlock, footer),         261_888);
+        assert_eq!(offset_of!(HolographicBlock, concept_ref), 0x22000);
+        assert_eq!(offset_of!(HolographicBlock, payload), 0x22028);
+        assert_eq!(offset_of!(HolographicBlock, footer), 261_888);
     }
 
     #[test]
@@ -620,13 +668,26 @@ mod tests {
     fn symplectic_state_invariants_and_frame_application() {
         let mut state = SymplecticState::new();
         // Starts normalized
-        let init_mag: f32 = state.active_location.iter().map(|c| c.re*c.re + c.im*c.im).sum::<f32>().sqrt();
-        assert!((init_mag - 1.0).abs() < 1e-5, "initial active_location not unit");
+        let init_mag: f32 = state
+            .active_location
+            .iter()
+            .map(|c| c.re * c.re + c.im * c.im)
+            .sum::<f32>()
+            .sqrt();
+        assert!(
+            (init_mag - 1.0).abs() < 1e-5,
+            "initial active_location not unit"
+        );
 
         // Set a location (must normalize)
         let raw_loc = [Complex32::new(2.0, 0.0); DIMENSION];
         state.set_active_location(raw_loc);
-        let loc_mag: f32 = state.active_location.iter().map(|c| c.re*c.re + c.im*c.im).sum::<f32>().sqrt();
+        let loc_mag: f32 = state
+            .active_location
+            .iter()
+            .map(|c| c.re * c.re + c.im * c.im)
+            .sum::<f32>()
+            .sqrt();
         assert!((loc_mag - 1.0).abs() < 1e-5);
 
         // Install lens + apply
@@ -637,8 +698,15 @@ mod tests {
 
         let query = [Complex32::new(1.0, 0.0); DIMENSION];
         let framed = state.apply_current_frame(&query);
-        let fmag: f32 = framed.iter().map(|c| c.re*c.re + c.im*c.im).sum::<f32>().sqrt();
-        assert!((fmag - 1.0).abs() < 1e-5, "SymplecticState frame application must yield unit vector");
+        let fmag: f32 = framed
+            .iter()
+            .map(|c| c.re * c.re + c.im * c.im)
+            .sum::<f32>()
+            .sqrt();
+        assert!(
+            (fmag - 1.0).abs() < 1e-5,
+            "SymplecticState frame application must yield unit vector"
+        );
 
         // Advance + clear
         state.advance_frame();
@@ -648,7 +716,11 @@ mod tests {
 
         // After clear, identity
         let passthrough = state.apply_current_frame(&query);
-        let pmag: f32 = passthrough.iter().map(|c| c.re*c.re + c.im*c.im).sum::<f32>().sqrt();
+        let pmag: f32 = passthrough
+            .iter()
+            .map(|c| c.re * c.re + c.im * c.im)
+            .sum::<f32>()
+            .sqrt();
         assert!((pmag - 1.0).abs() < 1e-5);
     }
 }

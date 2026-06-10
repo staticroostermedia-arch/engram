@@ -10,7 +10,9 @@ pub fn boot() {
             // Prefer a relative path from the binary; allow override via ENGRAM_SCOUT_DAEMON env var.
             let daemon_path = "integrations/scout_daemon.py";
             let env_path = std::env::var("ENGRAM_SCOUT_DAEMON").unwrap_or_default();
-            let path_to_run: &str = if !env_path.is_empty() && std::path::Path::new(&env_path).exists() {
+            let path_to_run: &str = if !env_path.is_empty()
+                && std::path::Path::new(&env_path).exists()
+            {
                 &env_path
             } else if std::path::Path::new(daemon_path).exists() {
                 daemon_path
@@ -28,7 +30,10 @@ pub fn boot() {
             {
                 Ok(c) => c,
                 Err(e) => {
-                    warn!("[SCOUT_SUPERVISOR] Failed to spawn scout daemon: {}. Retrying in 10s...", e);
+                    warn!(
+                        "[SCOUT_SUPERVISOR] Failed to spawn scout daemon: {}. Retrying in 10s...",
+                        e
+                    );
                     thread::sleep(std::time::Duration::from_secs(10));
                     continue;
                 }

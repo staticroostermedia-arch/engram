@@ -46,7 +46,9 @@ pub struct WatchedProcess {
     pub severity: String,
 }
 
-fn default_severity() -> String { "MEDIUM".to_string() }
+fn default_severity() -> String {
+    "MEDIUM".to_string()
+}
 
 /// Top-level `watchdog.toml` structure.
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -98,7 +100,8 @@ impl WatchdogConfig {
                 Err(e) => {
                     tracing::warn!(
                         "[Watchdog] Failed to parse {}: {}. Health watchdog disabled.",
-                        config_path.display(), e
+                        config_path.display(),
+                        e
                     );
                     Self::default()
                 }
@@ -106,7 +109,8 @@ impl WatchdogConfig {
             Err(e) => {
                 tracing::warn!(
                     "[Watchdog] Cannot read {}: {}. Health watchdog disabled.",
-                    config_path.display(), e
+                    config_path.display(),
+                    e
                 );
                 Self::default()
             }
@@ -150,10 +154,13 @@ pub fn is_process_alive(name: &str) -> bool {
                 entries.flatten().any(|e| {
                     // Only numeric entries are PIDs
                     let fname = e.file_name();
-                    let is_pid = fname.to_str()
+                    let is_pid = fname
+                        .to_str()
                         .map(|s| s.chars().all(|c| c.is_ascii_digit()))
                         .unwrap_or(false);
-                    if !is_pid { return false; }
+                    if !is_pid {
+                        return false;
+                    }
                     std::fs::read_to_string(e.path().join("comm"))
                         .ok()
                         .map(|s| s.trim() == name)
@@ -226,7 +233,10 @@ pub fn mint_proposal(process: &WatchedProcess, proposals_path: &std::path::Path)
     });
 
     if already_pending {
-        tracing::debug!("[Watchdog] Proposal for '{}' already pending — skipping.", process.name);
+        tracing::debug!(
+            "[Watchdog] Proposal for '{}' already pending — skipping.",
+            process.name
+        );
         return;
     }
 
@@ -240,11 +250,16 @@ pub fn mint_proposal(process: &WatchedProcess, proposals_path: &std::path::Path)
     match serde_json::to_string_pretty(&proposals) {
         Ok(json) => {
             if let Err(e) = std::fs::write(proposals_path, json) {
-                tracing::error!("[Watchdog] Failed to write proposals to {}: {}", proposals_path.display(), e);
+                tracing::error!(
+                    "[Watchdog] Failed to write proposals to {}: {}",
+                    proposals_path.display(),
+                    e
+                );
             } else {
                 tracing::info!(
                     "[Watchdog] Minted SYSTEM_HEALTH proposal for '{}' → {}",
-                    process.name, proposals_path.display()
+                    process.name,
+                    proposals_path.display()
                 );
             }
         }

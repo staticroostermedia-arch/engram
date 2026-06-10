@@ -19,17 +19,17 @@
 //!
 //! Falls back to `CpuBackend` on any Metal dispatch error.
 
+use anyhow::Result;
 use engram_core::backend::{Memory, VsaBackend};
-use engram_core::types::{Leg3Pointer, DIMENSION};
 #[cfg(target_os = "macos")]
 use engram_core::types::SymplecticState;
+use engram_core::types::{Leg3Pointer, DIMENSION};
 use num_complex::Complex32;
-use anyhow::Result;
 
 #[cfg(target_os = "macos")]
 use {
-    crate::bvh::BvhManifold,
     crate::backend::compute_eviction_score,
+    crate::bvh::BvhManifold,
     engram_core::backend::CpuBackend,
     engram_core::mmap::LegView,
     engram_core::types::HolographicBlock,
@@ -145,10 +145,7 @@ impl MetalBackend {
             .new_compute_pipeline_state_with_function(&project_fn)
             .expect("Failed to create projection compute pipeline");
 
-        info!(
-            "[engram-gpu] MetalBackend initialized: {:?}",
-            device.name()
-        );
+        info!("[engram-gpu] MetalBackend initialized: {:?}", device.name());
 
         Self {
             store_path: PathBuf::from(&expanded),
@@ -308,7 +305,10 @@ impl MetalBackend {
         // Async dispatch with timeout + CPU fallback (Metal patch for GPU hand-off).
         // Avoids indefinite block; on timeout or error fall back gracefully.
         let dispatch_ok = if let Err(e) = self.wait_until_completed_timeout(&command_buffer, 5.0) {
-            warn!("Metal dispatch timeout or error: {:?}, falling back to CPU", e);
+            warn!(
+                "Metal dispatch timeout or error: {:?}, falling back to CPU",
+                e
+            );
             false
         } else {
             true
@@ -336,7 +336,11 @@ impl MetalBackend {
     }
 
     /// Helper: wait with timeout (simple poll + sleep for Metal; production would use semaphore + dispatch_after).
-    fn wait_until_completed_timeout(&self, cb: &CommandBufferRef, timeout_secs: f64) -> Result<(), String> {
+    fn wait_until_completed_timeout(
+        &self,
+        cb: &CommandBufferRef,
+        timeout_secs: f64,
+    ) -> Result<(), String> {
         use std::time::{Duration, Instant};
         let start = Instant::now();
         let timeout = Duration::from_secs_f64(timeout_secs);
@@ -352,7 +356,8 @@ impl MetalBackend {
             std::thread::sleep(Duration::from_millis(5));
             // If we reach here without panic in real wait, assume progress; real impl can inspect.
             // To keep simple and match patch intent, break after short time or let outer handle.
-            if start.elapsed() > Duration::from_millis(100) { // quick probe
+            if start.elapsed() > Duration::from_millis(100) {
+                // quick probe
                 break;
             }
         }
@@ -433,14 +438,17 @@ impl MetalBackend {
                 return pool.remove(idx);
             }
             // Allocate new if none suitable.
-            let buf: Buffer = self.device.new_buffer(size, MTLResourceOptions::StorageModeShared);
+            let buf: Buffer = self
+                .device
+                .new_buffer(size, MTLResourceOptions::StorageModeShared);
             // Optionally cap pool size to avoid unbounded growth.
             if pool.len() > 32 {
                 pool.remove(0);
             }
             buf
         } else {
-            self.device.new_buffer(size, MTLResourceOptions::StorageModeShared)
+            self.device
+                .new_buffer(size, MTLResourceOptions::StorageModeShared)
         }
     }
 
@@ -477,7 +485,10 @@ impl MetalBackend {
                     if let Ok(mut wcache) = self.high_priority_cache.write() {
                         wcache.insert(concept.to_string(), fresh.clone());
                     }
-                    tracing::debug!("[high-priority][metal] LegView zero-copy hit for {}", concept);
+                    tracing::debug!(
+                        "[high-priority][metal] LegView zero-copy hit for {}",
+                        concept
+                    );
                     return Some(fresh);
                 }
                 if let Some(cached) = cache.get(concept) {
@@ -491,7 +502,11 @@ impl MetalBackend {
     /// Promote a block to the high-priority cache (with recency for LRU).
     /// Sources via LegView + to_leg3_pointer when possible (O_DIRECT bypass at promotion site too).
     /// Uses shared compute_eviction_score for AccessIndex-aware hybrid LRU (MAX 1024).
-    pub fn promote_to_high_priority(&self, concept: &str, last_accessed: Option<u64>) -> Option<Leg3Pointer> {
+    pub fn promote_to_high_priority(
+        &self,
+        concept: &str,
+        last_accessed: Option<u64>,
+    ) -> Option<Leg3Pointer> {
         let block = {
             let leg_path = self.store_path.join(format!("{}.leg", concept));
             if let Ok(view) = LegView::open(&leg_path) {
@@ -506,11 +521,14 @@ impl MetalBackend {
         if let Ok(mut cache) = self.high_priority_cache.write() {
             const MAX_HOT: usize = 1024;
             if cache.len() >= MAX_HOT {
-                if let Some(old_key) = cache.iter()
+                if let Some(old_key) = cache
+                    .iter()
                     .min_by(|a, b| {
                         let score_a = compute_eviction_score(&a.0, a.1, last_accessed);
                         let score_b = compute_eviction_score(&b.0, b.1, last_accessed);
-                        score_a.partial_cmp(&score_b).unwrap_or(std::cmp::Ordering::Equal)
+                        score_a
+                            .partial_cmp(&score_b)
+                            .unwrap_or(std::cmp::Ordering::Equal)
                     })
                     .map(|(k, _)| k.clone())
                 {
@@ -546,7 +564,10 @@ impl MetalBackend {
                 }
             }
             cache.insert(name.to_string(), state);
-            tracing::debug!("[high-priority][geo][metal] promoted SymplecticState snapshot {}", name);
+            tracing::debug!(
+                "[high-priority][geo][metal] promoted SymplecticState snapshot {}",
+                name
+            );
         }
         if let Ok(guard) = self.bvh.read() {
             if let Some(bvh) = guard.as_ref() {
@@ -627,7 +648,10 @@ impl VsaBackend for MetalBackend {
                             alpha_d: block.energetics.alpha_d,
                             aabb_min: block.aabb_min,
                             aabb_max: block.aabb_max,
-                            explain: format!("Metal GPU SIM => score={:.4} (crs={:.3})", score, crs),
+                            explain: format!(
+                                "Metal GPU SIM => score={:.4} (crs={:.3})",
+                                score, crs
+                            ),
                             l2_norm_residual: block.l2_norm_residual,
                         }
                     })
@@ -693,19 +717,45 @@ impl MetalBackend {
 
     // Symmetric no-op hot-path stubs (for API uniformity across cfgs; never reached
     // when engram_backend_metal is unset). Explicit O_DIRECT bypass contract preserved.
-    pub fn fetch_block_high_priority(&self, _concept: &str) -> Option<Leg3Pointer> { None }
-    pub fn promote_to_high_priority(&self, _concept: &str, _last_accessed: Option<u64>) -> Option<Leg3Pointer> { None }
-    pub fn is_hot(&self, _concept: &str) -> bool { false }
-    pub fn promote_to_high_priority_legacy(&self, _concept: &str) -> Option<Leg3Pointer> { None }
+    pub fn fetch_block_high_priority(&self, _concept: &str) -> Option<Leg3Pointer> {
+        None
+    }
+    pub fn promote_to_high_priority(
+        &self,
+        _concept: &str,
+        _last_accessed: Option<u64>,
+    ) -> Option<Leg3Pointer> {
+        None
+    }
+    pub fn is_hot(&self, _concept: &str) -> bool {
+        false
+    }
+    pub fn promote_to_high_priority_legacy(&self, _concept: &str) -> Option<Leg3Pointer> {
+        None
+    }
 }
 
 #[cfg(not(target_os = "macos"))]
 impl VsaBackend for MetalBackend {
-    fn encode(&self, _: &str) -> Leg3Pointer { unimplemented!() }
-    fn fetch(&self, _: &str) -> Option<Box<[Complex32; DIMENSION]>> { unimplemented!() }
-    fn fetch_block(&self, _: &str) -> Option<Leg3Pointer> { unimplemented!() }
-    fn query(&self, _: &[Complex32; DIMENSION], _: usize) -> Vec<Memory> { unimplemented!() }
-    fn store(&self, _: &str, _: Leg3Pointer) -> Result<()> { unimplemented!() }
-    fn forget(&self, _: &str) -> Result<()> { unimplemented!() }
-    fn list(&self) -> Vec<String> { unimplemented!() }
+    fn encode(&self, _: &str) -> Leg3Pointer {
+        unimplemented!()
+    }
+    fn fetch(&self, _: &str) -> Option<Box<[Complex32; DIMENSION]>> {
+        unimplemented!()
+    }
+    fn fetch_block(&self, _: &str) -> Option<Leg3Pointer> {
+        unimplemented!()
+    }
+    fn query(&self, _: &[Complex32; DIMENSION], _: usize) -> Vec<Memory> {
+        unimplemented!()
+    }
+    fn store(&self, _: &str, _: Leg3Pointer) -> Result<()> {
+        unimplemented!()
+    }
+    fn forget(&self, _: &str) -> Result<()> {
+        unimplemented!()
+    }
+    fn list(&self) -> Vec<String> {
+        unimplemented!()
+    }
 }

@@ -47,7 +47,11 @@ pub fn op_bind(role: &[Complex32; 8192], filler: &[Complex32; 8192]) -> [Complex
 }
 
 /// **OP_BIND (Arena)** — Associate two concepts using Bumpalo.
-pub fn op_bind_arena<'a>(arena: &'a bumpalo::Bump, role: &[Complex32; 8192], filler: &[Complex32; 8192]) -> &'a mut [Complex32; 8192] {
+pub fn op_bind_arena<'a>(
+    arena: &'a bumpalo::Bump,
+    role: &[Complex32; 8192],
+    filler: &[Complex32; 8192],
+) -> &'a mut [Complex32; 8192] {
     let bound = arena.alloc([Complex32::default(); 8192]);
     for i in 0..8192 {
         bound[i] = role[i] * filler[i];
@@ -73,7 +77,11 @@ pub fn op_add(a: &[Complex32; 8192], b: &[Complex32; 8192]) -> [Complex32; 8192]
 }
 
 /// **OP_ADD (Arena)** — Superpose two memories using Bumpalo.
-pub fn op_add_arena<'a>(arena: &'a bumpalo::Bump, a: &[Complex32; 8192], b: &[Complex32; 8192]) -> &'a mut [Complex32; 8192] {
+pub fn op_add_arena<'a>(
+    arena: &'a bumpalo::Bump,
+    a: &[Complex32; 8192],
+    b: &[Complex32; 8192],
+) -> &'a mut [Complex32; 8192] {
     let superposed = arena.alloc([Complex32::default(); 8192]);
     for i in 0..8192 {
         superposed[i].re = a[i].re + b[i].re;
@@ -181,12 +189,24 @@ pub fn normalize_in_place(vector: &mut [Complex32; 8192]) {
 /// inner product: Re(⟨a, b⟩) = Σ (a_i.re × b_i.re + a_i.im × b_i.im).
 #[inline]
 pub fn cosine_similarity(a: &[Complex32; 8192], b: &[Complex32; 8192]) -> f32 {
-    let dot: f32 = a.iter().zip(b.iter())
+    let dot: f32 = a
+        .iter()
+        .zip(b.iter())
         .map(|(ai, bi)| ai.re * bi.re + ai.im * bi.im)
         .sum();
-    let norm_a: f32 = a.iter().map(|v| v.re * v.re + v.im * v.im).sum::<f32>().sqrt();
-    let norm_b: f32 = b.iter().map(|v| v.re * v.re + v.im * v.im).sum::<f32>().sqrt();
-    if norm_a < 1e-8 || norm_b < 1e-8 { return 0.0; }
+    let norm_a: f32 = a
+        .iter()
+        .map(|v| v.re * v.re + v.im * v.im)
+        .sum::<f32>()
+        .sqrt();
+    let norm_b: f32 = b
+        .iter()
+        .map(|v| v.re * v.re + v.im * v.im)
+        .sum::<f32>()
+        .sqrt();
+    if norm_a < 1e-8 || norm_b < 1e-8 {
+        return 0.0;
+    }
     (dot / (norm_a * norm_b)).clamp(-1.0, 1.0)
 }
 
@@ -194,10 +214,7 @@ pub fn cosine_similarity(a: &[Complex32; 8192], b: &[Complex32; 8192]) -> f32 {
 ///
 /// Used to encode concepts that are explicitly *not* the basis concepts.
 /// For example, encoding "mammal but not cat" by orthogonalizing against `cat`.
-pub fn gram_schmidt(
-    target: &[Complex32; 8192],
-    basis: &[&[Complex32; 8192]],
-) -> [Complex32; 8192] {
+pub fn gram_schmidt(target: &[Complex32; 8192], basis: &[&[Complex32; 8192]]) -> [Complex32; 8192] {
     let mut result = *target;
     for b in basis {
         let proj = project(&result, b);
@@ -247,7 +264,10 @@ pub fn op_invert(q: &[Complex32; 8192]) -> [Complex32; 8192] {
 ///
 /// If `result = op_bind(role, filler)`, then `holographic_unbind(result, role) ≈ filler`.
 /// Works by binding with the complex conjugate of the role vector.
-pub fn holographic_unbind(result: &[Complex32; 8192], role: &[Complex32; 8192]) -> [Complex32; 8192] {
+pub fn holographic_unbind(
+    result: &[Complex32; 8192],
+    role: &[Complex32; 8192],
+) -> [Complex32; 8192] {
     let role_conj = complex_conjugate(role);
     op_bind(result, &role_conj)
 }
@@ -279,7 +299,10 @@ pub fn op_deduce(premise: &[Complex32; 8192], conclusion: &[Complex32; 8192]) ->
 
 /// **The Sensor (OP_ATTEND)**
 /// Selects specific dimensions from a superposed vector via geometric amplitude attenuation.
-pub fn op_attend(superposed: &[Complex32; 8192], attention_mask: &[Complex32; 8192]) -> [Complex32; 8192] {
+pub fn op_attend(
+    superposed: &[Complex32; 8192],
+    attention_mask: &[Complex32; 8192],
+) -> [Complex32; 8192] {
     let mut attended = [Complex32::default(); 8192];
     for i in 0..8192 {
         attended[i].re = superposed[i].re * attention_mask[i].re;
@@ -303,14 +326,19 @@ pub fn op_geometric_product(u: &[Complex32; 8192], v: &[Complex32; 8192]) -> [Co
 /// **The Paradox Lifter (OP_IS_SYMBOLIC_OF)**
 /// Resolves Cohomological Obstructions (H^1 ≠ 0) by mapping the obstructed
 /// Vector into a dual-phase toroidal embedding (ZADO-CPS: V = e^{i(\theta_A \cdot k + \theta_B)}).
-pub fn op_is_symbolic_of(raw_vector: &[Complex32; 8192], is_obstructed_h1: bool) -> [Complex32; 8192] {
-    if !is_obstructed_h1 { return *raw_vector; }
+pub fn op_is_symbolic_of(
+    raw_vector: &[Complex32; 8192],
+    is_obstructed_h1: bool,
+) -> [Complex32; 8192] {
+    if !is_obstructed_h1 {
+        return *raw_vector;
+    }
 
     let mut resolved = [Complex32::default(); 8192];
     for k in 0..8192 {
         let val = raw_vector[k];
-        let theta_a = val.im.atan2(val.re); 
-        let theta_b = (val.re * val.re + val.im * val.im).sqrt(); 
+        let theta_a = val.im.atan2(val.re);
+        let theta_b = (val.re * val.re + val.im * val.im).sqrt();
         let phase = theta_a * (k as f32) + theta_b;
 
         resolved[k].re = phase.cos();
@@ -386,7 +414,10 @@ pub fn op_measure(v: &[Complex32; 8192], basis: &[&[Complex32; 8192]]) -> Vec<f3
 /// **OP_COLLAPSE** — Collapse a superposed vector via attention mask (soft measurement).
 /// Binding/attend analog for reducing superposition to dominant component.
 /// Result unit-normalized. Frame-apply the inputs upstream for geo-aware collapse.
-pub fn op_collapse(superposed: &[Complex32; 8192], attention_mask: &[Complex32; 8192]) -> [Complex32; 8192] {
+pub fn op_collapse(
+    superposed: &[Complex32; 8192],
+    attention_mask: &[Complex32; 8192],
+) -> [Complex32; 8192] {
     op_attend(superposed, attention_mask)
 }
 
@@ -400,7 +431,10 @@ pub fn quasi_ortho_check(a: &[Complex32; 8192], b: &[Complex32; 8192], thresh: f
 /// Uses gram_schmidt (existing primitive). Returns unit vector. Essential for
 /// "against flat knowledge" — stripping known dimensions to surface novelty.
 /// ZEDOS_OPERATOR usage: apply to OPERATOR blocks for clean lifting.
-pub fn quasi_ortho_recovery(target: &[Complex32; 8192], basis: &[&[Complex32; 8192]]) -> [Complex32; 8192] {
+pub fn quasi_ortho_recovery(
+    target: &[Complex32; 8192],
+    basis: &[&[Complex32; 8192]],
+) -> [Complex32; 8192] {
     gram_schmidt(target, basis)
 }
 
@@ -468,7 +502,10 @@ pub fn op_linguistic_compress(bundle: &LinguisticDiscourseBundle) -> [Complex32;
 /// **op_linguistic_decompress** — Reverse compress; reconstruct bundle while preserving homotopy.
 /// Uses unbind-style + normalize; caller checks CRS on roundtrip for homotopy type.
 /// Payload/zedos from mint preserved in roundtrip fidelity.
-pub fn op_linguistic_decompress(_phase: &[Complex32; 8192], bundle: &LinguisticDiscourseBundle) -> LinguisticDiscourseBundle {
+pub fn op_linguistic_decompress(
+    _phase: &[Complex32; 8192],
+    bundle: &LinguisticDiscourseBundle,
+) -> LinguisticDiscourseBundle {
     // reverse (simplified for additive MVP: structure preserved + phase-derived; full unbind would recover coeffs)
     // homotopy via CRS (cosine on re-compress) asserted in tests >=0.85
     // text/coeffs/functor fidelity for roundtrip (payload side via mint_linguistic)
@@ -478,7 +515,10 @@ pub fn op_linguistic_decompress(_phase: &[Complex32; 8192], bundle: &LinguisticD
 /// **fibered_linguistic_equivalence** — Compare two presentations (e.g. syntactic vs semantic).
 /// Returns CRS-scored equivalence (via geometric product / cosine on phase reps of bundles).
 /// Reuses op_geometric_product / cosine_similarity; high score = fibered equiv.
-pub fn fibered_linguistic_equivalence(a: &LinguisticDiscourseBundle, b: &LinguisticDiscourseBundle) -> f32 {
+pub fn fibered_linguistic_equivalence(
+    a: &LinguisticDiscourseBundle,
+    b: &LinguisticDiscourseBundle,
+) -> f32 {
     let pa = op_linguistic_compress(a);
     let pb = op_linguistic_compress(b);
     // fibered via cos on phase (or op_geometric_product(pa, pb) scalar part)
@@ -506,7 +546,9 @@ pub fn fibered_linguistic_equivalence(a: &LinguisticDiscourseBundle, b: &Linguis
 /// for local 'd' approximation. Returns (delta_bundle, attended_phase_norm).
 /// Reuses op_linguistic_compress (for q phase), op_attend, op_shift, normalize.
 /// Sheaf local: treats words/patches as patch; delta as differential morphism.
-pub fn op_linguistic_differentiate(bundle: &LinguisticDiscourseBundle) -> (LinguisticDiscourseBundle, [Complex32; 8192]) {
+pub fn op_linguistic_differentiate(
+    bundle: &LinguisticDiscourseBundle,
+) -> (LinguisticDiscourseBundle, [Complex32; 8192]) {
     // Delta bundle first (synthetic 'd' on coeffs/text)
     let mut delta_words: Vec<LinguisticWord> = Vec::new();
     for w in &bundle.words {
@@ -561,7 +603,8 @@ pub fn op_linguistic_integrate(path: &[LinguisticDiscourseBundle]) -> Linguistic
         acc.bundle_id = format!("int:{}+{}", acc.bundle_id, b.bundle_id);
         acc.words.extend(b.words.iter().cloned());
         acc.patches.extend(b.patches.iter().cloned());
-        acc.functor_metadata = format!("integrate({};{})", acc.functor_metadata, b.functor_metadata);
+        acc.functor_metadata =
+            format!("integrate({};{})", acc.functor_metadata, b.functor_metadata);
         // add patch for integral step (sheaf H1)
         acc.patches.push(LinguisticContextPatch {
             patch_id: 1000 + i as u32,
@@ -577,7 +620,10 @@ pub fn op_linguistic_integrate(path: &[LinguisticDiscourseBundle]) -> Linguistic
 /// Applies sequence of 'functors' (e.g. metaphor then entailment span) as coherent
 /// chained geometric_product / compose (VSA multi-morph). Supports sheaf gluing of
 /// morphisms. N morphisms for N+1 bundles. Returns composed bundle + side mint.
-pub fn op_operadic_compose(bundles: &[LinguisticDiscourseBundle], morphisms: &[&str]) -> LinguisticDiscourseBundle {
+pub fn op_operadic_compose(
+    bundles: &[LinguisticDiscourseBundle],
+    morphisms: &[&str],
+) -> LinguisticDiscourseBundle {
     if bundles.is_empty() {
         let empty = LinguisticDiscourseBundle {
             bundle_id: "operad:empty".to_string(),
@@ -598,7 +644,10 @@ pub fn op_operadic_compose(bundles: &[LinguisticDiscourseBundle], morphisms: &[&
         composed.bundle_id = format!("operad:{} o_{} {}", composed.bundle_id, morph, b.bundle_id);
         composed.words.extend(b.words.iter().cloned());
         composed.patches.extend(b.patches.iter().cloned());
-        composed.functor_metadata = format!("operadic_compose({};{} via {})", composed.functor_metadata, b.functor_metadata, morph);
+        composed.functor_metadata = format!(
+            "operadic_compose({};{} via {})",
+            composed.functor_metadata, b.functor_metadata, morph
+        );
         // patch for morphism (fibered/sheaf)
         composed.patches.push(LinguisticContextPatch {
             patch_id: 2000 + i as u32,
@@ -645,7 +694,12 @@ impl StabilityTracker {
     /// Initialise from stored Dirichlet weights (read from block.energetics).
     pub fn from_energetics(alpha_a: f32, alpha_d: f32, alpha_r: f32) -> Self {
         let phi = compute_lyapunov(alpha_a, alpha_d, alpha_r);
-        Self { alpha_a, alpha_d, alpha_r, lyapunov: phi }
+        Self {
+            alpha_a,
+            alpha_d,
+            alpha_r,
+            lyapunov: phi,
+        }
     }
 
     /// Update the belief state given new evidence and return `(dv, h_out, h_in)`.
@@ -659,12 +713,12 @@ impl StabilityTracker {
     /// - `h_in`  — dL = Φ_new − Φ_prev (convergence signal; negative = converging)
     pub fn update(&mut self, gradient_mag: f32, drift_mag: f32) -> (f32, f32, f32) {
         const EPSILON: f32 = 0.034; // decay rate (forget)
-        const ETA: f32 = 0.120;    // learning rate
+        const ETA: f32 = 0.120; // learning rate
 
         // Evidence signals for ADR update
         let at = (1.0 - gradient_mag).max(0.0); // low gradient → affirming
-        let dt = gradient_mag.min(1.0);          // high gradient → denial
-        let rt = 1.0 - drift_mag.min(1.0);       // low drift → reconciling
+        let dt = gradient_mag.min(1.0); // high gradient → denial
+        let rt = 1.0 - drift_mag.min(1.0); // low drift → reconciling
 
         self.alpha_a = (1.0 - EPSILON) * self.alpha_a + ETA * at;
         self.alpha_d = (1.0 - EPSILON) * self.alpha_d + ETA * dt;
@@ -680,7 +734,9 @@ impl StabilityTracker {
     }
 
     /// True when the last update moved the system toward equilibrium (converging).
-    pub fn is_converging(&self, d_phi: f32) -> bool { d_phi <= 0.0 }
+    pub fn is_converging(&self, d_phi: f32) -> bool {
+        d_phi <= 0.0
+    }
 }
 
 /// Compute Lyapunov energy Φ(v) = wA·pA² + wD·pD² + wR·pR²
@@ -747,21 +803,35 @@ pub fn hermitian_cos_magnitude(a: &[Complex32; 8192], b: &[Complex32; 8192]) -> 
     for (ai, bi) in a.iter().zip(b.iter()) {
         // Hermitian-style: treat as <a, b> = sum a_re*b_re + a_im*b_im + i terms
         dot_re += ai.re * bi.re + ai.im * bi.im;
-        dot_im += ai.re * bi.im - ai.im * bi.re;  // imag cross for full |< >|
+        dot_im += ai.re * bi.im - ai.im * bi.re; // imag cross for full |< >|
     }
     let mag = (dot_re * dot_re + dot_im * dot_im).sqrt();
-    let norm_a: f32 = a.iter().map(|v| v.re*v.re + v.im*v.im).sum::<f32>().sqrt();
-    let norm_b: f32 = b.iter().map(|v| v.re*v.re + v.im*v.im).sum::<f32>().sqrt();
-    if norm_a < 1e-8 || norm_b < 1e-8 { return 0.0; }
-    (mag / (norm_a * norm_b)).clamp(0.0, 1.0)  // magnitude, non-negative
+    let norm_a: f32 = a
+        .iter()
+        .map(|v| v.re * v.re + v.im * v.im)
+        .sum::<f32>()
+        .sqrt();
+    let norm_b: f32 = b
+        .iter()
+        .map(|v| v.re * v.re + v.im * v.im)
+        .sum::<f32>()
+        .sqrt();
+    if norm_a < 1e-8 || norm_b < 1e-8 {
+        return 0.0;
+    }
+    (mag / (norm_a * norm_b)).clamp(0.0, 1.0) // magnitude, non-negative
 }
 
 /// AttractionField for Riemannian pull on the hypersphere (S^1)^8192 manifold.
 /// Returns the tangent-space direction vector (orthogonal component) scaled by strength.
 /// f(q) = strength * (target - <target, q> * q)   [projected to tangent]
 #[inline]
-fn attraction_field_tangent(q: &[Complex32; 8192], target: &[Complex32; 8192], strength: f32) -> [Complex32; 8192] {
-    let proj = project(q, target);  // reuse or inline simple dot proj
+fn attraction_field_tangent(
+    q: &[Complex32; 8192],
+    target: &[Complex32; 8192],
+    strength: f32,
+) -> [Complex32; 8192] {
+    let proj = project(q, target); // reuse or inline simple dot proj
     let mut tangent = [Complex32::default(); 8192];
     for i in 0..8192 {
         tangent[i].re = strength * (target[i].re - proj[i].re);
@@ -775,7 +845,12 @@ fn attraction_field_tangent(q: &[Complex32; 8192], target: &[Complex32; 8192], s
 /// Single RK4 micro-step on the unit hypersphere with AttractionField.
 /// Integrates dq/dt = AttractionField, then renormalizes to preserve |z|=1.
 /// dt in [0.05, 0.2] recommended for stability in 8192D.
-fn rk4_step_sphere(q: &[Complex32; 8192], target: &[Complex32; 8192], dt: f32, strength: f32) -> [Complex32; 8192] {
+fn rk4_step_sphere(
+    q: &[Complex32; 8192],
+    target: &[Complex32; 8192],
+    dt: f32,
+    strength: f32,
+) -> [Complex32; 8192] {
     // k1 = f(q)
     let k1 = attraction_field_tangent(q, target, strength);
     // k2 = f(q + dt/2 * k1)  -- approx (no full manifold exp map for MVP speed)
@@ -808,20 +883,26 @@ fn rk4_step_sphere(q: &[Complex32; 8192], target: &[Complex32; 8192], dt: f32, s
     // RK4 weighted
     let mut next = [Complex32::default(); 8192];
     for i in 0..8192 {
-        next[i].re = q[i].re + (dt / 6.0) * (k1[i].re + 2.0*k2[i].re + 2.0*k3[i].re + k4[i].re);
-        next[i].im = q[i].im + (dt / 6.0) * (k1[i].im + 2.0*k2[i].im + 2.0*k3[i].im + k4[i].im);
+        next[i].re = q[i].re + (dt / 6.0) * (k1[i].re + 2.0 * k2[i].re + 2.0 * k3[i].re + k4[i].re);
+        next[i].im = q[i].im + (dt / 6.0) * (k1[i].im + 2.0 * k2[i].im + 2.0 * k3[i].im + k4[i].im);
     }
     normalize(&next)
 }
 
 /// In-place normalize helper (local to avoid name clash with pub fn during edit).
 fn normalize_in_place_local(v: &mut [Complex32; 8192]) {
-    let sq: f32 = v.iter().map(|c| c.re*c.re + c.im*c.im).sum();
+    let sq: f32 = v.iter().map(|c| c.re * c.re + c.im * c.im).sum();
     let l = sq.sqrt();
     if l > 1e-8 {
-        for c in v.iter_mut() { c.re /= l; c.im /= l; }
+        for c in v.iter_mut() {
+            c.re /= l;
+            c.im /= l;
+        }
     } else {
-        for c in v.iter_mut() { c.re = 1.0; c.im = 0.0; }
+        for c in v.iter_mut() {
+            c.re = 1.0;
+            c.im = 0.0;
+        }
     }
 }
 
@@ -829,7 +910,7 @@ fn normalize_in_place_local(v: &mut [Complex32; 8192]) {
 /// Evolves `q` toward `target` (e.g. running acc or ego centroid) along manifold-respecting
 /// geodesic before it participates in weighted superposition. 4 steps, dt=0.1, strength=0.4 default.
 /// Returns evolved vector (still unit norm). Dramatically improves geometric fidelity vs naive add.
-/// 
+///
 /// Usage in NREM: for resonant items, q_evolved = riemannian_nrem_pre_step(&block.q, &acc_or_ego, 4, 0.1, 0.4);
 pub fn riemannian_nrem_pre_step(
     q: &[Complex32; 8192],
@@ -838,11 +919,11 @@ pub fn riemannian_nrem_pre_step(
     dt: f32,
     strength: f32,
 ) -> [Complex32; 8192] {
-    let mut current = *q;  // copy
+    let mut current = *q; // copy
     for _ in 0..steps {
         current = rk4_step_sphere(&current, target, dt, strength);
     }
-    current  // already normalized by steps
+    current // already normalized by steps
 }
 
 /// Polysemy curvature / conflict detector (post-geodesic probe).
@@ -850,7 +931,11 @@ pub fn riemannian_nrem_pre_step(
 /// from linear interpolation. High values → sense conflict / polysemy spike → route to
 /// separate SYNTHESIS accumulator (prevents contaminating unified centroid).
 /// Threshold ~0.25-0.35 in practice for NREM.
-pub fn polysemy_curvature(q_evolved: &[Complex32; 8192], q_original: &[Complex32; 8192], target: &[Complex32; 8192]) -> f32 {
+pub fn polysemy_curvature(
+    q_evolved: &[Complex32; 8192],
+    q_original: &[Complex32; 8192],
+    target: &[Complex32; 8192],
+) -> f32 {
     let cos_evo_orig = cosine_similarity(q_evolved, q_original);
     let cos_evo_target = cosine_similarity(q_evolved, target);
     let cos_orig_target = cosine_similarity(q_original, target);
@@ -868,18 +953,19 @@ pub fn polysemy_curvature(q_evolved: &[Complex32; 8192], q_original: &[Complex32
 /// blend_start=0.30, steps=12, min_w=0.10 per spec. Produces synthesis delta candidate.
 pub fn abbreviated_adr_kdk_reconcile(
     q_friction: &[Complex32; 8192],
-    reference: &[Complex32; 8192],  // usually ego_q or running centroid
-    steps: u32,                     // 12
-    blend_start: f32,               // 0.30
-    min_w: f32,                     // 0.10
-) -> ([Complex32; 8192], f32, f32) {  // (reconciled_q, crs_proxy, dl_dt)
+    reference: &[Complex32; 8192], // usually ego_q or running centroid
+    steps: u32,                    // 12
+    blend_start: f32,              // 0.30
+    min_w: f32,                    // 0.10
+) -> ([Complex32; 8192], f32, f32) {
+    // (reconciled_q, crs_proxy, dl_dt)
     let mut current = *q_friction;
     let mut prev_cos = cosine_similarity(&current, reference);
     let mut total_drift = 0.0f32;
 
     for step in 0..steps {
-        let w = (blend_start - (step as f32) * 0.017).max(min_w);  // 0.017 ~ (0.3-0.1)/12 approx
-        // Weighted kick toward reference (OP_ADD style but partial)
+        let w = (blend_start - (step as f32) * 0.017).max(min_w); // 0.017 ~ (0.3-0.1)/12 approx
+                                                                  // Weighted kick toward reference (OP_ADD style but partial)
         let mut blended = [Complex32::default(); 8192];
         for i in 0..8192 {
             blended[i].re = current[i].re * (1.0 - w) + reference[i].re * w;
@@ -894,8 +980,8 @@ pub fn abbreviated_adr_kdk_reconcile(
     }
 
     let final_cos = cosine_similarity(&current, reference);
-    let crs_proxy = final_cos.clamp(0.0, 1.0);  // proxy for post-recon coherence
-    let dl_dt = (total_drift / steps as f32).clamp(-1.0, 1.0);  // avg delta cos as drift signal
+    let crs_proxy = final_cos.clamp(0.0, 1.0); // proxy for post-recon coherence
+    let dl_dt = (total_drift / steps as f32).clamp(-1.0, 1.0); // avg delta cos as drift signal
 
     (current, crs_proxy, dl_dt)
 }
@@ -926,9 +1012,12 @@ pub fn abbreviated_adr_kdk_reconcile(
 /// Applies a temporal phase integration step to the block.
 pub fn check_euler_characteristic(q: &[Complex32; 8192]) -> bool {
     // Check for NaN/Inf contamination first — these are unrecoverable.
-    let has_bad_values = q.iter().any(|c| c.re.is_nan() || c.re.is_infinite()
-                                       || c.im.is_nan() || c.im.is_infinite());
-    if has_bad_values { return false; }
+    let has_bad_values = q
+        .iter()
+        .any(|c| c.re.is_nan() || c.re.is_infinite() || c.im.is_nan() || c.im.is_infinite());
+    if has_bad_values {
+        return false;
+    }
 
     // Compute L2-norm. A valid normalized vector must have ||q|| ≈ 1.0.
     // All-zero vectors have norm = 0. Un-normalized BLAKE3 accumulations
@@ -978,7 +1067,7 @@ pub fn apply_srht(v: &mut [f32], seed: u64) {
             for j in i..i + h {
                 let x = v[j];
                 let y = v[j + h];
-                v[j]     = x + y;
+                v[j] = x + y;
                 v[j + h] = x - y;
             }
             i += h * 2;
@@ -988,7 +1077,9 @@ pub fn apply_srht(v: &mut [f32], seed: u64) {
 
     // Step 3: normalise by 1/√d to preserve L2 norm
     let norm = (n as f32).sqrt();
-    for x in v.iter_mut() { *x /= norm; }
+    for x in v.iter_mut() {
+        *x /= norm;
+    }
 }
 
 /// Flatten an 8192-D Complex32 vector into a 16384-D f32 array for SRHT input.
@@ -1006,15 +1097,13 @@ pub fn flatten_complex_q(q: &[Complex32; 8192]) -> Vec<f32> {
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
 
-
-
 fn project(a: &[Complex32; 8192], b: &[Complex32; 8192]) -> [Complex32; 8192] {
     let mut dot_re = 0.0f32;
     let mut dot_im = 0.0f32;
     let mut norm_b_sq = 0.0f32;
     for i in 0..8192 {
-        dot_re    += a[i].re * b[i].re + a[i].im * b[i].im;
-        dot_im    += a[i].im * b[i].re - a[i].re * b[i].im;
+        dot_re += a[i].re * b[i].re + a[i].im * b[i].im;
+        dot_im += a[i].im * b[i].re - a[i].re * b[i].im;
         norm_b_sq += b[i].re * b[i].re + b[i].im * b[i].im;
     }
     let mut proj = [Complex32::default(); 8192];
@@ -1087,7 +1176,10 @@ pub fn frame_combine(query: &[Complex32; 8192], lens: &[Complex32; 8192]) -> [Co
 /// in query paths, SymplecticState, and MCP surfaces. Guarantees normalization
 /// on every return path.
 #[inline]
-pub fn apply_frame(query: &[Complex32; 8192], lens: Option<&[Complex32; 8192]>) -> [Complex32; 8192] {
+pub fn apply_frame(
+    query: &[Complex32; 8192],
+    lens: Option<&[Complex32; 8192]>,
+) -> [Complex32; 8192] {
     match lens {
         Some(l) => frame_combine(query, l),
         None => normalize(query),
@@ -1106,8 +1198,8 @@ mod tests {
         xof.finalize_xof().fill(&mut buf);
         let mut v = [Complex32::default(); 8192];
         for i in 0..8192 {
-            let theta = (buf[i * 4] as f32 * 256.0 + buf[i * 4 + 1] as f32)
-                / 65535.0 * std::f32::consts::TAU;
+            let theta = (buf[i * 4] as f32 * 256.0 + buf[i * 4 + 1] as f32) / 65535.0
+                * std::f32::consts::TAU;
             v[i] = Complex32::new(theta.cos(), theta.sin());
         }
         normalize(&v)
@@ -1126,9 +1218,9 @@ mod tests {
 
     #[test]
     fn holographic_unbind_recovers_filler() {
-        let role   = hash_vec("role:color");
+        let role = hash_vec("role:color");
         let filler = hash_vec("filler:red");
-        let bound  = op_bind(&role, &filler);
+        let bound = op_bind(&role, &filler);
         let recovered = holographic_unbind(&bound, &role);
         let sim = cosine_similarity(&recovered, &filler);
         assert!(sim > 0.95, "unbind recovery too low: {sim}");
@@ -1147,7 +1239,11 @@ mod tests {
     fn normalize_produces_unit_magnitude() {
         let v = [Complex32::new(3.0, 4.0); 8192];
         let normed = normalize(&v);
-        let mag: f32 = normed.iter().map(|c| c.re * c.re + c.im * c.im).sum::<f32>().sqrt();
+        let mag: f32 = normed
+            .iter()
+            .map(|c| c.re * c.re + c.im * c.im)
+            .sum::<f32>()
+            .sqrt();
         assert!((mag - 1.0).abs() < 1e-4, "magnitude not 1.0: {mag}");
     }
 
@@ -1166,17 +1262,38 @@ mod tests {
         let lens = hash_vec("lens:giza_cubit_origin");
 
         let combined = frame_combine(&q, &lens);
-        let mag: f32 = combined.iter().map(|c| c.re * c.re + c.im * c.im).sum::<f32>().sqrt();
-        assert!((mag - 1.0).abs() < 1e-4, "frame_combine magnitude not 1.0: {mag}");
+        let mag: f32 = combined
+            .iter()
+            .map(|c| c.re * c.re + c.im * c.im)
+            .sum::<f32>()
+            .sqrt();
+        assert!(
+            (mag - 1.0).abs() < 1e-4,
+            "frame_combine magnitude not 1.0: {mag}"
+        );
 
         let applied = apply_frame(&q, Some(&lens));
-        let mag2: f32 = applied.iter().map(|c| c.re * c.re + c.im * c.im).sum::<f32>().sqrt();
-        assert!((mag2 - 1.0).abs() < 1e-4, "apply_frame magnitude not 1.0: {mag2}");
+        let mag2: f32 = applied
+            .iter()
+            .map(|c| c.re * c.re + c.im * c.im)
+            .sum::<f32>()
+            .sqrt();
+        assert!(
+            (mag2 - 1.0).abs() < 1e-4,
+            "apply_frame magnitude not 1.0: {mag2}"
+        );
 
         // None path (identity transform)
         let id = apply_frame(&q, None);
-        let mag3: f32 = id.iter().map(|c| c.re * c.re + c.im * c.im).sum::<f32>().sqrt();
-        assert!((mag3 - 1.0).abs() < 1e-4, "apply_frame(None) magnitude not 1.0: {mag3}");
+        let mag3: f32 = id
+            .iter()
+            .map(|c| c.re * c.re + c.im * c.im)
+            .sum::<f32>()
+            .sqrt();
+        assert!(
+            (mag3 - 1.0).abs() < 1e-4,
+            "apply_frame(None) magnitude not 1.0: {mag3}"
+        );
     }
 
     #[test]
@@ -1187,7 +1304,10 @@ mod tests {
         let out = frame_combine(&q, &id_lens);
         let q_norm = normalize(&q);
         let sim = cosine_similarity(&out, &q_norm);
-        assert!(sim > 0.999, "identity lens must yield nearly identical normalized query (got {sim})");
+        assert!(
+            sim > 0.999,
+            "identity lens must yield nearly identical normalized query (got {sim})"
+        );
     }
 
     #[test]
@@ -1223,8 +1343,14 @@ mod tests {
         let w = LinguisticDiscourseBundle {
             bundle_id: "phase4-discourse".to_string(),
             words: vec![
-                LinguisticWord { text: "synthetic".to_string(), coeff: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8] },
-                LinguisticWord { text: "calculus".to_string(), coeff: [0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1] },
+                LinguisticWord {
+                    text: "synthetic".to_string(),
+                    coeff: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8],
+                },
+                LinguisticWord {
+                    text: "calculus".to_string(),
+                    coeff: [0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1],
+                },
             ],
             patches: vec![],
             functor_metadata: "phase4-test".to_string(),
@@ -1237,11 +1363,15 @@ mod tests {
         let crs_d = cosine_similarity(&re_c, &re_c); // unit self roundtrip
         assert!(crs_d >= 0.85, "diff roundtrip crs too low: {}", crs_d);
         // also check attended normed is unit (VSA reuse)
-        let mag: f32 = delta_ph.iter().map(|c| c.re*c.re + c.im*c.im).sum::<f32>().sqrt();
+        let mag: f32 = delta_ph
+            .iter()
+            .map(|c| c.re * c.re + c.im * c.im)
+            .sum::<f32>()
+            .sqrt();
         assert!((mag - 1.0).abs() < 1e-4);
         // text/coeff fidelity sample
         assert!(delta_b.words[0].text.contains("d(synthetic)"));
-        assert!((delta_b.words[0].coeff[0] - (0.1*0.618034 - 0.05)).abs() < 1e-5);
+        assert!((delta_b.words[0].coeff[0] - (0.1 * 0.618034 - 0.05)).abs() < 1e-5);
         // integrate/compose roundtrip homotopy (use fibered equiv on result for sheaf glue target)
         let path = vec![w.clone(), delta_b.clone()];
         let int_b = op_linguistic_integrate(&path);
@@ -1264,12 +1394,19 @@ mod tests {
 
         let shifted = frame_combine(&q, &lens);
         // Must still be valid unit
-        let mag: f32 = shifted.iter().map(|c| c.re*c.re + c.im*c.im).sum::<f32>().sqrt();
-        assert!((mag-1.0).abs() < 1e-4);
+        let mag: f32 = shifted
+            .iter()
+            .map(|c| c.re * c.re + c.im * c.im)
+            .sum::<f32>()
+            .sqrt();
+        assert!((mag - 1.0).abs() < 1e-4);
 
         // Distinct from original (unless lens == id, which it isn't)
         let sim = cosine_similarity(&shifted, &q);
-        assert!(sim.abs() < 0.98, "frame shift should move the vector meaningfully (sim={sim})");
+        assert!(
+            sim.abs() < 0.98,
+            "frame shift should move the vector meaningfully (sim={sim})"
+        );
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -1296,16 +1433,28 @@ mod tests {
         let a_framed = state.apply_current_frame(&a);
         let b_framed = state.apply_current_frame(&b);
         let bound = op_bind(&a_framed, &b_framed);
-        let mag_b: f32 = bound.iter().map(|c| c.re*c.re + c.im*c.im).sum::<f32>().sqrt();
+        let mag_b: f32 = bound
+            .iter()
+            .map(|c| c.re * c.re + c.im * c.im)
+            .sum::<f32>()
+            .sqrt();
         assert!((mag_b - 1.0).abs() < 1e-4, "framed op_bind not unit");
 
         // New ops
         let dyn_v = op_dynamis(&a);
-        let mag_d: f32 = dyn_v.iter().map(|c| c.re*c.re + c.im*c.im).sum::<f32>().sqrt();
+        let mag_d: f32 = dyn_v
+            .iter()
+            .map(|c| c.re * c.re + c.im * c.im)
+            .sum::<f32>()
+            .sqrt();
         assert!((mag_d - 1.0).abs() < 1e-4);
 
         let composed = op_compose(&a, &b);
-        let mag_c: f32 = composed.iter().map(|c| c.re*c.re + c.im*c.im).sum::<f32>().sqrt();
+        let mag_c: f32 = composed
+            .iter()
+            .map(|c| c.re * c.re + c.im * c.im)
+            .sum::<f32>()
+            .sqrt();
         assert!((mag_c - 1.0).abs() < 1e-4);
 
         let measures = op_measure(&bound, &[&a, &b]);
@@ -1317,14 +1466,22 @@ mod tests {
 
         // collapse + measure
         let collapsed = op_collapse(&bound, &a);
-        let mag_coll: f32 = collapsed.iter().map(|c| c.re*c.re + c.im*c.im).sum::<f32>().sqrt();
+        let mag_coll: f32 = collapsed
+            .iter()
+            .map(|c| c.re * c.re + c.im * c.im)
+            .sum::<f32>()
+            .sqrt();
         assert!((mag_coll - 1.0).abs() < 1e-4);
 
         // quasi ortho
         let _ortho = quasi_ortho_check(&a, &b, 0.6);
         // random hash vecs are typically <0.5 cos, so true
         let recovered_ortho = quasi_ortho_recovery(&bound, &[&a]);
-        let mag_o: f32 = recovered_ortho.iter().map(|c| c.re*c.re + c.im*c.im).sum::<f32>().sqrt();
+        let mag_o: f32 = recovered_ortho
+            .iter()
+            .map(|c| c.re * c.re + c.im * c.im)
+            .sum::<f32>()
+            .sqrt();
         assert!((mag_o - 1.0).abs() < 1e-4);
 
         // ZEDOS tag value is the expected constant (for block tagging of operators)
@@ -1344,8 +1501,15 @@ mod tests {
     // 3 iters: 1.PLAN/READ (searches+MCP session/verify/context+read+run inspect+todo equiv), 2.IMPLEMENT
     // (pre context+search_replace+post trace in record), 3.TEST/VALIDATE (exact hygiene run + cargo test
     // exec + crs asserts + handoff remember/relate/record).
-    fn op_mixed_linguistic_number_scale(phase: &[Complex32; 8192], word: &LinguisticWord) -> [Complex32; 8192] {
-        let s = if word.coeff.is_empty() { 1.0 } else { word.coeff[0] };
+    fn op_mixed_linguistic_number_scale(
+        phase: &[Complex32; 8192],
+        word: &LinguisticWord,
+    ) -> [Complex32; 8192] {
+        let s = if word.coeff.is_empty() {
+            1.0
+        } else {
+            word.coeff[0]
+        };
         let mut out = [Complex32::default(); 8192];
         for i in 0..8192 {
             out[i] = phase[i] * s;
@@ -1387,7 +1551,11 @@ mod tests {
         assert!(i_b.words.len() >= 2);
         assert!(o_b.functor_metadata.contains("num-scale"));
         // AABB/p-momentum preserved (spatial from context_for_edit; p via integrate op_add/compose no annihilate + norm)
-        let mag: f32 = mixed_norm.iter().map(|c| c.re * c.re + c.im * c.im).sum::<f32>().sqrt();
+        let mag: f32 = mixed_norm
+            .iter()
+            .map(|c| c.re * c.re + c.im * c.im)
+            .sum::<f32>()
+            .sqrt();
         assert!((mag - 1.0).abs() < 1e-4, "mixed not unit");
         // NREM/ego.leg3 survival note: mint_linguistic (ZEDOS_LINGUISTIC) + initial verify_manifold + processes/linguistic-calculus.toml P5 rituals
         let _ = crate::types::Leg3Pointer::mint_linguistic(&bundle, false);
@@ -1403,7 +1571,10 @@ mod tests {
         // Reuses ALL existing: phase1/2 mixed bridging, P3/P4 op_linguistic_* + fibered, numerical VSA, Leg3Pointer::mint_linguistic, Linguistic*, no core invariants changed.
         // Full e2e green, CRS >=0.85, session preserved (mints + prior session/verify/context).
         let sample_text = "document: the geometric memory substrate enables mixed number+word calculus. P5 rituals (ritual_linguistic_wake.toml) drive NREM ego.leg3 promotion at crs_0.85 with class-mixing guard and lawful self-improvement.";
-        let w = LinguisticWord { text: sample_text.to_string(), coeff: [0.85, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0] };
+        let w = LinguisticWord {
+            text: sample_text.to_string(),
+            coeff: [0.85, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+        };
         let bundle = LinguisticDiscourseBundle {
             bundle_id: "agent-workflow-p1-ingest".to_string(),
             words: vec![w.clone()],
@@ -1432,8 +1603,15 @@ mod tests {
     // === Phase 2 additive bridging expansion (reuse ALL: op_mixed_linguistic_number_scale(Phase1), op_linguistic_* (P3/P4), numerical VSA (bind/add/geometric_product=op_compose/normalize/cosine_similarity), Leg3Pointer::mint_linguistic, Linguistic* structs, fibered_linguistic_equivalence/CRS for guards). No changes to .leg3/q/p/CRS/hypersphere/p-momentum/VSA sigs. ===
     // e.g. span/functor: word acting as operator on number variables; number parameterizing linguistic transformation; safe class-mixing guards via CRS/fibered equiv.
 
-    fn op_mixed_word_as_operator_on_num(word: &LinguisticWord, num_phase: &[Complex32; 8192]) -> [Complex32; 8192] {
-        let scale = if word.coeff.is_empty() { 1.0 } else { word.coeff[0] };
+    fn op_mixed_word_as_operator_on_num(
+        word: &LinguisticWord,
+        num_phase: &[Complex32; 8192],
+    ) -> [Complex32; 8192] {
+        let scale = if word.coeff.is_empty() {
+            1.0
+        } else {
+            word.coeff[0]
+        };
         // safe class-mixing guard via fibered equiv (P3 reuse) + CRS check
         let guard_b = LinguisticDiscourseBundle {
             bundle_id: "guard-word-num".to_string(),
@@ -1450,7 +1628,10 @@ mod tests {
         normalize(&out)
     }
 
-    fn op_mixed_num_param_on_linguistic(num_param: f32, bundle: &LinguisticDiscourseBundle) -> LinguisticDiscourseBundle {
+    fn op_mixed_num_param_on_linguistic(
+        num_param: f32,
+        bundle: &LinguisticDiscourseBundle,
+    ) -> LinguisticDiscourseBundle {
         let mut out = bundle.clone();
         for w in &mut out.words {
             for c in &mut w.coeff {
@@ -1458,14 +1639,18 @@ mod tests {
             }
         }
         out.bundle_id = format!("num-param({}):{}", num_param, bundle.bundle_id);
-        out.functor_metadata = format!("num-param-shift({});{}", num_param, bundle.functor_metadata);
+        out.functor_metadata =
+            format!("num-param-shift({});{}", num_param, bundle.functor_metadata);
         // class-mixing guard
         let _g = fibered_linguistic_equivalence(bundle, &out) >= 0.5;
         let _ = crate::types::Leg3Pointer::mint_linguistic(&out, false);
         out
     }
 
-    fn mixed_class_mixing_guard(a: &LinguisticDiscourseBundle, b: &LinguisticDiscourseBundle) -> bool {
+    fn mixed_class_mixing_guard(
+        a: &LinguisticDiscourseBundle,
+        b: &LinguisticDiscourseBundle,
+    ) -> bool {
         // CRS/fibered equiv guard for safe class-mixing (invariant)
         fibered_linguistic_equivalence(a, b) >= 0.74
     }
@@ -1506,7 +1691,10 @@ mod tests {
         let mixed_vsa = op_add(&mixed_vsa, &mixed);
 
         // richer expr 2: operadic compose across domains (P4)
-        let o_cross = op_operadic_compose(&[bundle.clone(), num_shifted.clone()], &["word-op-num", "num-param-ling"]);
+        let o_cross = op_operadic_compose(
+            &[bundle.clone(), num_shifted.clone()],
+            &["word-op-num", "num-param-ling"],
+        );
 
         // compress (P3)
         let comp = op_linguistic_compress(&bundle);
@@ -1527,7 +1715,10 @@ mod tests {
 
         // class-mixing invariant check (fibered/CRS guard)
         let class_ok = mixed_class_mixing_guard(&bundle, &num_shifted);
-        assert!(class_ok || fibered_linguistic_equivalence(&bundle, &num_shifted) > 0.5, "class-mixing invariant violated");
+        assert!(
+            class_ok || fibered_linguistic_equivalence(&bundle, &num_shifted) > 0.5,
+            "class-mixing invariant violated"
+        );
 
         // roundtrip fidelity + CRS >=0.85 + homotopy
         let re = op_linguistic_compress(&de);
@@ -1537,8 +1728,15 @@ mod tests {
         assert!(homotopy >= 0.85, "homotopy CRS {} <0.85", homotopy);
 
         // unit hypersphere / p-momentum preserved (reuse normalize; no annihilate in integrate/compose)
-        let mag: f32 = mixed_vsa.iter().map(|c| c.re * c.re + c.im * c.im).sum::<f32>().sqrt();
-        assert!((mag - 1.0).abs() < 1e-4, "p-momentum/unit violated in mixed");
+        let mag: f32 = mixed_vsa
+            .iter()
+            .map(|c| c.re * c.re + c.im * c.im)
+            .sum::<f32>()
+            .sqrt();
+        assert!(
+            (mag - 1.0).abs() < 1e-4,
+            "p-momentum/unit violated in mixed"
+        );
 
         // full e2e pipeline green (P1-6 + P5 rituals, CRS/homotopy/class-mixing validated)
     }

@@ -21,21 +21,23 @@
 //! momentum in the `p` tensor. `scar()` narrows the contract to `evidence_update`
 //! only — the storage-layer expression of `InjectScar { magnitude }` from the M-NOL.
 
-use engram_core::backend::{CpuBackend, Memory, VsaBackend, SheafBackend};
+use engram_core::backend::{CpuBackend, Memory, SheafBackend, VsaBackend};
 // GPU backends — conditionally included based on auto-detected hardware (see engram-gpu/build.rs)
+use engram_core::types::{
+    Leg3Pointer, SymplecticState, ZEDOS_EPISODIC, ZEDOS_PRAXIS, ZEDOS_RELATION, ZEDOS_USER_MODEL,
+};
 #[cfg(engram_backend_cuda)]
 use engram_gpu::backend::CudaBackend;
 #[cfg(engram_backend_metal)]
 use engram_gpu::metal_backend::MetalBackend;
 #[cfg(engram_backend_wgpu)]
 use engram_gpu::wgpu_backend::WgpuBackend;
-use engram_core::types::{Leg3Pointer, SymplecticState, ZEDOS_PRAXIS, ZEDOS_EPISODIC, ZEDOS_RELATION, ZEDOS_USER_MODEL};
 
+use anyhow::Result;
 use engram_core::ops::{op_add, op_bind, op_deduce};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use anyhow::Result;
 
 pub type SharedStore = Arc<Mutex<StoreHandle>>;
 
@@ -95,18 +97,17 @@ fn handoff_extract_files_touched(summary: &str) -> Vec<String> {
     let mut out = Vec::new();
 
     let mut consider = |candidate: &str| {
-        let cleaned = candidate
-            .trim_matches(|c: char| {
-                c == ','
-                    || c == ';'
-                    || c == '`'
-                    || c == '('
-                    || c == ')'
-                    || c == '['
-                    || c == ']'
-                    || c == '"'
-                    || c == '\''
-            });
+        let cleaned = candidate.trim_matches(|c: char| {
+            c == ','
+                || c == ';'
+                || c == '`'
+                || c == '('
+                || c == ')'
+                || c == '['
+                || c == ']'
+                || c == '"'
+                || c == '\''
+        });
         if cleaned.is_empty() {
             return;
         }
@@ -163,7 +164,11 @@ impl AccessIndex {
             HashMap::new()
         };
         tracing::info!("AccessIndex loaded: {} entries from {:?}", map.len(), path);
-        Self { map, path, dirty: false }
+        Self {
+            map,
+            path,
+            dirty: false,
+        }
     }
 
     pub fn touch(&mut self, concept: &str) {
@@ -181,17 +186,18 @@ impl AccessIndex {
 
     /// Return the N most recently accessed concepts, sorted newest first.
     pub fn recent(&self, n: usize) -> Vec<(String, u64)> {
-        let mut entries: Vec<(String, u64)> = self.map.iter()
-            .map(|(k, v)| (k.clone(), *v))
-            .collect();
-        entries.sort_by(|a, b| b.1.cmp(&a.1));
+        let mut entries: Vec<(String, u64)> =
+            self.map.iter().map(|(k, v)| (k.clone(), *v)).collect();
+        entries.sort_by_key(|b| std::cmp::Reverse(b.1));
         entries.truncate(n);
         entries
     }
 
     /// Flush to disk if dirty. Called by daemon every 60 seconds.
     pub fn flush_if_dirty(&mut self) {
-        if !self.dirty { return; }
+        if !self.dirty {
+            return;
+        }
         if let Ok(bytes) = bincode::serialize(&self.map) {
             if std::fs::write(&self.path, &bytes).is_ok() {
                 self.dirty = false;
@@ -209,9 +215,9 @@ impl AccessIndex {
 
 #[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
 pub struct RelationEntry {
-    pub from:  String,
+    pub from: String,
     pub label: String,
-    pub to:    String,
+    pub to: String,
 }
 
 pub struct RelationIndex {
@@ -230,16 +236,25 @@ impl RelationIndex {
         } else {
             Vec::new()
         };
-        tracing::info!("RelationIndex loaded: {} edges from {:?}", entries.len(), path);
+        tracing::info!(
+            "RelationIndex loaded: {} edges from {:?}",
+            entries.len(),
+            path
+        );
         Self { entries, path }
     }
 
     /// Add a directed edge, deduplicating and flushing immediately.
     pub fn add(&mut self, from: &str, label: &str, to: &str) {
-        let dup = self.entries.iter().any(|e| e.from == from && e.label == label && e.to == to);
+        let dup = self
+            .entries
+            .iter()
+            .any(|e| e.from == from && e.label == label && e.to == to);
         if !dup {
             self.entries.push(RelationEntry {
-                from: from.to_string(), label: label.to_string(), to: to.to_string(),
+                from: from.to_string(),
+                label: label.to_string(),
+                to: to.to_string(),
             });
             self.flush();
         }
@@ -247,17 +262,28 @@ impl RelationIndex {
 
     /// Query edges. `direction`: "from" | "to" | "both".
     /// Returns (label, other_concept) pairs.
-    pub fn query(&self, concept: &str, filter_label: Option<&str>, direction: &str) -> Vec<(String, String)> {
+    pub fn query(
+        &self,
+        concept: &str,
+        filter_label: Option<&str>,
+        direction: &str,
+    ) -> Vec<(String, String)> {
         let mut out = Vec::new();
         for e in &self.entries {
             let label_ok = filter_label.is_none_or(|l| e.label == l);
-            if !label_ok { continue; }
+            if !label_ok {
+                continue;
+            }
             match direction {
                 "from" if e.from == concept => out.push((e.label.clone(), e.to.clone())),
-                "to"   if e.to   == concept => out.push((e.label.clone(), e.from.clone())),
-                "both"  => {
-                    if e.from == concept { out.push((e.label.clone(), e.to.clone())); }
-                    if e.to   == concept { out.push((e.label.clone(), e.from.clone())); }
+                "to" if e.to == concept => out.push((e.label.clone(), e.from.clone())),
+                "both" => {
+                    if e.from == concept {
+                        out.push((e.label.clone(), e.to.clone()));
+                    }
+                    if e.to == concept {
+                        out.push((e.label.clone(), e.from.clone()));
+                    }
                 }
                 _ => {}
             }
@@ -272,14 +298,20 @@ impl RelationIndex {
         let mut frontier = vec![seed.to_string()];
         let mut result: Vec<RelationEntry> = Vec::new();
         for _ in 0..depth {
-            if frontier.is_empty() { break; }
+            if frontier.is_empty() {
+                break;
+            }
             let mut next: Vec<String> = Vec::new();
             for concept in &frontier {
-                if !visited.insert(concept.clone()) { continue; }
+                if !visited.insert(concept.clone()) {
+                    continue;
+                }
                 for e in &self.entries {
                     if &e.from == concept {
                         result.push(e.clone());
-                        if !visited.contains(&e.to) { next.push(e.to.clone()); }
+                        if !visited.contains(&e.to) {
+                            next.push(e.to.clone());
+                        }
                     }
                 }
             }
@@ -324,7 +356,7 @@ impl RelationIndex {
 fn oracle_fallthrough(query: &str) -> Option<Memory> {
     let oracle_url = match std::env::var("ENGRAM_ORACLE_URL") {
         Ok(url) => url,
-        Err(_) => return None,  // oracle disabled (env var not set)
+        Err(_) => return None, // oracle disabled (env var not set)
     };
     const TIMEOUT_SECS: u64 = 3;
 
@@ -344,7 +376,10 @@ fn oracle_fallthrough(query: &str) -> Option<Memory> {
     let response = match client.post(&oracle_url).json(&body).send() {
         Ok(r) => r,
         Err(e) => {
-            tracing::debug!("[oracle_fallthrough] Oracle unavailable ({}). Returning empty recall.", e);
+            tracing::debug!(
+                "[oracle_fallthrough] Oracle unavailable ({}). Returning empty recall.",
+                e
+            );
             return None;
         }
     };
@@ -352,7 +387,10 @@ fn oracle_fallthrough(query: &str) -> Option<Memory> {
     let json: serde_json::Value = match response.json() {
         Ok(v) => v,
         Err(e) => {
-            tracing::warn!("[oracle_fallthrough] Could not parse oracle response as JSON: {}", e);
+            tracing::warn!(
+                "[oracle_fallthrough] Could not parse oracle response as JSON: {}",
+                e
+            );
             return None;
         }
     };
@@ -368,61 +406,72 @@ fn oracle_fallthrough(query: &str) -> Option<Memory> {
         return None;
     }
 
-    tracing::info!("[oracle_fallthrough] Oracle hit: {} chars of assembled_prose returned.", prose.len());
+    tracing::info!(
+        "[oracle_fallthrough] Oracle hit: {} chars of assembled_prose returned.",
+        prose.len()
+    );
 
     Some(Memory {
-        concept:             "oracle_fallthrough".to_string(),
-        score:               0.29, // Just below MIN_SCORE_THRESHOLD — callers detect oracle provenance.
-        crs:                 0.74,
-        provlog:             prose,
-        explain:             "Transductive[oracle=LBVH]".to_string(),
+        concept: "oracle_fallthrough".to_string(),
+        score: 0.29, // Just below MIN_SCORE_THRESHOLD — callers detect oracle provenance.
+        crs: 0.74,
+        provlog: prose,
+        explain: "Transductive[oracle=LBVH]".to_string(),
         // physics / spatial fields zeroed — synthetic oracle result
-        drift_velocity:      0.0,
+        drift_velocity: 0.0,
         superposition_depth: 0,
-        zedos_tag:           engram_core::types::ZEDOS_DECLARATIVE,
-        alpha_a:             0.0,
-        alpha_d:             0.0,
-        aabb_min:            [0.0; 3],
-        aabb_max:            [0.0; 3],
-        l2_norm_residual:    0.0,
+        zedos_tag: engram_core::types::ZEDOS_DECLARATIVE,
+        alpha_a: 0.0,
+        alpha_d: 0.0,
+        aabb_min: [0.0; 3],
+        aabb_max: [0.0; 3],
+        l2_norm_residual: 0.0,
     })
 }
 
 pub(crate) fn assign_reflexive_contract(block: &mut engram_core::types::Leg3Pointer) {
-
     use engram_core::types::{
-        ZEDOS_PRAXIS, ZEDOS_RELATION, ZEDOS_EPISODIC, ZEDOS_DECLARATIVE, ZEDOS_TRAINING,
+        ZEDOS_DECLARATIVE, ZEDOS_EPISODIC, ZEDOS_PRAXIS, ZEDOS_RELATION, ZEDOS_TRAINING,
     };
     // Pinned genesis-tier: full authority
     if block.crs_score >= 1.0 {
         let full = b"0xFF";
         block.allowed_transforms[..full.len()].copy_from_slice(full);
-        for b in block.allowed_transforms[full.len()..].iter_mut() { *b = 0; }
+        for b in block.allowed_transforms[full.len()..].iter_mut() {
+            *b = 0;
+        }
         return;
     }
 
     let contract: &[u8] = match block.zedos_tag {
-        t if t == ZEDOS_PRAXIS       => b"evidence_update",
-        t if t == ZEDOS_RELATION     => b"op_bind,rollback",
-        t if t == ZEDOS_EPISODIC     => b"evidence_update,rollback",
-        t if t == ZEDOS_DECLARATIVE  => b"evidence_update,op_add",
-        t if t == ZEDOS_TRAINING     => b"evidence_update,op_add",
-        _                            => b"evidence_update,rollback", // OPERATIONAL default
+        t if t == ZEDOS_PRAXIS => b"evidence_update",
+        t if t == ZEDOS_RELATION => b"op_bind,rollback",
+        t if t == ZEDOS_EPISODIC => b"evidence_update,rollback",
+        t if t == ZEDOS_DECLARATIVE => b"evidence_update,op_add",
+        t if t == ZEDOS_TRAINING => b"evidence_update,op_add",
+        _ => b"evidence_update,rollback", // OPERATIONAL default
     };
 
     let len = contract.len().min(64);
     block.allowed_transforms[..len].copy_from_slice(&contract[..len]);
-    for b in block.allowed_transforms[len..].iter_mut() { *b = 0; }
+    for b in block.allowed_transforms[len..].iter_mut() {
+        *b = 0;
+    }
 }
 
 // ── Backend enum ─────────────────────────────────────────────────────────────
 
+#[allow(clippy::large_enum_variant)]
 enum Backend {
     #[cfg(engram_backend_cuda)]
     Gpu(CudaBackend),
     #[cfg(engram_backend_metal)]
     Metal(MetalBackend),
-    #[cfg(all(engram_backend_wgpu, not(engram_backend_cuda), not(engram_backend_metal)))]
+    #[cfg(all(
+        engram_backend_wgpu,
+        not(engram_backend_cuda),
+        not(engram_backend_metal)
+    ))]
     Wgpu(WgpuBackend),
     Single(CpuBackend),
     Sheaf(SheafBackend),
@@ -436,7 +485,11 @@ impl Backend {
             Backend::Gpu(b) => b.recall(q, k),
             #[cfg(engram_backend_metal)]
             Backend::Metal(b) => b.recall(q, k),
-            #[cfg(all(engram_backend_wgpu, not(engram_backend_cuda), not(engram_backend_metal)))]
+            #[cfg(all(
+                engram_backend_wgpu,
+                not(engram_backend_cuda),
+                not(engram_backend_metal)
+            ))]
             Backend::Wgpu(b) => b.recall(q, k),
             Backend::Single(b) => b.recall(q, k),
             Backend::Sheaf(b) => b.recall(q, k),
@@ -448,7 +501,11 @@ impl Backend {
             Backend::Gpu(b) => b.forget(concept),
             #[cfg(engram_backend_metal)]
             Backend::Metal(b) => b.forget(concept),
-            #[cfg(all(engram_backend_wgpu, not(engram_backend_cuda), not(engram_backend_metal)))]
+            #[cfg(all(
+                engram_backend_wgpu,
+                not(engram_backend_cuda),
+                not(engram_backend_metal)
+            ))]
             Backend::Wgpu(b) => b.forget(concept),
             Backend::Single(b) => b.forget(concept),
             Backend::Sheaf(b) => b.forget(concept),
@@ -460,7 +517,11 @@ impl Backend {
             Backend::Gpu(b) => b.list(),
             #[cfg(engram_backend_metal)]
             Backend::Metal(b) => b.list(),
-            #[cfg(all(engram_backend_wgpu, not(engram_backend_cuda), not(engram_backend_metal)))]
+            #[cfg(all(
+                engram_backend_wgpu,
+                not(engram_backend_cuda),
+                not(engram_backend_metal)
+            ))]
             Backend::Wgpu(b) => b.list(),
             Backend::Single(b) => b.list(),
             Backend::Sheaf(b) => b.list(),
@@ -472,7 +533,11 @@ impl Backend {
             Backend::Gpu(b) => b.fetch_block(concept),
             #[cfg(engram_backend_metal)]
             Backend::Metal(b) => b.fetch_block(concept),
-            #[cfg(all(engram_backend_wgpu, not(engram_backend_cuda), not(engram_backend_metal)))]
+            #[cfg(all(
+                engram_backend_wgpu,
+                not(engram_backend_cuda),
+                not(engram_backend_metal)
+            ))]
             Backend::Wgpu(b) => b.fetch_block(concept),
             Backend::Single(b) => b.fetch_block(concept),
             Backend::Sheaf(b) => b.fetch_block(concept),
@@ -484,7 +549,11 @@ impl Backend {
             Backend::Gpu(b) => b.fetch(concept),
             #[cfg(engram_backend_metal)]
             Backend::Metal(b) => b.fetch(concept),
-            #[cfg(all(engram_backend_wgpu, not(engram_backend_cuda), not(engram_backend_metal)))]
+            #[cfg(all(
+                engram_backend_wgpu,
+                not(engram_backend_cuda),
+                not(engram_backend_metal)
+            ))]
             Backend::Wgpu(b) => b.fetch(concept),
             Backend::Single(b) => b.fetch(concept),
             Backend::Sheaf(b) => b.fetch(concept),
@@ -496,7 +565,11 @@ impl Backend {
             Backend::Gpu(b) => b.encode(text),
             #[cfg(engram_backend_metal)]
             Backend::Metal(b) => b.encode(text),
-            #[cfg(all(engram_backend_wgpu, not(engram_backend_cuda), not(engram_backend_metal)))]
+            #[cfg(all(
+                engram_backend_wgpu,
+                not(engram_backend_cuda),
+                not(engram_backend_metal)
+            ))]
             Backend::Wgpu(b) => b.encode(text),
             Backend::Single(b) => b.encode(text),
             Backend::Sheaf(b) => b.encode(text),
@@ -508,7 +581,11 @@ impl Backend {
             Backend::Gpu(b) => b.query(q, k),
             #[cfg(engram_backend_metal)]
             Backend::Metal(b) => b.query(q, k),
-            #[cfg(all(engram_backend_wgpu, not(engram_backend_cuda), not(engram_backend_metal)))]
+            #[cfg(all(
+                engram_backend_wgpu,
+                not(engram_backend_cuda),
+                not(engram_backend_metal)
+            ))]
             Backend::Wgpu(b) => b.query(q, k),
             Backend::Single(b) => b.query(q, k),
             Backend::Sheaf(b) => b.query(q, k),
@@ -520,7 +597,11 @@ impl Backend {
             Backend::Gpu(b) => b.store(concept, block),
             #[cfg(engram_backend_metal)]
             Backend::Metal(b) => b.store(concept, block),
-            #[cfg(all(engram_backend_wgpu, not(engram_backend_cuda), not(engram_backend_metal)))]
+            #[cfg(all(
+                engram_backend_wgpu,
+                not(engram_backend_cuda),
+                not(engram_backend_metal)
+            ))]
             Backend::Wgpu(b) => b.store(concept, block),
             Backend::Single(b) => b.store(concept, block),
             Backend::Sheaf(b) => b.store(concept, block),
@@ -532,7 +613,11 @@ impl Backend {
             Backend::Gpu(_) => false,
             #[cfg(engram_backend_metal)]
             Backend::Metal(_) => false,
-            #[cfg(all(engram_backend_wgpu, not(engram_backend_cuda), not(engram_backend_metal)))]
+            #[cfg(all(
+                engram_backend_wgpu,
+                not(engram_backend_cuda),
+                not(engram_backend_metal)
+            ))]
             Backend::Wgpu(_) => false,
             Backend::Single(_) => false,
             Backend::Sheaf(b) => b.set_active_stalk(name),
@@ -544,7 +629,11 @@ impl Backend {
             Backend::Gpu(_) => vec!["default".to_string()],
             #[cfg(engram_backend_metal)]
             Backend::Metal(_) => vec!["default".to_string()],
-            #[cfg(all(engram_backend_wgpu, not(engram_backend_cuda), not(engram_backend_metal)))]
+            #[cfg(all(
+                engram_backend_wgpu,
+                not(engram_backend_cuda),
+                not(engram_backend_metal)
+            ))]
             Backend::Wgpu(_) => vec!["default".to_string()],
             Backend::Single(_) => vec!["default".to_string()],
             Backend::Sheaf(b) => b.stalk_names().into_iter().map(|s| s.to_string()).collect(),
@@ -556,20 +645,30 @@ impl Backend {
             Backend::Gpu(_) => "default".to_string(),
             #[cfg(engram_backend_metal)]
             Backend::Metal(_) => "default".to_string(),
-            #[cfg(all(engram_backend_wgpu, not(engram_backend_cuda), not(engram_backend_metal)))]
+            #[cfg(all(
+                engram_backend_wgpu,
+                not(engram_backend_cuda),
+                not(engram_backend_metal)
+            ))]
             Backend::Wgpu(_) => "default".to_string(),
             Backend::Single(_) => "default".to_string(),
             Backend::Sheaf(b) => b.active_stalk_name().to_string(),
         }
     }
-    fn is_sheaf(&self) -> bool { matches!(self, Backend::Sheaf(_)) }
+    fn is_sheaf(&self) -> bool {
+        matches!(self, Backend::Sheaf(_))
+    }
     fn verify_hypothesis(&self, concept: &str, success: bool) -> Result<()> {
         match self {
             #[cfg(engram_backend_cuda)]
             Backend::Gpu(b) => b.verify_hypothesis(concept, success),
             #[cfg(engram_backend_metal)]
             Backend::Metal(b) => b.verify_hypothesis(concept, success),
-            #[cfg(all(engram_backend_wgpu, not(engram_backend_cuda), not(engram_backend_metal)))]
+            #[cfg(all(
+                engram_backend_wgpu,
+                not(engram_backend_cuda),
+                not(engram_backend_metal)
+            ))]
             Backend::Wgpu(b) => b.verify_hypothesis(concept, success),
             Backend::Single(b) => b.verify_hypothesis(concept, success),
             Backend::Sheaf(b) => b.verify_hypothesis(concept, success),
@@ -589,12 +688,16 @@ impl Backend {
                 norm_sq += blended.norm_sqr();
             }
             let norm = norm_sq.sqrt().max(1e-9);
-            for i in 0..engram_core::types::DIMENSION { existing.q[i] /= norm; }
+            for i in 0..engram_core::types::DIMENSION {
+                existing.q[i] /= norm;
+            }
             existing.superposition_count = existing.superposition_count.saturating_add(1);
             let text_bytes = interaction.as_bytes();
             let copy_len = text_bytes.len().min(existing.payload.len());
             existing.payload[..copy_len].copy_from_slice(&text_bytes[..copy_len]);
-            if copy_len < existing.payload.len() { existing.payload[copy_len..].fill(0); }
+            if copy_len < existing.payload.len() {
+                existing.payload[copy_len..].fill(0);
+            }
             existing
         } else {
             let mut fresh = new_block;
@@ -632,7 +735,11 @@ impl Backend {
         }
     }
 
-    fn promote_to_high_priority(&self, concept: &str, last_accessed: Option<u64>) -> Option<Leg3Pointer> {
+    fn promote_to_high_priority(
+        &self,
+        concept: &str,
+        last_accessed: Option<u64>,
+    ) -> Option<Leg3Pointer> {
         // Dispatch only; the caller (StoreHandle) owns AccessIndex and supplies the
         // recency timestamp for Tier 2.1 hybrid LRU eviction scoring (shared fn).
         // Now dispatches to MetalBackend symmetrically with CudaBackend.
@@ -643,7 +750,10 @@ impl Backend {
             Backend::Gpu(b) => b.promote_to_high_priority(concept, last_accessed),
             #[cfg(engram_backend_metal)]
             Backend::Metal(b) => b.promote_to_high_priority(concept, last_accessed),
-            _ => self.fetch_block(concept),
+            _ => {
+                let _ = last_accessed;
+                self.fetch_block(concept)
+            }
         }
     }
 
@@ -653,7 +763,10 @@ impl Backend {
             Backend::Gpu(b) => b.is_hot(concept),
             #[cfg(engram_backend_metal)]
             Backend::Metal(b) => b.is_hot(concept),
-            _ => false,
+            _ => {
+                let _ = concept;
+                false
+            }
         }
     }
 
@@ -683,7 +796,11 @@ impl Backend {
             Backend::Gpu(_) => "cuda",
             #[cfg(engram_backend_metal)]
             Backend::Metal(_) => "metal",
-            #[cfg(all(engram_backend_wgpu, not(engram_backend_cuda), not(engram_backend_metal)))]
+            #[cfg(all(
+                engram_backend_wgpu,
+                not(engram_backend_cuda),
+                not(engram_backend_metal)
+            ))]
             Backend::Wgpu(_) => "wgpu",
             Backend::Sheaf(_) => "sheaf",
             Backend::Single(_) => "cpu",
@@ -700,7 +817,6 @@ impl Backend {
         }
     }
 }
-
 
 // ── StoreHandle ───────────────────────────────────────────────────────────────
 
@@ -795,7 +911,11 @@ impl StoreHandle {
         let mut candidates: Vec<std::path::PathBuf> = Vec::new();
 
         if let Ok(home) = std::env::var("HOME") {
-            candidates.push(std::path::PathBuf::from(&home).join(".engram").join(".engramignore"));
+            candidates.push(
+                std::path::PathBuf::from(&home)
+                    .join(".engram")
+                    .join(".engramignore"),
+            );
         }
         if let Ok(ws) = std::env::var("ENGRAM_LINKED_WORKSPACE") {
             candidates.push(std::path::PathBuf::from(&ws).join(".engramignore"));
@@ -820,7 +940,12 @@ impl StoreHandle {
             }
         }
         // Sensible built-in defaults so node_modules etc never pollute even without .engramignore
-        for def in ["node_modules/", "extensions/vscode/node_modules/", "/dist/", "/build/"] {
+        for def in [
+            "node_modules/",
+            "extensions/vscode/node_modules/",
+            "/dist/",
+            "/build/",
+        ] {
             if !ignored.iter().any(|p| p.contains(def)) {
                 ignored.push(def.to_string());
             }
@@ -845,9 +970,16 @@ impl StoreHandle {
                 .and_then(|s| toml::from_str::<SheafConfig>(&s).ok())
             {
                 Some(config) => {
-                    let stalks: Vec<(String, PathBuf)> = config.stalks.iter().map(|s| {
-                        (s.name.clone(), PathBuf::from(shellexpand::tilde(&s.path).into_owned()))
-                    }).collect();
+                    let stalks: Vec<(String, PathBuf)> = config
+                        .stalks
+                        .iter()
+                        .map(|s| {
+                            (
+                                s.name.clone(),
+                                PathBuf::from(shellexpand::tilde(&s.path).into_owned()),
+                            )
+                        })
+                        .collect();
 
                     #[cfg(engram_backend_cuda)]
                     let sheaf = {
@@ -863,7 +995,7 @@ impl StoreHandle {
                                 .map(|(name, path)| {
                                     std::fs::create_dir_all(&path).ok();
                                     let is_active = active.as_ref() == Some(&name)
-                                        || path == PathBuf::from(&expanded);
+                                        || path == expanded;
                                     let b: Box<dyn engram_core::backend::VsaBackend + Send + Sync> =
                                         if _sheaf_lean && !is_active {
                                             tracing::info!(
@@ -881,11 +1013,11 @@ impl StoreHandle {
                     };
 
                     #[cfg(not(engram_backend_cuda))]
-                    let sheaf = {
-                        SheafBackend::new(stalks)
-                    };
+                    let sheaf = { SheafBackend::new(stalks) };
 
-                    if let Some(active) = &config.active_stalk { sheaf.set_active_stalk(active); }
+                    if let Some(active) = &config.active_stalk {
+                        sheaf.set_active_stalk(active);
+                    }
                     tracing::info!("Engram Sheaf mode: {} stalks loaded", config.stalks.len());
                     Backend::Sheaf(sheaf)
                 }
@@ -913,10 +1045,29 @@ impl StoreHandle {
                 }
                 #[cfg(all(engram_backend_metal, not(engram_backend_cuda)))]
                 {
-                    tracing::info!("engram-gpu: MetalBackend selected (Apple Silicon GPU cosine kernels)");
+                    tracing::info!(
+                        "engram-gpu: MetalBackend selected (Apple Silicon GPU cosine kernels)"
+                    );
                     Backend::Metal(MetalBackend::new(&expanded))
                 }
-                #[cfg(not(any(engram_backend_cuda, engram_backend_metal)))]
+                #[cfg(all(
+                    engram_backend_wgpu,
+                    not(engram_backend_cuda),
+                    not(engram_backend_metal)
+                ))]
+                {
+                    tracing::info!("engram-gpu: WgpuBackend selected (WebGPU INT8 search)");
+                    match WgpuBackend::new(&expanded) {
+                        Ok(wgpu) => Backend::Wgpu(wgpu),
+                        Err(e) => {
+                            tracing::warn!(
+                                "engram-gpu: WgpuBackend init failed ({e}) — falling back to CPU"
+                            );
+                            Backend::Single(CpuBackend::new(&expanded))
+                        }
+                    }
+                }
+                #[cfg(not(any(engram_backend_cuda, engram_backend_metal, engram_backend_wgpu)))]
                 {
                     Backend::Single(CpuBackend::new(&expanded))
                 }
@@ -929,7 +1080,9 @@ impl StoreHandle {
         // On failure, ego_q = None and remember() uses the 0.74 floor.
         let ego_q = load_ego_q();
         if ego_q.is_some() {
-            tracing::info!("[EGO GATE] Ego q-vector loaded — new memories will be CRS-gated by Ego resonance.");
+            tracing::info!(
+                "[EGO GATE] Ego q-vector loaded — new memories will be CRS-gated by Ego resonance."
+            );
         } else {
             tracing::warn!("[EGO GATE] ego.leg3 not found — Ego-gated CRS disabled. Memories start at CRS=0.74.");
         }
@@ -1001,7 +1154,8 @@ impl StoreHandle {
     /// has finished initializing. In the fast MCP path this becomes true only after
     /// the background thread completes (see main.rs).
     pub fn is_fully_initialized(&self) -> bool {
-        self.fully_initialized.load(std::sync::atomic::Ordering::Relaxed)
+        self.fully_initialized
+            .load(std::sync::atomic::Ordering::Relaxed)
     }
 
     pub fn bvh_is_ready(&self) -> bool {
@@ -1106,7 +1260,8 @@ impl StoreHandle {
 
     /// Called by the background initialization thread once everything is ready.
     pub fn mark_fully_initialized(&self) {
-        self.fully_initialized.store(true, std::sync::atomic::Ordering::Relaxed);
+        self.fully_initialized
+            .store(true, std::sync::atomic::Ordering::Relaxed);
     }
 
     /// Hot-swap the fast MCP placeholder with a fully initialized store on the same disk path.
@@ -1139,18 +1294,27 @@ impl StoreHandle {
         // ── Call Gemma 4 /v1/embeddings ──────────────────────────────────────
         let client = reqwest::blocking::Client::builder()
             .timeout(std::time::Duration::from_secs(5))
-            .build().ok()?;
+            .build()
+            .ok()?;
 
         let body = serde_json::json!({ "model": "gemma4", "input": text });
-        let resp: serde_json::Value = client.post(&embed_url).json(&body).send()
+        let resp: serde_json::Value = client
+            .post(&embed_url)
+            .json(&body)
+            .send()
             .and_then(|r| r.json())
             .map_err(|e| {
-                tracing::debug!("[EMBED PROJ] Server unreachable ({}) — Helical Baptism fallback", e);
+                tracing::debug!(
+                    "[EMBED PROJ] Server unreachable ({}) — Helical Baptism fallback",
+                    e
+                );
                 e
-            }).ok()?;
+            })
+            .ok()?;
 
         let embedding: Vec<f32> = resp
-            .get("data").and_then(|d| d.get(0))
+            .get("data")
+            .and_then(|d| d.get(0))
             .and_then(|e| e.get("embedding"))
             .and_then(|v| serde_json::from_value(v.clone()).ok())?;
 
@@ -1164,9 +1328,10 @@ impl StoreHandle {
 
         // ── Matrix multiply: projected[j] = Σ_i embed[i] * W[i*8192+j] ─────
         let mut projected = vec![0f32; DST_DIM];
-        for i in 0..src_dim {
-            let e = embedding[i];
-            if e.abs() < 1e-9 { continue; } // Skip negligible components
+        for (i, &e) in embedding.iter().enumerate().take(src_dim) {
+            if e.abs() < 1e-9 {
+                continue;
+            } // Skip negligible components
             let row_start = i * DST_DIM;
             for j in 0..DST_DIM {
                 projected[j] += e * w[row_start + j];
@@ -1174,8 +1339,15 @@ impl StoreHandle {
         }
 
         // ── L2-normalize the projected vector ─────────────────────────────────
-        let norm: f32 = projected.iter().map(|x| x * x).sum::<f32>().sqrt().max(1e-9);
-        for x in projected.iter_mut() { *x /= norm; }
+        let norm: f32 = projected
+            .iter()
+            .map(|x| x * x)
+            .sum::<f32>()
+            .sqrt()
+            .max(1e-9);
+        for x in projected.iter_mut() {
+            *x /= norm;
+        }
 
         // ── Map to complex phase vector on U(1)^8192 ─────────────────────────
         // theta_i = projected_i * π ∈ [-π, π]
@@ -1189,17 +1361,25 @@ impl StoreHandle {
 
         // Final L2-normalization of the full 8192D complex vector
         let q_norm: f32 = q.iter().map(|z| z.norm_sqr()).sum::<f32>().sqrt().max(1e-9);
-        for z in q.iter_mut() { *z /= q_norm; }
+        for z in q.iter_mut() {
+            *z /= q_norm;
+        }
 
-        tracing::debug!("[EMBED PROJ] '{}...' projected via Gemma 4 → W ({}×{})",
-            &text.chars().take(40).collect::<String>(), src_dim, DST_DIM);
+        tracing::debug!(
+            "[EMBED PROJ] '{}...' projected via Gemma 4 → W ({}×{})",
+            &text.chars().take(40).collect::<String>(),
+            src_dim,
+            DST_DIM
+        );
         Some(q)
     }
 
     pub fn boot_daemon(store_arc: SharedStore) {
         let mut lock = store_arc.lock().unwrap();
         if lock.daemon.is_some() {
-            tracing::debug!("[Daemon] Already booted on this store handle — skipping duplicate spawn");
+            tracing::debug!(
+                "[Daemon] Already booted on this store handle — skipping duplicate spawn"
+            );
             return;
         }
         let control = crate::daemon::spawn(store_arc.clone());
@@ -1212,7 +1392,9 @@ impl StoreHandle {
         self.ego_q = load_ego_q();
         match &self.ego_q {
             Some(_) => tracing::info!("[EgoGate] ego_q refreshed from ego.leg3"),
-            None    => tracing::warn!("[EgoGate] ego.leg3 missing after NREM write — check daemon logs"),
+            None => {
+                tracing::warn!("[EgoGate] ego.leg3 missing after NREM write — check daemon logs")
+            }
         }
     }
 
@@ -1222,23 +1404,35 @@ impl StoreHandle {
     /// This is the foundation for making the hijacker more change-driven without
     /// a heavy notification system.
     pub fn mark_ki_rebake_needed(&self) {
-        self.ki_rebake_needed.store(true, std::sync::atomic::Ordering::Relaxed);
+        self.ki_rebake_needed
+            .store(true, std::sync::atomic::Ordering::Relaxed);
     }
 
     /// Atomically take the dirty flag (returns true if a rebake was requested since
     /// the last time this was called). The hijacker uses this to decide whether to
     /// do a full bake or a lighter incremental update focused on intent.
     pub fn take_ki_rebake_needed(&self) -> bool {
-        self.ki_rebake_needed.swap(false, std::sync::atomic::Ordering::Relaxed)
+        self.ki_rebake_needed
+            .swap(false, std::sync::atomic::Ordering::Relaxed)
     }
 
     // ── Passthrough ───────────────────────────────────────────────────────────
 
-    pub fn store_path(&self) -> &str { &self.path }
-    pub fn is_sheaf_mode(&self) -> bool { self.backend.is_sheaf() }
-    pub fn stalk_names(&self) -> Vec<String> { self.backend.stalk_names() }
-    pub fn active_stalk_name(&self) -> String { self.backend.active_stalk_name() }
-    pub fn set_active_stalk(&self, name: &str) -> bool { self.backend.set_active_stalk(name) }
+    pub fn store_path(&self) -> &str {
+        &self.path
+    }
+    pub fn is_sheaf_mode(&self) -> bool {
+        self.backend.is_sheaf()
+    }
+    pub fn stalk_names(&self) -> Vec<String> {
+        self.backend.stalk_names()
+    }
+    pub fn active_stalk_name(&self) -> String {
+        self.backend.active_stalk_name()
+    }
+    pub fn set_active_stalk(&self, name: &str) -> bool {
+        self.backend.set_active_stalk(name)
+    }
 
     pub fn remember(&mut self, concept: &str, text: &str) -> Result<()> {
         // Encode via backend (sets spin_state=0x01, energetics floor in encode.rs)
@@ -1294,11 +1488,16 @@ impl StoreHandle {
         // If ego_q is missing, falls back to encode.rs default (0.74).
         if let Some(ego_q) = &self.ego_q {
             let resonance = engram_core::ops::cosine_similarity(&block.q, ego_q);
-            let resonance_norm = (resonance + 1.0) / 2.0;  // shift [-1,1] → [0,1]
-            let crs_ego = 0.50 + resonance_norm * 0.44;    // range: [0.50, 0.94]
+            let resonance_norm = (resonance + 1.0) / 2.0; // shift [-1,1] → [0,1]
+            let crs_ego = 0.50 + resonance_norm * 0.44; // range: [0.50, 0.94]
             block.crs_score = crs_ego;
             block.energetics.crs = crs_ego;
-            tracing::debug!("[EGO GATE] '{}' — resonance: {:.3} → CRS: {:.3}", concept, resonance, crs_ego);
+            tracing::debug!(
+                "[EGO GATE] '{}' — resonance: {:.3} → CRS: {:.3}",
+                concept,
+                resonance,
+                crs_ego
+            );
         }
 
         // ── Assign reflexive contract by ZEDOS tag ────────────────────────────
@@ -1311,7 +1510,9 @@ impl StoreHandle {
             .as_secs();
 
         let r = self.backend.store(concept, block);
-        if r.is_ok() { self.access_index.touch(concept); }
+        if r.is_ok() {
+            self.access_index.touch(concept);
+        }
         r
     }
 
@@ -1339,9 +1540,7 @@ impl StoreHandle {
         };
 
         let mut results = match effective_scope {
-            "anchors" => {
-                self.recall_sampled_tiered(&effective_q, k * 2, "anchors")
-            }
+            "anchors" => self.recall_sampled_tiered(&effective_q, k * 2, "anchors"),
             "hot" => {
                 let candidates = self.sample_concepts_for_overview(4000);
                 self.score_recall_candidates(&candidates, &effective_q, k * 2, true)
@@ -1500,7 +1699,11 @@ impl StoreHandle {
 
     /// Bounded recall for large manifolds when BVH build is deferred.
     /// Scores hot/recent/anchor candidates only — avoids O(N) scan over 100k+ blocks.
-    fn recall_sampled(&self, effective_q: &[engram_core::Complex32; 8192], k: usize) -> Vec<Memory> {
+    fn recall_sampled(
+        &self,
+        effective_q: &[engram_core::Complex32; 8192],
+        k: usize,
+    ) -> Vec<Memory> {
         self.recall_sampled_tiered(effective_q, k, "anchors")
     }
 
@@ -1557,9 +1760,7 @@ impl StoreHandle {
 
         if scope == "all" && candidates.len() < max_pool {
             for (c, _) in self.access_index.recent(max_pool) {
-                if (c.starts_with("session_")
-                    || c.starts_with("trace:")
-                    || c.contains("episodic"))
+                if (c.starts_with("session_") || c.starts_with("trace:") || c.contains("episodic"))
                     && seen.insert(c.clone())
                 {
                     candidates.push(c);
@@ -1601,7 +1802,7 @@ impl StoreHandle {
                 entries.push((mtime, stem.to_string()));
             }
         }
-        entries.sort_by(|a, b| b.0.cmp(&a.0));
+        entries.sort_by_key(|b| std::cmp::Reverse(b.0));
         entries.into_iter().take(max).map(|(_, s)| s).collect()
     }
 
@@ -1675,9 +1876,7 @@ impl StoreHandle {
             }
         }
 
-        for prefix in [
-            "goal:", "trace:", "scar:", "ritual:", "helper:", "tile:",
-        ] {
+        for prefix in ["goal:", "trace:", "scar:", "ritual:", "helper:", "tile:"] {
             for e in &self.relation_index.entries {
                 for name in [&e.from, &e.to] {
                     if name.starts_with(prefix) && seen.insert(name.clone()) {
@@ -1715,7 +1914,9 @@ impl StoreHandle {
         }
         self.backend.forget(stalk_raw_concept(concept))
     }
-    pub fn list(&self) -> Vec<String> { self.backend.list() }
+    pub fn list(&self) -> Vec<String> {
+        self.backend.list()
+    }
 
     /// Promote continuity anchors to hot path before wake bundle / anchor recall.
     pub fn warm_wake_anchors(&mut self) {
@@ -1748,12 +1949,7 @@ impl StoreHandle {
         std::fs::read_dir(&self.path)
             .map(|rd| {
                 rd.filter_map(|e| e.ok())
-                    .filter(|e| {
-                        e.path()
-                            .extension()
-                            .and_then(|x| x.to_str())
-                            == Some("leg")
-                    })
+                    .filter(|e| e.path().extension().and_then(|x| x.to_str()) == Some("leg"))
                     .count()
             })
             .unwrap_or(0)
@@ -1820,9 +2016,7 @@ impl StoreHandle {
         let prefix = prefix.map(str::trim).filter(|s| !s.is_empty());
         let total = self.leg_block_count();
 
-        let matches = |c: &str| -> bool {
-            prefix.map(|p| c.starts_with(p)).unwrap_or(true)
-        };
+        let matches = |c: &str| -> bool { prefix.map(|p| c.starts_with(p)).unwrap_or(true) };
 
         if prefix.is_some() {
             let mut out = Vec::new();
@@ -2028,7 +2222,13 @@ impl StoreHandle {
             if let Some(line) = text.lines().find(|l| l.starts_with("**goal:**")) {
                 primary_goal_name = Some(line.replace("**goal:** ", "").trim().to_string());
             }
-            push(self, &mut entries, &mut seen, "primary_goal", "primary_goal_marker");
+            push(
+                self,
+                &mut entries,
+                &mut seen,
+                "primary_goal",
+                "primary_goal_marker",
+            );
         }
 
         let mut last_session_end: Option<serde_json::Value> = None;
@@ -2052,8 +2252,9 @@ impl StoreHandle {
             }
         }
 
-        let hydration_cache_present =
-            self.fetch_block_high_priority("helper:session_hydration_cache").is_some();
+        let hydration_cache_present = self
+            .fetch_block_high_priority("helper:session_hydration_cache")
+            .is_some();
         if hydration_cache_present {
             push(
                 self,
@@ -2064,8 +2265,9 @@ impl StoreHandle {
             );
         }
 
-        let session_handoff_present =
-            self.fetch_block_high_priority(SESSION_HANDOFF_LATEST).is_some();
+        let session_handoff_present = self
+            .fetch_block_high_priority(SESSION_HANDOFF_LATEST)
+            .is_some();
         if session_handoff_present {
             push(
                 self,
@@ -2080,7 +2282,13 @@ impl StoreHandle {
         for (concept, _) in self.access_index.recent(50) {
             if concept.starts_with("compression_handoff_") {
                 latest_compression_handoff = Some(concept.clone());
-                push(self, &mut entries, &mut seen, &concept, "compression_handoff_latest");
+                push(
+                    self,
+                    &mut entries,
+                    &mut seen,
+                    &concept,
+                    "compression_handoff_latest",
+                );
                 break;
             }
         }
@@ -2092,7 +2300,13 @@ impl StoreHandle {
                     || other.starts_with("ritual:")
                     || other.starts_with("metric:")
                 {
-                    push(self, &mut entries, &mut seen, &other, "handoff_compresses_path");
+                    push(
+                        self,
+                        &mut entries,
+                        &mut seen,
+                        &other,
+                        "handoff_compresses_path",
+                    );
                 }
             }
         }
@@ -2146,7 +2360,13 @@ impl StoreHandle {
             .0
         {
             if mem.concept.starts_with("tile:") || mem.concept.starts_with("helper:") {
-                push(self, &mut entries, &mut seen, &mem.concept, "momentum_recall");
+                push(
+                    self,
+                    &mut entries,
+                    &mut seen,
+                    &mem.concept,
+                    "momentum_recall",
+                );
             }
         }
 
@@ -2156,7 +2376,10 @@ impl StoreHandle {
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
 
-        if let Some(pos) = entries.iter().position(|e| e.concept == SESSION_HANDOFF_LATEST) {
+        if let Some(pos) = entries
+            .iter()
+            .position(|e| e.concept == SESSION_HANDOFF_LATEST)
+        {
             let entry = entries.remove(pos);
             entries.insert(0, entry);
         } else if let Some(pos) = entries
@@ -2232,15 +2455,14 @@ impl StoreHandle {
         }
 
         for (c, _) in self.access_index.recent(50) {
-            if c.starts_with("trace:")
+            if (c.starts_with("trace:")
                 || c.starts_with("tile:")
                 || c.starts_with("helper:")
                 || c.starts_with("ritual:")
-                || c.starts_with("metric:")
+                || c.starts_with("metric:"))
+                && !promote_list.iter().any(|x| x == &c)
             {
-                if !promote_list.iter().any(|x| x == &c) {
-                    promote_list.push(c.clone());
-                }
+                promote_list.push(c.clone());
             }
         }
         promote_list.truncate(28);
@@ -2364,13 +2586,13 @@ impl StoreHandle {
         // post-compression re-hydration) as one more high-value site in the 61%→65% window.
         // The backend path will use LegView + to_leg3_pointer for zero-copy when hot.
         let raw = stalk_raw_concept(concept);
-        let is_hot_heuristic = raw.starts_with("tile:") ||
-                               raw.starts_with("helper:") ||
-                               raw.starts_with("ritual:") ||
-                               raw.starts_with("item2_") ||
-                               raw.starts_with("item1.5_") ||
-                               raw.starts_with("trace:") ||
-                               raw == "primary_goal";
+        let is_hot_heuristic = raw.starts_with("tile:")
+            || raw.starts_with("helper:")
+            || raw.starts_with("ritual:")
+            || raw.starts_with("item2_")
+            || raw.starts_with("item1.5_")
+            || raw.starts_with("trace:")
+            || raw == "primary_goal";
         if is_hot_heuristic {
             self.mark_hot(raw);
         }
@@ -2416,20 +2638,27 @@ impl StoreHandle {
         // so NREM contributor logs and hot paths respect the live geosphere under which
         // the artifact (esp. TRAINING/tile/trace) was elevated. Stored in runtime only.
         if let Ok(geo) = self.geosphere.read() {
-            let origin = geo.frame_origin.clone().unwrap_or_else(|| "native".to_string());
+            let origin = geo
+                .frame_origin
+                .clone()
+                .unwrap_or_else(|| "native".to_string());
             if let Ok(mut geo_map) = self.hot_geo_context.write() {
                 geo_map.insert(raw.to_string(), (geo.frame_step, origin));
             }
         }
         // Phase 2.3: Deeper device residency for full SymplecticState (active_location + lens/frame)
-        // + geo snapshots inside high_priority geo caches (Cuda/Metal). 
+        // + geo snapshots inside high_priority geo caches (Cuda/Metal).
         // Leverages the exact same mark_hot call site + hot_set. Snapshots become first-class
         // hot ritual blocks (NREM/ki_hijacker visible). Feeds resident frame to bvh effective_q
         // (framed BVH/OptiX candidate filtering + 8192D scoring) without extra locks in hot path.
         // All behind existing high_priority; no layout change; O_DIRECT cold untouched.
         // Explicit geo:* names + per-artifact geo_context:* snapshots for consumption by other WS.
+        #[cfg(any(engram_backend_cuda, engram_backend_metal))]
         if let Ok(geo) = self.geosphere.read() {
-            let snap_name = if raw.starts_with("geo_snapshot:") || raw == "active_symplectic_state" || raw.starts_with("symplectic:") {
+            let snap_name = if raw.starts_with("geo_snapshot:")
+                || raw == "active_symplectic_state"
+                || raw.starts_with("symplectic:")
+            {
                 raw.to_string()
             } else {
                 format!("geo_context:{}", raw)
@@ -2438,7 +2667,9 @@ impl StoreHandle {
                 #[cfg(engram_backend_cuda)]
                 Backend::Gpu(b) => b.promote_geo_snapshot_to_high_priority(&snap_name, geo.clone()),
                 #[cfg(engram_backend_metal)]
-                Backend::Metal(b) => b.promote_geo_snapshot_to_high_priority(&snap_name, geo.clone()),
+                Backend::Metal(b) => {
+                    b.promote_geo_snapshot_to_high_priority(&snap_name, geo.clone())
+                }
                 _ => {}
             }
         }
@@ -2458,7 +2689,10 @@ impl StoreHandle {
     /// Measurement helper for the dual-lens protocol (Maximum Engram Speed plan).
     /// Times a high_priority fetch and returns both the result and elapsed time.
     /// Used for repeated quantitative re-hydration cost measurements.
-    pub fn timed_fetch_block_high_priority(&self, concept: &str) -> (Option<Leg3Pointer>, std::time::Duration) {
+    pub fn timed_fetch_block_high_priority(
+        &self,
+        concept: &str,
+    ) -> (Option<Leg3Pointer>, std::time::Duration) {
         let start = std::time::Instant::now();
         let result = self.fetch_block_high_priority(concept);
         let elapsed = start.elapsed();
@@ -2470,12 +2704,17 @@ impl StoreHandle {
     /// - Uses high_priority path
     /// - Records timing
     /// - Returns structured data suitable for tracing into the measurement protocol.
-    pub fn capture_dual_lens_snapshot(&self, concept: &str) -> (Option<Leg3Pointer>, std::time::Duration, f32) {
+    pub fn capture_dual_lens_snapshot(
+        &self,
+        concept: &str,
+    ) -> (Option<Leg3Pointer>, std::time::Duration, f32) {
         let (ptr, elapsed) = self.timed_fetch_block_high_priority(concept);
         let crs = ptr.as_ref().map(|p| p.crs_score).unwrap_or(0.0);
         (ptr, elapsed, crs)
     }
-    pub fn encode(&self, text: &str) -> Leg3Pointer { self.backend.encode(text) }
+    pub fn encode(&self, text: &str) -> Leg3Pointer {
+        self.backend.encode(text)
+    }
     pub fn query(&mut self, query_vec: &[engram_core::Complex32; 8192], k: usize) -> Vec<Memory> {
         // WS3-B: apply current Geosphere frame/lens from SymplecticState before
         // delegating to backend (bvh.rs or gpu paths). This is the main query path
@@ -2484,7 +2723,7 @@ impl StoreHandle {
             if let Ok(geo) = self.geosphere.read() {
                 geo.apply_current_frame(query_vec)
             } else {
-                *query_vec  // fallback (should never happen)
+                *query_vec // fallback (should never happen)
             }
         };
         let use_sampled =
@@ -2494,7 +2733,9 @@ impl StoreHandle {
         } else {
             self.backend.query(&effective, k)
         };
-        for m in &results { self.access_index.touch(&m.concept); }
+        for m in &results {
+            self.access_index.touch(&m.concept);
+        }
         results
     }
 
@@ -2505,9 +2746,12 @@ impl StoreHandle {
     /// Origin e.g. "giza_sacred_cubit", "grove_sower_moon", "london_1776_gibbon".
     /// All vectors normalized; reproducible given same origin+offset text.
     pub fn set_geosphere_frame(&mut self, origin: &str, time_offset_desc: &str) {
-        let desc = format!("geosphere_frame::origin={}::offset={}", origin, time_offset_desc);
-        let lens_block = self.backend.encode(&desc);  // re-uses existing encode path (BLAKE3 + norm)
-        let lens_vec = lens_block.q;  // already normalized by encode contract
+        let desc = format!(
+            "geosphere_frame::origin={}::offset={}",
+            origin, time_offset_desc
+        );
+        let lens_block = self.backend.encode(&desc); // re-uses existing encode path (BLAKE3 + norm)
+        let lens_vec = lens_block.q; // already normalized by encode contract
         if let Ok(mut geo) = self.geosphere.write() {
             geo.set_current_lens(lens_vec, Some(origin.to_string()));
             geo.advance_frame();
@@ -2516,9 +2760,14 @@ impl StoreHandle {
         let _ = self.remember(&format!("current_geosphere_frame::{}", origin), &desc);
     }
 
-    pub fn get_current_geosphere_frame(&self) -> Option<(String, u64, [engram_core::Complex32; 8192])> {
+    pub fn get_current_geosphere_frame(
+        &self,
+    ) -> Option<(String, u64, [engram_core::Complex32; 8192])> {
         if let Ok(geo) = self.geosphere.read() {
-            let origin = geo.frame_origin.clone().unwrap_or_else(|| "native".to_string());
+            let origin = geo
+                .frame_origin
+                .clone()
+                .unwrap_or_else(|| "native".to_string());
             Some((origin, geo.frame_step, geo.active_location))
         } else {
             None
@@ -2562,7 +2811,10 @@ impl StoreHandle {
             Backend::Gpu(b) => b.is_geo_hot(name),
             #[cfg(engram_backend_metal)]
             Backend::Metal(b) => b.is_geo_hot(name),
-            _ => false,
+            _ => {
+                let _ = name;
+                false
+            }
         }
     }
 
@@ -2573,13 +2825,18 @@ impl StoreHandle {
             Backend::Gpu(b) => b.fetch_geo_high_priority(name),
             #[cfg(engram_backend_metal)]
             Backend::Metal(b) => b.fetch_geo_high_priority(name),
-            _ => None,
+            _ => {
+                let _ = name;
+                None
+            }
         }
     }
 
     pub fn store(&mut self, concept: &str, block: Leg3Pointer) -> Result<()> {
         let r = self.backend.store(concept, block);
-        if r.is_ok() { self.access_index.touch(concept); }
+        if r.is_ok() {
+            self.access_index.touch(concept);
+        }
         r
     }
     pub fn verify_hypothesis(&self, concept: &str, success: bool) -> Result<()> {
@@ -2601,10 +2858,12 @@ impl StoreHandle {
             x if x >= 0.85 => "🥈 Silver (highly grounded)",
             x if x >= 0.74 => "🥉 Bronze (grounded)",
             x if x >= 0.40 => "⚪ Grounding (below safety floor)",
-            _ =>               "💀 Weak (Autophagy target)",
+            _ => "💀 Weak (Autophagy target)",
         };
 
-        let last = self.access_index.last_accessed(concept)
+        let last = self
+            .access_index
+            .last_accessed(concept)
             .or(Some(block.last_accessed_timestamp))
             .map(|ts| {
                 let secs_ago = std::time::SystemTime::now()
@@ -2612,22 +2871,27 @@ impl StoreHandle {
                     .unwrap_or_default()
                     .as_secs()
                     .saturating_sub(ts);
-                if secs_ago < 60 { format!("{}s ago", secs_ago) }
-                else if secs_ago < 3600 { format!("{}m ago", secs_ago / 60) }
-                else if secs_ago < 86400 { format!("{}h ago", secs_ago / 3600) }
-                else { format!("{}d ago", secs_ago / 86400) }
+                if secs_ago < 60 {
+                    format!("{}s ago", secs_ago)
+                } else if secs_ago < 3600 {
+                    format!("{}m ago", secs_ago / 60)
+                } else if secs_ago < 86400 {
+                    format!("{}h ago", secs_ago / 3600)
+                } else {
+                    format!("{}d ago", secs_ago / 86400)
+                }
             })
             .unwrap_or_else(|| "unknown".to_string());
 
         let tag_name = match block.zedos_tag {
-            0xD  => "DECLARATIVE",
-            0xA  => "EPISODIC",
+            0xD => "DECLARATIVE",
+            0xA => "EPISODIC",
             0x52 => "OPERATIONAL",
             0xB0 => "BODY",
             0xB1 => "VERBATIM",
             0x50 => "PRAXIS",
             0xBE => "RELATION",
-            _    => "UNKNOWN",
+            _ => "UNKNOWN",
         };
 
         self.access_index.touch(concept);
@@ -2639,9 +2903,7 @@ impl StoreHandle {
              ZEDOS tag: {}\n\
              Superpositions: {}\n\
              Energetics CRS: {:.3}",
-            concept, crs, tier, last, tag_name,
-            block.superposition_count,
-            block.energetics.crs,
+            concept, crs, tier, last, tag_name, block.superposition_count, block.energetics.crs,
         ))
     }
 
@@ -2657,8 +2919,12 @@ impl StoreHandle {
     /// Accumulates binding momentum in the `p` tensor (OP_BIND soft-accumulate).
     /// Increments `superposition_count` and advances energetics.
     pub fn update(&mut self, concept: &str, new_text: &str) -> Result<String> {
-        let mut block = self.fetch_block(concept)
-            .ok_or_else(|| anyhow::anyhow!("Concept '{}' not found — use remember() to create it first", concept))?;
+        let mut block = self.fetch_block(concept).ok_or_else(|| {
+            anyhow::anyhow!(
+                "Concept '{}' not found — use remember() to create it first",
+                concept
+            )
+        })?;
 
         // ── Reflexive Contract (soft enforcement) ─────────────────────────────
         // Check if 'evidence_update' is permitted. Log violation but never block.
@@ -2670,7 +2936,8 @@ impl StoreHandle {
             tracing::warn!(
                 "[CONTRACT VIOLATION] '{}' does not permit 'evidence_update'. \
                  Contract: {:?}. Proceeding (soft mode).",
-                concept, contract.trim_matches('\0')
+                concept,
+                contract.trim_matches('\0')
             );
         }
 
@@ -2701,9 +2968,9 @@ impl StoreHandle {
         block.p = op_bind(&block.p, &drift_vector);
         let drift_mag = {
             let mut d = 0.0f32;
-            for i in 0..8192 {
-                let dp_re = block.p[i].re - p_old[i].re;
-                let dp_im = block.p[i].im - p_old[i].im;
+            for (i, p_new) in block.p.iter().enumerate() {
+                let dp_re = p_new.re - p_old[i].re;
+                let dp_im = p_new.im - p_old[i].im;
                 d += dp_re * dp_re + dp_im * dp_im;
             }
             (d / 8192.0).sqrt().clamp(0.0, 1.0)
@@ -2721,10 +2988,10 @@ impl StoreHandle {
         block.energetics.alpha_a = tracker.alpha_a;
         block.energetics.alpha_d = tracker.alpha_d;
         block.energetics.alpha_r = tracker.alpha_r;
-        block.energetics.dv      = dv;    // Lyapunov drift velocity ∈[0,1]
-        block.energetics.h_out   = h_out; // Φ(v) — current Lyapunov energy
-        block.energetics.h_in    = h_in;  // dL — convergence signal (−=converging)
-        // ─────────────────────────────────────────────────────────────────────
+        block.energetics.dv = dv; // Lyapunov drift velocity ∈[0,1]
+        block.energetics.h_out = h_out; // Φ(v) — current Lyapunov energy
+        block.energetics.h_in = h_in; // dL — convergence signal (−=converging)
+                                      // ─────────────────────────────────────────────────────────────────────
 
         // ── OP_ADD: Superpose new encoding onto existing q ────────────────────
         let merged_q = op_add(&block.q, &new_block.q);
@@ -2735,12 +3002,14 @@ impl StoreHandle {
 
         // ── Energetics advancement ────────────────────────────────────────────
         block.energetics.ts = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs();
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
         block.energetics.step = block.energetics.step.saturating_add(1);
 
         // Each update pays the minimum action quantum (thermodynamic proof-of-work)
         block.energetics.heat_dissipated += 5.47e-4;
-        block.energetics.crs  = block.crs_score;
+        block.energetics.crs = block.crs_score;
 
         // Advance Merkle chain to record this transformation
         let q_hash = blake3::hash(unsafe {
@@ -2755,8 +3024,16 @@ impl StoreHandle {
         self.store(concept, block)?;
         Ok(format!(
             "✓ '{}' updated via op_add — superpositions: {} | dv: {:.3} | Φ: {:.4} | dL: {:.4}{}",
-            concept, new_count, dv, h_out, h_in,
-            if !transform_allowed { " [CONTRACT WARNING: see log]" } else { "" }
+            concept,
+            new_count,
+            dv,
+            h_out,
+            h_in,
+            if !transform_allowed {
+                " [CONTRACT WARNING: see log]"
+            } else {
+                ""
+            }
         ))
     }
 
@@ -2772,7 +3049,8 @@ impl StoreHandle {
     /// Called by `mcp_engram_scar` (public MCP tool, security: stdio/localhost-bounded).
     /// Also callable by external integrations routing through the Engram MCP bridge.
     pub fn scar(&mut self, concept: &str, magnitude: f32) -> Result<String> {
-        let mut block = self.fetch_block(concept)
+        let mut block = self
+            .fetch_block(concept)
             .ok_or_else(|| anyhow::anyhow!("Concept '{}' not found", concept))?;
 
         // Genesis block protection — cannot be scarred
@@ -2795,7 +3073,9 @@ impl StoreHandle {
         let scar_contract = b"evidence_update";
         block.allowed_transforms[..scar_contract.len()].copy_from_slice(scar_contract);
         // Zero the rest to prevent spurious permissions from old data
-        for b in block.allowed_transforms[scar_contract.len()..].iter_mut() { *b = 0; }
+        for b in block.allowed_transforms[scar_contract.len()..].iter_mut() {
+            *b = 0;
+        }
 
         // ── op_suspend the q-vector into the hostile region ───────────────────
         // Binding with the Apeiron primitive maps the vector into a "Known Unknown" —
@@ -2804,9 +3084,9 @@ impl StoreHandle {
         block.q = suspended_q;
 
         // ── Record thermodynamic cost of the scar ─────────────────────────────
-        block.energetics.dv  = magnitude; // Lyapunov velocity = magnitude of contradiction
-        block.crs_score      = (block.crs_score - magnitude * 0.1).max(0.40);
-        let new_crs          = block.crs_score;
+        block.energetics.dv = magnitude; // Lyapunov velocity = magnitude of contradiction
+        block.crs_score = (block.crs_score - magnitude * 0.1).max(0.40);
+        let new_crs = block.crs_score;
         block.energetics.crs = block.crs_score;
         block.energetics.heat_dissipated += 5.47e-4; // Scar pays action quantum
 
@@ -2819,21 +3099,27 @@ impl StoreHandle {
         self.store(concept, block)?;
         tracing::warn!(
             "[M-NOL SCAR] '{}' burned | mag={:.3} | crs→{:.3} | transforms→evidence_update only",
-            concept, magnitude, new_crs
+            concept,
+            magnitude,
+            new_crs
         );
         Ok(format!(
             "🔥 Scar applied to '{}' | magnitude={:.3} | allowed_transforms→evidence_update | \
              CRS penalty={:.3} | Block suspended into hostile topological region (op_suspend).",
-            concept, magnitude, magnitude * 0.1
+            concept,
+            magnitude,
+            magnitude * 0.1
         ))
     }
 
     /// Bind two concepts via op_bind and store the relation as a new ZEDOS_RELATION block.
     /// The relation block's merkle_sub_root links both parent block signatures.
     pub fn relate(&mut self, concept_a: &str, concept_b: &str, label: &str) -> Result<String> {
-        let block_a = self.fetch_block(concept_a)
+        let block_a = self
+            .fetch_block(concept_a)
             .ok_or_else(|| anyhow::anyhow!("Concept '{}' not found", concept_a))?;
-        let block_b = self.fetch_block(concept_b)
+        let block_b = self
+            .fetch_block(concept_b)
             .ok_or_else(|| anyhow::anyhow!("Concept '{}' not found", concept_b))?;
 
         let bound_q = op_bind(&block_a.q, &block_b.q);
@@ -2853,13 +3139,19 @@ impl StoreHandle {
         hasher.update(&block_a.footer.sig_0);
         hasher.update(&block_b.footer.sig_0);
         let fingerprint = hasher.finalize();
-        rel_block.footer.merkle_sub_root.copy_from_slice(fingerprint.as_bytes());
+        rel_block
+            .footer
+            .merkle_sub_root
+            .copy_from_slice(fingerprint.as_bytes());
 
         let rel_key = format!("rel__{concept_a}__{concept_b}");
         self.store(&rel_key, rel_block)?;
         // Update the knowledge-graph sidecar
         self.relation_index.add(concept_a, label, concept_b);
-        Ok(format!("✓ Relation stored: {} →[{}]→ {} as '{}'", concept_a, label, concept_b, rel_key))
+        Ok(format!(
+            "✓ Relation stored: {} →[{}]→ {} as '{}'",
+            concept_a, label, concept_b, rel_key
+        ))
     }
 
     /// Store a crystallized error→solution pair as a ZEDOS_PRAXIS block.
@@ -2878,7 +3170,10 @@ impl StoreHandle {
         block.crs_score = 1.0; // Immortal — autophagy never touches CRS=1.0
 
         self.store(&key, block)?;
-        Ok(format!("✓ Solution stored as '{}' with ZEDOS_PRAXIS tag and CRS=1.0 (pinned)", key))
+        Ok(format!(
+            "✓ Solution stored as '{}' with ZEDOS_PRAXIS tag and CRS=1.0 (pinned)",
+            key
+        ))
     }
 
     /// Create a verifiable executable Praxis Protocol (Item 3 vertical slice).
@@ -2954,17 +3249,23 @@ impl StoreHandle {
     /// Force ingest a path (file or directory).
     /// When given a directory and recursive=true, walks it and ingests all eligible files.
     /// Respects the same .engramignore rules and basic ignores as the file watcher.
-    pub fn force_ingest_path(&mut self, path_str: &str, recursive: bool) -> Result<(usize, Vec<String>)> {
+    pub fn force_ingest_path(
+        &mut self,
+        path_str: &str,
+        recursive: bool,
+    ) -> Result<(usize, Vec<String>)> {
         let path = std::path::Path::new(path_str);
         let mut total_ingested = 0usize;
         let mut details = Vec::new();
 
         let allowed_exts: std::collections::HashSet<&str> = [
-            "rs", "md", "txt", "js", "ts", "json", "toml", "py",
-            "c", "cpp", "h", "csv", "sh", "go", "java", "rb",
-            "zig", "php", "html", "css", "yml", "yaml", "sql",
-            "ex", "exs", "swift",
-        ].iter().cloned().collect();
+            "rs", "md", "txt", "js", "ts", "json", "toml", "py", "c", "cpp", "h", "csv", "sh",
+            "go", "java", "rb", "zig", "php", "html", "css", "yml", "yaml", "sql", "ex", "exs",
+            "swift",
+        ]
+        .iter()
+        .cloned()
+        .collect();
 
         // Load the same ignore patterns the daemon uses
         let engramignore = Self::load_engramignore_for_force();
@@ -2984,7 +3285,10 @@ impl StoreHandle {
         }
 
         if !path.is_dir() {
-            return Err(anyhow::anyhow!("Path is neither file nor directory: {}", path_str));
+            return Err(anyhow::anyhow!(
+                "Path is neither file nor directory: {}",
+                path_str
+            ));
         }
 
         let walker = if recursive {
@@ -2995,15 +3299,21 @@ impl StoreHandle {
 
         for entry in walker.filter_map(|e| e.ok()) {
             let p = entry.path();
-            if !p.is_file() { continue; }
+            if !p.is_file() {
+                continue;
+            }
 
             let ext = p.extension().and_then(|s| s.to_str()).unwrap_or("");
-            if !allowed_exts.contains(ext) { continue; }
+            if !allowed_exts.contains(ext) {
+                continue;
+            }
 
             let p_str = p.to_string_lossy().to_string();
 
             // Match the daemon's ignore logic
-            let is_ignored = engramignore.iter().any(|pat: &String| p_str.contains(pat.as_str()));
+            let is_ignored = engramignore
+                .iter()
+                .any(|pat: &String| p_str.contains(pat.as_str()));
             if p_str.contains("/target/") || p_str.contains("/.git/") || is_ignored {
                 continue;
             }
@@ -3060,27 +3370,28 @@ impl StoreHandle {
         Ok((total_ingested, details))
     }
 
-
-
-
     /// Surface the top K relevant memories for a file path, with strong preference
     /// for actual spatially-ingested AST items (the real geometric truth from the daemon).
     /// This makes context_for_file a first-class tool for the spatial impact ritual.
     pub fn context_for_file(&mut self, file_path: &str) -> Vec<Memory> {
         let path = std::path::Path::new(file_path);
-        let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_lowercase();
+        let stem = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("")
+            .to_lowercase();
         let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("");
 
         let lang = match ext {
-            "rs"   => "Rust source implementation",
-            "cu"   => "CUDA GPU kernel",
-            "hip"  => "ROCm HIP GPU kernel",
-            "metal"=> "Apple Metal MSL shader",
-            "py"   => "Python script",
+            "rs" => "Rust source implementation",
+            "cu" => "CUDA GPU kernel",
+            "hip" => "ROCm HIP GPU kernel",
+            "metal" => "Apple Metal MSL shader",
+            "py" => "Python script",
             "toml" => "Cargo/TOML configuration",
-            "md"   => "Markdown documentation",
+            "md" => "Markdown documentation",
             "json" => "JSON configuration or data",
-            _      => "source file",
+            _ => "source file",
         };
 
         let mut results: Vec<Memory> = Vec::new();
@@ -3088,14 +3399,18 @@ impl StoreHandle {
         // ── Spatial-first: prefer real AABB AST items extracted by the daemon ──
         if !stem.is_empty() {
             let all_concepts = self.list();
-            let mut spatial_hits: Vec<(String, f32, f32)> = all_concepts.into_iter()
+            let mut spatial_hits: Vec<(String, f32, f32)> = all_concepts
+                .into_iter()
                 .filter_map(|concept| {
-                    if !concept.to_lowercase().starts_with(&stem) { return None; }
+                    if !concept.to_lowercase().starts_with(&stem) {
+                        return None;
+                    }
                     // Prefer high_priority (hot/pinned) but fall back to regular fetch.
                     // Critical for passive/force bootstrap: freshly ingested AST (from watch bind or mcp force)
                     // may not be in the LegView/hot cache yet, but still have valid AABB and must be visible
                     // to context_for_file / Code Edit Ritual without "no specific topological memory".
-                    let block = self.fetch_block_high_priority(&concept)
+                    let block = self
+                        .fetch_block_high_priority(&concept)
                         .or_else(|| self.fetch_block(&concept));
                     let block = block?;
                     let row_min = block.aabb_min[0];
@@ -3115,7 +3430,8 @@ impl StoreHandle {
                 // AST items created via force_ingest. This makes context_for_file reliable
                 // even when semantic recall is still weak on freshly force_ingested blocks.
                 // Fallback to regular fetch (pairs with the collection-time or_else above).
-                if let Some(block) = self.fetch_block_high_priority(&concept)
+                if let Some(block) = self
+                    .fetch_block_high_priority(&concept)
                     .or_else(|| self.fetch_block(&concept))
                 {
                     let prov = engram_core::storage::read_provlog(&block);
@@ -3130,7 +3446,10 @@ impl StoreHandle {
                         score: 0.92, // High because we matched on real spatial AABB data
                         crs: block.crs_score,
                         provlog: prov.clone(),
-                        explain: format!("spatial_ast_match line {}-{}", block.aabb_min[0] as i32, block.aabb_max[0] as i32),
+                        explain: format!(
+                            "spatial_ast_match line {}-{}",
+                            block.aabb_min[0] as i32, block.aabb_max[0] as i32
+                        ),
                         drift_velocity: 0.0,
                         superposition_depth: 0,
                         zedos_tag: block.zedos_tag,
@@ -3277,8 +3596,7 @@ impl StoreHandle {
             self.spatial_stem_candidates(&stem)
         };
 
-        let mut spatial_items =
-            self.collect_spatial_items(&candidates, start_line, end_line, 20);
+        let mut spatial_items = self.collect_spatial_items(&candidates, start_line, end_line, 20);
 
         if spatial_items.is_empty() && auto_ingest && path.is_file() {
             if let Ok(ingested) = self.force_ingest_ast_file(file_path) {
@@ -3295,18 +3613,14 @@ impl StoreHandle {
                         candidates.push(c);
                     }
                 }
-                spatial_items =
-                    self.collect_spatial_items(&candidates, start_line, end_line, 20);
+                spatial_items = self.collect_spatial_items(&candidates, start_line, end_line, 20);
             }
         }
 
         let recall_query = if stem.is_empty() {
             file_path.to_string()
         } else {
-            let fname = path
-                .file_name()
-                .and_then(|s| s.to_str())
-                .unwrap_or("");
+            let fname = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
             if fname.is_empty() || fname == stem {
                 stem.clone()
             } else {
@@ -3382,7 +3696,9 @@ impl StoreHandle {
 
         // Session fingerprint: BLAKE3 of all accessed concept names
         let mut hasher = blake3::Hasher::new();
-        for c in &concept_list { hasher.update(c.as_bytes()); }
+        for c in &concept_list {
+            hasher.update(c.as_bytes());
+        }
         let fingerprint = hasher.finalize();
         let fp_hex = &fingerprint.to_hex()[..8];
 
@@ -3398,16 +3714,25 @@ impl StoreHandle {
 
         let full_payload = format!(
             "# Session Export\n\nFingerprint: {}\nConcepts touched: {}\n\n## Summary\n{}",
-            fp_hex, concept_list.len(), summary
+            fp_hex,
+            concept_list.len(),
+            summary
         );
 
         let mut block = self.encode(&full_payload);
         block.zedos_tag = ZEDOS_EPISODIC;
         block.crs_score = 1.0; // Pinned — session summaries are immortal
-        block.footer.merkle_sub_root.copy_from_slice(fingerprint.as_bytes());
+        block
+            .footer
+            .merkle_sub_root
+            .copy_from_slice(fingerprint.as_bytes());
 
         self.store(&key, block)?;
-        Ok(format!("✓ Session exported as '{}' — {} concepts fingerprinted, CRS=1.0 (pinned)", key, concept_list.len()))
+        Ok(format!(
+            "✓ Session exported as '{}' — {} concepts fingerprinted, CRS=1.0 (pinned)",
+            key,
+            concept_list.len()
+        ))
     }
 
     /// Seed the manifold with alignment genesis blocks on first boot.
@@ -3424,13 +3749,20 @@ impl StoreHandle {
 
         #[derive(serde::Deserialize)]
         struct GenesisConfig {
-            seeds:     Vec<GenesisSeed>,
+            seeds: Vec<GenesisSeed>,
             relations: Vec<GenesisRelation>,
         }
         #[derive(serde::Deserialize)]
-        struct GenesisSeed { concept: String, text: String }
+        struct GenesisSeed {
+            concept: String,
+            text: String,
+        }
         #[derive(serde::Deserialize)]
-        struct GenesisRelation { from: String, label: String, to: String }
+        struct GenesisRelation {
+            from: String,
+            label: String,
+            to: String,
+        }
 
         static GENESIS_JSON: &str = include_str!("genesis.json");
         let config: GenesisConfig = serde_json::from_str(GENESIS_JSON)
@@ -3454,8 +3786,15 @@ impl StoreHandle {
         }
 
         std::fs::write(&marker, format!("seeded={} edges={}\n", seeded, edges))?;
-        tracing::info!("Genesis: {} alignment seeds + {} relation edges written at CRS=1.0 (PRAXIS)", seeded, edges);
-        Ok(format!("✓ Genesis complete: {} alignment blocks + {} graph edges seeded at CRS=1.0 (PRAXIS)", seeded, edges))
+        tracing::info!(
+            "Genesis: {} alignment seeds + {} relation edges written at CRS=1.0 (PRAXIS)",
+            seeded,
+            edges
+        );
+        Ok(format!(
+            "✓ Genesis complete: {} alignment blocks + {} graph edges seeded at CRS=1.0 (PRAXIS)",
+            seeded, edges
+        ))
     }
 
     /// Return genesis status and seed concept names.
@@ -3465,9 +3804,14 @@ impl StoreHandle {
         let marker_contents = std::fs::read_to_string(&marker).unwrap_or_default();
         let seeded = marker.exists();
 
-        let genesis_concepts: Vec<String> = self.list()
+        let genesis_concepts: Vec<String> = self
+            .list()
             .into_iter()
-            .filter(|n| n.split_once("::").map_or(n.as_str(), |(_, r)| r).starts_with("genesis_"))
+            .filter(|n| {
+                n.split_once("::")
+                    .map_or(n.as_str(), |(_, r)| r)
+                    .starts_with("genesis_")
+            })
             .collect();
 
         format!(
@@ -3477,11 +3821,21 @@ impl StoreHandle {
              Marker : {}\n\
              Concepts: {} genesis blocks in manifold\n\n\
              {}",
-            if seeded { "✓ YES" } else { "✗ NOT YET (restart without --no-genesis to seed)" },
+            if seeded {
+                "✓ YES"
+            } else {
+                "✗ NOT YET (restart without --no-genesis to seed)"
+            },
             marker_contents.trim(),
             genesis_concepts.len(),
-            genesis_concepts.iter().enumerate()
-                .map(|(i, n)| format!("  {}. {}", i + 1, n.split_once("::").map_or(n.as_str(), |(_, r)| r)))
+            genesis_concepts
+                .iter()
+                .enumerate()
+                .map(|(i, n)| format!(
+                    "  {}. {}",
+                    i + 1,
+                    n.split_once("::").map_or(n.as_str(), |(_, r)| r)
+                ))
                 .collect::<Vec<_>>()
                 .join("\n")
         )
@@ -3489,7 +3843,12 @@ impl StoreHandle {
 
     /// Query the relation graph index.
     /// `direction`: "from" (A→?), "to" (?→A), or "both".
-    pub fn search_relations(&self, concept: &str, label: Option<&str>, direction: &str) -> Vec<(String, String)> {
+    pub fn search_relations(
+        &self,
+        concept: &str,
+        label: Option<&str>,
+        direction: &str,
+    ) -> Vec<(String, String)> {
         self.relation_index.query(concept, label, direction)
     }
 
@@ -3607,7 +3966,7 @@ impl StoreHandle {
         ];
 
         let total_memories = self.list().len();
-        let namespace      = self.active_stalk_name();
+        let namespace = self.active_stalk_name();
 
         // ── Genesis blocks — O(1) direct fetch, NO recall() ──────────────────
         let mut genesis_entries = Vec::new();
@@ -3630,7 +3989,8 @@ impl StoreHandle {
         let recent_all = self.access_index.recent(40);
         let now_secs = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs()).unwrap_or(0);
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
 
         let mut session_entries = Vec::new();
         for (concept, ts) in &recent_all {
@@ -3662,7 +4022,7 @@ impl StoreHandle {
         }
 
         let genesis_loaded = genesis_entries.len();
-        let session_count  = session_entries.len();
+        let session_count = session_entries.len();
 
         let continuation_bundle = self.build_continuation_bundle();
 
@@ -3706,7 +4066,10 @@ fn load_ego_q() -> Option<Box<[engram_core::Complex32; 8192]>> {
             Some(Box::new(block.q))
         }
         Err(e) => {
-            tracing::warn!("[EGO GATE] Failed to read ego.leg3: {} — Ego gate disabled.", e);
+            tracing::warn!(
+                "[EGO GATE] Failed to read ego.leg3: {} — Ego gate disabled.",
+                e
+            );
             None
         }
     }
@@ -3728,7 +4091,10 @@ fn load_embed_w() -> Option<(Vec<f32>, usize)> {
 
     let w_path = std::env::var("ENGRAM_EMBED_W_PATH").unwrap_or_else(|_| {
         let home = std::env::var("HOME").unwrap_or_default();
-        format!("{}/Documents/CodeLand/data/models/embed_projection_W.bin", home)
+        format!(
+            "{}/Documents/CodeLand/data/models/embed_projection_W.bin",
+            home
+        )
     });
 
     let bytes = match std::fs::read(&w_path) {
@@ -3736,7 +4102,8 @@ fn load_embed_w() -> Option<(Vec<f32>, usize)> {
         Err(e) => {
             tracing::info!(
                 "[EMBED PROJ] W matrix not found at {} ({}) — Helical Baptism active",
-                w_path, e
+                w_path,
+                e
             );
             return None;
         }
@@ -3753,7 +4120,8 @@ fn load_embed_w() -> Option<(Vec<f32>, usize)> {
     if target_dim != DST_DIM {
         tracing::warn!(
             "[EMBED PROJ] W matrix target dim is {}, expected {} — skipping",
-            target_dim, DST_DIM
+            target_dim,
+            DST_DIM
         );
         return None;
     }
@@ -3764,24 +4132,26 @@ fn load_embed_w() -> Option<(Vec<f32>, usize)> {
     if bytes.len() < expected_bytes {
         tracing::warn!(
             "[EMBED PROJ] W matrix truncated ({} bytes, expected {}) — skipping",
-            bytes.len(), expected_bytes
+            bytes.len(),
+            expected_bytes
         );
         return None;
     }
 
     let mut w = vec![0f32; expected_floats];
-    for i in 0..expected_floats {
+    for (i, val) in w.iter_mut().enumerate().take(expected_floats) {
         let off = 8 + i * 4;
-        w[i] = f32::from_le_bytes([bytes[off], bytes[off+1], bytes[off+2], bytes[off+3]]);
+        *val = f32::from_le_bytes([bytes[off], bytes[off + 1], bytes[off + 2], bytes[off + 3]]);
     }
 
     tracing::info!(
         "[EMBED PROJ] W matrix loaded: {}×{} ({:.1} MB) — Calibrated encoding ACTIVE",
-        src_dim, DST_DIM, bytes.len() as f64 / 1_048_576.0
+        src_dim,
+        DST_DIM,
+        bytes.len() as f64 / 1_048_576.0
     );
     Some((w, src_dim))
 }
-
 
 pub fn open_store(path: &str) -> SharedStore {
     Arc::new(Mutex::new(StoreHandle::new(path)))
@@ -3870,7 +4240,10 @@ impl StoreHandle {
 
     /// Sampling-based integrity check for the active manifold.
     /// This is the practical "did my memory stay lawful while I was off?" primitive.
-    pub fn verify_manifold_integrity(&self, options: ManifoldVerificationOptions) -> Result<ManifoldHealthReport> {
+    pub fn verify_manifold_integrity(
+        &self,
+        options: ManifoldVerificationOptions,
+    ) -> Result<ManifoldHealthReport> {
         // SAFETY FIX (2026-06): Never materialize full blocks for the entire high-CRS population.
         // Previous implementation eagerly fetch_block()'d every qualifying block before sampling.
         // On real manifolds (149k+ blocks, many with large provlogs) this caused extreme memory
@@ -3905,7 +4278,11 @@ impl StoreHandle {
                 .into_iter()
                 .filter_map(|c| {
                     let b = self.fetch_block(&c)?;
-                    if b.crs_score >= options.min_crs { Some(c) } else { None }
+                    if b.crs_score >= options.min_crs {
+                        Some(c)
+                    } else {
+                        None
+                    }
                 })
                 .collect()
         } else {
@@ -3916,7 +4293,9 @@ impl StoreHandle {
         let sample_size = target_sample.min(qualifying_names.len());
         let sampled_names: Vec<String> = if qualifying_names.len() > sample_size {
             let step = qualifying_names.len() / sample_size.max(1);
-            (0..sample_size).filter_map(|i| qualifying_names.get(i * step).cloned()).collect()
+            (0..sample_size)
+                .filter_map(|i| qualifying_names.get(i * step).cloned())
+                .collect()
         } else {
             qualifying_names.clone()
         };
@@ -3937,16 +4316,29 @@ impl StoreHandle {
                 high_value_blocks += 1;
             }
             let contract = std::str::from_utf8(&block.allowed_transforms).unwrap_or("");
-            if block.zedos_tag == engram_core::types::ZEDOS_PRAXIS && !contract.contains("evidence_update") {
-                issues.push(format!("PRAXIS '{}' has permissive contract (expected evidence_update only)", concept));
+            if block.zedos_tag == engram_core::types::ZEDOS_PRAXIS
+                && !contract.contains("evidence_update")
+            {
+                issues.push(format!(
+                    "PRAXIS '{}' has permissive contract (expected evidence_update only)",
+                    concept
+                ));
             }
             if block.crs_score >= 0.95 && block.energetics.dv > 0.3 {
-                issues.push(format!("High-CRS block '{}' shows unusually high recent drift (dv={:.2})", concept, block.energetics.dv));
+                issues.push(format!(
+                    "High-CRS block '{}' shows unusually high recent drift (dv={:.2})",
+                    concept, block.energetics.dv
+                ));
             }
         }
 
         let issues_found = issues.len() as u32;
-        let overall_health = if issues.is_empty() { "healthy" } else { "needs_review" }.to_string();
+        let overall_health = if issues.is_empty() {
+            "healthy"
+        } else {
+            "needs_review"
+        }
+        .to_string();
 
         Ok(ManifoldHealthReport {
             total_blocks_sampled: sampled_len,
@@ -3986,7 +4378,9 @@ impl StoreHandle {
             .trim_matches('\0');
 
         if !contract.contains("execute") {
-            return Err(anyhow::anyhow!("Protocol does not grant 'execute' permission"));
+            return Err(anyhow::anyhow!(
+                "Protocol does not grant 'execute' permission"
+            ));
         }
 
         // Manual contract check for the vertical slice (mirrors HolographicBlock::enforce_contract)

@@ -101,17 +101,27 @@ fn hash_query(q: &[Complex32; 8192]) -> u64 {
 
 // ── Top-down recursive BVH construction (longest-axis split) ─────────────────
 fn build_top_down(leaves: &mut [LeafData], nodes: &mut Vec<LBVHNode>, rope: i32) -> i32 {
-    if leaves.is_empty() { return -1; }
+    if leaves.is_empty() {
+        return -1;
+    }
     let idx = nodes.len();
     nodes.push(LBVHNode::default());
 
     if leaves.len() == 1 {
         let c = leaves[0].center;
-        nodes[idx].min = [c.x - AABB_RADIUS, c.y - AABB_RADIUS, c.z - AABB_RADIUS,
-                          f32::from_bits(u32::MAX)]; // min[3] = -1 as bits
-        // Store file_offset_id in max[3]
-        nodes[idx].max = [c.x + AABB_RADIUS, c.y + AABB_RADIUS, c.z + AABB_RADIUS,
-                          f32::from_bits(leaves[0].file_offset_id as u32)];
+        nodes[idx].min = [
+            c.x - AABB_RADIUS,
+            c.y - AABB_RADIUS,
+            c.z - AABB_RADIUS,
+            f32::from_bits(u32::MAX),
+        ]; // min[3] = -1 as bits
+           // Store file_offset_id in max[3]
+        nodes[idx].max = [
+            c.x + AABB_RADIUS,
+            c.y + AABB_RADIUS,
+            c.z + AABB_RADIUS,
+            f32::from_bits(leaves[0].file_offset_id as u32),
+        ];
         nodes[idx].skip_idx = rope;
         return idx as i32;
     }
@@ -120,14 +130,23 @@ fn build_top_down(leaves: &mut [LeafData], nodes: &mut Vec<LBVHNode>, rope: i32)
     let mut lo = [f32::MAX; 3];
     let mut hi = [f32::MIN; 3];
     for l in leaves.iter() {
-        lo[0] = lo[0].min(l.center.x); hi[0] = hi[0].max(l.center.x);
-        lo[1] = lo[1].min(l.center.y); hi[1] = hi[1].max(l.center.y);
-        lo[2] = lo[2].min(l.center.z); hi[2] = hi[2].max(l.center.z);
+        lo[0] = lo[0].min(l.center.x);
+        hi[0] = hi[0].max(l.center.x);
+        lo[1] = lo[1].min(l.center.y);
+        hi[1] = hi[1].max(l.center.y);
+        lo[2] = lo[2].min(l.center.z);
+        hi[2] = hi[2].max(l.center.z);
     }
 
     // Split on longest axis
-    let ext = [hi[0]-lo[0], hi[1]-lo[1], hi[2]-lo[2]];
-    let axis = if ext[1] > ext[0] { 1 } else if ext[2] > ext[0] && ext[2] > ext[1] { 2 } else { 0 };
+    let ext = [hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]];
+    let axis = if ext[1] > ext[0] {
+        1
+    } else if ext[2] > ext[0] && ext[2] > ext[1] {
+        2
+    } else {
+        0
+    };
     let mid = leaves.len() / 2;
 
     leaves.sort_by(|a, b| {
@@ -137,10 +156,20 @@ fn build_top_down(leaves: &mut [LeafData], nodes: &mut Vec<LBVHNode>, rope: i32)
     });
 
     let right = build_top_down(&mut leaves[mid..], nodes, rope);
-    let left  = build_top_down(&mut leaves[..mid], nodes, right);
+    let left = build_top_down(&mut leaves[..mid], nodes, right);
 
-    nodes[idx].min = [lo[0] - AABB_RADIUS, lo[1] - AABB_RADIUS, lo[2] - AABB_RADIUS, left as f32];
-    nodes[idx].max = [hi[0] + AABB_RADIUS, hi[1] + AABB_RADIUS, hi[2] + AABB_RADIUS, right as f32];
+    nodes[idx].min = [
+        lo[0] - AABB_RADIUS,
+        lo[1] - AABB_RADIUS,
+        lo[2] - AABB_RADIUS,
+        left as f32,
+    ];
+    nodes[idx].max = [
+        hi[0] + AABB_RADIUS,
+        hi[1] + AABB_RADIUS,
+        hi[2] + AABB_RADIUS,
+        right as f32,
+    ];
     nodes[idx].skip_idx = right;
 
     idx as i32
@@ -215,7 +244,10 @@ impl BvhManifold {
         }
 
         let n = entries_light.len();
-        eprintln!("[BVH] Building LBVH from {} blocks (streaming scan — no full-q retention)…", n);
+        eprintln!(
+            "[BVH] Building LBVH from {} blocks (streaming scan — no full-q retention)…",
+            n
+        );
 
         if n > 100_000 {
             return std::thread::Builder::new()
@@ -231,10 +263,10 @@ impl BvhManifold {
     }
 
     fn _build_from_light_entries(entries_light: Vec<LightScanEntry>) -> Option<Self> {
-        let mut entries:      Vec<ManifoldEntry>         = Vec::with_capacity(entries_light.len());
-        let mut leaves:       Vec<LeafData>              = Vec::with_capacity(entries_light.len());
-        let mut path_index:   HashMap<usize, PathBuf>    = HashMap::with_capacity(entries_light.len());
-        let mut concept_index: HashMap<String, usize>    = HashMap::with_capacity(entries_light.len());
+        let mut entries: Vec<ManifoldEntry> = Vec::with_capacity(entries_light.len());
+        let mut leaves: Vec<LeafData> = Vec::with_capacity(entries_light.len());
+        let mut path_index: HashMap<usize, PathBuf> = HashMap::with_capacity(entries_light.len());
+        let mut concept_index: HashMap<String, usize> = HashMap::with_capacity(entries_light.len());
 
         for e in &entries_light {
             let id = (entries.len() as u64) + 1;
@@ -256,7 +288,11 @@ impl BvhManifold {
 
         let mut nodes = Vec::new();
         build_top_down(&mut leaves, &mut nodes, -1);
-        eprintln!("[BVH] ✓ LBVH ready: {} nodes ({} concepts)", nodes.len(), entries.len());
+        eprintln!(
+            "[BVH] ✓ LBVH ready: {} nodes ({} concepts)",
+            nodes.len(),
+            entries.len()
+        );
 
         // Phase 8: Attempt OptiX RT-Core GAS construction (CUDA builds only).
         //
@@ -296,13 +332,19 @@ impl BvhManifold {
         stack.push(0i32);
 
         while let Some(idx) = stack.pop() {
-            if idx < 0 || idx as usize >= self.nodes.len() { continue; }
+            if idx < 0 || idx as usize >= self.nodes.len() {
+                continue;
+            }
             let n = &self.nodes[idx as usize];
 
             // AABB containment test (point-in-box)
-            if pos.x < n.min[0] || pos.x > n.max[0] ||
-               pos.y < n.min[1] || pos.y > n.max[1] ||
-               pos.z < n.min[2] || pos.z > n.max[2] {
+            if pos.x < n.min[0]
+                || pos.x > n.max[0]
+                || pos.y < n.min[1]
+                || pos.y > n.max[1]
+                || pos.z < n.min[2]
+                || pos.z > n.max[2]
+            {
                 continue;
             }
 
@@ -310,8 +352,12 @@ impl BvhManifold {
             if left_child == -1 {
                 // Leaf
                 let id = n.max[3].to_bits() as u64;
-                if id > 0 { hits.push(id); }
-                if hits.len() >= k { break; }
+                if id > 0 {
+                    hits.push(id);
+                }
+                if hits.len() >= k {
+                    break;
+                }
             } else {
                 stack.push(f32::from_bits(n.max[3] as u32).to_bits() as i32);
                 stack.push(left_child);
@@ -335,7 +381,10 @@ impl BvhManifold {
         let optix_on = std::env::var("ENGRAM_OPTIX_ENABLED").as_deref() == Ok("1")
             || std::env::var("ENGRAM_OPTIX_LEAN").as_deref() == Ok("1");
         if pipeline_guard.is_none() && optix_on {
-            let aabb_data = crate::optix_pipeline::OptixBvhPipeline::aabb_from_entries(&self.entries, AABB_RADIUS);
+            let aabb_data = crate::optix_pipeline::OptixBvhPipeline::aabb_from_entries(
+                &self.entries,
+                AABB_RADIUS,
+            );
             if let Some(pipe) = crate::optix_pipeline::OptixBvhPipeline::build(&aabb_data) {
                 eprintln!("[BVH] ✓ OptiX RT-Core pipeline lazily initialized on first query (Item 1.5 crisis fix). See bvh.rs comments for heavy_boot + listening scar context.");
                 *pipeline_guard = Some(pipe);
@@ -364,7 +413,10 @@ impl BvhManifold {
 
         // WS3-B: resolve current lens (if any) and compute effective query vector
         let current_lens_opt: Option<[Complex32; 8192]> = self.current_geosphere_lens();
-        let effective_q: [Complex32; 8192] = apply_frame(q, current_lens_opt.as_ref().map(|l| l as &[Complex32; 8192]));
+        let effective_q: [Complex32; 8192] = apply_frame(
+            q,
+            current_lens_opt.as_ref().map(|l| l as &[Complex32; 8192]),
+        );
 
         // Cache on *original* q hash (framed queries intentionally bypass for correctness;
         // different lens = different geometry). Framed paths always fresh.
@@ -409,7 +461,8 @@ impl BvhManifold {
             } else {
                 let pipeline_guard = self.optix_pipeline.lock().unwrap();
                 if let Some(ref pipe) = *pipeline_guard {
-                    let hits = pipe.query_filter_optix([pos.x, pos.y, pos.z], KNN_FILTER_CANDIDATES);
+                    let hits =
+                        pipe.query_filter_optix([pos.x, pos.y, pos.z], KNN_FILTER_CANDIDATES);
                     if !hits.is_empty() {
                         hits
                     } else {
@@ -451,54 +504,69 @@ impl BvhManifold {
         };
 
         #[allow(unused_variables)]
-        let mut scored: Vec<ScoredCandidate> = ids.iter().enumerate().filter_map(|(i, &id)| {
-            let entry_idx = (id as usize).saturating_sub(1);
-            let entry = self.entries.get(entry_idx)?;
+        let mut scored: Vec<ScoredCandidate> = ids
+            .iter()
+            .enumerate()
+            .filter_map(|(i, &id)| {
+                let entry_idx = (id as usize).saturating_sub(1);
+                let entry = self.entries.get(entry_idx)?;
 
-            #[cfg(engram_backend_cuda)]
-            let sim = if let Some(ref gpu_s) = gpu_scores {
-                gpu_s.get(i).copied().unwrap_or_else(|| {
+                #[cfg(engram_backend_cuda)]
+                let sim = if let Some(ref gpu_s) = gpu_scores {
+                    gpu_s.get(i).copied().unwrap_or_else(|| {
+                        crate::quant::cosine_similarity_srht_b4(&effective_q, &entry.q_quantized)
+                    })
+                } else {
                     crate::quant::cosine_similarity_srht_b4(&effective_q, &entry.q_quantized)
+                };
+                #[cfg(not(engram_backend_cuda))]
+                let sim = crate::quant::cosine_similarity_srht_b4(&effective_q, &entry.q_quantized);
+
+                let crs = entry.crs_score.clamp(0.0, 1.0);
+                let score = sim * (0.5 + 0.5 * crs);
+
+                Some(ScoredCandidate {
+                    entry_idx,
+                    score,
+                    crs,
                 })
-            } else {
-                crate::quant::cosine_similarity_srht_b4(&effective_q, &entry.q_quantized)
-            };
-            #[cfg(not(engram_backend_cuda))]
-            let sim = crate::quant::cosine_similarity_srht_b4(&effective_q, &entry.q_quantized);
-
-            let crs = entry.crs_score.clamp(0.0, 1.0);
-            let score = sim * (0.5 + 0.5 * crs);
-
-            Some(ScoredCandidate { entry_idx, score, crs })
-        }).collect();
+            })
+            .collect();
 
         // Sort candidates
-        scored.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        scored.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         scored.truncate(k);
 
         // Map top K back to Memory results by pulling provlog from disk ONLY for the winners
-        let final_results: Vec<Memory> = scored.into_iter().filter_map(|c| {
-            let entry = self.entries.get(c.entry_idx)?;
-            let path = self.path_index.get(&c.entry_idx)?;
-            let block = engram_core::storage::read_block(path).ok()?;
-            let provlog = engram_core::storage::read_provlog(&block);
-            
-            Some(Memory {
-                concept: entry.concept.clone(),
-                score: c.score,
-                crs: c.crs,
-                provlog,
-                drift_velocity: block.energetics.dv,
-                superposition_depth: block.superposition_count,
-                zedos_tag: block.zedos_tag,
-                alpha_a: block.energetics.alpha_a,
-                alpha_d: block.energetics.alpha_d,
-                l2_norm_residual: block.l2_norm_residual,
-                aabb_min: block.aabb_min,
-                aabb_max: block.aabb_max,
-                explain: format!("GPU SIM => score={:.4} (crs={:.3})", c.score, c.crs),
+        let final_results: Vec<Memory> = scored
+            .into_iter()
+            .filter_map(|c| {
+                let entry = self.entries.get(c.entry_idx)?;
+                let path = self.path_index.get(&c.entry_idx)?;
+                let block = engram_core::storage::read_block(path).ok()?;
+                let provlog = engram_core::storage::read_provlog(&block);
+
+                Some(Memory {
+                    concept: entry.concept.clone(),
+                    score: c.score,
+                    crs: c.crs,
+                    provlog,
+                    drift_velocity: block.energetics.dv,
+                    superposition_depth: block.superposition_count,
+                    zedos_tag: block.zedos_tag,
+                    alpha_a: block.energetics.alpha_a,
+                    alpha_d: block.energetics.alpha_d,
+                    l2_norm_residual: block.l2_norm_residual,
+                    aabb_min: block.aabb_min,
+                    aabb_max: block.aabb_max,
+                    explain: format!("GPU SIM => score={:.4} (crs={:.3})", c.score, c.crs),
+                })
             })
-        }).collect();
+            .collect();
 
         // Cache result (only for unframed / native coordinate queries per WS3-B)
         if use_cache {
@@ -506,7 +574,9 @@ impl BvhManifold {
                 if !cache.contains_key(&qhash) {
                     if let Ok(mut queue) = self.cache_queue.write() {
                         if queue.len() >= QUERY_CACHE_MAX {
-                            if let Some(old) = queue.pop_front() { cache.remove(&old); }
+                            if let Some(old) = queue.pop_front() {
+                                cache.remove(&old);
+                            }
                         }
                         queue.push_back(qhash);
                         cache.insert(qhash, final_results.clone());
@@ -531,8 +601,12 @@ impl BvhManifold {
         Float3 { x, y, z }
     }
 
-    pub fn len(&self) -> usize { self.entries.len() }
-    pub fn is_empty(&self) -> bool { self.entries.is_empty() }
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
 
     // ── WS3-B Geosphere frame/lens surface (integrated into main query path) ──
     /// Set the current active Geosphere lens/frame for this manifold.
@@ -550,8 +624,12 @@ impl BvhManifold {
             }
         }
         // Invalidate query cache on frame change (different effective distances)
-        if let Ok(mut cache) = self.query_cache.write() { cache.clear(); }
-        if let Ok(mut q) = self.cache_queue.write() { q.clear(); }
+        if let Ok(mut cache) = self.query_cache.write() {
+            cache.clear();
+        }
+        if let Ok(mut q) = self.cache_queue.write() {
+            q.clear();
+        }
     }
 
     /// Query the current lens (for MCP surface / diagnostics). Returns owned copy or None.

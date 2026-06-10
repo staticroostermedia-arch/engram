@@ -3,10 +3,22 @@ use num_complex::Complex32;
 const D_SQRT: f32 = 90.509_67; // √8192
 
 const CENTROIDS_B4: [f32; 16] = [
-    -2.7326 / D_SQRT, -2.0690 / D_SQRT, -1.5184 / D_SQRT, -1.0563 / D_SQRT,
-    -0.6560 / D_SQRT, -0.2872 / D_SQRT,  0.0000 / D_SQRT,  0.0000 / D_SQRT,
-     0.2872 / D_SQRT,  0.6560 / D_SQRT,  1.0563 / D_SQRT,  1.5184 / D_SQRT,
-     2.0690 / D_SQRT,  2.7326 / D_SQRT,  0.0000 / D_SQRT,  0.0000 / D_SQRT,
+    -2.7326 / D_SQRT,
+    -2.0690 / D_SQRT,
+    -1.5184 / D_SQRT,
+    -1.0563 / D_SQRT,
+    -0.6560 / D_SQRT,
+    -0.2872 / D_SQRT,
+    0.0000 / D_SQRT,
+    0.0000 / D_SQRT,
+    0.2872 / D_SQRT,
+    0.6560 / D_SQRT,
+    1.0563 / D_SQRT,
+    1.5184 / D_SQRT,
+    2.0690 / D_SQRT,
+    2.7326 / D_SQRT,
+    0.0000 / D_SQRT,
+    0.0000 / D_SQRT,
 ];
 
 #[inline(always)]
@@ -80,7 +92,7 @@ pub fn cosine_similarity_quantized(q: &[Complex32; 8192], packed: &[u8]) -> f32 
 pub fn pack_int8_to_u32(quantized: &[i8; 384]) -> [u32; 96] {
     let mut packed = [0u32; 96];
     for i in 0..96 {
-        let b0 =  (quantized[i * 4    ] as u8) as u32;
+        let b0 = (quantized[i * 4] as u8) as u32;
         let b1 = ((quantized[i * 4 + 1] as u8) as u32) << 8;
         let b2 = ((quantized[i * 4 + 2] as u8) as u32) << 16;
         let b3 = ((quantized[i * 4 + 3] as u8) as u32) << 24;
@@ -99,19 +111,18 @@ pub fn pack_int8_to_u32(quantized: &[i8; 384]) -> [u32; 96] {
 /// - The `.re` slots 0..384 contain the L2-normalised MiniLM embedding.
 /// - The remaining 7808 dimensions are ignored by the INT8 path.
 pub fn quantize_centroid_int8(centroid: &[Complex32; 8192]) -> ([i8; 384], [u32; 96], f32) {
-    let mut q_int8  = [0i8; 384];
+    let mut q_int8 = [0i8; 384];
     let mut norm_sq = 0.0f32;
 
     for i in 0..384 {
         let val = (centroid[i].re * 127.0).round().clamp(-128.0, 127.0) as i8;
         q_int8[i] = val;
-        norm_sq   += (val as f32) * (val as f32);
+        norm_sq += (val as f32) * (val as f32);
     }
 
     let q_packed = pack_int8_to_u32(&q_int8);
     (q_int8, q_packed, norm_sq.sqrt())
 }
-
 
 // ── TurboQuant: SRHT + Lloyd-Max B4 (Task 6) ─────────────────────────────────
 
@@ -150,10 +161,12 @@ pub fn cosine_similarity_srht_b4(q: &[Complex32; 8192], packed: &[u8]) -> f32 {
         let p_im = CENTROIDS_B4[(b & 0x0F) as usize];
         let q_re = flat[i * 2];
         let q_im = flat[i * 2 + 1];
-        dot    += q_re * p_re + q_im * p_im;
+        dot += q_re * p_re + q_im * p_im;
         norm_q += q_re * q_re + q_im * q_im;
         norm_p += p_re * p_re + p_im * p_im;
     }
-    if norm_q <= 0.0 || norm_p <= 0.0 { return 0.0; }
+    if norm_q <= 0.0 || norm_p <= 0.0 {
+        return 0.0;
+    }
     dot / (norm_q.sqrt() * norm_p.sqrt())
 }

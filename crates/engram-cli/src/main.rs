@@ -2,7 +2,11 @@ use clap::{Parser, Subcommand};
 use engram_core::backend::{CpuBackend, VsaBackend};
 
 #[derive(Parser)]
-#[command(name = "engram", about = "Persistent geometric memory for AI agents", version)]
+#[command(
+    name = "engram",
+    about = "Persistent geometric memory for AI agents",
+    version
+)]
 struct Cli {
     /// Directory to store .leg memory blocks
     #[arg(long, default_value = "~/.engram/manifold", env = "ENGRAM_STORE")]
@@ -30,9 +34,7 @@ enum Commands {
         k: usize,
     },
     /// Delete a concept from memory
-    Forget {
-        concept: String,
-    },
+    Forget { concept: String },
     /// List all stored concepts
     List,
     /// Recursively ingest a directory of text/code files
@@ -114,7 +116,13 @@ fn main() -> anyhow::Result<()> {
                 println!("No memories found.");
             } else {
                 for (i, mem) in results.iter().enumerate() {
-                    println!("[{}] {} (score: {:.3}, crs: {:.3})", i + 1, mem.concept, mem.score, mem.crs);
+                    println!(
+                        "[{}] {} (score: {:.3}, crs: {:.3})",
+                        i + 1,
+                        mem.concept,
+                        mem.score,
+                        mem.crs
+                    );
                     if !mem.provlog.is_empty() {
                         let preview: String = mem.provlog.chars().take(120).collect();
                         println!("    {}", preview);
@@ -139,36 +147,59 @@ fn main() -> anyhow::Result<()> {
         }
         Commands::Ingest { path, chunk_size } => {
             use engram_ast::extract_ast_items;
-            use walkdir::WalkDir;
             use std::fs;
+            use walkdir::WalkDir;
 
             println!("> Starting Engram Ingest: {}", path);
             println!("  Code files  → AST extraction (one block per semantic item)");
-            println!("  Other files → character chunking ({} chars/block)", chunk_size);
+            println!(
+                "  Other files → character chunking ({} chars/block)",
+                chunk_size
+            );
             println!();
 
             let mut files_processed = 0;
-            let mut chunks_minted   = 0;
+            let mut chunks_minted = 0;
             let mut ast_items_minted = 0;
 
             let allowed_extensions = [
-                "rs", "md", "txt", "js", "ts", "jsx", "tsx", "json", "toml", "py", "c", "cpp", "cc", "cxx", "h", "hpp", "csv", "sh", "go", "java"
+                "rs", "md", "txt", "js", "ts", "jsx", "tsx", "json", "toml", "py", "c", "cpp",
+                "cc", "cxx", "h", "hpp", "csv", "sh", "go", "java",
             ];
 
             for entry in WalkDir::new(&path).into_iter().filter_map(|e| e.ok()) {
-                if !entry.file_type().is_file() { continue; }
-                let ext = entry.path().extension().and_then(|s| s.to_str()).unwrap_or("");
-                if !allowed_extensions.contains(&ext) { continue; }
+                if !entry.file_type().is_file() {
+                    continue;
+                }
+                let ext = entry
+                    .path()
+                    .extension()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("");
+                if !allowed_extensions.contains(&ext) {
+                    continue;
+                }
 
-                let Ok(content) = fs::read_to_string(entry.path()) else { continue; };
-                let file_name = entry.path().file_name()
+                let Ok(content) = fs::read_to_string(entry.path()) else {
+                    continue;
+                };
+                let file_name = entry
+                    .path()
+                    .file_name()
                     .and_then(|s| s.to_str())
                     .unwrap_or("unknown");
-                let file_stem = entry.path().file_stem()
+                let file_stem = entry
+                    .path()
+                    .file_stem()
                     .and_then(|s| s.to_str())
                     .unwrap_or("unknown");
 
-                if ["rs", "py", "ts", "tsx", "js", "jsx", "go", "java", "c", "cpp", "cc", "cxx", "h", "hpp"].contains(&ext) {
+                if [
+                    "rs", "py", "ts", "tsx", "js", "jsx", "go", "java", "c", "cpp", "cc", "cxx",
+                    "h", "hpp",
+                ]
+                .contains(&ext)
+                {
                     // ── AST path: one block per public item ──────────────────
                     let items = extract_ast_items(entry.path().to_str().unwrap_or(""), &content);
 
@@ -193,28 +224,32 @@ fn main() -> anyhow::Result<()> {
                     }
                 } else {
                     // ── Chunker path: all other file types ───────────────────
-                    let mut start     = 0;
+                    let mut start = 0;
                     let mut chunk_idx = 1;
 
                     while start < content.len() {
                         let mut end = (start + chunk_size).min(content.len());
-                        while end > start && !content.is_char_boundary(end) { end -= 1; }
+                        while end > start && !content.is_char_boundary(end) {
+                            end -= 1;
+                        }
 
                         let mut safe_end = end;
                         if safe_end < content.len() {
-                            if let Some(offset) = content[start..end].rfind(|c: char| c.is_whitespace()) {
+                            if let Some(offset) =
+                                content[start..end].rfind(|c: char| c.is_whitespace())
+                            {
                                 safe_end = start + offset;
                             }
                         }
 
-                        let chunk   = &content[start..safe_end];
+                        let chunk = &content[start..safe_end];
                         let concept = format!("{}_part{}", file_name.replace('.', "_"), chunk_idx);
 
                         if backend.remember(&concept, chunk.trim()).is_ok() {
                             chunks_minted += 1;
                         }
 
-                        start     = safe_end + 1;
+                        start = safe_end + 1;
                         chunk_idx += 1;
                     }
                 }
@@ -225,22 +260,30 @@ fn main() -> anyhow::Result<()> {
             println!();
             println!("✓ INGESTION COMPLETE");
             println!("  Files processed : {files_processed}");
-            println!("  AST items minted: {ast_items_minted}  (one block per pub fn/struct/enum/trait)");
+            println!(
+                "  AST items minted: {ast_items_minted}  (one block per pub fn/struct/enum/trait)"
+            );
             println!("  Chunk blocks    : {chunks_minted}  (non-Rust files)");
             println!("  Total blocks    : {}", ast_items_minted + chunks_minted);
         }
 
-        Commands::Distill { cluster_size, min_crs, dry_run } => {
+        Commands::Distill {
+            cluster_size,
+            min_crs,
+            dry_run,
+        } => {
+            use engram_core::genesis::KEPLER_GATE;
             use engram_core::ops::bundle;
             use engram_core::types::{Leg3Pointer, ZEDOS_PRAXIS};
-            use engram_core::genesis::KEPLER_GATE;
             use num_complex::Complex32;
 
             println!("🔬 Engram Distill — Manifold Crystallization");
             println!("   Store    : {store_path}");
             println!("   Cluster  : {} memories per centroid", cluster_size);
             println!("   Min CRS  : {:.2}", min_crs);
-            if dry_run { println!("   Mode     : DRY RUN (nothing will be written)"); }
+            if dry_run {
+                println!("   Mode     : DRY RUN (nothing will be written)");
+            }
             println!();
 
             let concepts = backend.list();
@@ -256,7 +299,9 @@ fn main() -> anyhow::Result<()> {
                 .filter_map(|name| {
                     let block = backend.fetch_block(name)?;
                     let crs = block.crs_score;
-                    if crs < min_crs { return None; }
+                    if crs < min_crs {
+                        return None;
+                    }
                     Some((name.clone(), crs, block.q))
                 })
                 .collect();
@@ -264,8 +309,13 @@ fn main() -> anyhow::Result<()> {
             eligible.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
             let skipped = total - eligible.len();
-            println!("   {}/{} memories qualify (≥ CRS {:.2}), {} skipped",
-                eligible.len(), total, min_crs, skipped);
+            println!(
+                "   {}/{} memories qualify (≥ CRS {:.2}), {} skipped",
+                eligible.len(),
+                total,
+                min_crs,
+                skipped
+            );
 
             if eligible.is_empty() {
                 println!("Nothing to distill — lower --min-crs or ingest more memories first.");
@@ -275,13 +325,21 @@ fn main() -> anyhow::Result<()> {
             let clusters: Vec<&[(String, f32, [Complex32; 8192])]> =
                 eligible.chunks(cluster_size).collect();
 
-            println!("   {} clusters → {} praxis blocks", clusters.len(), clusters.len());
+            println!(
+                "   {} clusters → {} praxis blocks",
+                clusters.len(),
+                clusters.len()
+            );
             println!();
 
             let mut minted = 0usize;
             for (idx, cluster) in clusters.iter().enumerate() {
                 if cluster.len() < 2 {
-                    println!("  [cluster {:03}] Only {} member — skipping (need ≥ 2).", idx, cluster.len());
+                    println!(
+                        "  [cluster {:03}] Only {} member — skipping (need ≥ 2).",
+                        idx,
+                        cluster.len()
+                    );
                     continue;
                 }
 
@@ -289,8 +347,10 @@ fn main() -> anyhow::Result<()> {
                 let refs: Vec<&[Complex32; 8192]> = cluster.iter().map(|(_, _, q)| q).collect();
                 let centroid = bundle(&refs);
 
-                let avg_crs: f32 = cluster.iter().map(|(_, c, _)| c).sum::<f32>() / cluster.len() as f32;
-                let members_preview: String = cluster.iter()
+                let avg_crs: f32 =
+                    cluster.iter().map(|(_, c, _)| c).sum::<f32>() / cluster.len() as f32;
+                let members_preview: String = cluster
+                    .iter()
                     .take(3)
                     .map(|(name, _, _)| name.as_str())
                     .collect::<Vec<_>>()
@@ -302,13 +362,20 @@ fn main() -> anyhow::Result<()> {
                      Source concepts: {members_preview}{}\n\
                      Kepler gate: {:.2} | Riemann AI bound: 0.50",
                     cluster.len(),
-                    if cluster.len() > 3 { format!(" +{} more", cluster.len() - 3) } else { String::new() },
+                    if cluster.len() > 3 {
+                        format!(" +{} more", cluster.len() - 3)
+                    } else {
+                        String::new()
+                    },
                     KEPLER_GATE,
                 );
 
                 println!(
                     "  [cluster {:03}] {} members, avg CRS {:.3} → {}",
-                    idx, cluster.len(), avg_crs, concept_name
+                    idx,
+                    cluster.len(),
+                    avg_crs,
+                    concept_name
                 );
 
                 if !dry_run {
@@ -316,10 +383,10 @@ fn main() -> anyhow::Result<()> {
                     block.magic = *b"LEG3";
                     block.schema_ver = 3;
                     block.content_type = ZEDOS_PRAXIS;
-                    block.zedos_tag   = ZEDOS_PRAXIS;
-                    block.spin_state  = 1;  // Axiomatic
+                    block.zedos_tag = ZEDOS_PRAXIS;
+                    block.spin_state = 1; // Axiomatic
                     block.tensor_rank = 1;
-                    block.crs_score   = 1.0;  // Praxis blocks are crystallized — always CRS=1.0
+                    block.crs_score = 1.0; // Praxis blocks are crystallized — always CRS=1.0
                     block.energetics.crs = 1.0;
                     block.energetics.heat_dissipated = 5.47e-4;
                     block.q = centroid;
@@ -329,8 +396,12 @@ fn main() -> anyhow::Result<()> {
                     block.payload[..copy_len].copy_from_slice(&label_bytes[..copy_len]);
 
                     match backend.store(&concept_name, block) {
-                        Ok(())  => { minted += 1; }
-                        Err(e) => { eprintln!("  ✗ Failed to mint {concept_name}: {e}"); }
+                        Ok(()) => {
+                            minted += 1;
+                        }
+                        Err(e) => {
+                            eprintln!("  ✗ Failed to mint {concept_name}: {e}");
+                        }
                     }
                 } else {
                     minted += 1; // Count for dry-run report
@@ -339,18 +410,33 @@ fn main() -> anyhow::Result<()> {
 
             println!();
             if dry_run {
-                println!("✓ Dry run complete — {} praxis blocks would be minted.", minted);
+                println!(
+                    "✓ Dry run complete — {} praxis blocks would be minted.",
+                    minted
+                );
             } else {
-                println!("✓ Distillation complete — {} praxis blocks minted at CRS=1.0.", minted);
+                println!(
+                    "✓ Distillation complete — {} praxis blocks minted at CRS=1.0.",
+                    minted
+                );
                 println!("  Run `engram forget-old --min-crs-threshold 0.70` to clean up the episodic source blocks.");
             }
         }
 
-        Commands::Trace { term_a, op, term_b, k } => {
+        Commands::Trace {
+            term_a,
+            op,
+            term_b,
+            k,
+        } => {
             use engram_core::ops::{op_add, op_bind};
-            let q_a = backend.fetch(&term_a).unwrap_or_else(|| Box::new(backend.encode(&term_a).q));
-            let q_b = backend.fetch(&term_b).unwrap_or_else(|| Box::new(backend.encode(&term_b).q));
-            
+            let q_a = backend
+                .fetch(&term_a)
+                .unwrap_or_else(|| Box::new(backend.encode(&term_a).q));
+            let q_b = backend
+                .fetch(&term_b)
+                .unwrap_or_else(|| Box::new(backend.encode(&term_b).q));
+
             let q_res = match op.to_uppercase().as_str() {
                 "ADD" => op_add(&q_a, &q_b),
                 "BIND" => op_bind(&q_a, &q_b),
@@ -359,14 +445,25 @@ fn main() -> anyhow::Result<()> {
                     std::process::exit(1);
                 }
             };
-            
-            println!("> Submitting semantic query to BVH Manifold: [{} {} {}]", term_a, op.to_uppercase(), term_b);
+
+            println!(
+                "> Submitting semantic query to BVH Manifold: [{} {} {}]",
+                term_a,
+                op.to_uppercase(),
+                term_b
+            );
             let results = backend.query(&q_res, k);
             if results.is_empty() {
                 println!("No memories found intersecting that geometry.");
             } else {
                 for (i, mem) in results.iter().enumerate() {
-                    println!("[{}] {} (sim: {:.3}, crs: {:.3})", i + 1, mem.concept, mem.score, mem.crs);
+                    println!(
+                        "[{}] {} (sim: {:.3}, crs: {:.3})",
+                        i + 1,
+                        mem.concept,
+                        mem.score,
+                        mem.crs
+                    );
                 }
             }
         }
@@ -374,15 +471,15 @@ fn main() -> anyhow::Result<()> {
             let engram_root = shellexpand::tilde("~/.engram").into_owned();
             let access_index = std::path::Path::new(&engram_root).join("access_index.bin");
             let bvh_index = std::path::Path::new(&engram_root).join("stalks/default/engram.bvh");
-            
+
             println!("🔍 Verifying Engram Agent Environment...");
-            
+
             if access_index.exists() {
                 println!("✓ Access Index found: {:?}", access_index);
             } else {
                 println!("✗ Access Index missing! Make sure the daemon is running.");
             }
-            
+
             if bvh_index.exists() {
                 println!("✓ LBVH Index found: {:?}", bvh_index);
             } else {
@@ -399,25 +496,30 @@ fn main() -> anyhow::Result<()> {
                 .build();
 
             match client {
-                Ok(c) => {
-                    match c.post(&embed_url).json(&probe_body).send() {
-                        Ok(resp) if resp.status().is_success() => {
-                            println!("✓ Embedding server live: {embed_url}");
-                            println!("  → remember() calls will produce valid vectors (Euler gate: PASS)");
-                        }
-                        Ok(resp) => {
-                            println!("✗ Embedding server at {embed_url} returned HTTP {}", resp.status());
-                            println!("  → remember() calls will FAIL the Euler gate (BLAKE3-only vectors are chaotic)");
-                            println!("  → Fix: ensure nomic-embed llama-server is running on port 8086");
-                        }
-                        Err(e) => {
-                            println!("✗ Embedding server UNREACHABLE at {embed_url}: {e}");
-                            println!("  → remember() calls will FAIL the Euler gate");
-                            println!("  → Fix: start llama-server with nomic-embed model on port 8086");
-                            println!("  → OR: set ENGRAM_EMBED_URL to the correct URL in your shell and IDE env");
-                        }
+                Ok(c) => match c.post(&embed_url).json(&probe_body).send() {
+                    Ok(resp) if resp.status().is_success() => {
+                        println!("✓ Embedding server live: {embed_url}");
+                        println!(
+                            "  → remember() calls will produce valid vectors (Euler gate: PASS)"
+                        );
                     }
-                }
+                    Ok(resp) => {
+                        println!(
+                            "✗ Embedding server at {embed_url} returned HTTP {}",
+                            resp.status()
+                        );
+                        println!("  → remember() calls will FAIL the Euler gate (BLAKE3-only vectors are chaotic)");
+                        println!(
+                            "  → Fix: ensure nomic-embed llama-server is running on port 8086"
+                        );
+                    }
+                    Err(e) => {
+                        println!("✗ Embedding server UNREACHABLE at {embed_url}: {e}");
+                        println!("  → remember() calls will FAIL the Euler gate");
+                        println!("  → Fix: start llama-server with nomic-embed model on port 8086");
+                        println!("  → OR: set ENGRAM_EMBED_URL to the correct URL in your shell and IDE env");
+                    }
+                },
                 Err(e) => println!("✗ HTTP client build failed: {e}"),
             }
 
@@ -433,7 +535,9 @@ fn main() -> anyhow::Result<()> {
                 for c in &concepts {
                     if let Some(b) = backend.fetch_block(c) {
                         sum_crs += b.crs_score;
-                        if b.crs_score >= 1.0 { pinned_count += 1; }
+                        if b.crs_score >= 1.0 {
+                            pinned_count += 1;
+                        }
                     }
                 }
                 avg_crs = sum_crs / total_memories as f32;
@@ -450,7 +554,9 @@ fn main() -> anyhow::Result<()> {
             for c in concepts {
                 if let Some(b) = backend.fetch_block(&c) {
                     if b.crs_score >= min_crs {
-                        let text = std::str::from_utf8(&b.payload).unwrap_or("").trim_matches(char::from(0));
+                        let text = std::str::from_utf8(&b.payload)
+                            .unwrap_or("")
+                            .trim_matches(char::from(0));
                         exported.push(serde_json::json!({
                             "concept": c,
                             "text": text.trim(),
@@ -470,10 +576,12 @@ fn main() -> anyhow::Result<()> {
             for entry in entries {
                 let concept = entry["concept"].as_str().unwrap_or("");
                 let text = entry["text"].as_str().unwrap_or("");
-                if !concept.is_empty() && !text.is_empty()
-                    && backend.remember(concept, text).is_ok() {
-                        count += 1;
-                    }
+                if !concept.is_empty()
+                    && !text.is_empty()
+                    && backend.remember(concept, text).is_ok()
+                {
+                    count += 1;
+                }
             }
             println!("✓ Imported {} memories from {}", count, file);
         }

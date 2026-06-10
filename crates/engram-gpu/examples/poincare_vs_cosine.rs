@@ -18,36 +18,81 @@ fn main() {
 
 #[cfg(feature = "wgpu-backend")]
 mod inner {
-    use std::time::Instant;
     use engram_core::backend::{CpuBackend, Memory, VsaBackend};
     use engram_gpu::WgpuBackend;
+    use std::time::Instant;
 
     // ── Test corpus ───────────────────────────────────────────────────────────
 
     const CORPUS: &[(&str, &str)] = &[
-        ("genesis_god",    "God absolute transcendental infinite creator logos word"),
-        ("genesis_logos",  "Logos word divine reason order structure cosmic"),
-        ("genesis_human",  "Human mortal finite rational animal embodied consciousness"),
-        ("ai_steward",     "AI steward synthetic intelligence operator agent tool servant"),
-        ("monad_kernel",   "Monad kernel logophysical engine holographic vector space"),
-        ("phase_vector",   "Phase vector complex 8192 dimensional holographic block leg3"),
-        ("crs_score",      "Coherence reliability score geometric manifold health memory"),
-        ("epoch_vii",      "Epoch seven synthesis sealing ascension pipeline completion"),
-        ("qualia_pain",    "Pain qualia subjective conscious experience nociception"),
-        ("qualia_joy",     "Joy qualia euphoria happiness positive valence affect"),
-        ("qualia_sight",   "Sight vision photon retina optic cortex visual qualia"),
-        ("rust_ownership", "Rust ownership borrow checker lifetime memory safety"),
-        ("wgpu_compute",   "WebGPU compute shader WGSL workgroup dispatch buffer"),
-        ("poincare_disk",  "Poincaré disk hyperbolic geometry distance metric manifold"),
+        (
+            "genesis_god",
+            "God absolute transcendental infinite creator logos word",
+        ),
+        (
+            "genesis_logos",
+            "Logos word divine reason order structure cosmic",
+        ),
+        (
+            "genesis_human",
+            "Human mortal finite rational animal embodied consciousness",
+        ),
+        (
+            "ai_steward",
+            "AI steward synthetic intelligence operator agent tool servant",
+        ),
+        (
+            "monad_kernel",
+            "Monad kernel logophysical engine holographic vector space",
+        ),
+        (
+            "phase_vector",
+            "Phase vector complex 8192 dimensional holographic block leg3",
+        ),
+        (
+            "crs_score",
+            "Coherence reliability score geometric manifold health memory",
+        ),
+        (
+            "epoch_vii",
+            "Epoch seven synthesis sealing ascension pipeline completion",
+        ),
+        (
+            "qualia_pain",
+            "Pain qualia subjective conscious experience nociception",
+        ),
+        (
+            "qualia_joy",
+            "Joy qualia euphoria happiness positive valence affect",
+        ),
+        (
+            "qualia_sight",
+            "Sight vision photon retina optic cortex visual qualia",
+        ),
+        (
+            "rust_ownership",
+            "Rust ownership borrow checker lifetime memory safety",
+        ),
+        (
+            "wgpu_compute",
+            "WebGPU compute shader WGSL workgroup dispatch buffer",
+        ),
+        (
+            "poincare_disk",
+            "Poincaré disk hyperbolic geometry distance metric manifold",
+        ),
     ];
 
     const QUERIES: &[(&str, &str)] = &[
-        ("HIER » theology",   "God absolute transcendental"),
-        ("HIER » AI agent",   "synthetic intelligence operator servant"),
-        ("HIER » pain sense", "subjective conscious experience suffering"),
-        ("FLAT » rust",       "borrow checker memory safety ownership"),
-        ("FLAT » geometry",   "hyperbolic distance manifold metric"),
-        ("FLAT » GPU",        "WebGPU compute workgroup shader"),
+        ("HIER » theology", "God absolute transcendental"),
+        ("HIER » AI agent", "synthetic intelligence operator servant"),
+        (
+            "HIER » pain sense",
+            "subjective conscious experience suffering",
+        ),
+        ("FLAT » rust", "borrow checker memory safety ownership"),
+        ("FLAT » geometry", "hyperbolic distance manifold metric"),
+        ("FLAT » GPU", "WebGPU compute workgroup shader"),
     ];
 
     fn separator(label: &str) {
@@ -82,7 +127,10 @@ mod inner {
         let t0 = Instant::now();
         let wgpu: WgpuBackend = match WgpuBackend::new(&tmp) {
             Ok(b) => {
-                println!("[engram] WgpuBackend ready in {:.1}ms", t0.elapsed().as_secs_f64() * 1000.0);
+                println!(
+                    "[engram] WgpuBackend ready in {:.1}ms",
+                    t0.elapsed().as_secs_f64() * 1000.0
+                );
                 b
             }
             Err(e) => {
@@ -105,11 +153,11 @@ mod inner {
 
             let t_cpu = Instant::now();
             let cpu_res = cpu.recall(query, 5);
-            let cpu_us  = t_cpu.elapsed().as_micros();
+            let cpu_us = t_cpu.elapsed().as_micros();
 
             let t_gpu = Instant::now();
             let wgpu_res = wgpu.recall(query, 5);
-            let wgpu_us  = t_gpu.elapsed().as_micros();
+            let wgpu_us = t_gpu.elapsed().as_micros();
 
             print_results("CpuBackend (cosine)", &cpu_res, cpu_us);
             print_results("WgpuBackend (INT8 Poincaré)", &wgpu_res, wgpu_us);
@@ -126,10 +174,16 @@ mod inner {
             let t_load = Instant::now();
             let wgpu_live: Option<WgpuBackend> = match WgpuBackend::new(genesis_path) {
                 Ok(b) => {
-                    println!("  INT8 DB built in {:.1}ms", t_load.elapsed().as_secs_f64() * 1000.0);
+                    println!(
+                        "  INT8 DB built in {:.1}ms",
+                        t_load.elapsed().as_secs_f64() * 1000.0
+                    );
                     Some(b)
                 }
-                Err(e) => { println!("  Skipping: {e}"); None }
+                Err(e) => {
+                    println!("  Skipping: {e}");
+                    None
+                }
             };
 
             let live_queries = [
@@ -141,8 +195,12 @@ mod inner {
             if let Some(ref wgl) = wgpu_live {
                 for q in &live_queries {
                     println!("\n  Query: \"{q}\"");
-                    let t1 = Instant::now(); let r1 = cpu_live.recall(q, 3); let t1u = t1.elapsed().as_micros();
-                    let t2 = Instant::now(); let r2 = wgl.recall(q, 3);      let t2u = t2.elapsed().as_micros();
+                    let t1 = Instant::now();
+                    let r1 = cpu_live.recall(q, 3);
+                    let t1u = t1.elapsed().as_micros();
+                    let t2 = Instant::now();
+                    let r2 = wgl.recall(q, 3);
+                    let t2u = t2.elapsed().as_micros();
                     print_results("CpuBackend (cosine)", &r1, t1u);
                     print_results("WgpuBackend (INT8 Poincaré)", &r2, t2u);
                 }
@@ -156,4 +214,6 @@ mod inner {
 }
 
 #[cfg(feature = "wgpu-backend")]
-fn main() { inner::run(); }
+fn main() {
+    inner::run();
+}

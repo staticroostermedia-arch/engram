@@ -33,15 +33,15 @@ use tracing::info;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ScoutResult {
-    pub concept:         String,
-    pub summary:         String,
-    pub snippets:        Vec<WebSnippet>,
-    pub total_memories:  usize,
+    pub concept: String,
+    pub summary: String,
+    pub snippets: Vec<WebSnippet>,
+    pub total_memories: usize,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct WebSnippet {
-    pub title:   String,
+    pub title: String,
     pub snippet: String,
 }
 
@@ -49,7 +49,7 @@ pub struct WebSnippet {
 
 #[derive(Deserialize)]
 struct DaemonResp {
-    summary:  String,
+    summary: String,
     snippets: Vec<WebSnippet>,
 }
 
@@ -62,29 +62,40 @@ pub async fn run(store: SharedStore, query: &str, max_results: usize) -> Result<
     }
 
     let port: u16 = env::var("ENGRAM_SCOUT_PORT")
-        .ok().and_then(|v| v.parse().ok()).unwrap_or(8088);
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(8088);
 
     info!("scout: calling daemon on port {} for {:?}", port, query);
 
     // ── Step 1: Call companion daemon ─────────────────────────────────────
-    let resp = daemon_get(port, query, max_results).await
-        .map_err(|e| anyhow!(
+    let resp = daemon_get(port, query, max_results).await.map_err(|e| {
+        anyhow!(
             "Scout daemon unreachable (port {}): {}\n\
-             → Start it: python3 integrations/scout_daemon.py &", port, e
-        ))?;
+             → Start it: python3 integrations/scout_daemon.py &",
+            port,
+            e
+        )
+    })?;
 
-    let daemon: DaemonResp = serde_json::from_str(&resp)
-        .map_err(|e| {
-            // Check for error response from daemon
-            if let Ok(err_val) = serde_json::from_str::<serde_json::Value>(&resp) {
-                if let Some(msg) = err_val["error"].as_str() {
-                    return anyhow!("Scout daemon error: {}", msg);
-                }
+    let daemon: DaemonResp = serde_json::from_str(&resp).map_err(|e| {
+        // Check for error response from daemon
+        if let Ok(err_val) = serde_json::from_str::<serde_json::Value>(&resp) {
+            if let Some(msg) = err_val["error"].as_str() {
+                return anyhow!("Scout daemon error: {}", msg);
             }
-            anyhow!("Scout daemon response parse error: {e}\nRaw: {}", &resp[..resp.len().min(200)])
-        })?;
+        }
+        anyhow!(
+            "Scout daemon response parse error: {e}\nRaw: {}",
+            &resp[..resp.len().min(200)]
+        )
+    })?;
 
-    info!("scout: {} snippets, synthesis {} chars", daemon.snippets.len(), daemon.summary.len());
+    info!(
+        "scout: {} snippets, synthesis {} chars",
+        daemon.snippets.len(),
+        daemon.summary.len()
+    );
 
     // ── Step 2: Store in manifold ─────────────────────────────────────────
     let concept = make_concept_key(query);
@@ -93,9 +104,13 @@ pub async fn run(store: SharedStore, query: &str, max_results: usize) -> Result<
         query,
         daemon.summary.trim(),
         daemon.snippets.len(),
-        daemon.snippets.iter().enumerate()
+        daemon
+            .snippets
+            .iter()
+            .enumerate()
             .map(|(i, s)| format!("{}. {} — {}", i + 1, s.title, s.snippet))
-            .collect::<Vec<_>>().join("\n")
+            .collect::<Vec<_>>()
+            .join("\n")
     );
 
     let total_memories = {
@@ -108,11 +123,14 @@ pub async fn run(store: SharedStore, query: &str, max_results: usize) -> Result<
         lock.list().len()
     };
 
-    info!("scout: stored '{}' | manifold={} memories", concept, total_memories);
+    info!(
+        "scout: stored '{}' | manifold={} memories",
+        concept, total_memories
+    );
 
     Ok(ScoutResult {
         concept,
-        summary:  daemon.summary,
+        summary: daemon.summary,
         snippets: daemon.snippets,
         total_memories,
     })
@@ -122,17 +140,13 @@ pub async fn run(store: SharedStore, query: &str, max_results: usize) -> Result<
 
 async fn daemon_get(port: u16, query: &str, max: usize) -> Result<String> {
     let addr = format!("127.0.0.1:{}", port);
-    let path = format!(
-        "/search?q={}&max={}",
-        urlencoded(query), max
-    );
+    let path = format!("/search?q={}&max={}", urlencoded(query), max);
 
-    let mut stream = tokio::time::timeout(
-        std::time::Duration::from_secs(5),
-        TcpStream::connect(&addr),
-    ).await
-        .map_err(|_| anyhow!("connection timeout to {}", addr))?
-        .map_err(|e| anyhow!("connect {}: {}", addr, e))?;
+    let mut stream =
+        tokio::time::timeout(std::time::Duration::from_secs(5), TcpStream::connect(&addr))
+            .await
+            .map_err(|_| anyhow!("connection timeout to {}", addr))?
+            .map_err(|e| anyhow!("connect {}: {}", addr, e))?;
 
     // HTTP/1.1 request
     let request = format!(
@@ -146,9 +160,9 @@ async fn daemon_get(port: u16, query: &str, max: usize) -> Result<String> {
     tokio::time::timeout(
         std::time::Duration::from_secs(120), // LLM can be slow
         stream.read_to_end(&mut raw),
-    ).await
-        .map_err(|_| anyhow!("response timeout (120s) from scout daemon"))?
-        ?;
+    )
+    .await
+    .map_err(|_| anyhow!("response timeout (120s) from scout daemon"))??;
 
     let text = String::from_utf8_lossy(&raw);
 
@@ -158,11 +172,17 @@ async fn daemon_get(port: u16, query: &str, max: usize) -> Result<String> {
         // Check HTTP status
         if !headers.contains("200 OK") {
             let body = text[body_start + 4..].trim().to_string();
-            return Err(anyhow!("daemon HTTP error: {headers}\nBody: {}", &body[..body.len().min(200)]));
+            return Err(anyhow!(
+                "daemon HTTP error: {headers}\nBody: {}",
+                &body[..body.len().min(200)]
+            ));
         }
         Ok(text[body_start + 4..].trim().to_string())
     } else {
-        Err(anyhow!("malformed HTTP response from daemon: {}", &text[..text.len().min(200)]))
+        Err(anyhow!(
+            "malformed HTTP response from daemon: {}",
+            &text[..text.len().min(200)]
+        ))
     }
 }
 
@@ -173,8 +193,15 @@ fn make_concept_key(query: &str) -> String {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs();
-    let norm: String = query.chars()
-        .map(|c| if c.is_alphanumeric() { c.to_ascii_lowercase() } else { '_' })
+    let norm: String = query
+        .chars()
+        .map(|c| {
+            if c.is_alphanumeric() {
+                c.to_ascii_lowercase()
+            } else {
+                '_'
+            }
+        })
         .collect::<String>()
         .split('_')
         .filter(|s| !s.is_empty())

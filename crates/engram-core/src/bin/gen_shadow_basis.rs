@@ -83,23 +83,25 @@ fn main() -> anyhow::Result<()> {
             Ok(vec_768) => {
                 let normalized = l2_normalize(vec_768);
                 let path = shadow_dir.join(format!("{}.bin", concept));
-                let bytes: Vec<u8> = normalized
-                    .iter()
-                    .flat_map(|f| f.to_le_bytes())
-                    .collect();
+                let bytes: Vec<u8> = normalized.iter().flat_map(|f| f.to_le_bytes()).collect();
                 std::fs::write(&path, &bytes)?;
                 println!("✓  ({} bytes, dim={})", bytes.len(), normalized.len());
             }
             Err(e) => {
                 eprintln!("✗  FAILED: {e}");
                 eprintln!("   Is nomic-embed running?");
-                eprintln!("   llama-server -m ~/Downloads/nomic-embed.gguf --port 8086 --embedding");
+                eprintln!(
+                    "   llama-server -m ~/Downloads/nomic-embed.gguf --port 8086 --embedding"
+                );
                 std::process::exit(1);
             }
         }
     }
 
-    println!("[ShadowBasis] Done. {} shadow vectors written.", GENESIS_DEFINITIONS.len());
+    println!(
+        "[ShadowBasis] Done. {} shadow vectors written.",
+        GENESIS_DEFINITIONS.len()
+    );
     Ok(())
 }
 

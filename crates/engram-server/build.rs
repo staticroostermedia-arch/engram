@@ -49,7 +49,10 @@ fn main() {
 
     // ── CUDA detection ────────────────────────────────────────────────────────
     if let Some(nvcc) = which_compiler("nvcc", "CUDA_HOME") {
-        println!("cargo:warning=engram-server: CUDA detected ({}). Activating CudaBackend.", nvcc.display());
+        println!(
+            "cargo:warning=engram-server: CUDA detected ({}). Activating CudaBackend.",
+            nvcc.display()
+        );
         println!("cargo:rustc-cfg=engram_backend_cuda");
 
         // ── OptiX detection ───────────────────────────────────────────────────
@@ -68,7 +71,10 @@ fn main() {
 
     // ── ROCm detection ────────────────────────────────────────────────────────
     if let Some(hipcc) = which_compiler("hipcc", "ROCM_PATH") {
-        println!("cargo:warning=engram-server: ROCm detected ({}). Activating ROCm backend.", hipcc.display());
+        println!(
+            "cargo:warning=engram-server: ROCm detected ({}). Activating ROCm backend.",
+            hipcc.display()
+        );
         println!("cargo:rustc-cfg=engram_backend_rocm");
         return;
     }
@@ -87,12 +93,16 @@ fn main() {
 fn which_compiler(binary: &str, env_home: &str) -> Option<std::path::PathBuf> {
     if let Ok(home) = std::env::var(env_home) {
         let c = std::path::Path::new(&home).join("bin").join(binary);
-        if c.exists() { return Some(c); }
+        if c.exists() {
+            return Some(c);
+        }
     }
     if let Ok(path_var) = std::env::var("PATH") {
         for dir in std::env::split_paths(&path_var) {
             let c = dir.join(binary);
-            if c.exists() { return Some(c); }
+            if c.exists() {
+                return Some(c);
+            }
         }
     }
     None
