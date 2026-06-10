@@ -429,6 +429,7 @@ enum Backend {
 }
 
 impl Backend {
+    #[allow(dead_code)]
     fn recall(&self, q: &str, k: usize) -> Vec<Memory> {
         match self {
             #[cfg(engram_backend_cuda)]

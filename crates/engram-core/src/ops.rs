@@ -1321,7 +1321,7 @@ mod tests {
         assert!((mag_coll - 1.0).abs() < 1e-4);
 
         // quasi ortho
-        let ortho = quasi_ortho_check(&a, &b, 0.6);
+        let _ortho = quasi_ortho_check(&a, &b, 0.6);
         // random hash vecs are typically <0.5 cos, so true
         let recovered_ortho = quasi_ortho_recovery(&bound, &[&a]);
         let mag_o: f32 = recovered_ortho.iter().map(|c| c.re*c.re + c.im*c.im).sum::<f32>().sqrt();

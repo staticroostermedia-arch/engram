@@ -5329,7 +5329,7 @@ mod tests {
         assert!(fib_crs >= 0.80, "P3 fibered equiv");
         // P4: diff / integrate / operadic (from ops, used by mcp_linguistic_calculus handler)
         let (diff_b, _) = engram_core::ops::op_linguistic_differentiate(&bundle);
-        let int_b = engram_core::ops::op_linguistic_integrate(&[bundle.clone(), diff_b.clone()]);
+        let _int_b = engram_core::ops::op_linguistic_integrate(&[bundle.clone(), diff_b.clone()]);
         let oper_b = engram_core::ops::op_operadic_compose(&[bundle.clone(), diff_b.clone()], &["metaphor"]);
         let p4_crs = engram_core::ops::cosine_similarity(
             &engram_core::ops::op_linguistic_compress(&bundle),
