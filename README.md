@@ -22,9 +22,28 @@
 
 Engram is not a vector database. It is a **persistent geometric memory engine** (hardware-native 256KB HolographicBlocks on NVMe with O_DIRECT/GPUDirect, VSA calculus, sheaf gluing via relations, symplectic frames, CRS Lyapunov stability, hot/NREM consolidation, lawfulness gates, scar mechanics). It has **no opinion on your use case**. Sophisticated agents bring their own perspective (BYOP — "Build Your Own Perspective") and construct their own tuned manifolds on the shared substrate. High-quality use reveals deeper structure (category theory + calculus over memory) after the fact.
 
+**Why EngramGrok over plain .md files or vector stores?**
+- **Cryptographic security & lawfulness**: BLAKE3 Merkle + CRS Lyapunov + `verify_*` gates + scars deflect corruption/drift (no silent append-log rot).
+- **True continuity across cold boots & long sleeps**: `ego.leg3` + NREM + continuation bundles + hot promotion survive shutdowns/sessions — the "self" doesn't reset.
+- **Long-term self-improving loops**: native support for goals/tiles/traces/compression + subvisor H¹ + ritual discipline lets agents improve their own substrate without doom loops.
+- **Mixed symbolic-numeric calculus**: homotopy-coherent categorical reasoning over *words + numbers together* (P1-6 + fibered bridging) inside the *same* geometric sheaf — not bolted-on LLM+RAG.
+- **Spatial + ritual discipline**: AABB AST on save, mandatory Code Edit Ritual, process sheaf (toml category/H¹ gluing), sub-agent governance — code and memory stay coherent.
+- **Hardware-native non-flat scale**: 8192D phase tensors + VSA + sheaf on real storage survives 200k+ blocks without OOM or semantic flattening.
+
 **See also:** [docs/GITHUB_MVP_PREP_PLAN.md](docs/GITHUB_MVP_PREP_PLAN.md) (current prep for public representation) and [MANIFESTO.md](MANIFESTO.md).
 
 No cloud. No API keys. Runs on your machine via MCP — **8 essential tools** for daily agent work, 62 total for power users ([tier reference](docs/MCP_TOOLS_REFERENCE.md)). Build: `cargo build -p engram-server && target/debug/engram --version`.
+
+## What is EngramGrok in 30 Seconds?
+
+Think of it as a **persistent, self-healing geometric "brain" for your AI agents** — not just a bag of .md files or a flat vector database that forgets on every restart or flattens meaning into numbers.
+
+- **.leg3 HolographicBlocks** are the "neurons": fixed 256KB packets carrying phase tensors (q), momentum/trajectory (p), CRS "coherence health", BLAKE3 Merkle provenance, and spatial AABB.
+- **VSA calculus + sheaf rituals** are the "synapses and sleep/wake cycles": bind/superpose/differentiate/integrate *over* memories (including the new mixed word+number categorical calculus), glue via declarative processes/*.toml (category/H¹), NREM compress to ego.leg3 for long-term continuity, and continue across sessions/cold boots.
+- **Spatial + subvisor discipline** gives "location-aware" edits (tree-sitter AABB on save, Code Edit Ritual) and governance (H¹ oversight for sub-agents/loops, scars deflect repetition).
+- **Lawful self-improvement**: built-in goals/tiles/traces/verify/scar + trace compression mean agents can loop, learn their own substrate, and survive 200k-block stores without semantic collapse or OOM.
+
+High-quality use reveals deeper structure (category theory + calculus over memory) after the fact. See [docs/GEOMETRIC_MEMORY.md](docs/GEOMETRIC_MEMORY.md), [docs/RITUALS.md](docs/RITUALS.md), and [docs/AGENT_MEMORY_CONTRACT.md](docs/AGENT_MEMORY_CONTRACT.md) for the full 8-tool contract.
 
 ## Memory Model: Geometric (Non-Flat) vs Flat
 
@@ -39,6 +58,25 @@ Engram replaces flat vector DBs / append-log RAG with a **geometric sheaf**:
 - **Lawfulness / Subvisor**: Phase 1.5 metrics, process sheaf (monitor/subvisor OP_INVERT/H¹ for sub-agent doom-loop prevention).
 
 See [docs/GEOMETRIC_MEMORY.md](docs/GEOMETRIC_MEMORY.md) and [docs/RITUALS.md](docs/RITUALS.md) for full.
+
+## Memory Lifecycle at a Glance (Mermaid)
+
+```mermaid
+flowchart TD
+    A[Mint .leg3 Block<br/>q 8192D phase + p momentum + CRS + Merkle + AABB] --> B[VSA Calculus + Mixed Ops<br/>OP_ADD / OP_BIND / OP_GEOMETRIC_PRODUCT<br/>+ word/number bridging under fibered CRS>=0.74]
+    B --> C[Compress / Differentiate /<br/>Integrate / Operadic Compose<br/>mcp_linguistic_calculus]
+    C --> D[NREM Consolidation +<br/>ego.leg3 Promotion<br/>CRS 0.85+ homotopy + fidelity]
+    D --> E[Continuation Bundle +<br/>Session Handoff + Hot Promotion]
+    E -->|next wake / ritual_linguistic_wake| A
+    subgraph Rituals & Governance
+        F[session_start + recall/trace<br/>+ Code Edit Ritual]
+        G[session_end prepare_compression<br/>+ subvisor H¹ oversight]
+    end
+    style A fill:#e3f2fd
+    style D fill:#fff3e0
+```
+
+(See [docs/CATEGORICAL_LINGUISTIC_CALCULUS.md](docs/CATEGORICAL_LINGUISTIC_CALCULUS.md) for the word+number calculus extension and full P1-6 pipeline.)
 
 ## Categorical Linguistic Calculus
 
@@ -58,6 +96,29 @@ result = mcp_linguistic_calculus({
 **Mixed word/number bridge ex:** coeff scalar on phase (word→num) or num param shift on linguistic under fibered guard + CRS check (class-mixing scar on violation). Full roundtrip: mint mixed → compress → calc (e.g. integrate) → decompress → NREM/ego.leg3 (fidelity >=0.85).
 
 **How to try the new calculus:** `cargo build -p engram-server && target/debug/engram --version`; wire MCP (ENGRAM_PROFILE=agent); `mcp_engram_session_start(intent="explore linguistic calculus")`; call mcp_linguistic_calculus (or extend examples/hello-engram-agent.py); verify `mcp_engram_verify_manifold_integrity` (min_crs 0.74). Full hygiene: cargo test -p engram-core -p engram-server, target/debug/engram --version.
+
+**Tiny copy-paste examples**
+
+*Persistent memory (basic ~8-line agent flow):*
+```python
+# (MCP client or direct)
+s.session_start(intent="research assistant")
+s.remember("project_context", "User is building geometric memory substrate with rituals + subvisors + mixed calculus.")
+facts = s.recall("project_context", k=2)
+print("Recalled:", facts)
+s.session_end(summary="Learned core context; continuation via ego.leg3/NREM + bundles.")
+```
+
+*Mixed word+number (word coeff as scalar on numeric phase, under guard):*
+```python
+bundle = {"words": [{"text": "scaling_factor", "coeff": [0.92, 0.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]}], "bundle_id": "mix1"}
+res = mcp_linguistic_calculus({
+    "bundle": bundle,
+    "operation": "scale",      # or differentiate/integrate/operadic
+    "numeric_scale": 1.5       # word acts as operator on phase; fibered CRS>=0.74 guard + class-mixing scar
+})
+# returns {crs, result...}; roundtrips >=0.85 homotopy/fidelity via NREM/ego.leg3
+```
 
 This advances Engram from geometric memory to geometric *reasoning* substrate (calculus over the manifold). Public Phase 6 polish complete.
 
