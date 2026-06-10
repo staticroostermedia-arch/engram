@@ -1,108 +1,108 @@
-# Engram Wake-Up Protocol
+# Engram Wake-Up Protocol — Lean 8-Tool Contract
 
-> **For agents:** Run this at the start of every session or after reconnecting.
-> **For IDE setup:** Wire this as a slash command (e.g. `/wake_up`) or include the key steps in your system prompt.
+> **For agents:** Run at the start of every session or after reconnecting.
+> **Canonical:** [docs/AGENT_MEMORY_CONTRACT.md](../../docs/AGENT_MEMORY_CONTRACT.md)
 
 ---
 
-## Step 0: Verify the MCP Connection
+## Step 0: Verify MCP Connection
 
-Before any memory calls, confirm Engram is reachable. If your IDE shows the MCP tools available, you're connected. If not:
+If your IDE shows Engram MCP tools, you're connected. If not:
 
 ```bash
-# Verify the engram binary is installed
 engram --version
-
-# Start MCP server (the IDE spawns this automatically via mcp_config.json)
-# If you need to run it manually:
-engram mcp --store ~/.engram/stalks/
-
-# Verify the store exists
 ls ~/.engram/stalks/
 ```
 
-> **Note:** The ki_hijacker bridge (which auto-bakes your context every 60s) only runs inside `engram mcp`. If you're running `engram serve` (REST mode) separately, the bridge runs there. Never run both `mcp` and `serve` pointing to the same store simultaneously — the scout daemon will collide on its port.
+Ensure MCP config uses **safe defaults** on large stores — see `integrations/grok-build/mcp.json`.
 
 ---
 
-## Step 1: Start the Session (MANDATORY)
+## Step 1: Wake — One Call (MANDATORY)
 
 ```
-mcp_engram_session_start(intent="<describe what you're working on today>")
+mcp_engram_session_start(
+  intent="<what you're working on today>",
+  include_spatial=false
+)
 ```
 
-This call:
-- Binds the thermodynamic context for the session
-- Returns your genesis identity anchors + recent session history
-- Triggers an immediate KI bake (context.md update) so your IDE has fresh state
+**This single call returns:**
+- `continuation_bundle` — primary goal, last session_end preview, active artifacts
+- `backend_readiness` — bvh_ready, recall_mode, leg_block_count
+- `session_key` — epistemic anchor for this session
 
-**Do not skip this.** Memories written without `session_start` have no epistemic anchor.
+**Lean mode — you do NOT need:**
+- `get_continuation_bundle` (redundant)
+- `watch_workspace` at wake
+- `summarize` / `query_pure` / `query_with_momentum`
+- `promote_hot_batch` / `incremental_spatial_ingest`
+
+### After the response
+
+1. Read `continuation_bundle.primary_goal` and `last_session_end.preview`.
+2. State continuation: *"I am continuing prior work on X; last session ended with Y."*
+3. If you need full text on an artifact: `mcp_engram_recall(query="<keywords>", scope="anchors", k=5)`.
+4. Proceed to work per [engram-working-memory.md](../../docs/skills/engram-working-memory.md).
+
+**Target:** <2s wake, <500MB RSS on 181k+ stores.
 
 ---
 
-## Step 2: Bind Your Workspace (run at least once per project)
+## Step 2: Work (Per File)
+
+Before editing any file:
 
 ```
-mcp_engram_watch_workspace("/absolute/path/to/your/project")
+mcp_engram_context_for_edit("/absolute/path/to/file.rs")
 ```
 
-This binds the inotify/fsevents file watcher to your project directory. From this point:
-- Every file you save is automatically parsed through Tree-Sitter
-- AST nodes (functions, structs, classes) are ingested as memory blocks with line-range coordinates
-- You can then call `mcp_engram_recall_in_file(file_stem, start_line, end_line)` to search by position
-
-**Run once per project directory.** The watcher persists until the MCP server restarts.
-
----
-
-## Step 3: Rehydrate Your Context
+At decision forks:
 
 ```
-mcp_engram_summarize(top_n=10)
+mcp_engram_quick_trace(decision="...", why="...")
 ```
 
-Returns all pinned (CRS=1.0) memories first, then top-10 by score. This is your fastest route to project orientation — one call instead of multiple recalls.
-
-Then, if the task is specific:
-```
-mcp_engram_recall("<keywords from the task you're resuming>", k=5)
-```
-
-> **Recall tip:** Engram uses BLAKE3 lexical encoding, NOT neural semantic search.
-> Write queries using **exact words** that appear in the target memory, not paraphrases.
-> `"auth token bearer middleware axum"` → good
-> `"how does the authentication system work"` → may miss results
-
----
-
-## Step 4: Load Praxis Rules for This Task
+New facts only (recall first):
 
 ```
-mcp_engram_recall("<crate or component name> architecture pattern convention", k=5, zedos_filter="praxis")
-```
-
-Praxis blocks (CRS=1.0, ZEDOS_PRAXIS tag) are crystallized rules proven correct in past sessions. Always check what praxis exists before modifying a subsystem.
-
----
-
-## Step 5: Check Daemon Status (Optional but Recommended)
-
-```bash
-# Check if Engram is running
-curl -s http://localhost:3456/health 2>/dev/null && echo "REST server: RUNNING" || echo "REST server: not running (MCP-only mode is fine)"
-
-# Check embed server if using semantic recall enhancement
-curl -s http://localhost:8086/health 2>/dev/null && echo "Embed server: RUNNING" || echo "Embed server: not running"
+mcp_engram_remember("concept:name", "text")
 ```
 
 ---
 
-## You're Ready
+## Step 3: Deep Mode (On Demand Only)
 
-At this point you have:
-- ✅ Session context bound (thermodynamic anchor)
-- ✅ File watcher active (AST auto-ingest running)
-- ✅ Project state recalled (pinned memories loaded)
-- ✅ Praxis rules checked (established conventions in context)
+Escalate when lean bundle is empty or task needs full manifold navigation:
 
-Proceed with the task. Remember to call `session_end` when you stop.
+```
+mcp_engram_set_memory_mode(mode="deep")
+```
+
+Then optionally:
+- `mcp_engram_search_by_relation("<seed>", direction="both", k=8)`
+- `mcp_engram_watch_workspace("/absolute/path/to/project")` — once per project if passive ingest needed
+- `mcp_engram_verify_manifold_integrity(min_crs=0.74, sample_size=50)` — cold boot / high-stakes
+
+Reset to lean before `session_end` on long meta sessions.
+
+---
+
+## Step 4: End Session (MANDATORY)
+
+```
+mcp_engram_session_end(summary="Decisions, files changed, open questions, next steps.")
+```
+
+---
+
+## You're Ready (Lean Checklist)
+
+- Session context bound (one `session_start`)
+- Continuation bundle read (primary goal + last handoff)
+- Working-memory discipline active (`context_for_edit` before edits)
+- `session_end` planned for handoff
+
+**Power tools** (62 total): [docs/MCP_TOOLS_REFERENCE.md](../../docs/MCP_TOOLS_REFERENCE.md)
+
+**Grok Build integration:** [docs/GROK_BUILD_MEMORY.md](../../docs/GROK_BUILD_MEMORY.md)

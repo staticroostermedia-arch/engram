@@ -150,12 +150,33 @@ class ScoutHandler(BaseHTTPRequestHandler):
             })
             return
 
+    def do_POST(self):
+        parsed = urllib.parse.urlparse(self.path)
+        if parsed.path == "/shutdown":
+            self.send_json(200, {"status": "shutting_down"})
+            import threading
+            threading.Thread(target=self.server.shutdown).start()
+            return
         self.send_json(404, {"error": f"Unknown path: {parsed.path}"})
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
 
+def shutdown_existing(port: int):
+    url = f"http://127.0.0.1:{port}/shutdown"
+    try:
+        req = urllib.request.Request(url, method="POST")
+        with urllib.request.urlopen(req, timeout=1.0) as resp:
+            data = json.loads(resp.read().decode('utf-8'))
+            if data.get("status") == "shutting_down":
+                print(f"[scout] Sent shutdown signal to existing daemon on port {port}.", file=sys.stderr)
+                import time
+                time.sleep(0.5)
+    except Exception:
+        pass
+
 if __name__ == "__main__":
+    shutdown_existing(PORT)
     server = HTTPServer(("127.0.0.1", PORT), ScoutHandler)
     print(f"[scout] Engram Scout Daemon online — http://127.0.0.1:{PORT}", file=sys.stderr)
     print(f"[scout] LLM: {LLM_URL} model={LLM_MODEL}", file=sys.stderr)

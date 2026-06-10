@@ -1,0 +1,30 @@
+# agent:engram.process.session-end
+
+[process]
+name = "agent:engram.process.session-end"
+zedos_type = "process"
+phase_seed = "0xSESSIONEND202606..."
+
+[category]
+object = "session_end"
+morphism = "OP_GEOMETRIC_PRODUCT"
+sheaf_role = "Episodic → oracle gluing (terminal momentum handoff, compress traces/Tiles to 0x10 functors, refresh hydration cache)"
+h1_handler = "OP_IS_SYMBOLIC_OF"
+
+[mcp_tools]
+list = ["mcp_engram_session_end", "mcp_engram_promote_hot"]
+
+[requires]
+list = ["continuation_bundle"]
+
+[produces]
+list = ["compression_handoff_*", "helper:session_hydration_cache"]
+
+[invariants]
+list = ["unit_hypersphere_normalization", "crs_weighted"]
+
+[timeout_ms]
+value = 30000
+
+[notes]
+# From proposal and handoff troop: auto refresh_compression_handoff, hot promote. Completes wake-up cycle. Subvisor can monitor for proper trace compression to prevent loss of continuity.

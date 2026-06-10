@@ -24,6 +24,7 @@
 //! ```
 
 use engram_core::backend::Memory;
+use engram_core::ops::apply_frame;
 use num_complex::Complex32;
 use std::collections::HashMap;
 use std::fs;
@@ -75,6 +76,15 @@ pub struct ManifoldEntry {
 struct LeafData {
     center: Float3,
     file_offset_id: u64,
+}
+
+/// Lightweight BVH build input — quantized + 3D center only (no 8192D q retention).
+struct LightScanEntry {
+    concept: String,
+    path: PathBuf,
+    q_quantized: Vec<u8>,
+    crs_score: f32,
+    center_3d: Float3,
 }
 
 // ── FNV-1a query hash for cache keying ───────────────────────────────────────
@@ -151,12 +161,27 @@ pub struct BvhManifold {
     /// K-NN result cache (FNV hash → top-K results)
     query_cache: std::sync::RwLock<HashMap<u64, Vec<Memory>>>,
     cache_queue: std::sync::RwLock<std::collections::VecDeque<u64>>,
-    /// Phase 8: OptiX RT-Core accelerated BVH pipeline.
-    /// `Some(_)` when compiled with OPTIX_SDK_PATH and init succeeded.
-    /// `None` → query falls back to `filter_cpu()` (CPU slab traversal).
-    /// Only present on CUDA builds — elided entirely on CPU/Metal builds.
+    /// WS3-B Live Geosphere: optional current lens/frame for query-time effective vector transform.
+    /// When set (via MCP surface or daemon), query() applies it (via ops::apply_frame = elementwise * + normalize)
+    /// to the input q for BOTH the 3D BVH projection (filter) and the 8192D cosine scoring.
+    /// This makes distance computation use the "current active_location / lens" without mutating stored blocks or .leg3 layout.
+    /// Invariant: effective vectors always re-normalized to unit hypersphere.
+    current_lens: std::sync::RwLock<Option<[Complex32; 8192]>>,
+    /// Phase 8: OptiX RT-Core accelerated BVH pipeline (now lazy - Item 1.5 fix).
+    /// We no longer build this expensive structure at startup.
+    /// It is built on first actual use of a spatial query (see query() method).
+    ///
+    /// This change was driven by the 2026-05-27 MCP starvation crisis:
+    /// - Full OptiX GAS + pipeline construction for ~150k primitives on ENGRAM_OPTIX_ENABLED=1
+    ///   starved the main MCP event loop for 10-20+ minutes after restart.
+    /// - Root cause traces: trace:1779906993_heavy-optix..., trace:1779907381_tui-client-restart...
+    /// - Listening / process gap scar also recorded during that period.
+    ///
+    /// Safe launch while lazy binary is not yet deployed: ENGRAM_OPTIX_ENABLED=0 engram-grok mcp
+    ///
+    /// References: goal:item1.5_spatial_discipline_adoption, Cycle 2 of the 1.5 gate.
     #[cfg(engram_backend_cuda)]
-    pub optix_pipeline: Option<crate::optix_pipeline::OptixBvhPipeline>,
+    pub optix_pipeline: std::sync::Mutex<Option<crate::optix_pipeline::OptixBvhPipeline>>,
 }
 
 unsafe impl Send for BvhManifold {}
@@ -166,34 +191,66 @@ impl BvhManifold {
     /// Build a BVH from all `.leg` files in `dir`.
     pub fn build_from_dir<P: AsRef<Path>>(dir: P) -> Option<Self> {
         let dir = dir.as_ref();
-        let entries_raw = Self::scan_dir(dir)?;
-        if entries_raw.is_empty() {
+
+        // ── Fast pre-scan guard (2026-06-01) ────────────────────────────────────
+        // Count directory entries WITHOUT reading file contents (O(n) metadata only).
+        // The previous guard fired AFTER scan_dir already read all 154k .leg files,
+        // allocating ~10GB of memory per rebuild thread. With 4 concurrent rebuilds
+        // that's ~40GB peak just to immediately free it — likely causing the crash.
+        // This check is ~milliseconds vs the previous ~62-second full scan.
+        let approx_count = std::fs::read_dir(dir)
+            .ok()?
+            .filter_map(|e| e.ok())
+            .filter(|e| e.path().extension().and_then(|x| x.to_str()) == Some("leg"))
+            .count();
+
+        if approx_count > 100_000 {
+            eprintln!("[BVH] Large manifold ({} .leg >100k) — proceeding with LBVH build via large-stack thread (no skip; CPU build but enables fast filter path + CUDA/OptiX when active). NVMe-GPU design requires this for real stores.", approx_count);
+        }
+
+        let entries_light = Self::scan_dir_streaming(dir)?;
+        if entries_light.is_empty() {
             eprintln!("[BVH] No .leg files found in {:?}", dir);
             return None;
         }
 
-        eprintln!("[BVH] Building LBVH from {} blocks…", entries_raw.len());
+        let n = entries_light.len();
+        eprintln!("[BVH] Building LBVH from {} blocks (streaming scan — no full-q retention)…", n);
 
-        let mut entries:      Vec<ManifoldEntry>         = Vec::with_capacity(entries_raw.len());
-        let mut leaves:       Vec<LeafData>              = Vec::with_capacity(entries_raw.len());
-        let mut path_index:   HashMap<usize, PathBuf>    = HashMap::with_capacity(entries_raw.len());
-        let mut concept_index: HashMap<String, usize>    = HashMap::with_capacity(entries_raw.len());
+        if n > 100_000 {
+            return std::thread::Builder::new()
+                .stack_size(128 * 1024 * 1024)
+                .spawn(move || Self::_build_from_light_entries(entries_light))
+                .unwrap()
+                .join()
+                .ok()
+                .flatten();
+        }
 
-        for (concept, path, q, crs_score) in &entries_raw {
-            let center = Self::project_to_3d(q);
+        Self::_build_from_light_entries(entries_light)
+    }
+
+    fn _build_from_light_entries(entries_light: Vec<LightScanEntry>) -> Option<Self> {
+        let mut entries:      Vec<ManifoldEntry>         = Vec::with_capacity(entries_light.len());
+        let mut leaves:       Vec<LeafData>              = Vec::with_capacity(entries_light.len());
+        let mut path_index:   HashMap<usize, PathBuf>    = HashMap::with_capacity(entries_light.len());
+        let mut concept_index: HashMap<String, usize>    = HashMap::with_capacity(entries_light.len());
+
+        for e in &entries_light {
             let id = (entries.len() as u64) + 1;
-            leaves.push(LeafData { center, file_offset_id: id });
-            concept_index.insert(concept.clone(), entries.len());
-            path_index.insert(entries.len(), path.clone());
-            
-            let q_quantized = crate::quant::quantize_srht_b4(q);
-            
-            entries.push(ManifoldEntry { 
-                concept: concept.clone(), 
-                center_3d: center, 
+            leaves.push(LeafData {
+                center: e.center_3d,
                 file_offset_id: id,
-                q_quantized,
-                crs_score: *crs_score
+            });
+            concept_index.insert(e.concept.clone(), entries.len());
+            path_index.insert(entries.len(), e.path.clone());
+
+            entries.push(ManifoldEntry {
+                concept: e.concept.clone(),
+                center_3d: e.center_3d,
+                file_offset_id: id,
+                q_quantized: e.q_quantized.clone(),
+                crs_score: e.crs_score,
             });
         }
 
@@ -208,20 +265,10 @@ impl BvhManifold {
         // arch the optixModuleCreate call SIGSEGVs inside the driver's JIT compiler.
         // The CPU BVH + CUDA cosine-kernel path (CudaBackend) is already fast enough
         // for manifolds <100K blocks. OptiX is only needed at >100K scale.
+        // OptiX pipeline is now lazy (see query() below). We no longer build it at startup.
+        // This prevents the insane 10-20+ minute startup thrash that was making the MCP layer unusable.
         #[cfg(engram_backend_cuda)]
-        let optix_pipeline = if std::env::var("ENGRAM_OPTIX_ENABLED").as_deref() == Ok("1") {
-            let aabb_data = crate::optix_pipeline::OptixBvhPipeline::aabb_from_entries(&entries, AABB_RADIUS);
-            let pipe = crate::optix_pipeline::OptixBvhPipeline::build(&aabb_data);
-            if pipe.is_some() {
-                eprintln!("[BVH] ✓ OptiX RT-Core pipeline ready.");
-            } else {
-                eprintln!("[BVH] OptiX RT-Core init failed — CPU BVH active.");
-            }
-            pipe
-        } else {
-            eprintln!("[BVH] OptiX RT-Core disabled (set ENGRAM_OPTIX_ENABLED=1 to enable).");
-            None
-        };
+        let optix_pipeline = std::sync::Mutex::new(None);
 
         Some(Self {
             nodes,
@@ -231,6 +278,7 @@ impl BvhManifold {
             ready: Arc::new(AtomicBool::new(true)),
             query_cache: std::sync::RwLock::new(HashMap::new()),
             cache_queue: std::sync::RwLock::new(std::collections::VecDeque::new()),
+            current_lens: std::sync::RwLock::new(None),
             #[cfg(engram_backend_cuda)]
             optix_pipeline,
         })
@@ -272,34 +320,107 @@ impl BvhManifold {
         hits
     }
 
-    /// K-NN query with cache. Returns up to `k` Memory results sorted by score.
-    pub fn query(&self, q: &[Complex32; 8192], k: usize) -> Vec<Memory> {
-        if !self.ready.load(Ordering::Relaxed) { return Vec::new(); }
+    #[cfg(engram_backend_cuda)]
+    fn ensure_optix_pipeline(&self) {
+        // Skip OptiX init entirely when the manifold has no entries.
+        // This occurs when the large-manifold guard in build_from_dir() returned
+        // an empty BvhManifold to avoid the post-construction CUDA crash on 154k+
+        // blocks. Calling OptixBvhPipeline::build() with 0 primitives SIGSEGVs
+        // inside the OptiX driver JIT compiler (PTX arch mismatch on Blackwell).
+        if self.entries.is_empty() || self.nodes.is_empty() {
+            return;
+        }
 
+        let mut pipeline_guard = self.optix_pipeline.lock().unwrap();
+        let optix_on = std::env::var("ENGRAM_OPTIX_ENABLED").as_deref() == Ok("1")
+            || std::env::var("ENGRAM_OPTIX_LEAN").as_deref() == Ok("1");
+        if pipeline_guard.is_none() && optix_on {
+            let aabb_data = crate::optix_pipeline::OptixBvhPipeline::aabb_from_entries(&self.entries, AABB_RADIUS);
+            if let Some(pipe) = crate::optix_pipeline::OptixBvhPipeline::build(&aabb_data) {
+                eprintln!("[BVH] ✓ OptiX RT-Core pipeline lazily initialized on first query (Item 1.5 crisis fix). See bvh.rs comments for heavy_boot + listening scar context.");
+                *pipeline_guard = Some(pipe);
+            }
+        }
+    }
+
+    /// K-NN query with cache. Returns up to `k` Memory results sorted by score.
+    ///
+    /// WS3-B: Optionally applies current active_location / lens when computing
+    /// *effective vectors* for distance. The lens (set via MCP geosphere tools or
+    /// daemon SymplecticState) transforms the input query for BOTH:
+    ///   - 3D projection (affects BVH AABB filter / OptiX)
+    ///   - Full 8192D scoring (affects cosine_similarity_srht_b4 ranking)
+    /// Effective = apply_frame(q, current_lens) = elementwise complex mul + re-normalize
+    /// (guarantees unit hypersphere per ops contract; no stored block mutation).
+    /// When no lens, identity (backward compatible).
+    pub fn query(&self, q: &[Complex32; 8192], k: usize) -> Vec<Memory> {
+        if !self.ready.load(Ordering::Relaxed) {
+            return Vec::new();
+        }
+        // Large-manifold guard returns empty entries/nodes; never touch OptiX/CUDA paths.
+        if self.entries.is_empty() || self.nodes.is_empty() {
+            return Vec::new();
+        }
+
+        // WS3-B: resolve current lens (if any) and compute effective query vector
+        let current_lens_opt: Option<[Complex32; 8192]> = self.current_geosphere_lens();
+        let effective_q: [Complex32; 8192] = apply_frame(q, current_lens_opt.as_ref().map(|l| l as &[Complex32; 8192]));
+
+        // Cache on *original* q hash (framed queries intentionally bypass for correctness;
+        // different lens = different geometry). Framed paths always fresh.
         let qhash = hash_query(q);
-        if let Ok(cache) = self.query_cache.read() {
-            if let Some(hit) = cache.get(&qhash) {
-                return hit[..hit.len().min(k)].to_vec();
+        let use_cache = current_lens_opt.is_none();
+        if use_cache {
+            if let Ok(cache) = self.query_cache.read() {
+                if let Some(hit) = cache.get(&qhash) {
+                    return hit[..hit.len().min(k)].to_vec();
+                }
             }
         }
 
-        let pos = Self::project_to_3d(q);
+        let pos = Self::project_to_3d(&effective_q);
 
-        // ── Phase 8: OptiX RT-Core path (CUDA builds only) ───────────────────
+        // ── Phase 8: OptiX RT-Core path (CUDA builds only) — lazy initialization ──
+        // The expensive pipeline is built on first use, not at startup.
+        // This is the real fix for the 10-20+ minute "unusable after restart" problem.
+        //
+        // Historical context (Item 1.5 crisis, May/June 2026):
+        // - Full eager OptiX GAS + SBT + pipeline construction for ~150k primitives
+        //   on ENGRAM_OPTIX_ENABLED=1 starved the main MCP stdio loop.
+        // - Result: persistent "Transport closed" from the agent even after "Pipeline ready".
+        // - Primary traces: trace:1779906993_heavy-optix... and trace:1779907381_tui-client-restart...
+        // - Listening/process gap scar also recorded (agent initially prioritized artifacts over substrate usability).
+        // - Safe launch while lazy binary not yet deployed: ENGRAM_OPTIX_ENABLED=0 engram-grok mcp
+        //
+        // See struct comment above for the full canonical reference.
         #[cfg(engram_backend_cuda)]
-        let ids = if let Some(ref pipe) = self.optix_pipeline {
-            let hits = pipe.query_filter_optix([pos.x, pos.y, pos.z], KNN_FILTER_CANDIDATES);
-            if !hits.is_empty() {
-                hits
+        let ids = {
+            self.ensure_optix_pipeline();
+
+            // Lean CUDA: GPU slab traversal first (engram_bvh_traverse.cu)
+            if let Some(gpu_hits) =
+                crate::cuda_dispatch::gpu_bvh_filter(&self.nodes, pos, KNN_FILTER_CANDIDATES)
+            {
+                if !gpu_hits.is_empty() {
+                    gpu_hits
+                } else {
+                    self.filter_cpu(pos, KNN_FILTER_CANDIDATES)
+                }
             } else {
-                // Fall back to CPU slab traversal on empty result
-                self.filter_cpu(pos, KNN_FILTER_CANDIDATES)
+                let pipeline_guard = self.optix_pipeline.lock().unwrap();
+                if let Some(ref pipe) = *pipeline_guard {
+                    let hits = pipe.query_filter_optix([pos.x, pos.y, pos.z], KNN_FILTER_CANDIDATES);
+                    if !hits.is_empty() {
+                        hits
+                    } else {
+                        self.filter_cpu(pos, KNN_FILTER_CANDIDATES)
+                    }
+                } else {
+                    self.filter_cpu(pos, KNN_FILTER_CANDIDATES)
+                }
             }
-        } else {
-            self.filter_cpu(pos, KNN_FILTER_CANDIDATES)
         };
 
-        // ── CPU BVH slab path (non-CUDA builds) ──────────────────────────────
         #[cfg(not(engram_backend_cuda))]
         let ids = self.filter_cpu(pos, KNN_FILTER_CANDIDATES);
 
@@ -310,13 +431,41 @@ impl BvhManifold {
             crs: f32,
         }
 
-        let mut scored: Vec<ScoredCandidate> = ids.iter().filter_map(|&id| {
+        // Lean CUDA: batch GPU cosine on filter candidates when runtime is ready.
+        #[cfg(engram_backend_cuda)]
+        let gpu_scores: Option<Vec<f32>> = {
+            let qs: Vec<[Complex32; 8192]> = ids
+                .iter()
+                .filter_map(|&id| {
+                    let entry_idx = (id as usize).saturating_sub(1);
+                    let path = self.path_index.get(&entry_idx)?;
+                    let block = engram_core::storage::read_block(path).ok()?;
+                    Some(block.q)
+                })
+                .collect();
+            if qs.is_empty() {
+                None
+            } else {
+                crate::cuda_dispatch::gpu_cosine_batch(&effective_q, &qs)
+            }
+        };
+
+        #[allow(unused_variables)]
+        let mut scored: Vec<ScoredCandidate> = ids.iter().enumerate().filter_map(|(i, &id)| {
             let entry_idx = (id as usize).saturating_sub(1);
             let entry = self.entries.get(entry_idx)?;
 
-            // In-memory Phase 8: SRHT+B4 TurboQuant codebook inner-product (no disk I/O!)
-            // SRHT pre-rotation Gaussianizes the distribution → ~40% lower MSE than raw B4
-            let sim = crate::quant::cosine_similarity_srht_b4(q, &entry.q_quantized);
+            #[cfg(engram_backend_cuda)]
+            let sim = if let Some(ref gpu_s) = gpu_scores {
+                gpu_s.get(i).copied().unwrap_or_else(|| {
+                    crate::quant::cosine_similarity_srht_b4(&effective_q, &entry.q_quantized)
+                })
+            } else {
+                crate::quant::cosine_similarity_srht_b4(&effective_q, &entry.q_quantized)
+            };
+            #[cfg(not(engram_backend_cuda))]
+            let sim = crate::quant::cosine_similarity_srht_b4(&effective_q, &entry.q_quantized);
+
             let crs = entry.crs_score.clamp(0.0, 1.0);
             let score = sim * (0.5 + 0.5 * crs);
 
@@ -351,15 +500,17 @@ impl BvhManifold {
             })
         }).collect();
 
-        // Cache result
-        if let Ok(mut cache) = self.query_cache.write() {
-            if !cache.contains_key(&qhash) {
-                if let Ok(mut queue) = self.cache_queue.write() {
-                    if queue.len() >= QUERY_CACHE_MAX {
-                        if let Some(old) = queue.pop_front() { cache.remove(&old); }
+        // Cache result (only for unframed / native coordinate queries per WS3-B)
+        if use_cache {
+            if let Ok(mut cache) = self.query_cache.write() {
+                if !cache.contains_key(&qhash) {
+                    if let Ok(mut queue) = self.cache_queue.write() {
+                        if queue.len() >= QUERY_CACHE_MAX {
+                            if let Some(old) = queue.pop_front() { cache.remove(&old); }
+                        }
+                        queue.push_back(qhash);
+                        cache.insert(qhash, final_results.clone());
                     }
-                    queue.push_back(qhash);
-                    cache.insert(qhash, final_results.clone());
                 }
             }
         }
@@ -383,20 +534,73 @@ impl BvhManifold {
     pub fn len(&self) -> usize { self.entries.len() }
     pub fn is_empty(&self) -> bool { self.entries.is_empty() }
 
+    // ── WS3-B Geosphere frame/lens surface (integrated into main query path) ──
+    /// Set the current active Geosphere lens/frame for this manifold.
+    /// All subsequent query() calls will compute effective vectors as apply_frame(q, Some(lens))
+    /// for 3D projection (BVH filter) + 8192D scoring. Lens is normalized on set.
+    /// Pass None to clear (identity / native coordinate).
+    pub fn set_current_geosphere_lens(&self, lens: Option<[Complex32; 8192]>) {
+        if let Ok(mut guard) = self.current_lens.write() {
+            if let Some(mut l) = lens {
+                // ensure unit hypersphere (defense in depth; apply_frame also does it)
+                engram_core::ops::normalize_in_place(&mut l);
+                *guard = Some(l);
+            } else {
+                *guard = None;
+            }
+        }
+        // Invalidate query cache on frame change (different effective distances)
+        if let Ok(mut cache) = self.query_cache.write() { cache.clear(); }
+        if let Ok(mut q) = self.cache_queue.write() { q.clear(); }
+    }
+
+    /// Query the current lens (for MCP surface / diagnostics). Returns owned copy or None.
+    pub fn current_geosphere_lens(&self) -> Option<[Complex32; 8192]> {
+        self.current_lens.read().ok().and_then(|g| *g)
+    }
+
     // ── Internal helpers ──────────────────────────────────────────────────────
 
-    #[allow(clippy::type_complexity)]
-    fn scan_dir(dir: &Path) -> Option<Vec<(String, PathBuf, Box<[num_complex::Complex32; 8192]>, f32)>> {
-        let mut results = Vec::new();
-        for entry in fs::read_dir(dir).ok()?.flatten() {
-            let path = entry.path();
-            if path.extension().and_then(|e| e.to_str()) != Some("leg") { continue; }
-            let concept = path.file_stem()?.to_str()?.to_string();
-            if concept.is_empty() { continue; }
-            let block = engram_core::storage::read_block(&path).ok()?;
-            let q = Box::new(block.q);
-            results.push((concept, path, q, block.crs_score));
+    /// Streaming directory scan — quantize and project inline; never retains full q vectors.
+    fn scan_dir_streaming(dir: &Path) -> Option<Vec<LightScanEntry>> {
+        use rayon::prelude::*;
+
+        let paths: Vec<(String, PathBuf)> = fs::read_dir(dir)
+            .ok()?
+            .flatten()
+            .filter_map(|entry| {
+                let path = entry.path();
+                if path.extension().and_then(|e| e.to_str()) != Some("leg") {
+                    return None;
+                }
+                let concept = path.file_stem()?.to_str()?.to_string();
+                if concept.is_empty() {
+                    return None;
+                }
+                Some((concept, path))
+            })
+            .collect();
+
+        if paths.is_empty() {
+            return Some(Vec::new());
         }
+
+        let results: Vec<LightScanEntry> = paths
+            .par_iter()
+            .filter_map(|(concept, path)| {
+                let block = engram_core::storage::read_block(path).ok()?;
+                let q_quantized = crate::quant::quantize_srht_b4(&block.q);
+                let center_3d = Self::project_to_3d(&block.q);
+                Some(LightScanEntry {
+                    concept: concept.clone(),
+                    path: path.clone(),
+                    q_quantized,
+                    crs_score: block.crs_score,
+                    center_3d,
+                })
+            })
+            .collect();
+
         Some(results)
     }
 }

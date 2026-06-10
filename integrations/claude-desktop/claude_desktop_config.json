@@ -1,8 +1,12 @@
 {
   "mcpServers": {
     "engram": {
-      "command": "engram",
-      "args": ["mcp", "--store", "~/.engram/manifold"],
+      "command": "/path/to/Engram/scripts/engram-grok",
+      "args": ["mcp"],
+      "env": {
+        "ENGRAM_STORE": "~/.engram/stalks/",
+        "ENGRAM_PROFILE": "agent"
+      },
       "disabled": false
     }
   }

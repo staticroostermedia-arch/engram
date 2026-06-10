@@ -1,10 +1,11 @@
 {
   "mcpServers": {
     "engram": {
-      "command": "engram",
-      "args": ["mcp", "--store", "~/.engram/stalks/"],
+      "command": "/path/to/Engram/scripts/engram-grok",
+      "args": ["mcp"],
       "env": {
-        "ENGRAM_EMBED_URL": "http://localhost:8086/v1/embeddings"
+        "ENGRAM_STORE": "~/.engram/stalks/",
+        "ENGRAM_PROFILE": "agent"
       },
       "disabled": false
     },

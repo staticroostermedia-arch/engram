@@ -470,11 +470,10 @@ fn main() -> anyhow::Result<()> {
             for entry in entries {
                 let concept = entry["concept"].as_str().unwrap_or("");
                 let text = entry["text"].as_str().unwrap_or("");
-                if !concept.is_empty() && !text.is_empty() {
-                    if backend.remember(concept, text).is_ok() {
+                if !concept.is_empty() && !text.is_empty()
+                    && backend.remember(concept, text).is_ok() {
                         count += 1;
                     }
-                }
             }
             println!("✓ Imported {} memories from {}", count, file);
         }

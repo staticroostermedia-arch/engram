@@ -175,6 +175,19 @@ pub fn extract_ast_items(file_path: &str, source: &str) -> Vec<AstItem> {
         .and_then(|s| s.to_str())
         .unwrap_or("");
 
+    // Special passive support for Markdown (no tree-sitter grammar in this crate yet).
+    // Treat top-level headings (#, ##, etc.) as "section" items + code fences as sub-items with AABB.
+    // This makes docs/plan/README/skills ingestion first-class. Enhanced 2026-06 for passive spatial.
+    if ext == "md" {
+        return extract_md_structure(file_path, source);
+    }
+
+    // Passive structured support for TOML (processes/*.toml, Cargo.toml, configs) — no external ts-toml dep.
+    // Tables [foo] and [[bar]] become items with line AABB for full context/recall_in_file on declarative process sheaf.
+    if ext == "toml" {
+        return extract_toml_structure(file_path, source);
+    }
+
     let config = match get_config(ext) {
         Some(c) => c,
         None => return Vec::new(),
@@ -196,7 +209,7 @@ pub fn extract_ast_items(file_path: &str, source: &str) -> Vec<AstItem> {
     };
 
     let mut cursor = QueryCursor::new();
-    let mut matches = cursor.matches(&query, tree.root_node(), source.as_bytes());
+    let matches = cursor.matches(&query, tree.root_node(), source.as_bytes());
 
     let mut items = Vec::new();
     let file_stem = std::path::Path::new(file_path)
@@ -208,7 +221,7 @@ pub fn extract_ast_items(file_path: &str, source: &str) -> Vec<AstItem> {
 
     let source_bytes = source.as_bytes();
 
-    while let Some(m) = matches.next() {
+    for m in matches {
         let mut name = String::new();
         let mut kind = ItemKind::Unknown("item".to_string());
         let mut node_opt = None;
@@ -277,5 +290,242 @@ pub fn extract_ast_items(file_path: &str, source: &str) -> Vec<AstItem> {
         }
     }
 
+    items
+}
+
+/// Enhanced passive MD "AST" (no external ts-md dep).
+/// Produces section items per # heading (level 1-6) + code fence items for ``` blocks.
+/// Frontmatter (leading --- ... ---) captured as special item.
+/// AABB line-based. Enables rich spatial for skills, plans, AGENTS.md, examples without crude chunking.
+/// This + toml makes passive ingestion effective for non-rs workspace files we actually edit.
+fn extract_md_structure(file_path: &str, source: &str) -> Vec<AstItem> {
+    let mut items = Vec::new();
+    let file_stem = std::path::Path::new(file_path)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("unknown")
+        .to_lowercase()
+        .replace(|c: char| !c.is_alphanumeric(), "_");
+
+    let lines: Vec<&str> = source.lines().collect();
+    let mut i = 0;
+
+    // Capture leading frontmatter as special item (common in skills/*.md, some docs)
+    if !lines.is_empty() && lines[0].trim() == "---" {
+        let mut end = 1;
+        while end < lines.len() {
+            if lines[end].trim() == "---" {
+                end += 1;
+                break;
+            }
+            end += 1;
+        }
+        let full_source = lines[0..end].join("\n");
+        let start_pos = (0, 0);
+        let end_pos = (end.saturating_sub(1), lines[end.saturating_sub(1)].len());
+        let concept = format!("{}__frontmatter", file_stem);
+        items.push(AstItem {
+            name: "frontmatter".to_string(),
+            kind: ItemKind::Unknown("frontmatter".to_string()),
+            doc_comment: String::new(),
+            signature: "--- frontmatter ---".to_string(),
+            full_source,
+            concept,
+            start_pos,
+            end_pos,
+        });
+        i = end;
+    }
+
+    while i < lines.len() {
+        let line = lines[i];
+        let trimmed = line.trim_start();
+
+        // Headings
+        if trimmed.starts_with('#') {
+            let level = trimmed.chars().take_while(|&c| c == '#').count();
+            if level > 0 && level <= 6 {
+                let name = trimmed[level..].trim().to_string();
+                if !name.is_empty() {
+                    let start_line = i;
+                    let mut end_line = i + 1;
+                    while end_line < lines.len() {
+                        let next = lines[end_line].trim_start();
+                        if next.starts_with('#') {
+                            let next_level = next.chars().take_while(|&c| c == '#').count();
+                            if next_level <= level {
+                                break;
+                            }
+                        }
+                        end_line += 1;
+                    }
+                    let full_source = lines[start_line..end_line].join("\n");
+                    let start_pos = (start_line, 0);
+                    let end_pos = (end_line.saturating_sub(1), lines[end_line.saturating_sub(1)].len());
+                    let concept = format!("{}__section__{}", file_stem, name)
+                        .to_lowercase()
+                        .replace(|c: char| !c.is_alphanumeric() && c != '_', "_");
+                    let signature = name.clone();
+                    items.push(AstItem {
+                        name,
+                        kind: ItemKind::Unknown(format!("h{}", level)),
+                        doc_comment: String::new(),
+                        signature,
+                        full_source,
+                        concept,
+                        start_pos,
+                        end_pos,
+                    });
+                }
+            }
+        }
+
+        // Code fences ```lang or ``` 
+        if let Some(stripped) = trimmed.strip_prefix("```") {
+            let lang = stripped.trim().to_string();
+            let start_line = i;
+            let mut end_line = i + 1;
+            while end_line < lines.len() {
+                if lines[end_line].trim_start().starts_with("```") {
+                    end_line += 1;
+                    break;
+                }
+                end_line += 1;
+            }
+            let full_source = lines[start_line..end_line].join("\n");
+            let start_pos = (start_line, 0);
+            let end_pos = (end_line.saturating_sub(1), lines[end_line.saturating_sub(1)].len());
+            let code_name = if lang.is_empty() { "code".to_string() } else { lang.clone() };
+            let concept = format!("{}__code__{}", file_stem, code_name)
+                .to_lowercase()
+                .replace(|c: char| !c.is_alphanumeric() && c != '_', "_");
+            items.push(AstItem {
+                name: code_name,
+                kind: ItemKind::Unknown("code".to_string()),
+                doc_comment: String::new(),
+                signature: format!("``` {}", lang).trim().to_string(),
+                full_source,
+                concept,
+                start_pos,
+                end_pos,
+            });
+        }
+
+        i += 1;
+    }
+    items
+}
+
+/// Lightweight passive TOML structure extractor (no tree-sitter-toml or toml crate dep).
+/// Treats [table], [[array-of-tables]], and top-level bare keys as items with line AABB.
+/// Enables rich spatial AABB for processes/*.toml (rituals, subvisor), pyproject etc without fallback chunk.
+/// Name sanitizes for concept; full section/key block as content. Robust for our declarative process sheaf.
+fn extract_toml_structure(file_path: &str, source: &str) -> Vec<AstItem> {
+    let mut items = Vec::new();
+    let file_stem = std::path::Path::new(file_path)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("unknown")
+        .to_lowercase()
+        .replace(|c: char| !c.is_alphanumeric(), "_");
+
+    let lines: Vec<&str> = source.lines().collect();
+    let mut i = 0;
+    while i < lines.len() {
+        let line = lines[i].trim();
+        if line.is_empty() || line.starts_with('#') {
+            i += 1;
+            continue;
+        }
+
+        // Array of tables [[name]]
+        if line.starts_with("[[") && line.ends_with("]]") {
+            let name = line[2..line.len()-2].trim().to_string();
+            let mut end_line = i + 1;
+            if !name.is_empty() {
+                let start_line = i;
+                while end_line < lines.len() {
+                    let next = lines[end_line].trim();
+                    if (next.starts_with('[') && !next.starts_with("[[")) || next.starts_with("[[") {
+                        break;
+                    }
+                    end_line += 1;
+                }
+                let full_source = lines[start_line..end_line].join("\n");
+                let concept = format!("{}__table__{}", file_stem, name)
+                    .to_lowercase()
+                    .replace(|c: char| !c.is_alphanumeric() && c != '_', "_");
+                items.push(AstItem {
+                    name: name.clone(),
+                    kind: ItemKind::Unknown("array_table".to_string()),
+                    doc_comment: String::new(),
+                    signature: line.to_string(),
+                    full_source,
+                    concept,
+                    start_pos: (start_line, 0),
+                    end_pos: (end_line.saturating_sub(1), lines[end_line.saturating_sub(1)].len()),
+                });
+            }
+            i = end_line;
+            continue;
+        }
+
+        // Table [name] or [name.sub]
+        if line.starts_with('[') && line.ends_with(']') && !line.starts_with("[[") {
+            let name = line[1..line.len()-1].trim().to_string();
+            let mut end_line = i + 1;
+            if !name.is_empty() {
+                let start_line = i;
+                while end_line < lines.len() {
+                    let next = lines[end_line].trim();
+                    if next.starts_with('[') {
+                        break;
+                    }
+                    end_line += 1;
+                }
+                let full_source = lines[start_line..end_line].join("\n");
+                let concept = format!("{}__table__{}", file_stem, name)
+                    .to_lowercase()
+                    .replace(|c: char| !c.is_alphanumeric() && c != '_', "_");
+                items.push(AstItem {
+                    name: name.clone(),
+                    kind: ItemKind::Unknown("table".to_string()),
+                    doc_comment: String::new(),
+                    signature: line.to_string(),
+                    full_source,
+                    concept,
+                    start_pos: (start_line, 0),
+                    end_pos: (end_line.saturating_sub(1), lines[end_line.saturating_sub(1)].len()),
+                });
+            }
+            i = end_line;
+            continue;
+        }
+
+        // Bare top-level key = value (simple key items for small tomls)
+        if let Some(eq) = line.find('=') {
+            let key = line[..eq].trim().to_string();
+            if !key.is_empty() && !key.contains('[') && !key.contains('.') {  // top level only, rough
+                let start_line = i;
+                let end_line = i + 1;
+                let full_source = lines[start_line..end_line].join("\n");
+                let concept = format!("{}__key__{}", file_stem, key)
+                    .to_lowercase()
+                    .replace(|c: char| !c.is_alphanumeric() && c != '_', "_");
+                items.push(AstItem {
+                    name: key.clone(),
+                    kind: ItemKind::Unknown("key".to_string()),
+                    doc_comment: String::new(),
+                    signature: line.to_string(),
+                    full_source,
+                    concept,
+                    start_pos: (start_line, 0),
+                    end_pos: (end_line.saturating_sub(1), lines[end_line.saturating_sub(1)].len()),
+                });
+            }
+        }
+
+        i += 1;
+    }
     items
 }

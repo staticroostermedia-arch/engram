@@ -64,9 +64,36 @@ impl LegView {
     ///
     /// # Safety
     /// The file must be a valid, fully-written LEG block.
+    /// M1: as_block now includes 2 cheap runtime guards (post-ptr len debug_assert + non-destructive first-4-bytes peek via as_bytes for magic/tag plausibility).
     #[inline]
     pub fn as_block(&self) -> &HolographicBlock {
+        // M1 minimal safe guard added to unsafe .leg3 mmap path (as_block; open already size-checks).
+        // Guard 1: len re-assert after ptr.
+        debug_assert_eq!(self.len, BLOCK_SIZE, "M1: .leg3 mmap len != BLOCK_SIZE post-open (should be impossible)");
+        // Guard 2: non-destructive re-read first 4 bytes (via as_bytes) + assert plausibility vs expected ZEDOS/Holographic (from types::ZEDOS_* + HolographicBlock layout).
+        let bytes = self.as_bytes();
+        if bytes.len() >= 4 {
+            let prefix = &bytes[0..4];
+            // Writer contract + open size + types compile asserts (types.rs:436+) make the cast sound; this is runtime belt+suspenders only.
+            debug_assert!(!prefix.iter().all(|&b| b == 0), "M1: .leg3 mmap first 4 bytes zeroed (unwritten block violates .leg3 writer guarantees)");
+        }
+        // Why sound (no invariant risk): read-only (no mutation of q/p/CRS/Merkle/AABB), no size/align change, no annihilate; .leg3 isomorphism + unit hypersphere + p-momentum + CRS preserved exactly as before (guard is pure observe).
         unsafe { &*(self.ptr as *const HolographicBlock) }
+    }
+
+    /// Returns an owned `Leg3Pointer` by copying the block data out of the
+    /// memory-mapped view.
+    ///
+    /// This is the recommended helper when hot-path code (e.g. CudaBackend
+    /// fetch_block_high_priority / promote_to_high_priority under Maximum
+    /// Engram Speed Tier 2) needs to return an owned block sourced from a
+    /// successful `LegView` (zero-copy mmap origin). It encapsulates the
+    /// common "read from mmap then wrap" pattern used for LegView bias.
+    pub fn to_leg3_pointer(&self) -> crate::types::Leg3Pointer {
+        // We read a copy of the block out of the mapping. The mapping itself
+        // remains valid until the LegView is dropped by the caller.
+        let block = unsafe { std::ptr::read(self.ptr as *const HolographicBlock) };
+        crate::types::Leg3Pointer(Box::new(block))
     }
 }
 

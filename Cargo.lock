@@ -679,6 +679,7 @@ dependencies = [
  "streaming-iterator",
  "tempfile",
  "thiserror 1.0.69",
+ "tokio",
  "tracing",
 ]
 
@@ -716,6 +717,7 @@ dependencies = [
  "engram-core",
  "engram-gpu",
  "flume",
+ "libc",
  "notify",
  "notify-debouncer-full",
  "regex",
@@ -729,6 +731,7 @@ dependencies = [
  "tower-http 0.5.2",
  "tracing",
  "tracing-subscriber",
+ "walkdir",
 ]
 
 [[package]]

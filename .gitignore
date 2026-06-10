@@ -3,8 +3,11 @@
 *.leg
 *.leg3
 *.leg3q
-data/manifold/
+data/
 ~/.engram/
+
+# User / TUI private config (not part of public repo surface)
+.grok/
 
 .DS_Store
 IMPLEMENTATION-PLAN.md
@@ -13,7 +16,21 @@ IMPLEMENTATION-PLAN.md
 # Runtime logs
 server.log
 *.log
+
+# Test harness artifacts (keep scripts + README only)
+tools/test-harness/logs/
+tools/test-harness/results/
+**/__pycache__/
+*.pyc
 test_hypothesis.rs
 # Scratch test files
 test_hypothesis.rs
 sem_search.rs
+
+# Internal handoff / private notes (not for public GH MVP)
+*handoff*
+*conv_task*
+*conv_arc*
+phase_c_*
+false_empire/
+tools/leg-browser/

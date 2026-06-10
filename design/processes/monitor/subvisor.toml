@@ -1,0 +1,31 @@
+# agent:engram.monitor.subvisor
+# Draft for Phase 6: subvisor process type using gluing/H1 to oversee sub-agents, detect repetitive (doom loop) patterns, enforce geometric entry (momentum/relation/spatial first), scar failures.
+
+[process]
+name = "agent:engram.monitor.subvisor"
+zedos_type = "monitor"
+phase_seed = "0xSUBVISOR202606..."
+
+[category]
+object = "subvisor"
+morphism = "OP_INVERT"  # inverts unstructured to structured via H1
+sheaf_role = "Oversee sub-agent launches (narrow one-shot only), detect loops via H¹ on tool graph, enforce gluing contracts from tomls, scar repetitive actions"
+h1_handler = "OP_IS_SYMBOLIC_OF"
+
+[mcp_tools]
+list = ["mcp_engram_scar", "mcp_engram_verify_manifold_integrity", "mcp_engram_record_reasoning_trace"]
+
+[requires]
+list = ["design:process_sheaf_loader_spec_v0_1", "tile:formal_spec_process-architecture-sheaf-v0-1---declarative-ri"]
+
+[produces]
+list = ["scar:*_subagent_loop", "trace:*_subvisor_enforce"]
+
+[invariants]
+list = ["crs_0.74_gate", "lawfulness_verification", "no_unstructured_loops"]
+
+[timeout_ms]
+value = 5000
+
+[notes]
+# Prototype: hook in session_start or agent launch. Uses new layer to prevent observed doom loops (traces 1780373850 etc.). Aligns to governance in exec plan.

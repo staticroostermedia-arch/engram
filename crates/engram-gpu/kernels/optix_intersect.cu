@@ -41,33 +41,17 @@ extern "C" __global__ void __intersection__engram_aabb() {
     const float* ab   = params.d_aabb_data + (size_t)pi * 6;
     // ab[0..2] = min XYZ,  ab[3..5] = max XYZ
 
-    // Slab test (matches bvh_traverse.cu intersect_aabb logic)
-    const float eps = 1e-8f;
-    const float3 inv_rd = make_float3(
-        fabsf(rd.x) > eps ? 1.0f / rd.x : (rd.x >= 0.0f ?  1e8f : -1e8f),
-        fabsf(rd.y) > eps ? 1.0f / rd.y : (rd.y >= 0.0f ?  1e8f : -1e8f),
-        fabsf(rd.z) > eps ? 1.0f / rd.z : (rd.z >= 0.0f ?  1e8f : -1e8f)
-    );
-
-    const float3 t0 = make_float3(
-        (ab[0] - ro.x) * inv_rd.x,
-        (ab[1] - ro.y) * inv_rd.y,
-        (ab[2] - ro.z) * inv_rd.z
-    );
-    const float3 t1 = make_float3(
-        (ab[3] - ro.x) * inv_rd.x,
-        (ab[4] - ro.y) * inv_rd.y,
-        (ab[5] - ro.z) * inv_rd.z
-    );
-
-    const float tmin = fmaxf(fmaxf(fminf(t0.x, t1.x), fminf(t0.y, t1.y)), fminf(t0.z, t1.z));
-    const float tmax = fminf(fminf(fmaxf(t0.x, t1.x), fmaxf(t0.y, t1.y)), fmaxf(t0.z, t1.z));
-
-    // Standard test: tmax >= 0 and tmax >= tmin
-    if (tmax >= 0.0f && tmax >= tmin) {
-        // Condition 2: interior ray (query origin inside AABB) → tmin < 0, tmax > 0
-        // Override: report t=0 so RT Core registers the hit rather than discarding it.
-        const float t_hit = fmaxf(0.0f, tmin);
-        optixReportIntersection(t_hit, 0u);
+    // Direct coordinate-wise containment check with a small epsilon tolerance
+    const float eps = 1e-3f;
+    if (ro.x >= ab[0] - eps && ro.x <= ab[3] + eps &&
+        ro.y >= ab[1] - eps && ro.y <= ab[4] + eps &&
+        ro.z >= ab[2] - eps && ro.z <= ab[5] + eps) {
+        // Calculate exit distance tmax along ray direction (rd has positive components)
+        float tx = (rd.x != 0.0f) ? (ab[3] - ro.x) / rd.x : 1e16f;
+        float ty = (rd.y != 0.0f) ? (ab[4] - ro.y) / rd.y : 1e16f;
+        float tz = (rd.z != 0.0f) ? (ab[5] - ro.z) / rd.z : 1e16f;
+        float tmax = fminf(fminf(tx, ty), tz);
+        if (tmax < 0.0f) tmax = 0.0f;
+        optixReportIntersection(tmax, 0u);
     }
 }

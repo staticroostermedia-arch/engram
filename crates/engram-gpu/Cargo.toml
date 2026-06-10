@@ -14,6 +14,7 @@ default      = []
 cuda-kernels = []   # kept for explicit override: --features cuda-kernels
 rocm-kernels = []   # kept for explicit override: --features rocm-kernels
 wgpu-backend = []   # WGPU fallback
+device_residency = []  # Tier 3: future cuFile / GPUDirect Storage / direct GPU memory residency for items in high_priority_cache (CPU removal from hottest paths)
 
 [dependencies]
 engram-core  = { path = "../engram-core", default-features = false }

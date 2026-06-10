@@ -1,251 +1,147 @@
 # Engram — First Run Guide
 
-> **For new users and AI agents.** Run through this guide exactly once when you first install Engram.
-> After completing it, your manifold is seeded, your daemon is watching your workspace,
-> and every tool in the MCP server is verified working.
+> **For new users and AI agents.** Run through this guide once when you first install Engram.
+> After completing it, MCP is verified, your store is seeded, and you know the **8-tool lean contract**.
+
+**Canonical reference:** [docs/AGENT_MEMORY_CONTRACT.md](docs/AGENT_MEMORY_CONTRACT.md)
 
 ---
 
 ## 1. Install the Binary
 
 ```bash
-# Clone and install from source (recommended — gets the latest physics loop)
 git clone https://github.com/staticroostermedia-arch/engram.git
 cd engram
 cargo install --path crates/engram-server
 
-# Verify:
 engram --version
 # engram-server 0.4.x
 ```
 
 ---
 
-## 2. Configure Your MCP Client
+## 2. Configure Your MCP Client (Safe Defaults)
 
-Add Engram to your IDE's MCP config. In **Antigravity / VS Code**, this is `.antigravity/mcp.json`:
+Add Engram to your IDE's MCP config. Use **`ENGRAM_PROFILE=agent`** (via `scripts/engram-grok`) — not the legacy 8-var env block.
 
 ```json
 {
   "mcpServers": {
     "engram": {
-      "command": "engram",
-      "args": ["mcp", "--store", "~/.engram/stalks/"]
+      "command": "/path/to/Engram/scripts/engram-grok",
+      "args": ["mcp"],
+      "env": {
+        "ENGRAM_STORE": "~/.engram/stalks/",
+        "ENGRAM_PROFILE": "agent"
+      }
     }
   }
 }
 ```
 
-> **Store location:** `~/.engram/stalks/` is the default. Each project namespace (stalk)
-> gets a subdirectory. You can override with `ENGRAM_STORE` env var.
+See [`integrations/README.md`](integrations/README.md) for Grok, Cursor, Claude, Antigravity, and Codex.
+
+**Restart your IDE** after changing MCP config.
+
+> **Store location:** `~/.engram/stalks/` is the default. Override with `ENGRAM_STORE`.
 
 ---
 
-## 3. (Optional but Recommended) Wire a Neural Embedding Server
+## 3. Wake — One Call (Verify MCP Works)
 
-Engram works out of the box with a pure BLAKE3 hash encoder — no network required.
-But if you run a local embedding server (llama.cpp, ONNX MiniLM, nomic-embed), semantic
-recall quality improves dramatically.
+In your AI agent, run:
 
-```bash
-# Tell Engram where to find the embedding server:
-export ENGRAM_EMBED_URL="http://localhost:8086/v1/embeddings"
-
-# Add to ~/.bashrc to make it permanent:
-echo 'export ENGRAM_EMBED_URL="http://localhost:8086/v1/embeddings"' >> ~/.bashrc
-
-# Verify the embedding server is alive:
-curl -sf http://localhost:8086/health && echo "✓ Embedding server ready" || echo "⚠ Not running — hash encoder will be used as fallback"
+```
+mcp_engram_session_start(intent="First run — verifying Engram MCP connection")
 ```
 
-> **Without an embedding server:** Engram falls back to BLAKE3 spiral-phase encoding.
-> Recall works, but semantic similarity is weaker for paraphrased queries.
-> The fallback is completely automatic — nothing breaks.
+Expected: inline JSON with `continuation_bundle`, `backend_readiness`, and `session_key`. Wake should complete in <2s even on large stores.
+
+If this fails, check `engram --version` and that the MCP server appears in your IDE's tool list.
 
 ---
 
-## 4. Store Your First Memory (Verify MCP is Working)
-
-In your AI agent (or via the CLI), run:
+## 4. Store and Recall Your First Memory
 
 ```
-remember("first_run_test", "Engram is working. This is my first memory block.")
+mcp_engram_remember("first_run_test", "Engram is working. This is my first memory block.")
+mcp_engram_recall("first memory working", k=3, scope="anchors")
 ```
 
 Or via CLI:
+
 ```bash
-engram --store ~/.engram/stalks/ remember first_run_test "Engram is working. This is my first memory block."
+engram --store ~/.engram/stalks/ remember first_run_test "Engram is working."
+engram --store ~/.engram/stalks/ recall "first memory" --k 3
 ```
 
-Expected output:
-```
-✓ Stored memory: 'first_run_test' (52 chars)
-```
-
-Then retrieve it:
-```
-recall("working first memory", k=3)
-```
-
-You should see `first_run_test` in the results with a score > 0.5.
+You should see `first_run_test` with score > 0.5.
 
 ---
 
-## 5. ⚠️ Activate the File Watcher Daemon (Critical — Don't Skip)
+## 5. Edit-Scoped Spatial (No Mandatory watch_workspace)
 
-**This is the most commonly missed step.**
+**Lean contract:** you do **not** need `watch_workspace` at first run or every wake.
 
-The Engram MCP server spawns a background daemon that auto-ingests files into memory whenever
-you save them. But it **watches nothing until you tell it what to watch.** Without this step:
-
-- `mcp_engram_recall_in_file` returns no results
-- AST spatial coordinates (AABB line ranges) are never populated
-- Code-aware spatial search doesn't work
-
-**Fix: tell the daemon which directories to watch:**
+Before editing a file, use:
 
 ```
-mcp_engram_watch_workspace("/path/to/your/project")
+mcp_engram_context_for_edit("/absolute/path/to/your/file.rs")
 ```
 
-Run this for every project you work in. For example:
+This returns file-scoped spatial context + related memories in one call.
+
+**Deep mode only:** if you need passive daemon ingest across a whole project:
 
 ```
-mcp_engram_watch_workspace("/home/user/Documents/MyProject")
-mcp_engram_watch_workspace("/home/user/Documents/AnotherProject")
+mcp_engram_set_memory_mode(mode="deep")
+mcp_engram_watch_workspace("/absolute/path/to/your/project")
 ```
 
-Expected output:
-```
-✓ Agentic Daemon now recursively watching: /home/user/Documents/MyProject
-```
-
-> **Make this permanent:** Add `mcp_engram_watch_workspace` calls to your IDE's session
-> start / wake-up workflow so they run automatically at the start of every session.
-> The daemon does not persist watch state across server restarts.
-
----
-
-## 6. Ingest Your Workspace (Seed the Manifold)
-
-The file watcher only picks up files you save *after* it starts watching. To ingest your
-existing codebase right now:
+Or bulk-ingest once via CLI:
 
 ```bash
-# Ingest a project directory (AST extraction for .rs, .py, .ts, etc. + chunking for everything else)
 engram ingest /path/to/your/project
-
-# Example:
-engram ingest /home/user/Documents/MyProject/src
-
-# Expected output:
-#   > Starting Engram Ingest: /home/user/Documents/MyProject/src
-#   [ast] my_project__fn__main              ← pub fn main (lines 1-50)
-#   [ast] my_project__struct__Config        ← pub struct Config (lines 52-80)
-#   ...
-#   ✓ INGESTION COMPLETE
-#     Files processed : 42
-#     AST items minted: 156  (one block per pub fn/struct/enum/trait)
-#     Chunk blocks    : 23   (non-code files)
-#     Total blocks    : 179
-```
-
-After ingestion, test spatial recall:
-
-```
-mcp_engram_recall_in_file("main", start_line=0, end_line=100)
-```
-
-You should see all AST concepts defined in `main.rs` within lines 0–100.
-
----
-
-## 7. Verify the Full Physics Loop
-
-Run these three checks to confirm all Phase 8 features are active:
-
-### Check 1: ZEDOS tag filtering works
-```
-recall("crystallized solutions", k=5, zedos_filter="praxis")
-```
-→ Should return only PRAXIS-tagged blocks (or "No memories found" if manifold is empty — that's OK)
-
-### Check 2: Momentum search works
-```
-mcp_engram_query_with_momentum("your project topic here", k=5)
-```
-→ Should return `Momentum-weighted results for '...'` with `(momentum score: X.XXX, drift: X.XXX)`
-
-### Check 3: Composite scoring is active
-```
-recall("any query", k=3)
-```
-→ Result lines should show `(score: X.XXX, crs: X.XXX, dv: X.XXX, depth: N, tag: DECLARATIVE)`
-→ If you see the `dv:` and `depth:` fields, composite scoring is live
-
----
-
-## 8. Genesis Blocks (Auto-Seeded)
-
-On first boot, Engram seeds alignment genesis blocks — foundational PRAXIS memories that
-define the system's operational context. These are pinned at CRS=1.0 and never decay.
-
-Check they exist:
-```
-mcp_engram_genesis(action="status")
-```
-
-If missing:
-```
-mcp_engram_genesis(action="reseed")
 ```
 
 ---
 
-## 9. Namespaces (Multi-Project Setup)
+## 6. (Optional) Neural Embedding Server
 
-Engram supports isolated namespaces (stalks) so different projects don't pollute each other:
+Engram works out of the box with BLAKE3 hash encoding. For better semantic recall:
 
-```
-mcp_engram_set_namespace("my_project")    # creates + switches to this namespace
-mcp_engram_set_namespace("work_project")  # switch to another project's memory
-
-mcp_engram_list_namespaces()              # see all namespaces
+```bash
+export ENGRAM_EMBED_URL="http://localhost:8086/v1/embeddings"
 ```
 
-> **Default namespace:** `default`. All memories without an explicit namespace go here.
+Add to your MCP `env` block. Without it, recall still works — paraphrased queries may score lower.
 
 ---
 
-## 10. Session End (Epistemic State Tracking)
-
-At the end of a work session, call:
+## 7. End Your Session (Handoff)
 
 ```
-mcp_engram_session_end("One-sentence summary of what we accomplished today.")
+mcp_engram_session_end(summary="First run complete. MCP verified, first memory stored, lean contract understood.")
 ```
 
-This calculates the aggregate CRS of your session's work and records the epistemic state
-(confidence vs. frustration ratio) as a PRAXIS block. Useful for understanding which sessions
-were productive vs. stuck.
+This produces a structured handoff packet. Your **next** `session_start` will surface it in the inline continuation bundle.
 
 ---
 
-## Quick Reference: The Tools That Matter
+## Quick Reference — The 8 Essential Tools
 
-| Tool | When to Use |
-|------|-------------|
-| `remember(concept, text)` | Save a fact, decision, or code pattern |
-| `recall(query, k)` | Find semantically similar memories |
-| `recall(query, k, zedos_filter="praxis")` | Only crystallized solutions |
-| `mcp_engram_query_with_momentum(query)` | Find concepts *trending toward* your query |
-| `mcp_engram_recall_in_file(file_stem, start_line, end_line)` | Spatial code search by file + line range |
-| `mcp_engram_watch_workspace(path)` | **Activate the daemon** (do this every session) |
-| `mcp_engram_update(concept, new_text)` | Update a stale memory (triggers drift tracking) |
-| `mcp_engram_scar(concept, magnitude)` | Mark a failed approach as hostile |
-| `mcp_engram_pin(concept)` | Prevent a concept from ever decaying |
-| `mcp_engram_session_end(summary)` | Record session epistemic state |
-| `mcp_engram_genesis(action="status")` | Check alignment anchor blocks |
+| Tool | When |
+|------|------|
+| `session_start(intent)` | **First call every session** |
+| `context_for_edit(path)` | Before editing a file |
+| `recall(query, scope="anchors")` | When stuck; lean default |
+| `quick_trace(decision, why)` | At decision forks |
+| `remember(concept, text)` | New facts (recall first) |
+| `session_end(summary)` | **Last call every session** |
+| `get_backend_readiness()` | Check BVH/recall mode |
+| `set_memory_mode("lean"\|"deep")` | Escalate for full recall |
+
+**62 power tools** remain available — see [docs/MCP_TOOLS_REFERENCE.md](docs/MCP_TOOLS_REFERENCE.md). Do not call `watch_workspace`, `rebuild_bvh`, or `summarize` in lean mode unless needed.
 
 ---
 
@@ -253,12 +149,19 @@ were productive vs. stuck.
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
-| `recall_in_file` returns nothing | Daemon not watching workspace | Call `mcp_engram_watch_workspace(path)` |
-| Low recall quality | No embedding server | Set `ENGRAM_EMBED_URL` + start llama.cpp |
-| `recall` returns everything with score ~0.85 | CRS weighting compressed range | Normal — composite scoring keeps cosine dominant |
-| Memories accumulate too fast | No autophagy threshold set | Run `mcp_engram_forget_old(min_crs_threshold=0.20)` periodically |
-| AABB coordinates all zero | Files ingested before daemon was watching | Re-run `engram ingest /your/project` |
+| MCP OOM / duplicate processes | Bare `engram mcp` on large store | Use safe env (section 2) + restart IDE |
+| Slow wake (>5s) | Deep tools at wake | Follow 8-tool contract; `ENGRAM_MEMORY_MODE=lean` |
+| `context_for_edit` sparse | File never ingested | `engram ingest <path>` once, or deep `watch_workspace` |
+| Low recall quality | No embedding server | Set `ENGRAM_EMBED_URL` |
+| Lost context between sessions | Skipped `session_end` | Always end with structured summary |
 
 ---
 
-*First-run guide complete. Your manifold is ready.*
+## Next Steps
+
+1. Load [SKILLS.md](SKILLS.md) + `docs/skills/engram-wake-up.md` into your agent instructions.
+2. Read [docs/GROK_BUILD_MEMORY.md](docs/GROK_BUILD_MEMORY.md) for Grok Build integration.
+3. Run `examples/hello-engram-agent.py` to see the lean loop.
+4. For deep rituals: [docs/RITUALS.md](docs/RITUALS.md) + [HOW_WE_ACTUALLY_USE_THIS_IN_2026.md](HOW_WE_ACTUALLY_USE_THIS_IN_2026.md).
+
+*First-run complete. Your manifold is ready.*

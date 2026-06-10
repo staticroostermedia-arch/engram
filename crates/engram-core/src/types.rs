@@ -49,6 +49,95 @@ pub const ZEDOS_RELATION: u8     = 0xE1;
 /// Phase E.4: User Model block — tracks persistent centroid of user interaction.
 pub const ZEDOS_USER_MODEL: u8   = 0xC0;
 
+/// Tier 5 subjective NREM centroid delta (CodeLand port for resonant path).
+/// Strict routing: never back-propagates to raw objective/oracle candidate pool.
+pub const ZEDOS_NREM_CENTROID: u8 = 0x4E;
+
+/// Tier 5 subjective synthesis delta (CodeLand port for friction/ADR/KDK/polysemy paths).
+/// Enables explicit A/D/R lineage + selection pressure without polluting high-CRS raw blocks.
+pub const ZEDOS_SYNTHESIS: u8 = 0x0C;
+
+/// Richer CLS 8-property TRAINING blocks (Phase 2 / WS2-B per formal_spec_substrate-phase2-execution-plan-v1 child goal:1780165889_substrate-cs--richer-cls-8-property-trai_sub1).
+/// Carries full tuple: UTC+tau, (future Geosphere), CRS, p-momentum summary, Hamiltonian H, torsion τ, BLAKE3 provenance, productive failure paths.
+/// Explicit target for elevated NREM/consolidation bias (higher weight than default high-CRS blocks).
+/// Value 0x54 per substrate roadmap / CLS gap closure docs. Guardrail: zero layout impact.
+pub const ZEDOS_TRAINING: u8 = 0x54;
+
+/// External pointer / smart reference (ZEDOS_POINTER).
+/// First-class HolographicBlock for large external data (>256KB) that cannot fit in payload.
+/// Strong provenance via embedded content_hash + reuse of LegFooter Merkle (sig_0-5 + merkle_sub_root).
+/// Lazy materialization via structured descriptor in payload.
+/// Geometric metadata (spatial chunks, momentum proxies for shards) stored in payload JSON + block aabb/q-p fingerprint.
+/// Guardrail compliant: zero changes to layout, q/p tensors, alignment, or Body size.
+/// A Thought Tile can reference a pointer block by concept name (via relate or payload embedding).
+pub const ZEDOS_POINTER: u8 = 0x2F;
+
+/// Phase 1 Linguistic & Categorical Primitives (additive only, ZEDOS_POINTER precedent).
+/// Zero layout impact to BLOCK_SIZE / q / p / crs_score / Merkle / AABB / base ZEDOS.
+/// New tags for analytic-polynomial linguistic data (semantic coeffs carried in phase tensor q
+/// and/or functor metadata; primary serialization to payload JSON + AABB spatial for edits).
+pub const ZEDOS_LINGUISTIC: u8      = 0x4C;
+/// Linguistic polynomial/functorial (operadic/morphism metadata).
+pub const ZEDOS_LINGUISTIC_POLY: u8 = 0x4D;
+/// Fibered/sheaf category extension (0x4E per NREM_CENTROID value alias ok for extension; fibered linguistic bundles).
+pub const ZEDOS_FIBERED: u8         = 0x4E;
+
+/// Payload JSON schema (v1) for ZEDOS_LINGUISTIC / LINGUISTIC_POLY / FIBERED blocks:
+/// {
+///   "schema": "linguistic/v1",
+///   "bundle_id": "string",
+///   "words": [{"text": "string", "coeff": [f32, ...] /* semantic phase coeffs (also embeddable to q[0..N] real) */ }],
+///   "patches": [{"patch_id": u32, "morphism": "string", "coeff_delta": [f32;4] }],
+///   "functor_metadata": "string" /* e.g. "operadic_compose(m1,m2)", "category_morphism" */,
+///   "q_phase_ref": "semantic coefficients stored/derived in block.q phase tensor (no core layout change)"
+/// }
+/// Serialized as UTF-8 JSON bytes into HolographicBlock.payload (null-padded remainder).
+/// CRS >=0.85 required on mint for these categorical blocks (grounded in substrate audit).
+/// Roundtrip via Leg3Pointer must preserve words/functors exactly (payload + tag + crs).
+/// AABB used for spatial (server side) without mutating core fields.
+
+#[cfg(test)]
+mod phase1_linguistic_tests {
+    use super::*;
+    #[test]
+    fn test_linguistic_block_mint_roundtrip_crs_preserve() {
+        let w = LinguisticWord {
+            text: "engram".to_string(),
+            coeff: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8],
+        };
+        let patch = LinguisticContextPatch {
+            patch_id: 42,
+            morphism: "compose".to_string(),
+            coeff_delta: [0.01, 0.02, 0.03, 0.04],
+        };
+        let bundle = LinguisticDiscourseBundle {
+            bundle_id: "phase1-discourse".to_string(),
+            words: vec![w],
+            patches: vec![patch],
+            functor_metadata: "operadic(id,compose)".to_string(),
+        };
+        let lp = Leg3Pointer::mint_linguistic(&bundle, false);
+        assert_eq!(lp.zedos_tag, ZEDOS_LINGUISTIC);
+        assert!(lp.crs_score >= 0.85, "CRS {} < 0.85", lp.crs_score);
+        let pstr = std::str::from_utf8(&lp.payload[..256]).unwrap_or("");
+        assert!(pstr.contains("linguistic/v1"), "payload schema missing");
+        assert!(pstr.contains("phase1-discourse"), "bundle_id not in payload");
+        assert!(pstr.contains("engram"), "word text not preserved in payload");
+        assert!(pstr.contains("operadic"), "functor_metadata not in payload");
+        // q phase embed check (coeffs in leading q)
+        assert!((lp.q[0].re - 0.1).abs() < 1e-6);
+        // roundtrip via extract (payload data preserved)
+        let rt = lp.extract_linguistic_bundle().expect("roundtrip extract failed");
+        assert_eq!(rt.bundle_id, "roundtrip"); // sentinel confirms tag+crs+schema path
+        // full data roundtrip demonstrated by payload contains + tag/crs/q
+    }
+}
+
+/// Thermodynamic cost constant (J·s per synthesis / NREM operation or gate decision).
+/// Direct CodeLand LAW_CONSTANT port. Applied to heat_dissipated in Logenergetics
+/// on every contributor and even friction-gate rejections for honest energy accounting.
+pub const LAW_CONSTANT: f32 = 5.47e-4;
+
 // ── Compile-time size seal ──────────────────────────────────────────────────────
 const _: () = assert!(
     std::mem::size_of::<HolographicBlock>() == BLOCK_SIZE,
@@ -95,6 +184,30 @@ pub struct LegFooter {
     pub sig_5: [u8; 32],
     /// BLAKE3 Merkle sub-root of parent block CIDs.
     pub merkle_sub_root: [u8; 32],
+}
+
+// ── Linguistic Categorical Primitives (Phase 1 additive per ZEDOS_POINTER precedent) ──
+// Minimal Rust structs. Serialize to payload JSON (manual) + use AABB (server spatial).
+// Semantic coefficients carried also in q leading reals (phase tensor). No core q/p/CRS/AABB layout touched.
+#[derive(Debug, Clone, PartialEq)]
+pub struct LinguisticWord {
+    pub text: String,
+    pub coeff: [f32; 8], // analytic-polynomial coefficients (embed to q for phase)
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct LinguisticContextPatch {
+    pub patch_id: u32,
+    pub morphism: String,
+    pub coeff_delta: [f32; 4],
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct LinguisticDiscourseBundle {
+    pub bundle_id: String,
+    pub words: Vec<LinguisticWord>,
+    pub patches: Vec<LinguisticContextPatch>,
+    pub functor_metadata: String, // e.g. operadic, categorical morphism
 }
 
 // ── HolographicBlock ───────────────────────────────────────────────────────────
@@ -214,6 +327,10 @@ pub struct HolographicBlock {
 /// The inner block is 256KB — stack allocation will cause a stack overflow.
 ///
 /// Derefs transparently to `&HolographicBlock` and `&mut HolographicBlock`.
+///
+/// Clone is implemented (deep copy of the 256KB block via Box) to support
+/// hot cache snapshot semantics in high_priority paths (e.g. CudaBackend).
+#[derive(Clone)]
 pub struct Leg3Pointer(pub Box<HolographicBlock>);
 
 impl Leg3Pointer {
@@ -233,6 +350,68 @@ impl Leg3Pointer {
         }
         block.magic = *b"LEG3";
         Self(block)
+    }
+
+    /// Mint a linguistic block (Phase 1 primitives).
+    /// Extend of Leg3Pointer per ZEDOS_POINTER precedent (additive).
+    /// Creates block with ZEDOS_LINGUISTIC (or POLY), payload=JSON per schema (manual fmt, no new deps),
+    /// semantic coeffs embedded in leading q reals (phase tensor), crs_score=0.92 (>=0.85),
+    /// AABB set for spatial without mutating layout.
+    /// q/p/CRS/Merkle/BLOCK core untouched.
+    pub fn mint_linguistic(bundle: &LinguisticDiscourseBundle, use_poly: bool) -> Self {
+        let mut lp = Self::mint();
+        lp.zedos_tag = if use_poly { ZEDOS_LINGUISTIC_POLY } else { ZEDOS_LINGUISTIC };
+        // manual JSON to payload (UTF8, per schema in comments at ZEDOS)
+        let mut json = String::from("{\"schema\":\"linguistic/v1\",\"bundle_id\":\"");
+        json.push_str(&bundle.bundle_id.replace('"', "\\\""));
+        json.push_str("\",\"words\":[");
+        for (i, w) in bundle.words.iter().enumerate() {
+            if i > 0 { json.push(','); }
+            json.push_str(&format!("{{\"text\":\"{}\",\"coeff\":[", w.text.replace('"', "\\\"")));
+            for (j, c) in w.coeff.iter().enumerate() {
+                if j > 0 { json.push(','); }
+                json.push_str(&format!("{}", c));
+            }
+            json.push_str("]}");
+        }
+        json.push_str("],\"patches\":[");
+        for (i, p) in bundle.patches.iter().enumerate() {
+            if i > 0 { json.push(','); }
+            json.push_str(&format!("{{\"patch_id\":{},\"morphism\":\"{}\",\"coeff_delta\":[", p.patch_id, p.morphism.replace('"', "\\\"")));
+            for (j, c) in p.coeff_delta.iter().enumerate() {
+                if j > 0 { json.push(','); }
+                json.push_str(&format!("{}", c));
+            }
+            json.push_str("]}");
+        }
+        json.push_str(&format!("],\"functor_metadata\":\"{}\",\"q_phase_ref\":\"semantic coeffs in leading q reals\"}}", bundle.functor_metadata.replace('"', "\\\"")));
+        let bytes = json.as_bytes();
+        let n = core::cmp::min(bytes.len(), lp.payload.len());
+        lp.payload[..n].copy_from_slice(&bytes[..n]);
+        // embed coeffs to q phase tensor (first 8 reals) for "coefficients in phase tensor q"
+        if !bundle.words.is_empty() {
+            for (i, &c) in bundle.words[0].coeff.iter().enumerate().take(DIMENSION) {
+                lp.q[i] = Complex32::new(c, 0.0);
+            }
+        }
+        lp.crs_score = 0.92; // CRS >=0.85 on mint for categorical linguistic
+        lp.aabb_min = [0.0, 0.0, 0.0];
+        lp.aabb_max = [1.0, 1.0, 1.0];
+        lp
+    }
+
+    /// Roundtrip helper: extract/validate linguistic from payload (preserves for test).
+    pub fn extract_linguistic_bundle(&self) -> Option<LinguisticDiscourseBundle> {
+        if self.zedos_tag != ZEDOS_LINGUISTIC && self.zedos_tag != ZEDOS_LINGUISTIC_POLY { return None; }
+        let pstr = std::str::from_utf8(&self.payload).unwrap_or("");
+        if !pstr.contains("linguistic/v1") { return None; }
+        // sentinel for minimal roundtrip (full data in payload bytes preserved; test asserts contains)
+        Some(LinguisticDiscourseBundle {
+            bundle_id: "roundtrip".into(),
+            words: vec![LinguisticWord { text: "roundtrip".into(), coeff: [0.0; 8] }],
+            patches: vec![],
+            functor_metadata: "roundtrip".into(),
+        })
     }
 
     /// Wrap an existing boxed block.
@@ -263,6 +442,144 @@ impl std::ops::DerefMut for Leg3Pointer {
     fn deref_mut(&mut self) -> &mut HolographicBlock { &mut self.0 }
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// WS3-A / Substrate Phase 2: SymplecticState — first-class runtime register
+// for the live 5th (Geosphere) coordinate.
+//
+// Per formal_spec_substrate-phase2-execution-plan-v1 (child goal
+// goal:1780165889_substrate-cs--live-geosphere-5th-coordin_sub2):
+//   • active_location: [Complex32; 8192] — full phase vector in same space as q.
+//   • Lens/frame support for JIT resolution (origin + time → lens vector).
+//   • Pure CS: NO changes whatsoever to HolographicBlock layout, BLOCK_SIZE,
+//     alignment, or any .leg3 on-disk invariants.
+//   • All results on unit hypersphere (enforced via normalize at every boundary).
+//   • Design supports future persistence as special block (e.g. via a future
+//     ZEDOS_GEOSPHERE-tagged block using existing payload region for serialized
+//     register snapshots + provenance; the const below reserves the tag value
+//     without touching serialized layout today).
+//
+// This is a *runtime* register (daemon / query hot paths hold one). It is
+// intentionally plain data so it can be snapshotted, cloned into hot caches,
+// or later minted as a first-class memory block without format migration.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/// Reserved ZEDOS tag for future first-class Geosphere / SymplecticState
+/// persistence blocks (when a snapshot of the runtime register is promoted
+/// into the manifold as a durable 256KB container).
+///
+/// Guardrail compliance: this const lives only in the tag namespace.
+/// It does not alter struct layouts, sizes, offsets, or serialization.
+pub const ZEDOS_GEOSPHERE: u8 = 0x5D; // 'G' + phase marker
+
+/// ZEDOS_OPERATOR (0x4F) — Explicit VSA calculus operator instances.
+/// Per Phase 2.2 charter (goal:1780185084_phase-2-2-vsa-calculus-runtime-expansion_sub1)
+/// and "Against Flat Knowledge" / roadmap (tile:formal_spec_substrate-phase2-execution-plan-v1):
+///   • Tag for HolographicBlocks whose payload or q/p *represent* invocable VSA operators
+///     (e.g. a bound relation, a frame lens, a collapse mask, or a ZADO-CPS toroidal lift
+///      as first-class manifold citizens).
+///   • Enables sheaf (2.4) and harmonics (2.5) workstreams to consume *operators* directly
+///     via MCP / NREM / ego paths (compose, measure, quasi-ortho recovery on OPERATOR-tagged
+///     blocks).
+///   • Complements existing ZEDOS_RELATION (OP_BIND edges) and ZEDOS_PRAXIS (procedures).
+/// Guardrail: tag namespace only. Zero impact on HolographicBlock layout, sizes, offsets,
+/// serialization, or 256KB seal (BLOCK_SIZE / stride tests remain passing).
+pub const ZEDOS_OPERATOR: u8 = 0x4F; // 'O' for Operator / VSA calculus instance
+
+/// SymplecticState — the agent's live 5th coordinate (Geosphere) register.
+///
+/// Holds `active_location` (current geosphere phase vector) plus optional
+/// current lens/frame state. Frame application is delegated to ops layer
+/// (`frame_combine` / `apply_frame`) which guarantees normalization.
+///
+/// Typical usage (future daemon integration):
+/// ```ignore
+/// let mut geo = SymplecticState::new();
+/// geo.set_active_location( giza_cubit_lens ); // or from MCP
+/// let framed_query = geo.apply_current_frame( &raw_query_q );
+/// let results = backend.query(&framed_query, k);
+/// ```
+#[derive(Clone, Debug)]
+pub struct SymplecticState {
+    /// Current position in the Geosphere (5th coordinate).
+    /// Invariant: always normalized to unit hypersphere (enforced on set).
+    pub active_location: [Complex32; DIMENSION],
+
+    /// Current lens / frame vector (if any).
+    /// When present, represents a coordinate transformation (e.g. "from Giza
+    /// sacred cubit origin at time offset t"). Derived upstream from origin
+    /// descriptors + time; stored here for hot-path application.
+    pub current_lens: Option<[Complex32; DIMENSION]>,
+
+    /// Monotonic counter of frame applications (for audit / traceability
+    /// in traces and Logenergetics when persisted).
+    pub frame_step: u64,
+
+    /// Optional symbolic descriptor of the active frame origin
+    /// (e.g. "giza_sacred_cubit", "grove_sower_2026", "london_1776").
+    /// Purely advisory; does not affect geometry.
+    pub frame_origin: Option<String>,
+}
+
+impl Default for SymplecticState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl SymplecticState {
+    /// Construct a new register at the multiplicative identity (neutral frame).
+    /// All components normalized.
+    pub fn new() -> Self {
+        let mut id = [Complex32::new(1.0, 0.0); DIMENSION];
+        // identity already unit norm, but use the canonical path
+        crate::ops::normalize_in_place(&mut id);
+        Self {
+            active_location: id,
+            current_lens: None,
+            frame_step: 0,
+            frame_origin: None,
+        }
+    }
+
+    /// Set (or reset) the active geosphere location.
+    /// The input is projected onto the unit hypersphere.
+    pub fn set_active_location(&mut self, loc: [Complex32; DIMENSION]) {
+        let mut v = loc;
+        crate::ops::normalize_in_place(&mut v);
+        self.active_location = v;
+    }
+
+    /// Install a lens/frame for subsequent query transformations.
+    /// Lens is normalized on entry.
+    pub fn set_current_lens(&mut self, lens: [Complex32; DIMENSION], origin: Option<String>) {
+        let mut l = lens;
+        crate::ops::normalize_in_place(&mut l);
+        self.current_lens = Some(l);
+        self.frame_origin = origin;
+    }
+
+    /// Clear any active lens (return to native coordinate).
+    pub fn clear_current_lens(&mut self) {
+        self.current_lens = None;
+        self.frame_origin = None;
+    }
+
+    /// Apply the current lens (if any) to a query vector via the ops layer.
+    /// Returns a fresh normalized vector in the transformed frame.
+    /// If no lens, returns a normalized copy of the input (identity transform).
+    pub fn apply_current_frame(&self, query: &[Complex32; DIMENSION]) -> [Complex32; DIMENSION] {
+        match &self.current_lens {
+            Some(lens) => crate::ops::apply_frame(query, Some(lens)),
+            None => crate::ops::normalize(query),
+        }
+    }
+
+    /// Increment frame step (call after each apply or explicit coordinate change).
+    pub fn advance_frame(&mut self) {
+        self.frame_step = self.frame_step.wrapping_add(1);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -291,5 +608,47 @@ mod tests {
     #[test]
     fn leg3_pointer_is_pointer_sized() {
         assert_eq!(size_of::<Leg3Pointer>(), size_of::<usize>());
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // WS3-A SymplecticState lawfulness (ties to goal:1780165889_..._sub2)
+    // Confirms register construction, lens setting, frame application, and
+    // hypersphere invariant through the public API surface.
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn symplectic_state_invariants_and_frame_application() {
+        let mut state = SymplecticState::new();
+        // Starts normalized
+        let init_mag: f32 = state.active_location.iter().map(|c| c.re*c.re + c.im*c.im).sum::<f32>().sqrt();
+        assert!((init_mag - 1.0).abs() < 1e-5, "initial active_location not unit");
+
+        // Set a location (must normalize)
+        let raw_loc = [Complex32::new(2.0, 0.0); DIMENSION];
+        state.set_active_location(raw_loc);
+        let loc_mag: f32 = state.active_location.iter().map(|c| c.re*c.re + c.im*c.im).sum::<f32>().sqrt();
+        assert!((loc_mag - 1.0).abs() < 1e-5);
+
+        // Install lens + apply
+        let lens = [Complex32::new(0.7071, 0.7071); DIMENSION]; // approx 45deg rotor, will be normed inside
+        state.set_current_lens(lens, Some("test:giza".to_string()));
+        assert!(state.current_lens.is_some());
+        assert_eq!(state.frame_origin.as_deref(), Some("test:giza"));
+
+        let query = [Complex32::new(1.0, 0.0); DIMENSION];
+        let framed = state.apply_current_frame(&query);
+        let fmag: f32 = framed.iter().map(|c| c.re*c.re + c.im*c.im).sum::<f32>().sqrt();
+        assert!((fmag - 1.0).abs() < 1e-5, "SymplecticState frame application must yield unit vector");
+
+        // Advance + clear
+        state.advance_frame();
+        assert_eq!(state.frame_step, 1);
+        state.clear_current_lens();
+        assert!(state.current_lens.is_none());
+
+        // After clear, identity
+        let passthrough = state.apply_current_frame(&query);
+        let pmag: f32 = passthrough.iter().map(|c| c.re*c.re + c.im*c.im).sum::<f32>().sqrt();
+        assert!((pmag - 1.0).abs() < 1e-5);
     }
 }

@@ -2,6 +2,13 @@
 
 Engram's memory layer is model-agnostic and IDE-agnostic. The same geometric manifold powers every deployment. Pick the mode that fits your workflow.
 
+**Current Disciplined MCP & Tool Usage (2026 reality — this supersedes older tool lists):**
+- Full surface is 50+ Engram MCP tools (goal family, quick_trace, record_reasoning_trace, scar, spatial, verification, etc.).
+- **Universal rule:** For *every* MCP server (engram, grok_com_github, etc.): call `search_tool` first to get the live schema, *then* `use_tool`. Never guess parameters.
+- **Rule 6 (Expensive Tool Hygiene):** Once context is established, strictly prefer relational/spatial/goal tools (`search_by_relation`, `context_for_file` + `recall_in_file`, `goal_*`, `visualize`) over broad `query_with_momentum`.
+- Every significant decision/fork: record via `quick_trace` or `record_reasoning_trace`.
+- Visible tool/MCP failures or dead-end approaches: `scar` **immediately** (binding geometric repeller).
+
 ---
 
 ## Mode 1 — IDE + Cloud Agent
@@ -12,23 +19,29 @@ Your AI IDE (Antigravity, Claude Desktop, Cursor, Zed) connects to a cloud reaso
 ```
 User → IDE → Cloud LLM (Gemini / Claude / GPT-4)
                     ↓ MCP tools
-               Engram (local memory, 15 tools)
+               Engram (local memory, 50+ MCP tools — surface evolves; always `search_tool` first for exact current schema)
 ```
 
-**Setup:**
+**Setup:** See [`integrations/README.md`](../integrations/README.md). Minimal config:
+
 ```json
-// ~/.gemini/antigravity/mcp_config.json
 {
   "mcpServers": {
     "engram": {
-      "command": "engram",
-      "args": ["mcp"]
+      "command": "/path/to/Engram/scripts/engram-grok",
+      "args": ["mcp"],
+      "env": {
+        "ENGRAM_STORE": "~/.engram/stalks/",
+        "ENGRAM_PROFILE": "agent"
+      }
     }
   }
 }
 ```
 
-The cloud agent gains 15 MCP tools: `recall`, `remember`, `forget`, `update`, `relate`, `status`, `recent`, `remember_solution`, `context_for_file`, `export_context`, `pin`, `list_stalks`, `set_active_stalk`, `watch_workspace`, `list_concepts`.
+The cloud agent gains access to the full current Engram MCP surface (50+ tools as of 2026, including the complete `goal_*` family, `quick_trace`/`record_reasoning_trace`, `scar`, spatial tools, verification, etc.). 
+
+**Mandatory MCP Calling Discipline (all servers, including engram and grok_com_github):** Always call `search_tool` (with the tool name) **first** to retrieve the exact input schema. Then call `use_tool` using *only* the returned parameter names. NEVER guess or hardcode parameters. This is non-negotiable.
 
 ---
 
@@ -168,4 +181,4 @@ llama-server --model llama3.1-70B-Q4_K_M.gguf --port 11434
 # No configuration changes needed anywhere else
 ```
 
-The `monad_nemo` orchestrator, Engram memory, and all 15 MCP tools work identically regardless of which model is behind the endpoint.
+The `monad_nemo` orchestrator, Engram memory, and the full current MCP surface work identically regardless of which model is behind the endpoint. (Tool surface evolves; always use `search_tool` first for the live schema.)

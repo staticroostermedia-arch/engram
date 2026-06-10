@@ -1,3 +1,9 @@
+#![recursion_limit = "512"]
+#![allow(unused_mut)]                 // many guard bindings from short-lock refactor are read-only after acquire; harmless, silences the bulk of the "does not need to be mutable" warnings
+#![allow(clippy::unnecessary_parens)] // tuple returns in Err arms and a few exprs are idiomatic; keeps code clear
+#![allow(clippy::type_complexity)]    // complex tuple types in KI bake (pinned + weighted) are inherent to the geometric payload; documented
+#![allow(clippy::ptr_arg)]            // &PathBuf in bake_ki is fine for the ki_dir usage; changing would cascade to callers
+
 //! Engram server — MCP + REST memory backend for AI agents.
 //!
 //! # Modes
@@ -9,13 +15,19 @@
 //! engram mcp [--store ~/.engram/manifold]
 //! ```
 //!
-//! **REST mode** — HTTP server on localhost. Used by custom integrations.
+//! **REST mode** — HTTP server on localhost. Used by custom integrations and the dynamic leg-browser GUI.
 //!
 //! ```sh
-//! engram serve [--port 3456] [--store ~/.engram/manifold]
+//! engram serve [--port 3456] [--store ~/.engram/manifold] [--light] [--no-scout]
 //! ```
+//!
+//! Flags for reliable leg-browser / GUI use (see scripts/launch-leg-browser-review.sh):
+//!   --light     : Force CPU backend (ENGRAM_FORCE_CPU_BACKEND), skips CUDA/Metal/BVH heavy init for fast non-GPU startup during UI testing.
+//!   --no-scout  : Skip scout_daemon supervisor (avoids port 8088 contention/spam when only using /api/* for dynamic views).
 
 mod mcp;
+mod mcp_lock;
+mod profile;
 mod serve;
 mod store;
 pub mod daemon;
@@ -25,7 +37,7 @@ pub mod scout;
 pub mod scout_supervisor;
 
 use clap::{Parser, Subcommand};
-use store::open_store;
+// open_store is now called inside the command arms (fast path for MCP, full for Serve)
 use tracing_subscriber::{fmt, EnvFilter};
 
 #[derive(Parser)]
@@ -62,6 +74,21 @@ enum Commands {
         /// Skip seeding alignment genesis blocks on first boot
         #[arg(long, default_value_t = false)]
         no_genesis: bool,
+
+        /// Light / UI-test mode for leg-browser dynamic GUI: force CPU-only backend (no CUDA/Metal/GPU BVH heavy init). Fast startup, sufficient for /api/block /api/hydrate /api/recent etc. (see parent goal:1780106168)
+        #[arg(long, default_value_t = false)]
+        light: bool,
+
+        /// Disable the scout_daemon.py supervisor (port 8088 web-search companion). Recommended with --light when only using serve for live leg-browser views (no /api/scout needed).
+        #[arg(long, default_value_t = false)]
+        no_scout: bool,
+
+        /// Enable the Streamable HTTP MCP transport at POST /mcp.
+        /// Allows multiple agents (Grok, Antigravity) to share ONE engram process
+        /// instead of each spawning their own private stdio subprocess.
+        /// Config: set `url = "http://127.0.0.1:<port>/mcp"` in your MCP client config.
+        #[arg(long, default_value_t = false)]
+        mcp_http: bool,
     },
 }
 
@@ -76,16 +103,26 @@ fn main() -> anyhow::Result<()> {
         .without_time()
         .init();
 
+    // Raise fd limit early for large stores (181k+ .leg files). Default soft ulimit 1024 causes EMFILE
+    // during bvh build (scan_dir opens many .leg), spatial force_ingest, hot cache, etc.
+    // This is required for the CUDA/BVH/NVMe-GPU path to work on real data without "too many open files".
+    // Hard limit is usually high (1M+); we raise soft to 64k.
+    // Ties to "NVMe to GPU" design + large manifold support post our bvh guard lift.
+    raise_fd_limit();
+
     let cli = Cli::parse();
 
-    // Boot scout daemon in background — only for HTTP serve mode.
+    // Boot scout daemon in background — only for HTTP serve mode (unless --no-scout for minimal leg-browser UI use).
     // In MCP mode the scout is not needed and its port-8088 startup
     // noise on stderr would corrupt the JSON-RPC protocol stream.
-    if let Commands::Serve { .. } = cli.command {
-        scout_supervisor::boot();
+    // Linked to sub-goal:1780106172 (diagnose/stabilize serve for seamless dynamic leg-browser under parent goal:1780106168).
+    if let Commands::Serve { no_scout, .. } = &cli.command {
+        if !no_scout {
+            scout_supervisor::boot();
+        } else {
+            tracing::info!("[SERVE] --no-scout: skipping scout_daemon supervisor (cleaner for leg-browser dynamic GUI testing).");
+        }
     }
-
-    let store = open_store(&cli.store);
 
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
@@ -93,32 +130,92 @@ fn main() -> anyhow::Result<()> {
 
     match cli.command {
         Commands::Mcp { no_genesis } => {
+            profile::EngramProfile::from_env().apply();
+            let _mcp_lock = mcp_lock::McpStoreLock::acquire(&cli.store)?;
+
+            // === Early MCP Ready Path ===
+            // Create an ultra-light placeholder instantly so we can answer
+            // initialize / tools/list before the heavy manifold + GPU + BVH work.
+            // The real work happens in the background (or on first real tool use).
+            let store = store::open_store_placeholder_for_mcp(&cli.store);
+
             if !no_genesis {
+                // Genesis seeding is cheap enough to do even on the placeholder path.
                 match store.lock().unwrap().seed_genesis() {
                     Ok(msg)  => tracing::info!("{msg}"),
                     Err(e)   => tracing::warn!("Genesis seed failed: {e}"),
                 }
             }
+
             let _guard = rt.enter();
 
-            // ── Boot file-watcher daemon (AST auto-ingest) ────────────────────
-            store::StoreHandle::boot_daemon(store.clone());
+            // Kick off the REAL heavy initialization in the background.
+            // This loads the full Sheaf/Cuda backends, BVH indexes, embed matrix, etc.
+            // We create a dedicated Tokio runtime inside this thread so that
+            // boot_daemon / ki_hijacker (which use tokio::spawn) do not panic.
+            let store_for_upgrade = store.clone();
+            let real_path = cli.store.clone();
+            std::thread::spawn(move || {
+                tracing::info!("[MCP-FAST] Starting full manifold initialization in background...");
+                maybe_defer_bvh_for_large_store(&real_path);
 
-            // ── Boot KI Hijacker — Logophysical Antigravity Bridge ────────────
-            //
-            // Every 60s, queries the manifold for top-N CRS + hot-session
-            // memories and writes them to:
-            //   ~/.gemini/antigravity/knowledge/active_engram_context/artifacts/context.md
-            //
-            // Antigravity reads this KI at session start. This means the
-            // agent always wakes up with its own geometric memory injected
-            // into its context window — no explicit recall calls needed.
-            let _hijacker = ki_hijacker::spawn(store.clone());
-            tracing::info!("[KI_HIJACKER] Logophysical Antigravity Bridge spawned (MCP mode).");
+                // Create a minimal multi-thread runtime just for this init thread.
+                let rt = match tokio::runtime::Builder::new_multi_thread()
+                    .enable_all()
+                    .build()
+                {
+                    Ok(r) => r,
+                    Err(e) => {
+                        tracing::error!("[MCP-FAST] Failed to create background runtime: {e}");
+                        return;
+                    }
+                };
+
+                let _rt_guard = rt.enter();
+
+                let mut full = store::StoreHandle::new(&real_path);
+
+                if !no_genesis {
+                    match full.seed_genesis() {
+                        Ok(msg)  => tracing::info!("[MCP-FAST] {msg}"),
+                        Err(e)   => tracing::warn!("[MCP-FAST] Genesis seed failed: {e}"),
+                    }
+                }
+
+                // Hot-swap into the SAME Arc the MCP stdio loop uses (fixes split-brain).
+                {
+                    let mut guard = store_for_upgrade.lock().unwrap();
+                    guard.upgrade_from(full);
+                    guard.mark_fully_initialized();
+                }
+
+                store::StoreHandle::boot_daemon(store_for_upgrade.clone());
+                let _hijacker = ki_hijacker::spawn(store_for_upgrade.clone());
+
+                tracing::info!("[MCP-FAST] Full initialization complete — MCP tools now use real backend.");
+
+                // Keep the runtime alive for the background work.
+                std::mem::forget(rt);
+            });
+
+            // Daemon + ki_hijacker start only after upgrade (same Arc as MCP loop).
+            tracing::info!("[MCP-FAST] Fast MCP path active — replying to protocol immediately.");
 
             mcp::run(store)?;
         }
-        Commands::Serve { port, no_genesis } => {
+        Commands::Serve { port, no_genesis, light, no_scout: _, mcp_http } => {
+            // Serve mode (HTTP) — stabilized for leg-browser dynamic GUI (parent goal:1780106168_make-the-leg-browser-a-seamless--truly-dynamic-g ; sub0:1780106172).
+            if light {
+                if std::env::var("ENGRAM_PROFILE").is_err() {
+                    std::env::set_var("ENGRAM_PROFILE", "ui");
+                }
+                profile::EngramProfile::Ui.apply();
+                tracing::info!("[SERVE] --light: ui profile (CPU-only, fast leg-browser).");
+            }
+
+            // Serve mode (HTTP) can afford the full heavy initialization (unless light).
+            let store = store::open_store(&cli.store);
+
             if !no_genesis {
                 match store.lock().unwrap().seed_genesis() {
                     Ok(msg)  => tracing::info!("{msg}"),
@@ -131,13 +228,68 @@ fn main() -> anyhow::Result<()> {
             // ── Boot file-watcher daemon ──────────────────────────────────────
             store::StoreHandle::boot_daemon(store.clone());
 
-            // ── Boot KI Hijacker ──────────────────────────────────────────────
+            // ── Boot KI Hijacker — — — — — — — — — — — — — — — — — — — — — — —
             let _hijacker = ki_hijacker::spawn(store.clone());
             tracing::info!("[KI_HIJACKER] Logophysical Antigravity Bridge spawned (REST mode).");
 
-            rt.block_on(serve::run(store, port))?;
+            // Concrete improvement: serve now supports clean shutdown signals (see serve.rs); "Keyboard interrupt received" will be logged on intentional Ctrl-C.
+            rt.block_on(serve::run(store, port, mcp_http))?;
         }
     }
 
     Ok(())
+}
+
+/// Defer the memory-heavy BVH full scan on very large stores.
+/// Queries fall back to CPU linear scan until BVH is built on demand.
+fn maybe_defer_bvh_for_large_store(path: &str) {
+    if std::env::var("ENGRAM_DEFER_BVH").is_ok() {
+        return;
+    }
+    let expanded = shellexpand::tilde(path).into_owned();
+    let count = std::fs::read_dir(&expanded)
+        .map(|rd| {
+            rd.filter_map(|e| e.ok())
+                .filter(|e| {
+                    e.path()
+                        .extension()
+                        .and_then(|x| x.to_str())
+                        == Some("leg")
+                })
+                .count()
+        })
+        .unwrap_or(0);
+
+    if count > 50_000 {
+        std::env::set_var("ENGRAM_DEFER_BVH", "1");
+        tracing::info!(
+            "[MCP-FAST] Large manifold (~{count} .leg files) — ENGRAM_DEFER_BVH=1. \
+             MCP stays responsive; recall uses CPU scan until BVH built on demand."
+        );
+    }
+}
+
+/// Raise soft RLIMIT_NOFILE early (for large stores with 100k+ .leg files).
+/// Prevents EMFILE during bvh::scan_dir / build (opens many .leg), spatial force_ingest
+/// (on source + manifold), hot cache residency, etc.
+/// Required for reliable CudaBackend + LBVH + device_residency (NVMe-GPU) on real data.
+/// We set soft to 64k (or hard if lower); hard is typically 1M+ from OS.
+fn raise_fd_limit() {
+    unsafe {
+        let mut rlim = libc::rlimit { rlim_cur: 0, rlim_max: 0 };
+        if libc::getrlimit(libc::RLIMIT_NOFILE, &mut rlim) == 0 {
+            let target: libc::rlim_t = 65536;
+            if rlim.rlim_cur < target {
+                let new_cur = if rlim.rlim_max > 0 { target.min(rlim.rlim_max) } else { target };
+                rlim.rlim_cur = new_cur;
+                if libc::setrlimit(libc::RLIMIT_NOFILE, &rlim) == 0 {
+                    tracing::info!("[FD] Raised RLIMIT_NOFILE soft limit to {} (was {}; hard {})", new_cur, rlim.rlim_cur, rlim.rlim_max);
+                } else {
+                    tracing::warn!("[FD] Failed to raise RLIMIT_NOFILE (errno {}) — large store bvh/spatial may hit EMFILE", std::io::Error::last_os_error().raw_os_error().unwrap_or(0));
+                }
+            } else {
+                tracing::info!("[FD] RLIMIT_NOFILE already >= {} (cur {})", target, rlim.rlim_cur);
+            }
+        }
+    }
 }

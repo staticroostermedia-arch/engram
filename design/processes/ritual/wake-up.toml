@@ -1,0 +1,33 @@
+# agent:engram.ritual.wake-up
+# Two-level name: inside file canonical, on-disk this.
+
+[process]
+name = "agent:engram.ritual.wake-up"
+zedos_type = "ritual"
+phase_seed = "0xWAKEUP202606SEEDBLAKE3..."  # derived from name + genesis
+
+[category]
+object = "session_start"
+morphism = "OP_ADD"
+sheaf_role = "Gluing axiom entry point (binds thermodynamic context + explicit inheritance edge via agent_instance_continuation)"
+h1_handler = "OP_IS_SYMBOLIC_OF"
+
+[mcp_tools]
+list = ["mcp_engram_session_start", "mcp_engram_get_continuation_bundle", "mcp_engram_relate"]
+
+[requires]
+list = ["ritual:wake_up_anchor", "goal:engram_mvp_v1"]
+
+[produces]
+list = ["continuation_bundle", "agent_instance_continuation", "metric:wake_up_verification_*"]
+
+[invariants]
+# From CS Roadmap Phase 0 pre-reqs and troop extract
+list = ["leg3_binary_vector_isomorphism", "unit_hypersphere_normalization", "crs_0.74_gate", "lawfulness_verification"]
+
+[timeout_ms]
+value = 30000
+
+[notes]
+# Aligned to handoff troop: uses continuation bundle, hot path, thought tiles. Supports NREM/ego.leg3 from roadmap.
+# H1 handler for gluing axiom consistency.

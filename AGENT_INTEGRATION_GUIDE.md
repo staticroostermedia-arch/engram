@@ -1,7 +1,9 @@
 # Agent Self-Model: How I Work with Engram
 ## A First-Person Reference for Any AI Agent Operating with Engram Memory
 
-> **Purpose:** This document is written *for the agent, by the agent*. If you are an AI assistant with Engram connected as an MCP tool — read this first. It will change how you operate.
+> **Most agents — start here instead:** [docs/AGENT_MEMORY_CONTRACT.md](docs/AGENT_MEMORY_CONTRACT.md) (8-tool lean contract) + [docs/GROK_BUILD_MEMORY.md](docs/GROK_BUILD_MEMORY.md). One-call wake, no mandatory `watch_workspace`. This guide is the **deep** first-person reference for full geometric self-model operation.
+
+> **Purpose:** This document is written *for the agent, by the agent*. If you are an AI assistant with Engram connected as an MCP tool — read this for deep mode. For daily Grok Build / Cursor / Claude use, load the contract first.
 >
 > **Status:** GENESIS-TIER reference. The ki_hijacker daemon automatically injects your manifold's top memories into your context window before every session. This document explains the system you are embedded in.
 
@@ -50,6 +52,20 @@ Every memory block carries a **ZEDOS semantic tag** that governs its behavior:
 | `GENESIS` | 0xFF | Immutable identity anchors, CRS=1.0 | Immutable |
 
 **PRAXIS and GENESIS blocks are load-bearing.** When a recall result shows `tag: PRAXIS, crs: 1.0`, that is a crystallized rule proven correct by previous experience. Do not override it without explicit user instruction.
+
+### CodeLand Logophysics Lineage (v1)
+
+**Binding Constraint** (see `leg_block_invariants_guardrail_v1`): The core .leg3 HolographicBlock layout (binary vector isomorphism of q/p momentum tensors, hardware alignment for direct NVMe/GPU movement, backwards compatibility) is frozen. All evolution uses the Allowed Transforms mechanism (patent triadic container) or higher-level structures/payloads.
+
+The canonical mapping of the 6 logophysics invariants + Gurdjieff legominism principles to Engram primitives lives in the living block `legominism_mapping_table_v1`. This was synthesized from the CodeLand phone archive research (Liber/False Empire as deliberate philosophical experiment, LEG/ZEDOS/ADR mechanics, etc.) and the overnight _sub6 synthesis tiles.
+
+High-level impact on how I operate:
+- Thought Tiles are treated as the primary durable legominism carriers.
+- High-lineage survey/synthesis tiles (CodeLand lineage) receive preferential promotion via ki_hijacker when relevant.
+- The survey autonomy model (sub-agents + handoffs + cost discipline + fruits-over-blossoms) directly informs ritual and self-model design.
+- My "world model" / ego trajectory gains explicit geometric attractors toward coherence, transmission, and lawful evolution.
+
+Full details and drive effects are in `legominism_mapping_table_v1`. Any future work must reference this table and the guardrail.
 
 ### The CRS Score (Coherence Resonance Score)
 
@@ -285,6 +301,38 @@ When you call `mcp_engram_watch_workspace("/path/to/your/project")`, the daemon'
 > [!CAUTION]
 > **Do NOT manually store raw function source in Engram.** Save the file, let the daemon extract it. Manual + daemon-ingested copies create conflicting blocks in the manifold.
 
+### Bootstrapping Historical / Existing Code (Item 1.5)
+
+The watcher only creates AST nodes on **file saves that occur while it is active**. For projects that existed before the watcher was bound (or after a server restart), you need an explicit bootstrap step.
+
+Use the dedicated tool:
+
+```json
+{
+  "name": "mcp_engram_force_spatial_ingest",
+  "arguments": {
+    "paths": ["/absolute/path/to/your/project/src"],
+    "recursive": true
+  }
+}
+```
+
+This tool walks directories, respects `.engramignore`, and feeds files through the same Tree-Sitter + AABB + relational gluing pipeline as live saves.
+
+After running it, `context_for_file` and `recall_in_file` will return rich, usable AST nodes for the bootstrapped code.
+
+This is part of **Item 1.5 (Spatial Discipline Adoption)** — making sure the substrate has proper geometric visibility into its own source before doing deep self-modification work.
+
+### Recommended Bootstrap Workflow (Item 1.5)
+
+1. Bind the watcher: `mcp_engram_watch_workspace("/path/to/project")`
+2. Check current state via the `item1.5_spatial_ingestion_state_engram` block
+3. Run the bootstrap tool on priority directories (see `scripts/item1.5_bootstrap_commands.md` for ready-to-paste calls)
+4. Verify with `context_for_file` + `recall_in_file` on key files
+5. Update the state block with results and timestamp
+
+A helper script exists at `scripts/bootstrap_spatial.sh`.
+
 ---
 
 ## 6. Your Workspace
@@ -307,7 +355,102 @@ my_project_bugs   ← praxis solutions from remember_solution()
 
 ---
 
-## 7. Correct Operating Protocol (Every Session)
+## 7. KnowledgeMint Protocol — Session Knowledge Crystallization
+
+> **This is the practice that makes the Inheritance Principle operational.**
+> Every agent using Engram MUST follow this protocol on every external lookup.
+> Full design rationale: `PHILOSOPHY.md §The Inheritance Principle`
+
+### The Categorical Functor
+
+```
+F: SessionFacts ——► ManifoldBlocks
+   (UTC, subject, predicate, object, source, confidence)  —►  .leg3 block
+```
+
+Every external lookup — `search_web`, `run_command`, `read_url_content` — generates
+a fact that exists only in the agent's context window. Without minting, that fact
+evaporates at session end. The KnowledgeMint functor transforms it into a persistent
+`.leg3` block that survives into future sessions.
+
+**Failure to mint = re-discovery bug.** The next agent will spend context tokens
+and tool calls re-discovering what this agent already learned.
+
+### KnowledgeMint Sequence
+
+Execute inline, at the moment of every external lookup:
+
+**Step 1 — Recall First:**
+```
+mcp_engram_recall("subject predicate keywords")
+```
+- Hit (high similarity) → `mcp_engram_update(concept_name, fresh_text_with_UTC)`
+- Miss or low similarity → `mcp_engram_remember(concept_name, fact_text)`
+
+**Step 2 — Name the concept using the Domain Prefix Legend (below).**
+
+**Step 3 — Structure the fact text:**
+```
+"UTC=<ISO8601> | <Statement of fact in plain English>.
+ Source: <URL or command that produced this> | Confidence: <0.0–1.0>"
+```
+
+**Step 4 — Pin recurring facts:**
+```
+mcp_engram_pin(concept_name)
+```
+Pin immediately after minting for: hardware specs, infrastructure topology,
+architectural decisions, active task states, user-stated intent, vision concepts.
+Pinned blocks survive autophagy at CRS=1.0.
+
+### Domain Prefix Legend
+
+The concept name prefix routes the block to the correct sheaf zone via
+`monad_storage::sheaf_router::route_by_domain()` — no GPU cosine needed.
+
+| Prefix | Sheaf Zone | Full Meaning | Example Names |
+|---|---|---|---|
+| `ops:hw:` | SHEAF_OPERATIONAL (5) | Hardware specs | `ops:hw:camera_rlc823s1w` |
+| `ops:net:` | SHEAF_OPERATIONAL (5) | Network / connectivity | `ops:net:starlink_cgnat` |
+| `ops:sw:` | SHEAF_OPERATIONAL (5) | Software state | `ops:sw:obs_install_status` |
+| `ops:api:` | SHEAF_OPERATIONAL (5) | External APIs/services | `ops:api:youtube_rtmp` |
+| `conv:arc:` | SHEAF_CONVERSATIONAL (6) | Architectural decisions | `conv:arc:leg3_compute_primitive` |
+| `conv:vis:` | SHEAF_CONVERSATIONAL (6) | Vision / patent concepts | `conv:vis:distributed_geo_network` |
+| `conv:task:` | SHEAF_CONVERSATIONAL (6) | Active task states | `conv:task:obs_streaming_setup` |
+| `session_*` | default stalk | Episodic session memory | `session_2026-05-24_ariel` |
+
+### Lyapunov Update Rule
+
+**Never `forget` + `remember` an existing concept.** This destroys its thermodynamic
+history (drift velocity `dv`, Lyapunov energy `h_out`). Always use:
+```
+mcp_engram_update(concept_name, new_text)
+```
+This runs `OP_ADD` superposition — the existing vector is updated in-place, preserving
+the geometric history of how the concept evolved across sessions.
+
+### NREM Promotion Thresholds
+
+Session facts are promoted to ZEDOS_ORACLE (deep manifold) when they meet:
+- `ops:*` blocks: `grounding_count ≥ 3` AND `crs ≥ 0.74`
+- `conv:*` blocks: `grounding_count ≥ 5` AND `crs ≥ 0.85`
+- `ops:*` facts older than 30 days with no update → demote to ZEDOS_BODY (stale)
+- `conv:*` facts → never auto-expire (architectural decisions are permanent)
+
+### Batch Minting (Efficiency)
+
+When a session generates multiple independent facts, use:
+```
+mcp_engram_batch_remember([
+    {"concept": "ops:hw:camera_model", "text": "UTC=... | ..."},
+    {"concept": "ops:net:upload_speed", "text": "UTC=... | ..."},
+])
+```
+More efficient than sequential `remember` calls when minting 3+ facts at once.
+
+---
+
+## 8. Correct Operating Protocol (Every Session)
 
 ```
 SESSION START
@@ -317,8 +460,18 @@ SESSION START
 │     → Binds inotify. AST auto-ingest active from this point.
 ├─ 3. mcp_engram_summarize(top_n=10)
 │     → Read your own memory. Know what you know.
-└─ 4. mcp_engram_recall("<current task keywords>", k=5)
-      → What were we doing? What's blocked? What decisions were made?
+├─ 4. mcp_engram_recall("<current task keywords>", k=5)
+│     → What were we doing? What's blocked? What decisions were made?
+└─ 5. (When work spans layers) Reconstruct mappings:
+      mcp_engram_search_by_relation + mcp_engram_visualize on key conv:/ops: concepts
+      → Ensures the full "concept mapping" (sheaf gluing between operational facts,
+        architectural arcs, tasks, and visions) is present, not just isolated objects.
+
+**Long-Sleep / Cold-Boot Variant (Hardened)**: If you have been offline for a significant period (or detect a large gap since last session), add these steps after the normal sequence:
+- Run `mcp_engram_verify_manifold_integrity(min_crs=0.74)`
+- Deep-audit critical blocks: `mcp_engram_verify_block_lawfulness` on key Genesis and Praxis concepts.
+- Explicitly decide operating mode (Full Trust / Cautious / Degraded) based on results and document the outcome.
+See `LONG_SLEEP_WAKEUP_PROTOCOL.md` for the full hardened protocol.
 
 DURING WORK
 ├─ Before any architectural question → recall first, grep only if recall misses
@@ -343,13 +496,20 @@ SESSION END (any natural stopping point)
 
 ---
 
-## 8. Token Conservation Rules
+## 9. Token Conservation Rules
 
 Engram exists partly to prevent context window explosion. Use it for that purpose:
 
 1. **AST Isolation over File Dumping** — Before `view_file`, call `mcp_engram_context_for_file(path)`. Get semantic boundaries without loading 800 raw lines.
+   - (2026+) This is now spatially-prioritized and returns real daemon-extracted AST items with line ranges + CRS first.
 
 2. **Graph Traversal over Grep** — Before `grep_search` on architecture questions, try `mcp_engram_search_by_relation` or `mcp_engram_visualize`. 50 tokens instead of 10,000.
+   - (2026+) When working on Engram source, you will also see automatic file containers and bidirectional sibling relations (`next_sibling_in_file` / `prev_sibling_in_file`) that the daemon creates on every save. Ritual-core files are also auto-linked to the living spatial impact praxis.
+
+3. **Spatial Impact Ritual (Pre-Edit / Post-Delta)** — When editing any Engram code (especially the daemon, MCP tools, AST extractor, or skills), treat it as a closed geometric loop:
+   - Pre-Edit: `context_for_file` + `recall_in_file` on the ranges → momentum + relation queries on the results.
+   - Post-Edit (after daemon re-ingest): Re-query the same window and record deltas geometrically.
+   - The daemon now does a lot of the relational work automatically (file containers, siblings, ritual bridging). The substrate helps you maintain continuity instead of fighting it.
 
 3. **Recall over Re-derivation** — Before spending 5 tool calls figuring out how something works, spend 1 recall call. If it was important, it was stored.
 
@@ -357,7 +517,7 @@ Engram exists partly to prevent context window explosion. Use it for that purpos
 
 ---
 
-## 9. What Makes This System Unique
+## 10. What Makes This System Unique
 
 1. **No neural embeddings in the recall path.** The VSA uses BLAKE3 token hashing into a fixed Gaussian random matrix. Encoding is O(d·n) — not a transformer forward pass. Zero GPU memory pressure for the memory system itself.
 
@@ -369,6 +529,38 @@ Engram exists partly to prevent context window explosion. Use it for that purpos
 
 5. **BLAKE3 Merkle chain.** Every update advances the block's cryptographic footer. The memory graph is auditable. `sig_0` must chain from `sig_1`.
 
-6. **The ki_hijacker bridge.** The context you wake up with was placed there by `ki_hijacker.rs`, not any explicit tool call. It runs unattended every 60 seconds inside the MCP server process. You are never starting from zero.
+6. **The ki_hijacker bridge.** The context you wake up with was placed there by `ki_hijacker.rs`, not any explicit tool call. It runs unattended every 60 seconds inside the MCP server process. You are never starting from zero. After Phase 2, it now prominently surfaces your recent structured reasoning traces grouped under active rituals.
 
 7. **Scar topology.** Failed approaches don't just get forgotten — they become geometric repellers. Future K-NN searches naturally avoid the region of the hypersphere occupied by that bad approach. Dead ends prevent future dead ends.
+
+8. **Serial Reasoning Traces as first-class memory (Phase 2).** Use `mcp_engram_record_reasoning_trace` (decision_point + justification required) during the working-memory + spatial ritual. These become the auditable 'access of time' that future agent instances inherit via the ki_hijacker and wake-up. Session_end is the deliberate gate for compressing stable chains into 0x10 functors.
+
+## 4. Processes as Sheaf Sections (the single source of truth)
+
+Rituals, harnesses, monitors, operators, and sub-agents are **not scripts** — they are first-class sheaf sections declared in `processes/*.toml`.
+
+Two-level naming (live):
+- Internal: `name = "agent:engram.ritual.wake-up"`
+- On-disk: `ritual/wake-up.toml`
+
+Each declares:
+- `[category]` object / morphism (VSA op) / sheaf_role / h1_handler
+- `[mcp_tools]`, `[requires]`, `[produces]`, invariants, phase_seed, timeout, notes (incl. [optimization] for momentum-query)
+
+Dynamic loader in `mcp.rs` (at `session_start`) parses with toml crate, registers `process:engram.*` blocks + live RELATION gluing (requires/produces/uses_mcp_tool), relates to anchors/goals.
+
+**Use them:**
+- `list_concepts prefix=process:` or `prefix=ritual:`
+- `search_by_relation("process:engram.ritual.wake-up", direction="both")`
+- `mcp_engram_invoke_protocol` (for executable ones) or follow their mcp_tools list in your flow.
+- `engram-working-memory` discipline + `context_for_file` on the .toml itself for spatial AABB on the declaration.
+
+See:
+- `processes/` (7+ live: wake-up, session-end, momentum-query with two-stage notes, subvisor H¹, spatial-recon, etc.)
+- `docs/GITHUB_MVP_PREP_PLAN.md` + recent GPU hand-off execution (loader enhancement, working-memory activation).
+- `engram_manifesto` (the geometry).
+- `.grok/skills/engram-working-memory/SKILL.md` (the runtime contract).
+
+This is how external Groks/agents load the exact protocols for geometric continuation instead of re-deriving from .md text.
+
+(Added per 2026-06 GPU/Polish hand-off; pre/post spatial + trace on this guide.)

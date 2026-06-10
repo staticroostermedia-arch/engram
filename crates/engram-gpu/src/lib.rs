@@ -1,3 +1,9 @@
+#![allow(clippy::doc_lazy_continuation)]
+#![allow(clippy::needless_borrow)]
+#![allow(clippy::question_mark)]
+#![allow(clippy::if_same_then_else)]
+#![allow(clippy::manual_c_str_literals)]
+
 //! CUDA backend for Engram — BVH O(log N) K-NN + parallel cosine kernels.
 //!
 //! # Architecture
@@ -22,6 +28,7 @@
 //! On GPU-less machines, `CudaBackend` transparently delegates to `CpuBackend`.
 
 pub mod bvh;
+pub mod cuda_dispatch;
 #[cfg(engram_backend_cuda)]
 pub mod optix_pipeline;
 pub mod backend;

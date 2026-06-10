@@ -3,16 +3,16 @@
 # Watching them from both daemons causes split-brain race conditions.
 
 # CodeLand source — ouroboros_expanded owns all .rs/.cu ingestion here
-/home/a/Documents/CodeLand/crates/
+/path/to/Documents/CodeLand/crates/
 
 # CodeLand holograms static — ouroboros writes .leg3 directly here
-/home/a/Documents/CodeLand/data/holograms/static/
+/path/to/Documents/CodeLand/data/holograms/static/
 
 # CodeLand oracle store — managed by ASCEND pipeline
-/home/a/Documents/CodeLand/data/ledger/
+/path/to/Documents/CodeLand/data/ledger/
 
 # Genesis blocks — immutable, never re-encode
-/home/a/Documents/CodeLand/data/holograms/genesis/
+/path/to/Documents/CodeLand/data/holograms/genesis/
 
 # Build artifacts
 target/

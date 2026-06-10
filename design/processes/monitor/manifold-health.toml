@@ -1,0 +1,30 @@
+# agent:engram.monitor.manifold-health
+
+[process]
+name = "agent:engram.monitor.manifold-health"
+zedos_type = "monitor"
+phase_seed = "0xMANIFOLDHEALTH202606..."
+
+[category]
+object = "manifold_health"
+morphism = "OP_INVERT"
+sheaf_role = "CRS / H¹ audit + scar (lawfulness verification, detect obstructions)"
+h1_handler = "OP_IS_SYMBOLIC_OF"
+
+[mcp_tools]
+list = ["mcp_engram_verify_manifold_integrity", "mcp_engram_verify_block_lawfulness", "mcp_engram_scar"]
+
+[requires]
+list = ["item1.5_spatial_ingestion_state_engram"]
+
+[produces]
+list = ["metric:wake_up_verification_*", "scar:*"]
+
+[invariants]
+list = ["crs_0.74_gate", "lawfulness_verification"]
+
+[timeout_ms]
+value = 10000
+
+[notes]
+# From proposal and roadmap Phase 5: H1 Laplacian on relation graph (tiles, traces, blocks, goals, spatial AST). Pre-gluing check. Supports subvisor for health monitoring of processes.

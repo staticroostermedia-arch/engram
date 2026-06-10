@@ -13,7 +13,7 @@ fn main() {
         }
     }
 
-    let backend = engram_core::CpuBackend::new("/home/a/.engram/stalks/");
+    let backend = engram_core::CpuBackend::new("/path/to/.engram/stalks/");
     println!("=== SEMANTIC RAY-CASTER ===");
     println!("Query: {}", query);
     let res = engram_core::VsaBackend::recall(&backend, &query, 5);

@@ -157,8 +157,8 @@ fn main() {
             Some(vec) => {
                 let dim = vec.len().min(8192);
                 // Place cleanly into q[0..dim].re
-                for i in 0..dim {
-                    block.q[i].re = vec[i];
+                for (i, &v) in vec.iter().enumerate().take(dim) {
+                    block.q[i].re = v;
                     block.q[i].im = 0.0;
                 }
                 // Write back

@@ -1,0 +1,30 @@
+# agent:engram.harness.spatial-recon
+
+[process]
+name = "agent:engram.harness.spatial-recon"
+zedos_type = "harness"
+phase_seed = "0xSPATIALRECON202606..."
+
+[category]
+object = "spatial_recon"
+morphism = "OP_ADD"
+sheaf_role = "Restriction on AABB overlaps (pre/post edit recon against living AST blocks)"
+h1_handler = "OP_IS_SYMBOLIC_OF"
+
+[mcp_tools]
+list = ["mcp_engram_context_for_file", "mcp_engram_recall_in_file", "mcp_engram_record_reasoning_trace"]
+
+[requires]
+list = ["praxis:spatial_manifold_impact_analysis", "item1.5_spatial_ingestion_state_engram"]
+
+[produces]
+list = ["spatial_impact__*", "trace:*_pre_edit", "trace:*_post_delta"]
+
+[invariants]
+list = ["allowed_transforms_contract", "provlog_gate_on_write", "spatial_aabb_coordinates"]
+
+[timeout_ms]
+value = 15000
+
+[notes]
+# From spatial praxis and roadmap realizations: daemon auto gluing for AST (defines, siblings). Enforces Code Edit Ritual. Aligns to handoff spatial context baking in ki_hijacker.

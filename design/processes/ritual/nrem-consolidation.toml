@@ -1,0 +1,30 @@
+# agent:engram.ritual.nrem-consolidation
+
+[process]
+name = "agent:engram.ritual.nrem-consolidation"
+zedos_type = "ritual"
+phase_seed = "0xNREM202606SEED..."
+
+[category]
+object = "nrem_consolidation"
+morphism = "OP_ADD"
+sheaf_role = "Hippocampus → neocortex promotion (hot-set high-CRS blocks, goal bias, mass cap)"
+h1_handler = "null"
+
+[mcp_tools]
+list = ["mcp_engram_promote_hot", "mcp_engram_record_reasoning_trace"]
+
+[requires]
+list = ["__system_state__", "ritual:wake_up_anchor"]
+
+[produces]
+list = ["ego.leg3", "hot_path_promotion", "trace:*_nrem"]
+
+[invariants]
+list = ["leg3_binary_vector_isomorphism", "crs_0.74_gate", "hot-swap"]
+
+[timeout_ms]
+value = 60000
+
+[notes]
+# From roadmap Phase 1: extend NREM for explicit hot-set. Supports subvisor oversight of consolidation for continuity. Aligned to handoff ki_hijacker bakes.

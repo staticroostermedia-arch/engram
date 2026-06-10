@@ -23,6 +23,25 @@ fn main() {
     // CPU is always available
     println!("cargo:rustc-cfg=engram_backend_cpu");
 
+    // ── Highest-priority escape hatch (symmetric to engram-gpu/build.rs) ─────
+    // Without this, forcing wgpu only in the gpu crate is useless because the
+    // server's own build script still activates engram_backend_cuda.
+    if let Ok(force) = std::env::var("ENGRAM_FORCE_BACKEND") {
+        match force.to_lowercase().as_str() {
+            "wgpu" | "webgpu" => {
+                println!("cargo:warning=engram-server: ENGRAM_FORCE_BACKEND=wgpu — forcing WebGPU backend and skipping CUDA/ROCm detection (per large-manifold debug plan).");
+                println!("cargo:rustc-cfg=engram_backend_wgpu");
+                return;
+            }
+            "cpu" => {
+                println!("cargo:warning=engram-server: ENGRAM_FORCE_BACKEND=cpu — forcing pure CPU backend.");
+                return;
+            }
+            "cuda" | "rocm" => { /* fall through for explicit force */ }
+            _ => {}
+        }
+    }
+
     // Rerun if these env vars change
     println!("cargo:rerun-if-env-changed=CUDA_HOME");
     println!("cargo:rerun-if-env-changed=OPTIX_SDK_PATH");

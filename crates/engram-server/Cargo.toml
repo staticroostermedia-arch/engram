@@ -13,17 +13,22 @@ path = "src/main.rs"
 
 [features]
 default = []
+async-io = []                          # declared for ki_hijacker prototype / async read demos (silences unexpected_cfgs for the feature-gated fns)
 # Legacy override flags — seldom needed since build.rs auto-detects the best backend.
 # Use these only to force a specific backend on a multi-GPU machine:
-cuda  = ["engram-gpu/cuda-kernels"]   # force CUDA even if ROCm is also present
+cuda  = ["engram-gpu/cuda-kernels", "engram-gpu/device_residency"]   # force CUDA + device_residency (cuFile/GPUDirect NVMe->GPU for hot; Tier 3 for NVMe-GPU design)
 rocm  = ["engram-gpu/rocm-kernels"]   # force ROCm even if CUDA is also present
 metal = []                             # macOS Metal: auto-detected by build.rs; kept for compat
 
 [dependencies]
-engram-core = { path = "../engram-core" }
+engram-core = { path = "../engram-core", features = ["async-io"] }
 engram-ast  = { path = "../engram-ast" }
-# engram-gpu is always included — build.rs auto-selects CUDA/ROCm/Metal/WebGPU/CPU
-engram-gpu   = { path = "../engram-gpu" }
+# engram-gpu is always included — build.rs auto-selects CUDA/ROCm/Metal/WebGPU/CPU.
+# device_residency (direct NVMe->GPU for high_priority/hot via cuFile stubs + LegView bias today;
+# full GPUDirect when nvidia-fs present) is now default so CUDA setups get the NVMe-GPU path
+# compiled in (tied to the design intent). Safe no-op on non-cuda.
+engram-gpu   = { path = "../engram-gpu", features = ["device_residency"] }
+libc = { workspace = true }
 
 # Async runtime
 tokio        = { workspace = true }
@@ -57,6 +62,7 @@ bincode = "1"
 regex   = "1"
 chrono  = { version = "0.4", features = ["serde"] }
 bumpalo = "3.14.0"
+walkdir = "2"
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(engram_backend_cuda)', 'cfg(engram_backend_metal)', 'cfg(engram_backend_rocm)', 'cfg(engram_backend_cpu)', 'cfg(engram_backend_wgpu)'] }

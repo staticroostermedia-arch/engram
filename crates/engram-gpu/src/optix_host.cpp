@@ -65,7 +65,8 @@ struct EngramOptiXPipeline {
 
 static void engram_optix_log(unsigned int level, const char* tag,
                               const char* msg, void*) {
-    if (level <= 3) fprintf(stderr, "[Engram-OptiX:%s] %s\n", tag, msg);
+    fprintf(stderr, "[Engram-OptiX-Logger:%u:%s] %s\n", level, tag, msg);
+    fflush(stderr);
 }
 
 // ── Public C API ─────────────────────────────────────────────────────────────
@@ -82,15 +83,42 @@ EngramOptiXPipeline* engram_optix_init(
 {
     auto* state = new EngramOptiXPipeline();
 
-    OPTIX_CHECK_NULL(optixInit());
+    OptixResult init_res = optixInit();
+    fprintf(stderr, "[Engram-OptiX] optixInit() returned: %d\n", (int)init_res);
+    fflush(stderr);
 
-    cudaFree(nullptr);
+    // CRITICAL: if optixInit() fails the function table is uninitialized.
+    // Calling ANY OptiX API after this (including optixDeviceContextCreate)
+    // dereferences a null function pointer -> SIGSEGV. Return immediately.
+    if (init_res != OPTIX_SUCCESS) {
+        fprintf(stderr, "[Engram-OptiX] optixInit() failed (%d) — OptiX unavailable on this driver/GPU. CPU BVH fallback.\n", (int)init_res);
+        fflush(stderr);
+        delete state;
+        return nullptr;
+    }
+
+    cudaError_t free_err = cudaFree(nullptr);
+    fprintf(stderr, "[Engram-OptiX] cudaFree(nullptr) returned: %d (%s)\n", (int)free_err, cudaGetErrorString(free_err));
+    fflush(stderr);
+
     CUcontext cu_ctx = nullptr;
-    cuCtxGetCurrent(&cu_ctx);
+    CUresult ctx_res = cuCtxGetCurrent(&cu_ctx);
+    fprintf(stderr, "[Engram-OptiX] cuCtxGetCurrent returned: %d, cu_ctx = %p\n", (int)ctx_res, (void*)cu_ctx);
+    fprintf(stderr, "[Engram-OptiX] optixDeviceContextCreate pointer = %p\n", (void*)OPTIX_FUNCTION_TABLE_SYMBOL.optixDeviceContextCreate);
+    fflush(stderr);
+
+    // Secondary guard: verify the function table was actually populated.
+    if (!OPTIX_FUNCTION_TABLE_SYMBOL.optixDeviceContextCreate) {
+        fprintf(stderr, "[Engram-OptiX] Function table null after optixInit — PTX arch mismatch? CPU BVH fallback.\n");
+        fflush(stderr);
+        delete state;
+        return nullptr;
+    }
 
     OptixDeviceContextOptions ctx_opts = {};
-    ctx_opts.logCallbackFunction = &engram_optix_log;
-    ctx_opts.logCallbackLevel    = 3;
+    ctx_opts.logCallbackFunction = engram_optix_log;
+    ctx_opts.logCallbackLevel    = 4;
+    ctx_opts.validationMode      = OPTIX_DEVICE_CONTEXT_VALIDATION_MODE_ALL;
     OPTIX_CHECK_NULL(optixDeviceContextCreate(cu_ctx, &ctx_opts, &state->context));
 
     OptixModuleCompileOptions mod_opts = {};
@@ -104,14 +132,10 @@ EngramOptiXPipeline* engram_optix_init(
     pipe_opts.numAttributeValues               = 0;
     pipe_opts.usesPrimitiveTypeFlags           = OPTIX_PRIMITIVE_TYPE_FLAGS_CUSTOM;  // renamed in OptiX 9
     pipe_opts.pipelineLaunchParamsVariableName = "params";
+    pipe_opts.pipelineLaunchParamsSizeInBytes = sizeof(EngramLaunchParams);
+    char log[4096];
+    size_t log_size = sizeof(log);
 
-    char log[4096]; size_t log_size = sizeof(log);
-
-    // PTX text is valid SM-native virtual ISA. _optix_* intrinsics are resolved
-    // by the OptiX 9.1 JIT at optixModuleCreate time — not by ptxas.
-    // We compile with nvcc --ptx --gpu-architecture=compute_120 (native SM 12.0)
-    // and ignore ptxas exit codes (CUDA 13 ptxas rejects _optix_* as unknown;
-    // the PTX file is written before ptxas validation runs).
     auto compile_mod = [&](const char* ptx, OptixModule* mod) -> bool {
         log_size = sizeof(log);
         OptixResult r = optixModuleCreate(
@@ -125,25 +149,36 @@ EngramOptiXPipeline* engram_optix_init(
     };
 
     OptixModule mod_is, mod_rg, mod_ah, mod_ms;
-    if (!compile_mod(ptx_is, &mod_is) ||
-        !compile_mod(ptx_rg, &mod_rg) ||
-        !compile_mod(ptx_ah, &mod_ah) ||
-        !compile_mod(ptx_ms, &mod_ms)) {
-        delete state;
-        return nullptr;
-    }
+    fprintf(stderr, "[Engram-OptiX] Compiling IS module...\n"); fflush(stderr);
+    if (!compile_mod(ptx_is, &mod_is)) { delete state; return nullptr; }
+    fprintf(stderr, "[Engram-OptiX] Compiling RG module...\n"); fflush(stderr);
+    if (!compile_mod(ptx_rg, &mod_rg)) { delete state; return nullptr; }
+    fprintf(stderr, "[Engram-OptiX] Compiling AH module...\n"); fflush(stderr);
+    if (!compile_mod(ptx_ah, &mod_ah)) { delete state; return nullptr; }
+    fprintf(stderr, "[Engram-OptiX] Compiling MS module...\n"); fflush(stderr);
+    if (!compile_mod(ptx_ms, &mod_ms)) { delete state; return nullptr; }
+    fprintf(stderr, "[Engram-OptiX] All modules compiled successfully.\n"); fflush(stderr);
 
     OptixProgramGroup pg_rg, pg_hg, pg_ms;
+    OptixProgramGroupOptions pg_opts = {};
 
     {
+        fprintf(stderr, "[Engram-OptiX] Creating RG program group...\n");
+        fprintf(stderr, "[Engram-OptiX] context: %p, optixProgramGroupCreate ptr: %p\n", (void*)state->context, (void*)OPTIX_FUNCTION_TABLE_SYMBOL.optixProgramGroupCreate);
+        fprintf(stderr, "[Engram-OptiX] mod_rg: %p, entryName: %s\n", (void*)mod_rg, "__raygen__engram_knn");
+        fprintf(stderr, "[Engram-OptiX] sizeof(OptixProgramGroupDesc) = %zu\n", sizeof(OptixProgramGroupDesc));
+        fprintf(stderr, "[Engram-OptiX] sizeof(OptixProgramGroupSingleModule) = %zu\n", sizeof(OptixProgramGroupSingleModule));
+        fprintf(stderr, "[Engram-OptiX] sizeof(OptixProgramGroupHitgroup) = %zu\n", sizeof(OptixProgramGroupHitgroup));
+        fflush(stderr);
         OptixProgramGroupDesc d = {};
         d.kind = OPTIX_PROGRAM_GROUP_KIND_RAYGEN;
         d.raygen.module = mod_rg;
         d.raygen.entryFunctionName = "__raygen__engram_knn";
         log_size = sizeof(log);
-        OPTIX_CHECK_NULL(optixProgramGroupCreate(state->context, &d, 1, nullptr, log, &log_size, &pg_rg));
+        OPTIX_CHECK_NULL(optixProgramGroupCreate(state->context, &d, 1, &pg_opts, log, &log_size, &pg_rg));
     }
     {
+        fprintf(stderr, "[Engram-OptiX] Creating HG program group...\n"); fflush(stderr);
         OptixProgramGroupDesc d = {};
         d.kind = OPTIX_PROGRAM_GROUP_KIND_HITGROUP;
         d.hitgroup.moduleAH             = mod_ah;
@@ -151,28 +186,34 @@ EngramOptiXPipeline* engram_optix_init(
         d.hitgroup.moduleIS             = mod_is;
         d.hitgroup.entryFunctionNameIS  = "__intersection__engram_aabb";
         log_size = sizeof(log);
-        OPTIX_CHECK_NULL(optixProgramGroupCreate(state->context, &d, 1, nullptr, log, &log_size, &pg_hg));
+        OPTIX_CHECK_NULL(optixProgramGroupCreate(state->context, &d, 1, &pg_opts, log, &log_size, &pg_hg));
     }
     {
+        fprintf(stderr, "[Engram-OptiX] Creating MS program group...\n"); fflush(stderr);
         OptixProgramGroupDesc d = {};
         d.kind = OPTIX_PROGRAM_GROUP_KIND_MISS;
         d.miss.module = mod_ms;
         d.miss.entryFunctionName = "__miss__engram_knn";
         log_size = sizeof(log);
-        OPTIX_CHECK_NULL(optixProgramGroupCreate(state->context, &d, 1, nullptr, log, &log_size, &pg_ms));
+        OPTIX_CHECK_NULL(optixProgramGroupCreate(state->context, &d, 1, &pg_opts, log, &log_size, &pg_ms));
     }
 
+    fprintf(stderr, "[Engram-OptiX] Program groups created successfully. Creating pipeline...\n"); fflush(stderr);
     OptixProgramGroup all_pgs[] = { pg_rg, pg_hg, pg_ms };
     OptixPipelineLinkOptions link_opts = {};
     link_opts.maxTraceDepth = 1;
     log_size = sizeof(log);
     OPTIX_CHECK_NULL(optixPipelineCreate(state->context, &pipe_opts, &link_opts,
                                          all_pgs, 3, log, &log_size, &state->pipeline));
+    
+    fprintf(stderr, "[Engram-OptiX] Pipeline created. Setting stack size...\n"); fflush(stderr);
     optixPipelineSetStackSize(state->pipeline, 2048, 2048, 2048, 1);
 
     // Build GAS
+    fprintf(stderr, "[Engram-OptiX] Allocating d_aabb_input for GAS (n_primitives = %u)...\n", n_primitives); fflush(stderr);
     const size_t aabb_bytes = (size_t)n_primitives * 6 * sizeof(float);
     cudaMalloc(reinterpret_cast<void**>(&state->d_aabb_input), aabb_bytes);
+    fprintf(stderr, "[Engram-OptiX] Copying AABB input to device...\n"); fflush(stderr);
     cudaMemcpy(reinterpret_cast<void*>(state->d_aabb_input),
                aabb_data, aabb_bytes, cudaMemcpyHostToDevice);
 
@@ -189,40 +230,51 @@ EngramOptiXPipeline* engram_optix_init(
     accel_opts.operation  = OPTIX_BUILD_OPERATION_BUILD;
 
     OptixAccelBufferSizes sizes = {};
+    fprintf(stderr, "[Engram-OptiX] Computing accel memory usage...\n"); fflush(stderr);
     OPTIX_CHECK_NULL(optixAccelComputeMemoryUsage(state->context, &accel_opts, &bi, 1, &sizes));
+    fprintf(stderr, "[Engram-OptiX] Accel sizes: tempSize = %zu, outputSize = %zu\n", sizes.tempSizeInBytes, sizes.outputSizeInBytes); fflush(stderr);
 
     CUdeviceptr d_temp, d_out_full;
     cudaMalloc(reinterpret_cast<void**>(&d_temp),     sizes.tempSizeInBytes);
     cudaMalloc(reinterpret_cast<void**>(&d_out_full), sizes.outputSizeInBytes);
 
     OptixTraversableHandle h_full;
+    fprintf(stderr, "[Engram-OptiX] Building initial GAS...\n"); fflush(stderr);
     OPTIX_CHECK_NULL(optixAccelBuild(state->context, nullptr, &accel_opts,
                                      &bi, 1,
                                      d_temp, sizes.tempSizeInBytes,
                                      d_out_full, sizes.outputSizeInBytes,
                                      &h_full, nullptr, 0));
-    cudaFree(reinterpret_cast<void*>(d_temp));
 
     // Compact
+    fprintf(stderr, "[Engram-OptiX] Allocating compact size pointer...\n"); fflush(stderr);
     CUdeviceptr d_compact_size;
     cudaMalloc(reinterpret_cast<void**>(&d_compact_size), sizeof(size_t));
     OptixAccelEmitDesc emit = { d_compact_size, OPTIX_PROPERTY_TYPE_COMPACTED_SIZE };
+    fprintf(stderr, "[Engram-OptiX] Emitting compacted size...\n"); fflush(stderr);
     optixAccelBuild(state->context, nullptr, &accel_opts, &bi, 1,
                     d_temp, sizes.tempSizeInBytes,
                     d_out_full, sizes.outputSizeInBytes,
                     &h_full, &emit, 1);
+    fprintf(stderr, "[Engram-OptiX] Freeing d_temp...\n"); fflush(stderr);
+    cudaFree(reinterpret_cast<void*>(d_temp));
     size_t compact_size = 0;
+    fprintf(stderr, "[Engram-OptiX] Copying compact size from device...\n"); fflush(stderr);
     cudaMemcpy(&compact_size, reinterpret_cast<void*>(d_compact_size),
                sizeof(size_t), cudaMemcpyDeviceToHost);
     cudaFree(reinterpret_cast<void*>(d_compact_size));
+    fprintf(stderr, "[Engram-OptiX] Compacted GAS size: %zu bytes\n", compact_size); fflush(stderr);
 
     cudaMalloc(reinterpret_cast<void**>(&state->d_gas_output), compact_size);
+    fprintf(stderr, "[Engram-OptiX] Compacting GAS...\n"); fflush(stderr);
     OPTIX_CHECK_NULL(optixAccelCompact(state->context, nullptr,
                                        h_full, state->d_gas_output, compact_size,
                                        &state->traversable));
+    fprintf(stderr, "[Engram-OptiX] Freeing d_out_full...\n"); fflush(stderr);
     cudaFree(reinterpret_cast<void*>(d_out_full));
 
     // SBT
+    fprintf(stderr, "[Engram-OptiX] Packing SBT headers...\n"); fflush(stderr);
     struct RaygenRecord  { char h[OPTIX_SBT_RECORD_HEADER_SIZE]; };
     struct MissRecord    { char h[OPTIX_SBT_RECORD_HEADER_SIZE]; };
     struct HgRecord      { char h[OPTIX_SBT_RECORD_HEADER_SIZE]; };
@@ -231,10 +283,12 @@ EngramOptiXPipeline* engram_optix_init(
     MissRecord   ms = {}; optixSbtRecordPackHeader(pg_ms, &ms);
     HgRecord     hg = {}; optixSbtRecordPackHeader(pg_hg, &hg);
 
+    fprintf(stderr, "[Engram-OptiX] Allocating SBT records on device...\n"); fflush(stderr);
     cudaMalloc(reinterpret_cast<void**>(&state->d_sbt_raygen),    sizeof(rg));
     cudaMalloc(reinterpret_cast<void**>(&state->d_sbt_miss),      sizeof(ms));
     cudaMalloc(reinterpret_cast<void**>(&state->d_sbt_hitgroup),  sizeof(hg));
 
+    fprintf(stderr, "[Engram-OptiX] Copying SBT records to device...\n"); fflush(stderr);
     cudaMemcpy(reinterpret_cast<void*>(state->d_sbt_raygen),   &rg, sizeof(rg), cudaMemcpyHostToDevice);
     cudaMemcpy(reinterpret_cast<void*>(state->d_sbt_miss),     &ms, sizeof(ms), cudaMemcpyHostToDevice);
     cudaMemcpy(reinterpret_cast<void*>(state->d_sbt_hitgroup), &hg, sizeof(hg), cudaMemcpyHostToDevice);

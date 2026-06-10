@@ -1,0 +1,37 @@
+# agent:engram.operator.momentum-query
+# Marked as hot path per proposal.
+
+[process]
+name = "agent:engram.operator.momentum-query"
+zedos_type = "operator"
+phase_seed = "0xMOMENTUMQUERY202606..."
+
+[category]
+object = "momentum_query"
+morphism = "OP_GEOMETRIC_PRODUCT"
+sheaf_role = "Core 80/20 q+p blend (semantic + trajectory for directional rehydration)"
+h1_handler = "null"  # Core path, optimized for speed; H1 on higher layers
+
+[mcp_tools]
+list = ["mcp_engram_query_with_momentum", "mcp_engram_promote_hot"]
+
+[requires]
+list = ["__system_state__", "continuation_bundle"]
+
+[produces]
+list = ["high_momentum_blocks", "hot_path_promotion"]
+
+[optimization]
+# Per proposal and handoff: two-stage query + virtual geometric index. Only on top-20 candidates.
+strategy = "top_k_then_blend"
+k_initial = 20
+blend_weights = { q=0.8, p=0.2 }
+
+[invariants]
+list = ["unit_hypersphere_normalization", "crs_weighted_scoring"]
+
+[timeout_ms]
+value = 5000  # Hot path, low latency
+
+[notes]
+# From roadmap Phase 4 VSA and handoff: promote_hot, get_continuation_bundle for pre-compression. Supports sub-agent reliability by preferring geometric entry over classical tools.

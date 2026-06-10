@@ -32,6 +32,32 @@ fn main() {
     // ── Always emit CPU baseline ─────────────────────────────────────────────
     println!("cargo:rustc-cfg=engram_backend_cpu");
 
+    // ── Highest-priority escape hatch (Phase 1 of large-manifold segfault fix plan) ──
+    // Allows forcing wgpu or cpu even when CUDA/ROCm toolchains are detected.
+    // This is the smallest, highest-leverage change to let the superior dev binary
+    // (LRU + WS3-B geo/hot-residency) run on this Linux + CUDA machine without
+    // hitting the post-LBVH CUDA crash path on the real 154k store.
+    // Usage examples:
+    //   ENGRAM_FORCE_BACKEND=wgpu cargo install --path crates/engram-server
+    //   ENGRAM_FORCE_BACKEND=wgpu ENGRAM_BINARY=... engram-tui
+    if let Ok(force) = std::env::var("ENGRAM_FORCE_BACKEND") {
+        match force.to_lowercase().as_str() {
+            "wgpu" | "webgpu" => {
+                println!("cargo:warning=engram: ENGRAM_FORCE_BACKEND=wgpu — forcing WebGPU backend and skipping CUDA/ROCm detection (per large-manifold debug plan).");
+                println!("cargo:rustc-cfg=engram_backend_wgpu");
+                return;
+            }
+            "cpu" => {
+                println!("cargo:warning=engram: ENGRAM_FORCE_BACKEND=cpu — forcing pure CPU backend.");
+                return;
+            }
+            "cuda" | "rocm" => {
+                // explicit force — fall through to normal probe
+            }
+            _ => {}
+        }
+    }
+
     // ── Probe CUDA ────────────────────────────────────────────────────────────
     if let Some(nvcc_path) = which_compiler("nvcc", "CUDA_HOME") {
         println!("cargo:warning=engram: CUDA detected (nvcc: {}). Compiling GPU kernels.", nvcc_path.display());
@@ -321,6 +347,7 @@ fn detect_native_ptx_arch() -> String {
                     let sm: u32 = digits.parse().unwrap_or(0);
                     // compute_89 is the highest arch fully supported by OptiX PTX JIT
                     // on SM 8.x hardware. For SM 9+ use native target.
+                    #[allow(clippy::if_same_then_else)]
                     if sm >= 90 {
                         return format!("compute_{sm}");
                     } else if sm >= 86 {
@@ -339,7 +366,7 @@ fn compile_optix_host(sdk: &str) {
     cc::Build::new()
         .cpp(true)
         .flag("-std=c++17")
-        .flag(&format!("-I{sdk}/include"))
+        .flag(format!("-I{sdk}/include"))
         .flag("-I/usr/local/cuda/include")
         .flag("-DOPTIX_SDK_AVAILABLE")
         .file("src/optix_host.cpp")

@@ -56,6 +56,31 @@ Always check before writing new memories:
 
 ---
 
+## Reasoning Trace Capture (Phase 2 — Automatic Self-Model Continuation)
+
+For anything that affects future agent instances (major decisions, edit intents/outcomes, forks), use the dedicated tool instead of free-form notes:
+
+```
+mcp_engram_record_reasoning_trace(
+  decision_point="...",
+  justification="...",
+  alternatives_considered="...",
+  falsifiability="...",
+  related_entities="...",
+  ritual_context="...",
+  spatial_context="...",
+  prev_trace="..."   # for chaining
+)
+```
+
+- Call this in the **Pre-Edit** and **Post-Delta** steps of the Spatial-Manifold Change Discipline.
+- These `trace:*` blocks are what the ki_hijacker now surfaces in the high-visibility Ritual + Reasoning Trajectory.
+- Session-end uses them for deliberate 0x10 functor compression decisions.
+
+This is the mechanism that turns the agent's actual reasoning into first-class, inheritable serial memory.
+
+---
+
 ## Token Conservation: When to Use Engram vs File Tools
 
 | Situation | Use Engram | Use File Tools |
@@ -128,21 +153,40 @@ The scar magnitude (0.0–1.0) controls how strongly the manifold repels this co
 
 ---
 
-## Spatial Code Search Pattern
+## Spatial Code Search Pattern + Manifold Impact Discipline
 
-When you need to understand a specific file section:
+The daemon uses Tree-Sitter (via engram-ast) on every save to isolate functions, structs, impls, etc. into dedicated HolographicBlocks carrying precise AABB line coordinates and the full source in the provlog. This is not just "better grep" — it is the foundation for geometric pre/post change analysis against the living memory.
 
+### Basic Spatial Lookup
 ```python
-# Pattern: position-based recall beats grep for semantic questions
-
 # 1. Get the file context first
 mcp_engram_context_for_file("/path/to/file.rs")
 
-# 2. If you know the line range (e.g. from a stack trace or error):
+# 2. Spatial AABB query on exact ranges
 mcp_engram_recall_in_file(file_stem="filename", start_line=80, end_line=200)
-# → Returns every function/struct/class defined in that range
-# → Full source code in the provlog payload
-# → Zero file reads needed
-
-# 3. Only if recall misses: view_file() for raw content
+# → Every AST concept whose row range intersects
+# → Concept names usable for further momentum/relation queries
+# → Full original source available via provlog / read_concept
 ```
+
+### Full Pre-Edit / Post-Edit Manifold Impact Protocol (Elevated Ritual)
+When editing any Engram source (especially self-modification of the daemon, MCP tools, AST extractor, skills, or protocols):
+
+**Before the edit (2026+ improved version):**
+- Confirm `watch_workspace` is active.
+- `context_for_file` (now spatially-prioritized — you get real extracted AST items with lines + CRS first).
+- `recall_in_file` on target ranges (now returns CRS + short content snippets).
+- For key AST concepts: `query_with_momentum` + `search_by_relation` + `visualize`.
+  - You will now see automatic file containers, bidirectional siblings, and (for ritual-core files) direct `exercises_spatial_ritual` links to the living praxis anchor.
+- This is your dynamic geometric test of the planned change — dramatically lower friction than before.
+
+**After save + daemon re-ingest:**
+- Re-query the same spatial window.
+- Capture delta (new/updated AST blocks, relation effects, CRS signals).
+- Record via `remember`/`update`/`scar`/`relate` tied to the active thread and to `praxis:spatial_manifold_impact_analysis`.
+
+**Before vs After summary**: The daemon now does a lot of the relational gluing automatically. The query tools surface geometry + ritual context much more readily. The ritual went from "lots of manual work" to "the substrate helps you".
+
+See the living `praxis:spatial_manifold_impact_analysis` block and the `engram-working-memory` skill for the current operational form. This pattern was elevated during the 2026 ritual skill evolution to make the built-in spatial utility a first-class participant in the non-flat workflow.
+
+Only if the geometric layer returns nothing relevant: fall back to raw file tools.

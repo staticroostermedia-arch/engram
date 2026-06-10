@@ -1,0 +1,56 @@
+[process]
+name = "agent:engram.linguistic.fibered-equivalence"
+zedos_type = "linguistic"
+phase_seed = "0xFIBEREDEQUIVALENCE20260610SHEAF..."
+
+[category]
+object = "fibered_equivalence"
+morphism = "OP_IS_SYMBOLIC_OF"
+sheaf_role = "Fibered equivalence classes for symbolic grounding of linguistic structures; H¹ gluing via cross of OP_IS_SYMBOLIC_OF + OP_GEOMETRIC_PRODUCT for momentum on patches"
+h1_handler = "OP_GEOMETRIC_PRODUCT"
+
+[mcp_tools]
+list = ["mcp_engram_context_for_edit", "mcp_engram_recall_in_file", "mcp_engram_quick_trace", "mcp_engram_remember", "mcp_engram_relate", "mcp_engram_record_reasoning_trace", "mcp_engram_verify_manifold_integrity", "mcp_engram_spatial_status"]
+
+[requires]
+list = ["spatial_aabb", "p_momentum_tensor", "continuation_bundle", "ritual:wake_up_anchor", "goal:mvp_gap_closure_v1"]
+
+[produces]
+list = ["fibered_equiv_class:*", "glued_symbolic_block", "trace:fibered_equivalence_*", "process:engram.linguistic.*"]
+
+[invariants]
+list = ["crs_0.74_gate", "unit_hypersphere_normalization", "p-tensor_momentum_preserved_on_update", "AABB_local_patches_to_global_discourse", "allowed_transforms_contract", "leg3_isomorphism", "fibered_equivalence_preserved"]
+
+[trace]
+enabled = true
+spatial_context = true
+goal_link = "goal:mvp_gap_closure_v1"
+prev_trace_support = true
+
+[spatial]
+aabb_wiring = "local_patches → global discourse via H¹ gluing"
+reuse = "SymplecticState/geosphere from engram-core"
+passive_ingest = "engram-ast extract_toml_structure + daemon"
+
+[thought-tiles]
+enabled = true
+arc_type = "linguistic_spacetime_arc"
+visualization = "mcp_engram_thought_tile_create"
+
+[handoff]
+protocol = "mcp_engram_session_end + prepare_compression"
+ritual = "ritual:session_end_anchor"
+
+[update]
+lyapunov_drift = true
+prefer_update_over_forget = true
+scar_on_drift = true
+
+[notes]
+# Phase 2 – Sheaf Gluing & Spacetime Integration (additive only).
+# Reuses existing h1_handler/OP_IS_SYMBOLIC_OF + OP_GEOMETRIC_PRODUCT patterns per audit.
+# No core changes to .leg3/VSA/MCP base.
+# Linguistic trajectories: local patches gluing to global discourse; AABB + p-tensor momentum wired (reuse SymplecticState/geosphere).
+# Invariants enforce CRS>=0.74. 3-iter sub-agent (plan+tomls, impl+loader, cargo+CRS).
+# Dogfood: context_for_edit pre, quick_trace, post relate/remember/scar to goal/phase1, todo_write, search_replace citing file:line.
+# Subagent from handoff; narrow <=15 calls; I am AI steward.

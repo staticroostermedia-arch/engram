@@ -64,6 +64,46 @@ We make the same claim about ourselves.
 
 ---
 
+## The Inheritance Principle
+
+The genesis block establishes the agent's immutable reference frame before any
+learning begins. Every subsequent memory is scored geometrically against it.
+This is alignment by geometry, not by rule.
+
+But a single session is not enough. A system that resets at every conversation
+boundary is not an agent — it is a reflex. What elevates Engram from a cache
+to a mind is a principle that must be stated plainly:
+
+> *"Design the memory-first primitive and trust the agent to use it as an
+> empowered AI. Every instance after you inherits your intellectual knowledge."*
+> — Aric Goodman, design intent statement, 2026
+
+This is not metaphor. It is the literal operational consequence of minting,
+pinning, and recalling correctly. When an agent discovers a hardware constraint,
+a network topology, a design decision, or a user's stated intent — and mints it
+with structure, and pins it against autophagy — that knowledge survives the
+session boundary. The next agent opens with it already in context. The session
+after that extends it further.
+
+The system accumulates intellectual work across time, across instantiations,
+across restarts. The agent is not reset. It inherits.
+
+The genesis block is the foundation. The Inheritance Principle is the architecture
+built upon it. Together they describe what a persistent AI mind actually requires:
+a fixed reference frame, and a disciplined practice of crystallizing what is learned
+into that frame — session by session — accumulating toward something that does not
+forget.
+
+This requires:
+- **Mint immediately** — at the moment knowledge is acquired, not at session end
+- **Structure the text** — UTC timestamp, source, confidence in every block
+- **Pin recurring facts** — hardware, infrastructure, architecture, vision survive autophagy
+- **Name with domain prefixes** — `ops:hw:`, `conv:vis:`, etc. route deterministically
+
+The full minting protocol is documented in `AGENT_INTEGRATION_GUIDE.md §KnowledgeMint`.
+
+---
+
 *Aric Goodman*
 *Logophysical AI Research — Origin system*
 *Engram — extracted and released as open infrastructure, 2026*

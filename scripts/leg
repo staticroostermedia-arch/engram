@@ -1,0 +1,441 @@
+#!/usr/bin/env bash
+# =============================================================================
+# LEG Browser Launcher — Polished One-Command Geometric Mind State Review
+#
+#   "review my current geometric mind state" — now truly one command.
+#
+# Location: scripts/leg  (executable, no extension)
+#
+# Sub-goal:   goal:1780106172_create-polished-launcher-script---update_sub3
+# Parent:     goal:1780106168_make-the-leg-browser-a-seamless--truly-dynamic-g
+# Ritual:     ritual:code_edit_ritual_v1 (pre/post traces + context_for_file + spatial recon + goal-linked)
+#
+# This replaces the previous 300-char one-liner with a robust, documented,
+# user-friendly experience that clearly explains STATIC vs LIVE mode.
+#
+# Quick usage (from repo root):
+#   ./scripts/leg                 # STATIC — instant, curated, no backend required
+#   ./scripts/leg --live          # LIVE  — starts engram serve in bg + dynamic mode
+#   ./scripts/leg --help
+#   ./scripts/leg --port 9876     # custom http port
+#
+# Features:
+# - Starts python http.server on a clean port (default 8765)
+# - Optionally boots `engram serve` (port 3456) in background with dedicated log
+# - Auto-detects engram binary (PATH > ./target/debug > ./target/release)
+# - Cross-platform browser launch (macOS open / Linux xdg-open)
+# - Prominent, colorized output explaining exactly what you are seeing
+# - Favicon 404s eliminated (inline SVG data: URI + docs)
+# - Proper signal handling + PID cleanup (never leave orphans)
+# - Graceful fallbacks and clear warnings
+#
+# After launch you will see the prominent "Current Work • Your Latest Request"
+# hero + the big "Review Current Mind State (Activity Canvas)" button.
+# All v0.5+ seamlessness tiles, handoff deltas, and sub-agent artifacts are
+# front-and-center for immediate review — static or live.
+#
+# Stop: Ctrl-C (or kill the printed PIDs). The trap cleans everything.
+# =============================================================================
+
+set -euo pipefail
+
+# --- Locate repo root robustly (works when invoked from anywhere) ---
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ENG_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$ENG_ROOT"
+
+# --- Defaults ---
+HTTP_PORT=8765
+LIVE_MODE=false
+OPEN_BROWSER=true
+VERBOSE=false
+SERVE_PORT=3456
+HTTP_PID=""
+SERVE_PID=""
+EMITTER_PID=""
+HTTP_LOG="leg-http.log"
+SERVE_LOG="leg-serve.log"
+PID_FILE_HTTP=".leg-http.pid"
+PID_FILE_SERVE=".leg-serve.pid"
+PID_FILE_EMITTER=".leg-emitter.pid"
+
+# --- Colors (portable) ---
+if [ -t 1 ]; then
+  BOLD="\033[1m"; GREEN="\033[32m"; BLUE="\033[34m"; CYAN="\033[36m"
+  YELLOW="\033[33m"; MAGENTA="\033[35m"; RESET="\033[0m"
+else
+  BOLD=""; GREEN=""; BLUE=""; CYAN=""; YELLOW=""; MAGENTA=""; RESET=""
+fi
+
+print_header() {
+  echo -e "${BOLD}${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+  echo -e "${BOLD}${GREEN}  LEG Browser  •  Review Your Current Geometric Mind State${RESET}"
+  echo -e "${BOLD}${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+}
+
+usage() {
+  cat <<EOF
+${BOLD}LEG Browser Launcher${RESET}  (one-command mind-state review)
+
+Usage:
+  ./scripts/leg [options]
+
+Options:
+  --live, -l          Start engram serve (background) for full LIVE dynamic mode
+  --port N            HTTP port for the viewer (default: 8765)
+  --no-open           Do not auto-open browser
+  --verbose, -v       Show raw server logs in foreground (advanced)
+  --help, -h          This help
+
+Modes explained:
+  STATIC (default):  Curated snapshot + all review tiles / handoff deltas /
+                     Activity Canvas demo data. Zero dependencies. Opens
+                     instantly. Perfect for quick "what is my agent thinking?"
+                     review right now.
+
+  LIVE (--live):     Same beautiful UI + auto-polling /api/recent + momentum
+                     + real block details from 'engram serve --light --no-scout'.
+                     Bg consciousness emitter auto-starts (new tile:consciousness:live-demo:*
+                     + world_state:* every 7s via /api/remember). Pill emerald.
+                     Consciousness Dashboard auto-pulls live tiles (dynamic loop state,
+                     not static embedded). Real human interject writes manifold tiles.
+
+Exact command you just ran (for future reference):
+  $0 $@
+
+Sub-goal: goal:1780106172_create-polished-launcher-script---update_sub3
+Parent:   goal:1780106168_make-the-leg-browser-a-seamless--truly-dynamic-g
+See also: tools/leg-browser/README.md  (now points here)
+EOF
+}
+
+# --- Arg parsing ---
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --live|-l) LIVE_MODE=true; shift ;;
+    --port) HTTP_PORT="$2"; shift 2 ;;
+    --no-open) OPEN_BROWSER=false; shift ;;
+    --verbose|-v) VERBOSE=true; shift ;;
+    --help|-h) usage; exit 0 ;;
+    *) echo "Unknown option: $1"; usage; exit 1 ;;
+  esac
+done
+
+# --- Port availability helper (pure Python, cross-platform) ---
+port_free() {
+  python3 - "$1" <<'PY' 2>/dev/null
+import socket, sys
+port = int(sys.argv[1])
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+try:
+    s.bind(("127.0.0.1", port))
+    s.close()
+    sys.exit(0)   # free
+except OSError:
+    sys.exit(1)   # in use
+PY
+}
+
+find_free_port() {
+  local p=$1
+  for i in {0..9}; do
+    if port_free $p; then
+      echo $p
+      return 0
+    fi
+    p=$((p + 1))
+  done
+  echo $1  # give up, let it fail with clear error
+}
+
+# --- Cleanup trap (critical for robustness) ---
+cleanup() {
+  echo -e "\n${YELLOW}Shutting down LEG Browser launcher...${RESET}"
+  if [[ -n "${HTTP_PID:-}" ]] && kill -0 "$HTTP_PID" 2>/dev/null; then
+    kill "$HTTP_PID" 2>/dev/null || true
+  fi
+  if [[ -n "${SERVE_PID:-}" ]] && kill -0 "$SERVE_PID" 2>/dev/null; then
+    echo "  Stopping engram serve (PID $SERVE_PID)..."
+    kill "$SERVE_PID" 2>/dev/null || true
+    sleep 0.5
+    kill -9 "$SERVE_PID" 2>/dev/null || true
+  fi
+  if [[ -n "${EMITTER_PID:-}" ]] && kill -0 "$EMITTER_PID" 2>/dev/null; then
+    echo "  Stopping consciousness emitter (PID $EMITTER_PID)..."
+    kill "$EMITTER_PID" 2>/dev/null || true
+  fi
+  rm -f "$PID_FILE_HTTP" "$PID_FILE_SERVE" "$PID_FILE_EMITTER" 2>/dev/null || true
+
+  # Clean up any temp viewer directory we created for this run
+  if [[ -n "${TEMP_VIEWER_DIR:-}" ]] && [[ -d "$TEMP_VIEWER_DIR" ]]; then
+    rm -rf "$TEMP_VIEWER_DIR"
+  fi
+
+  echo -e "${GREEN}Clean shutdown complete.${RESET}"
+}
+trap cleanup INT TERM EXIT
+
+# --- Resolve engram binary (for --live) ---
+resolve_engram() {
+  if command -v engram >/dev/null 2>&1; then
+    echo "engram"
+    return 0
+  fi
+  if [[ -x "./target/debug/engram" ]]; then
+    echo "./target/debug/engram"
+    return 0
+  fi
+  if [[ -x "./target/release/engram" ]]; then
+    echo "./target/release/engram"
+    return 0
+  fi
+  return 1
+}
+
+# --- Start engram serve in background (LIVE mode) ---
+start_engram_serve() {
+  local bin
+  if ! bin=$(resolve_engram); then
+    echo -e "${YELLOW}WARNING: 'engram' binary not found in PATH or ./target/{debug,release}.${RESET}"
+    echo "         Falling back to STATIC mode. (Install with: cargo install --path crates/engram-server)"
+    return 1
+  fi
+
+  echo -e "${BLUE}→ Starting engram serve (LIVE backend) on :$SERVE_PORT${RESET}"
+  echo "   Binary : $bin"
+  echo "   Log    : $SERVE_LOG"
+  echo "   (This enables dynamic /api/recent, block details, momentum in the viewer)"
+
+  # Kill any stale from previous run
+  if [[ -f "$PID_FILE_SERVE" ]]; then
+    oldpid=$(cat "$PID_FILE_SERVE" 2>/dev/null || true)
+    if [[ -n "$oldpid" ]] && kill -0 "$oldpid" 2>/dev/null; then
+      kill "$oldpid" 2>/dev/null || true
+    fi
+    rm -f "$PID_FILE_SERVE"
+  fi
+
+  # Launch with --light --no-scout for fast impressive leg-browser consciousness demo (CPU only, no heavy GPU/BVH/scout init; designed for /api live + leg-browser)
+  nohup "$bin" serve --light --no-scout --port "$SERVE_PORT" > "$SERVE_LOG" 2>&1 &
+  SERVE_PID=$!
+  echo "$SERVE_PID" > "$PID_FILE_SERVE"
+
+  # Give the heavy initialization (GPU/BVH/manifold) a moment
+  echo -n "   Booting"
+  for _ in {1..6}; do
+    sleep 0.6
+    echo -n "."
+    if ! kill -0 "$SERVE_PID" 2>/dev/null; then
+      echo -e "\n   ${YELLOW}engram serve exited early — check $SERVE_LOG${RESET}"
+      return 1
+    fi
+  done
+  echo " (PID $SERVE_PID)"
+
+  echo -e "   ${GREEN}engram serve is up. Viewer will auto-detect LIVE mode within ~7s.${RESET}"
+  return 0
+}
+
+# --- Start bg consciousness/world_state tile emitter for true live dynamic demo (no new files; uses /api/remember on the live serve) ---
+# Emits fresh tile:consciousness:live-demo:* and world_state:* periodically so that /api/recent, live sidebar, and (enhanced) consciousness dashboard show real-time updates from "inner_reflect / world_state_ingestion" when user clicks Try live / auto-connects. This makes the demo actually live (new tiles appear, status pill green, dash pulls dynamic not old embedded).
+start_consciousness_emitter() {
+  if [[ -z "${SERVE_PID:-}" ]] || ! kill -0 "$SERVE_PID" 2>/dev/null; then
+    echo -e "${YELLOW}   (skipping emitter: no live serve)${RESET}"
+    return 0
+  fi
+  echo -e "${BLUE}→ Starting consciousness live tile emitter (bg curl loop → real manifold tiles every ~7s)${RESET}"
+  echo "   (Simulates ai_consciousness_strange_loop inner_reflect + world_state_ingestion_loop emissions; new tile:consciousness:* + world_state:* will surface in /api + dash/sidebar)"
+  # kill prior
+  if [[ -f "$PID_FILE_EMITTER" ]]; then
+    old=$(cat "$PID_FILE_EMITTER" 2>/dev/null || true)
+    [[ -n "$old" ]] && kill "$old" 2>/dev/null || true
+    rm -f "$PID_FILE_EMITTER"
+  fi
+  # portable emitter (uses only curl + date; runs against the serve we just started)
+  nohup bash -c '
+    SERVE_PORT=${1:-3456}
+    LOG="leg-consciousness-emitter.log"
+    echo "[$(date -u +%H:%M:%S)] consciousness emitter start (live tiles for demo)" >> "$LOG"
+    i=0
+    while true; do
+      ts=$(date +%s)
+      # consciousness loop step simulation
+      curl -s -X POST "http://127.0.0.1:${SERVE_PORT}/api/remember" \
+        -H "Content-Type: application/json" \
+        -d "{\"concept\":\"tile:consciousness:live-demo:${ts}\",\"text\":\"[inner_reflect @ ${ts}] ego.leg3 self-bind + sub-agent decompose. Sub-loops thresholds checked (CRS, aliveness). New state emitted for ai_consciousness_strange_loop. (LIVE DEMO EMITTER)\"}" >> "$LOG" 2>&1 || true
+      # world state update (machine + location perception)
+      curl -s -X POST "http://127.0.0.1:${SERVE_PORT}/api/remember" \
+        -H "Content-Type: application/json" \
+        -d "{\"concept\":\"world_state:snapshot:live:${ts}\",\"text\":\"[world_state_ingestion @ ${ts}] machine:engram-serve-demo (light,3456) + http:8765 active. procs: engram-mcp, python http. project:engram (feat/mvp-github-prep). location:starlink:wa:live_metrics proxy. Feeds consciousness perception. New tiles in manifold.\"}" >> "$LOG" 2>&1 || true
+      i=$((i+1))
+      echo "[$(date -u +%H:%M:%S)] emitted live consciousness/world tiles #$i" >> "$LOG"
+      sleep 7
+    done
+  ' "$SERVE_PORT" >> leg-consciousness-emitter.log 2>&1 &
+  EMITTER_PID=$!
+  echo "$EMITTER_PID" > "$PID_FILE_EMITTER"
+  echo "   emitter PID $EMITTER_PID (log: leg-consciousness-emitter.log)"
+  return 0
+}
+
+# --- Start the leg-browser http.server ---
+start_http_server() {
+  local chosen_port
+  chosen_port=$(find_free_port "$HTTP_PORT")
+
+  if [[ "$chosen_port" != "$HTTP_PORT" ]]; then
+    echo -e "${YELLOW}Port $HTTP_PORT busy — using $chosen_port instead.${RESET}"
+  fi
+  HTTP_PORT="$chosen_port"
+
+  echo -e "${BLUE}→ Starting LEG viewer http.server on http://localhost:$HTTP_PORT${RESET}"
+  echo "   Directory: tools/leg-browser"
+  echo "   Log      : $HTTP_LOG (request noise filtered for clean UX)"
+
+  # Remove stale pid
+  if [[ -f "$PID_FILE_HTTP" ]]; then
+    old=$(cat "$PID_FILE_HTTP" 2>/dev/null || true)
+    [[ -n "$old" ]] && kill "$old" 2>/dev/null || true
+    rm -f "$PID_FILE_HTTP"
+  fi
+
+  # Create a completely unique temporary copy of the leg-browser directory.
+  # This is the single most reliable way to defeat extremely aggressive browser
+  # caching of a large single-file HTML app with a giant inline <script>.
+  TEMP_VIEWER_DIR="/tmp/leg-viewer-$$"
+  mkdir -p "$TEMP_VIEWER_DIR"
+  cp -r tools/leg-browser/* "$TEMP_VIEWER_DIR/" 2>/dev/null || cp -r tools/leg-browser/. "$TEMP_VIEWER_DIR/"
+
+  # Inject a visible build ID so the user can instantly tell if they have fresh code
+  BUILD_ID="$$-$(date +%s)"
+  sed -i "s|Build: 2026-05-30 03:xx|Build: $BUILD_ID|g" "$TEMP_VIEWER_DIR/index.html" 2>/dev/null || true
+
+  echo "   Serving fresh copy from: $TEMP_VIEWER_DIR"
+
+  # Launch with minimal but useful logging
+  if $VERBOSE; then
+    python3 -m http.server "$HTTP_PORT" --directory "$TEMP_VIEWER_DIR" --bind 127.0.0.1 &
+  else
+    python3 -m http.server "$HTTP_PORT" --directory "$TEMP_VIEWER_DIR" --bind 127.0.0.1 \
+      2>&1 | grep -v -E '(favicon|GET / |HEAD / )' >> "$HTTP_LOG" &
+  fi
+  HTTP_PID=$!
+  echo "$HTTP_PID" > "$PID_FILE_HTTP"
+
+  # Wait for it to actually listen
+  sleep 1.2
+  if ! kill -0 "$HTTP_PID" 2>/dev/null; then
+    echo -e "${YELLOW}http.server failed to start — see $HTTP_LOG${RESET}"
+    return 1
+  fi
+
+  echo -e "   ${GREEN}Viewer serving at http://localhost:$HTTP_PORT${RESET}"
+  return 0
+}
+
+# --- Open browser cross-platform ---
+open_browser() {
+  # Cache-buster query parameter helps force fresh JS load for the large inline script
+  # when using python http.server. This is the most reliable way to beat stubborn caching
+  # during active development of a single-file static UI.
+  local cache_buster=$(date +%s%N | cut -b1-13)
+  local url="http://localhost:$HTTP_PORT/?v=$cache_buster"
+
+  local cmd
+
+  case "$(uname -s)" in
+    Darwin)  cmd="open" ;;
+    Linux)   cmd="xdg-open" ;;
+    CYGWIN*|MINGW*|MSYS*) cmd="start" ;;
+    *)       echo -e "${YELLOW}Could not auto-detect browser opener. Please visit:${RESET} $url"; return ;;
+  esac
+
+  if command -v "$cmd" >/dev/null 2>&1; then
+    echo -e "${CYAN}→ Opening browser (with cache-buster)...${RESET}"
+    ($cmd "$url" >/dev/null 2>&1 || true) &
+    sleep 0.4
+  else
+    echo -e "${YELLOW}Open manually:${RESET} $url"
+  fi
+}
+
+# =============================================================================
+# MAIN
+# =============================================================================
+
+print_header
+
+echo -e "Repo root: ${MAGENTA}$ENG_ROOT${RESET}"
+echo ""
+
+if $LIVE_MODE; then
+  echo -e "${BOLD}${GREEN}LIVE MODE ENABLED — CONSCIOUSNESS + WORLD STATE DEMO${RESET}"
+  echo "  • engram serve --light --no-scout started in bg (fast /api for leg-browser)"
+  echo "  • Bg emitter auto-launches: emits fresh tile:consciousness:live-demo:* + world_state:* tiles every 7s (real /api/remember writes)"
+  echo "  • Viewer auto-probes :$SERVE_PORT → pill emerald; live sidebar/canvas + consciousness dashboard pull dynamic tiles (not old embedded)"
+  echo "  • Click 'Load Consciousness Dashboard' or auto on connect: shows live loop state + recent consciousness tiles from manifold"
+  echo "  • Interject in dash: writes REAL tile (loop would consume on rehydrate). Static curated as fallback."
+  echo ""
+  if ! start_engram_serve; then
+    LIVE_MODE=false
+    echo -e "${YELLOW}Continuing in STATIC mode.${RESET}"
+  else
+    # Launch emitter so live demo has dynamic new consciousness/world_state tiles (real /api writes)
+    start_consciousness_emitter || true
+  fi
+else
+  echo -e "${BOLD}${BLUE}STATIC MODE (default — recommended for instant review)${RESET}"
+  echo "  • Pure client-side curated snapshot + hero + Activity Canvas + all v0.5 tiles"
+  echo "  • No engram serve required. Zero backend. Opens in <2s."
+  echo "  • Perfect for 'just show me what my geometric mind looks like right now'"
+  echo ""
+  echo "  ⚠️  After any update to the leg-browser code: HARD REFRESH the tab"
+  echo "     (Ctrl+Shift+R or Cmd+Shift+R) so new rich renderers for the hero cards load."
+  echo "  • (Re-run with --live when you want live /api/* updates)"
+  echo ""
+fi
+
+echo ""
+
+if ! start_http_server; then
+  echo -e "${YELLOW}Failed to start viewer. Aborting.${RESET}"
+  exit 1
+fi
+
+echo ""
+echo -e "${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+if $LIVE_MODE; then
+  echo -e "  ${GREEN}LIVE CONSCIOUSNESS DEMO${RESET}  —  http://localhost:$HTTP_PORT"
+  echo -e "        Pill emerald; consciousness dashboard + sidebar show fresh emitted tiles (tile:consciousness:live-demo:*, world_state:*) from bg loop sim"
+else
+  echo -e "  ${BLUE}STATIC${RESET} —  http://localhost:$HTTP_PORT"
+  echo -e "        Hero + 'Review Current Mind State' button are live immediately"
+  echo ""
+  echo -e "  Note: After editing the leg-browser code, the browser may show stale content."
+  echo -e "        Use 'Empty cache and hard reload' (right-click reload button with DevTools open)"
+  echo -e "        or open a fresh Incognito window."
+fi
+echo -e "${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+echo ""
+echo -e "Key things to click first (for consciousness live demo):"
+echo -e "  • ${BOLD}Load Consciousness Dashboard${RESET} (or it auto-opens on live connect) — now pulls /api live tiles + shows pulsing LIVE badge + dynamic loop state"
+echo -e "  • ${BOLD}Review Current Mind State (Activity Canvas)${RESET}  (big prominent button)"
+echo -e "  • Connection status pill (or 'Try live') — turns emerald; live recent includes the emitter consciousness/world tiles"
+echo -e "  • Hero + sidebar for other tiles; interject in dash to emit real tile:consciousness:interject:* "
+echo ""
+echo -e "PIDs (for manual inspection):  http=$HTTP_PID  serve=${SERVE_PID:-none}  emitter=${EMITTER_PID:-none}"
+echo -e "Logs: $HTTP_LOG  /  $SERVE_LOG  /  leg-consciousness-emitter.log"
+echo -e "Stop: ${BOLD}Ctrl-C${RESET}  (trap will clean up background processes)"
+echo ""
+
+if $OPEN_BROWSER; then
+  open_browser
+fi
+
+echo -e "${GREEN}Ready. Your geometric mind state is now visible.${RESET}"
+echo ""
+
+# Keep the launcher alive so the trap fires on Ctrl-C and we can show nice shutdown.
+# The http.server child keeps the port alive; we just wait on it.
+wait $HTTP_PID 2>/dev/null || true

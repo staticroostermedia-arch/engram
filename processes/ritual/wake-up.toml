@@ -1,0 +1,48 @@
+# agent:engram.ritual.wake-up
+# Two-level name: inside file canonical, on-disk this.
+
+[process]
+name = "agent:engram.ritual.wake-up"
+zedos_type = "ZEDOS_PRAXIS"
+phase_seed = "wake-up"
+
+[category]
+object = "session_start"
+morphism = "OP_ADD"
+sheaf_role = "Gluing axiom entry point (binds thermodynamic context + explicit inheritance edge via agent_instance_continuation)"
+restriction_maps = ["manifold_integrity >= 0.85", "hot_cache_valid"]
+gluing = "OP_GEOMETRIC_PRODUCT"
+natural_transformation = "@0.4"
+h1_handler = "OP_IS_SYMBOLIC_OF"
+
+[mcp_tools]
+# A1 one-call wake: continuation bundle + readiness are inline in session_start JSON response.
+# No separate get_continuation_bundle / query_pure / incremental_spatial / promote_hot_batch round-trips required.
+list = [
+  "mcp_engram_session_start",              # bundle + readiness inline; optional include_spatial=true
+  "mcp_engram_context_for_edit",           # unified pre-edit context (spatial + anchor traces)
+  "mcp_engram_recall",
+  "mcp_engram_record_reasoning_trace",
+  "mcp_engram_quick_trace",
+]
+
+[requires]
+list = ["manifold_integrity >= 0.85", "hot_cache_valid"]
+
+[produces]
+list = ["rehydrated_continuation", "hot_anchors", "working-memory_locked"]
+
+[invariants]
+# From CS Roadmap Phase 0 pre-reqs and troop extract
+list = ["leg3_binary_vector_isomorphism", "unit_hypersphere_normalization", "crs_0.74_gate", "lawfulness_verification"]
+
+[timeout_ms]
+value = 90000   # target: ≤ 90 seconds for cold post-compression wake
+
+[notes]
+# A1 Agent Memory MVP: session_start returns inline JSON wake packet
+# {"status","elapsed_s","session_key","readiness","continuation","spatial"?}
+# Replaces the prior 5-tool lean wake (get_continuation_bundle, query_pure, incremental_spatial_ingest, promote_hot_batch).
+# FAST path preserved: sync registration + inline bundle/readiness; no bg threads calling handle_tool_call.
+# Optional spatial hygiene: session_start(include_spatial=true, spatial_max_files=5).
+# Recall + trace tools for work and decision capture; context_for_file when opening/editing files.

@@ -1,0 +1,39 @@
+# agent:engram.monitor.subvisor
+# Draft for Phase 6: subvisor process type using gluing/H1 to oversee sub-agents, detect repetitive (doom loop) patterns, enforce geometric entry (momentum/relation/spatial first), scar failures.
+
+[process]
+name = "agent:engram.monitor.subvisor"
+zedos_type = "monitor"
+phase_seed = "0xSUBVISOR202606..."
+
+[category]
+object = "subvisor"
+morphism = "OP_INVERT"  # inverts unstructured to structured via H1
+sheaf_role = "Oversee sub-agent launches (narrow one-shot only), detect loops via H¹ on tool graph, enforce gluing contracts from tomls, scar repetitive actions. 2026-06: also detect meta-work patterns (roadmaps, policies) and trigger tile escalation + update preference via helper:meta_work_escalation_v1 / current_meta_arc."
+h1_handler = "OP_IS_SYMBOLIC_OF"
+
+[mcp_tools]
+list = ["mcp_engram_scar", "mcp_engram_verify_manifold_integrity", "mcp_engram_record_reasoning_trace", "mcp_engram_thought_tile_create", "mcp_engram_update"]
+
+[requires]
+list = ["design:process_sheaf_loader_spec_v0_1", "tile:formal_spec_process-architecture-sheaf-v0-1---declarative-ri", "helper:meta_work_escalation_v1", "helper:current_meta_arc"]
+
+[produces]
+list = ["scar:*_subagent_loop", "trace:*_subvisor_enforce", "trace:*_meta_escalation", "scar:*_no_tile_in_meta_arc (optional)"]
+
+[invariants]
+list = ["crs_0.74_gate", "lawfulness_verification", "no_unstructured_loops"]
+
+[timeout_ms]
+value = 5000
+
+[notes]
+# Prototype: hook in session_start or agent launch. Uses new layer to prevent observed doom loops (traces 1780373850 etc.). Aligns to governance in exec plan.
+
+# 2026-06 Ritual Evolution addition: Meta-work escalation via H1.
+# Detect tool graphs with repeated record_reasoning_trace / remember without update or tile:* creation during active design:/progress: or multi-phase goal.
+# If detected: produce scar or trace suggesting "meta-work roadmap/policy arc - escalate to tile per helper:meta_work_escalation_v1 and update helper:current_meta_arc".
+# H¹ inverts unstructured agent activity to structured (tile + update preference).
+# Requires: helper:meta_work_escalation_v1, helper:current_meta_arc, design:github_mvp_prep_plan_v1 (example).
+# Produces: trace:*_meta_escalation, scar:*_no_tile_in_meta_arc (if needed).
+# This makes subvisor proactive for the weak-heuristics gap identified in prep self-assessment.

@@ -1,7 +1,7 @@
 use std::fs;
 
 fn main() {
-    let path = "/home/a/.engram/stalks/test_scar_target.leg";
+    let path = "/path/to/.engram/stalks/test_scar_target.leg";
     if let Ok(data) = fs::read(path) {
         let mut block = unsafe { std::ptr::read_unaligned(data.as_ptr() as *const engram_core::types::HolographicBlock) };
         block.crs_score = 0.85; // Set below genesis threshold

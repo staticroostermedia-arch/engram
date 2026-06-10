@@ -1,0 +1,13 @@
+{
+  "_comment": "Canonical Engram MCP config — copy engram block into your IDE. Replace COMMAND_PATH. See integrations/README.md.",
+  "mcpServers": {
+    "engram": {
+      "command": "COMMAND_PATH",
+      "args": ["mcp"],
+      "env": {
+        "ENGRAM_STORE": "~/.engram/stalks/",
+        "ENGRAM_PROFILE": "agent"
+      }
+    }
+  }
+}

@@ -11,7 +11,7 @@
 //! 4. Normalize to the unit hypersphere |z| = 1.0
 //! 5. Pack into a `HolographicBlock` with the source text in the ProvLog
 
-use crate::types::{Leg3Pointer, ZEDOS_DECLARATIVE, DIMENSION};
+use crate::types::{Leg3Pointer, ZEDOS_DECLARATIVE, ZEDOS_POINTER, DIMENSION};
 use crate::ops::normalize;
 use crate::storage::write_provlog;
 use num_complex::Complex32;
@@ -82,6 +82,158 @@ pub fn from_text_with_crs(text: &str, crs: f32) -> Leg3Pointer {
     block.crs_score = crs.clamp(0.0, 1.0);
     block.energetics.crs = block.crs_score;
     block
+}
+
+/// Mint a first-class smart external pointer HolographicBlock (ZEDOS_POINTER).
+///
+/// Designed for data >256KB payload limit. The block itself is a lightweight,
+/// Merkle-strong, geometrically fingerprinted reference descriptor.
+/// 
+/// - Payload holds structured EXTERNAL_POINTER_V1 descriptor (text/JSON hybrid for readability + parse).
+/// - Strong integrity: content_hash (blake3 of external), block's native sig_0-5 + merkle_sub_root.
+/// - Lazy: materialization hints + chunk ranges (on-demand fetch ranges, no auto-load).
+/// - Geometric: q/p encodes descriptor fingerprint (searchable); payload + aabb hold spatial chunk refs + momentum proxies.
+/// - Thought Tile integration: create tile that relates to the pointer_concept or embeds its key in payload.
+/// - Guardrail: NO layout, tensor, or alignment changes. All extra data in existing payload region.
+/// 
+/// Example usage (MCP / core consumer):
+///   let ptr = mint_external_pointer("file:///data/large.pt", &blake3_hash, 12_000_000, r#"{"mime":"application/octet-stream","chunks":[{"id":0,"offset":0,"len":4096,"spatial":"region:0-100"}]}"# );
+///   backend.store("pointer:large_model_weights_v2", ptr);
+pub fn mint_external_pointer(
+    external_uri: &str,
+    content_hash: &[u8; 32],
+    size_bytes: u64,
+    extra_metadata_json: &str,  // e.g. chunks, spatial, lazy hints as JSON string
+) -> Leg3Pointer {
+    // Build human + machine readable descriptor (fits easily in 122KB payload)
+    let hash_hex: String = content_hash.iter().map(|b| format!("{:02x}", b)).collect();
+    let descriptor = format!(
+        "EXTERNAL_POINTER_V1\n\
+         uri: {}\n\
+         content_hash: blake3:{}\n\
+         size_bytes: {}\n\
+         created_at: {}\n\
+         provenance: {{ \"block_footer_merkle\": \"self\", \"source_trace\": \"trace:1780102103...\" }}\n\
+         geometric: {{ \"fingerprint_via_qp\": true, \"momentum_chunks\": [0.92, 0.67], \"spatial_refs\": [\"aabb:chunk0\"] }}\n\
+         lazy: {{ \"protocol\": \"direct|http|chunked\", \"on_demand\": true, \"prefetch\": false, \"ranges_supported\": true }}\n\
+         metadata: {}\n\
+         \n\
+         // Merkle integrity: verify via block.footer (sig_0..sig_5 + merkle_sub_root) + external content_hash.\n\
+         // Lazy materialization: external consumer reads descriptor, fetches ranges, checks sub-hashes.\n\
+         // For Thought Tiles: relate(this_pointer_concept, tile_key, \"provides_data_for\") or embed uri in tile payload.\n",
+        external_uri,
+        hash_hex,
+        size_bytes,
+        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs(),
+        if extra_metadata_json.is_empty() { "{}" } else { extra_metadata_json }
+    );
+
+    // Encode descriptor text -> gives searchable geometric fingerprint (q/p) for the pointer itself
+    let mut block = from_text(&descriptor);
+    block.zedos_tag = ZEDOS_POINTER;
+    block.crs_score = 0.91; // High for structural refs
+    block.energetics.crs = 0.91;
+
+    // Optionally tighten aabb for "external spatial chunk" metadata hint (cheap geometric)
+    // (reuse existing fields without layout change)
+    block.aabb_min = [0.0, 0.0, 0.0];
+    block.aabb_max = [1.0, 0.5, 0.0]; // proxy for "external manifold region"
+
+    // Footer already carries merkle_sub_root; descriptor embeds content_hash for external Merkle tie-in.
+    // (No mutation of footer layout.)
+
+    block
+}
+
+/// Mint a canonical compound HTML payload for an HTML Visualization Thought Tile.
+///
+/// This follows the evolved v0 spec (building on the recovered LEG3-HTML compound format).
+/// The returned string is intended to be passed as the `payload` field when creating
+/// an `html_visualization` Thought Tile via mcp_engram_thought_tile_create_visualization.
+///
+/// The agent itself will primarily use the geometric vector + ProvLog summary + relations.
+/// External viewers can render the full HTML.
+pub fn mint_html_visualization_payload(
+    title: &str,
+    summary: &str,
+    structured_data: Option<serde_json::Value>,
+    relations: Vec<(String, String, f32)>, // (label, target, weight)
+    notes: Option<&str>,
+) -> String {
+    let mut html = String::new();
+
+    let safe_title = title.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;");
+    html.push_str(&format!(
+        r#"<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>{}</title>
+<style>
+  body {{ font-family: system-ui, sans-serif; margin: 0; padding: 20px; background: #0a0a0a; color: #eee; }}
+  .leg3-tile {{ max-width: 960px; margin: 0 auto; background: #111; border: 1px solid #333; border-radius: 8px; padding: 20px; }}
+  .s-identity h2 {{ margin: 0 0 8px; color: #4fc3f7; }}
+  .zedos-badge {{ background: #1565c0; color: white; padding: 2px 8px; border-radius: 4px; font-size: 0.8em; }}
+  section {{ margin-bottom: 16px; }}
+  .bond {{ display: inline-block; margin: 4px; padding: 4px 8px; background: #222; border-radius: 4px; text-decoration: none; color: #4fc3f7; }}
+  .agent-note {{ background: #1a1a1a; padding: 12px; border-left: 3px solid #4fc3f7; }}
+</style>
+</head>
+<body>
+<article class="leg3-tile html_visualization" data-concept="{}" data-tile-type="html_visualization">
+"#,
+        safe_title, safe_title
+    ));
+
+    // s-identity
+    html.push_str("  <section class=\"s-identity\">\n");
+    html.push_str(&format!("    <h2>{}</h2>\n", safe_title));
+    html.push_str("    <span class=\"zedos-badge\">VISUALIZATION</span>\n");
+    html.push_str("  </section>\n");
+
+    // s-summary
+    html.push_str("  <section class=\"s-summary\">\n");
+    html.push_str(&format!("    <p>{}</p>\n", summary.replace('&', "&amp;").replace('<', "&lt;")));
+    html.push_str("  </section>\n");
+
+    // s-data (machine readable)
+    if let Some(data) = structured_data {
+        html.push_str("  <section class=\"s-data\">\n");
+        html.push_str("    <script type=\"application/json\" class=\"tile-data\">\n");
+        if let Ok(pretty) = serde_json::to_string_pretty(&data) {
+            html.push_str(&pretty);
+        } else {
+            html.push_str("{}");
+        }
+        html.push_str("\n    </script>\n");
+        html.push_str("  </section>\n");
+    }
+
+    // s-relations
+    if !relations.is_empty() {
+        html.push_str("  <section class=\"s-relations\">\n");
+        html.push_str("    <nav class=\"bond-graph\">\n");
+        for (label, target, weight) in relations {
+            let safe_label = label.replace('&', "&amp;").replace('<', "&lt;");
+            html.push_str(&format!(
+                "      <a href=\"monad://tile/{}\" class=\"bond\" data-weight=\"{:.2}\">{}</a>\n",
+                target, weight, safe_label
+            ));
+        }
+        html.push_str("    </nav>\n");
+        html.push_str("  </section>\n");
+    }
+
+    // s-notes
+    if let Some(notes_text) = notes {
+        html.push_str("  <section class=\"s-notes\">\n");
+        html.push_str(&format!("    <div class=\"agent-note\">{}</div>\n", notes_text.replace('&', "&amp;").replace('<', "&lt;")));
+        html.push_str("  </section>\n");
+    }
+
+    html.push_str("</article>\n</body>\n</html>\n");
+
+    html
 }
 
 #[cfg(test)]

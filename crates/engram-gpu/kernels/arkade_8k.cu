@@ -142,3 +142,14 @@ engram_cosine_batch(const cuComplex *__restrict__ query,    // [DIM]
         }
     }
 }
+
+// ── C launchers (called from Rust via FFI) ────────────────────────────────────
+extern "C" void
+engram_launch_cosine_batch(const cuComplex *d_query,
+                           const cuComplex *d_candidates,
+                           float          *d_scores,
+                           int             N) {
+    if (N <= 0) return;
+    engram_cosine_batch<<<N, 256>>>(d_query, d_candidates, d_scores, N);
+    cudaDeviceSynchronize();
+}

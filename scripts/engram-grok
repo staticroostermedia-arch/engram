@@ -1,0 +1,58 @@
+#!/bin/bash
+# engram-grok — portable MCP launcher (Grok / Cursor / Claude / Antigravity / Codex)
+#
+# Bakes ENGRAM_PROFILE=agent. Install option:
+#   cp scripts/engram-grok ~/.local/bin/engram-grok && chmod +x ~/.local/bin/engram-grok
+#
+# Resolves binary: ENGRAM_BINARY > repo target/debug > PATH engram
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+STORE="${ENGRAM_STORE:-$HOME/.engram/stalks/}"
+
+export ENGRAM_PROFILE="${ENGRAM_PROFILE:-agent}"
+export ENGRAM_STORE="$STORE"
+
+# CUDA paths (optional — ignored if CUDA not installed)
+export LD_LIBRARY_PATH="/usr/local/cuda/lib64:/usr/local/cuda-13.1/lib64:/usr/lib/x86_64-linux-gnu:${LD_LIBRARY_PATH:-}"
+export CUDA_HOME="${CUDA_HOME:-/usr/local/cuda}"
+export CUDA_PATH="${CUDA_PATH:-/usr/local/cuda}"
+export PATH="/usr/local/cuda/bin:/usr/local/cuda-13.1/bin:${PATH:-}"
+
+if [ -n "${ENGRAM_BINARY:-}" ] && [ -x "${ENGRAM_BINARY}" ]; then
+    REAL_ENGRAM="${ENGRAM_BINARY}"
+elif [ -x "$REPO_ROOT/target/debug/engram" ]; then
+    REAL_ENGRAM="$REPO_ROOT/target/debug/engram"
+elif [ -x "$REPO_ROOT/target/release/engram" ]; then
+    REAL_ENGRAM="$REPO_ROOT/target/release/engram"
+elif command -v engram >/dev/null 2>&1; then
+    REAL_ENGRAM="$(command -v engram)"
+else
+    echo "ERROR: No usable engram binary." >&2
+    echo "  Build: cd $REPO_ROOT && cargo build -p engram-server" >&2
+    echo "  Or set ENGRAM_BINARY to your engram executable." >&2
+    exit 1
+fi
+
+# --- Grok Build TUI / seamless native MCP support ---
+# When launching the MCP server for the TUI, first wait for the geometric
+# manifold to be past the fast-placeholder stage. This makes native
+# search_tool + use_tool (engram__mcp_engram_*) succeed reliably without the
+# "MCP server 'engram' not found" or early-warmup races that force the
+# python driver fallback.
+#
+# We use the new `wait-ready` subcommand (implemented in main.rs) which
+# polls backend_readiness until fully_initialized or a healthy hot set exists.
+if [[ " $* " == *" mcp "* ]]; then
+    # TUI-specific mode: block until ready, with generous timeout for large
+    # manifolds or first cold boot with OptiX/BVH.
+    echo "[engram-grok] Waiting for Enram geometric readiness before MCP handshake (TUI seamless path)..." >&2
+    "$REAL_ENGRAM" --store "$STORE" wait-ready --timeout 180 || {
+        echo "[engram-grok] wait-ready timed out or failed; proceeding with mcp anyway (may still hit early-ready guard)." >&2
+    }
+fi
+
+exec "$REAL_ENGRAM" --store "$STORE" "$@"

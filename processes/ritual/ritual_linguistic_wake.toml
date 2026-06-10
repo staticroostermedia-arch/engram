@@ -1,0 +1,45 @@
+# agent:engram.ritual.linguistic-wake
+# Phase 5 additive ritual per handoff. Reuses h1_handler/OP_IS_SYMBOLIC_OF/OP_GEOMETRIC_PRODUCT/CRS patterns from P2 linguistic-calculus.toml + fibered-equivalence.toml + nrem-consolidation.toml/wake-up.toml. Linguistic-specific invariants for calculus ops + NREM/ego.leg3 promotion. Additive only.
+
+[process]
+name = "agent:engram.ritual.linguistic-wake"
+zedos_type = "ritual"
+phase_seed = "0xLINGWAKE202606SEED..."
+
+[category]
+object = "linguistic_wake"
+morphism = "OP_IS_SYMBOLIC_OF"
+sheaf_role = "linguistic wake gluing with CRS 0.85/homotopy coherence via fibered equiv; NREM promotion of high-CRS linguistic bundles to ego.leg3"
+h1_handler = "OP_GEOMETRIC_PRODUCT"
+
+[mcp_tools]
+list = ["mcp_engram_session_start", "mcp_engram_context_for_edit", "mcp_engram_record_reasoning_trace", "mcp_engram_verify_manifold_integrity", "mcp_engram_quick_trace", "mcp_engram_remember", "mcp_engram_relate"]
+
+[requires]
+list = ["__system_state__", "ritual:wake_up_anchor", "process:linguistic-calculus", "ritual:nrem-consolidation"]
+
+[produces]
+list = ["ego.leg3", "linguistic_bundle_high_crs", "trace:*_linguistic_wake", "NREM_promoted_linguistic"]
+
+[invariants]
+list = ["leg3_binary_vector_isomorphism", "crs_0.85_for_calculus_ops", "fibered_homotopy_coherence", "NREM_promotion_high_crs_linguistic_bundles_to_ego.leg3", "categorical_class_mixing_rules_no_number_word_vars_without_geometric_product_or_explicit", "lyapunov_stable_on_linguistic_update", "scar_on_class_mixing_violation"]
+
+[timeout_ms]
+value = 30000
+
+[trace]
+at = ["wake_entry", "calculus_op", "NREM_handoff", "ego_promotion"]
+tools = ["mcp_engram_quick_trace", "mcp_engram_record_reasoning_trace", "mcp_engram_remember"]
+
+[spatial]
+on = ["linguistic toml edits", "calculus sections"]
+tools = ["mcp_engram_context_for_edit", "mcp_engram_recall_in_file"]
+
+[handoff]
+ritual = "engram-session-end"
+tools = ["mcp_engram_session_end", "mcp_engram_remember"]
+prepare_compression = true
+next = "ritual:nrem-consolidation"
+
+[notes]
+# Phase 5 handoff (Sub-agent 5, 3-iter narrow, additive only). ritual_linguistic_wake.toml created per spec. Reuses P2 linguistic patterns (OP_IS_SYMBOLIC_OF/OP_GEOMETRIC_PRODUCT/h1 + CRS) + existing ritual (nrem/wake). Linguistic invariants: CRS >=0.85 for calculus ops, homotopy coherence via fibered equiv, NREM promotion of high-CRS linguistic bundles to ego.leg3. Extends scars/lawfulness gates for categorical invariants (e.g. no number/word var mixing without geometric product). Integrates with existing NREM/ego/CRS/Lyapunov (nrem produces ego.leg3; self_improvement lawfulness extended). Dogfood: every artifact related to goal:mvp_gap_closure_v1 + trace chain + spatial. Tests survive session handoff (wake → calculus → NREM → ego.leg3) via tomls + verify. 3-iter complete. Primary goal active. Ready for P6.
