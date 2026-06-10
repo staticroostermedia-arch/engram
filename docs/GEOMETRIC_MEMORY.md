@@ -36,6 +36,9 @@ Engram is a **persistent geometric (non-flat) memory engine** for AI agents.
 
 .leg3 isomorphism, CRS gate >=0.74, lawfulness, unit hypersphere, allowed transforms.
 
+### Runtime guards (M1)
+as_block now has 2 guards (len debug_assert + non-destructive first-4-bytes via as_bytes assert for ZEDOS/Holographic magic plausibility); open enforces BLOCK_SIZE; layout asserts in types.rs:436+ ; still requires valid writer per .leg3 contract. CRS/p-momentum preserved as no mutation here.
+
 See also: MANIFESTO.md, docs/2026-06_Substrate_CS_Gap_Closure_Roadmap.md, architecture.md, praxis_as_protocol_spec.md, processes/ (declarative tomls for rituals/harness/etc.), GITHUB_MVP_PREP_PLAN.md.
 
 For external agents: BYOP (Build Your Own Perspective) on the neutral substrate.

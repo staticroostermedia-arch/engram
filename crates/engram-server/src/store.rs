@@ -837,7 +837,7 @@ impl StoreHandle {
         let relation_index = RelationIndex::load(&engram_root);
 
         let disable_sheaf = std::env::var("ENGRAM_DISABLE_SHEAF").is_ok();
-        let sheaf_lean = std::env::var("ENGRAM_SHEAF_LEAN").as_deref() == Ok("1");
+        let _sheaf_lean = std::env::var("ENGRAM_SHEAF_LEAN").as_deref() == Ok("1");
         let backend = if sheaf_config_path.exists() && !disable_sheaf {
             match std::fs::read_to_string(&sheaf_config_path)
                 .ok()
@@ -854,7 +854,7 @@ impl StoreHandle {
                         tracing::info!(
                             "engram-gpu: Sheaf × CudaBackend — {} stalks (lean={})",
                             config.stalks.len(),
-                            sheaf_lean
+                            _sheaf_lean
                         );
                         let boxed_stalks: Vec<(String, Box<dyn engram_core::backend::VsaBackend + Send + Sync>)> =
                             stalks
@@ -864,7 +864,7 @@ impl StoreHandle {
                                     let is_active = active.as_ref() == Some(&name)
                                         || path == PathBuf::from(&expanded);
                                     let b: Box<dyn engram_core::backend::VsaBackend + Send + Sync> =
-                                        if sheaf_lean && !is_active {
+                                        if _sheaf_lean && !is_active {
                                             tracing::info!(
                                                 "engram-gpu: sheaf lean — stalk '{}' uses CpuBackend (defer GPU init)",
                                                 name

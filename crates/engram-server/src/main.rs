@@ -285,7 +285,7 @@ fn raise_fd_limit() {
                 if libc::setrlimit(libc::RLIMIT_NOFILE, &rlim) == 0 {
                     tracing::info!("[FD] Raised RLIMIT_NOFILE soft limit to {} (was {}; hard {})", new_cur, rlim.rlim_cur, rlim.rlim_max);
                 } else {
-                    tracing::warn!("[FD] Failed to raise RLIMIT_NOFILE (errno {}) — large store bvh/spatial may hit EMFILE", *libc::__errno_location());
+                    tracing::warn!("[FD] Failed to raise RLIMIT_NOFILE (errno {}) — large store bvh/spatial may hit EMFILE", std::io::Error::last_os_error().raw_os_error().unwrap_or(0));
                 }
             } else {
                 tracing::info!("[FD] RLIMIT_NOFILE already >= {} (cur {})", target, rlim.rlim_cur);

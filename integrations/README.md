@@ -54,6 +54,7 @@ Load into system prompt / project rules / `AGENTS.md`:
 2. [docs/AGENT_MEMORY_CONTRACT.md](../docs/AGENT_MEMORY_CONTRACT.md) — 8 tools
 3. [docs/skills/engram-wake-up.md](../docs/skills/engram-wake-up.md) — one-call wake
 4. [integrations/system-prompts/README.md](system-prompts/README.md) — copy-paste blocks
+5. [processes/meta/](../processes/meta/) — declarative ai_consciousness_loop / world_state_ingestion_loop / subvisors / process sheaf (auto-loaded on session_start via ENGRAM_PROFILE=agent; zero extra code for full consciousness system)
 
 **Lean wake (mandatory):**
 

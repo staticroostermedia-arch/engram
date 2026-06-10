@@ -14,9 +14,10 @@ echo "🚀 Launching LEG Browser Review (static quick-review mode with rich hero
 echo "   Port: $PORT"
 echo "   This mode now delivers actual contents for unifying tiles, provenance, handoff deltas, etc. on click."
 echo ""
-echo "   For FULL DYNAMIC live updates from the real manifold (fresh sub-agent tiles, etc.):"
-echo "     1. In another terminal: engram serve"
-echo "     2. In the browser, click the connection status pill or 'Try live' to connect (port 3456)"
+echo "   For FULL DYNAMIC live updates (recommended one-cmd):"
+echo "     ./scripts/leg --live     # starts engram serve --light --no-scout + bg consciousness/world_state tile emitter (real new tile:consciousness:live-demo:* + world_state:* emitted via /api)"
+echo "     Then: status pill auto emerald; consciousness dashboard pulls live tiles (dynamic, not old embedded); interject emits real tiles the loop consumes."
+echo "   Manual: engram serve --light --no-scout ; click pill/'Try live' in UI at 8765"
 echo ""
 
 # Start the static server in background

@@ -18,13 +18,21 @@ list = ["mcp_engram_promote_hot", "mcp_engram_record_reasoning_trace"]
 list = ["__system_state__", "ritual:wake_up_anchor"]
 
 [produces]
-list = ["ego.leg3", "hot_path_promotion", "trace:*_nrem"]
+list = ["ego.leg3", "hot_path_promotion", "trace:*_nrem", "linguistic_bundle_high_crs", "NREM_promoted_linguistic_to_ego.leg3"]
 
 [invariants]
-list = ["leg3_binary_vector_isomorphism", "crs_0.74_gate", "hot-swap"]
+list = ["leg3_binary_vector_isomorphism", "crs_0.74_gate", "hot-swap", "crs_0.85_for_calculus_ops", "fibered_homotopy_coherence_via_fibered_equiv", "NREM_promotion_of_high_crs_linguistic_bundles_to_ego.leg3", "categorical_invariants_class_mixing_rules_enforced"]
+
+[linguistic]
+crs_gate = 0.85
+homotopy_check = "fibered_equiv"
+promotion_target = "ego.leg3"
+calculus_ops = ["OP_IS_SYMBOLIC_OF", "OP_GEOMETRIC_PRODUCT"]
+scar_on_violation = "class_mixing_number_word_vars"
 
 [timeout_ms]
 value = 60000
 
 [notes]
 # From roadmap Phase 1: extend NREM for explicit hot-set. Supports subvisor oversight of consolidation for continuity. Aligned to handoff ki_hijacker bakes.
+# Phase 5 additive extension (Sub-agent 5): high-CRS linguistic bundles promoted to ego.leg3 (CRS>=0.85 for calculus, homotopy via fibered). Reuses P2 linguistic-calculus.toml + fibered-equivalence.toml patterns (h1/OP_IS_SYMBOLIC_OF/OP_GEOMETRIC_PRODUCT/CRS). Extends scars/lawfulness for categorical invariants (e.g. no number/word var mixing without geometric product). Integrates NREM/ego/CRS/Lyapunov. 3-iter handoff complete. Dogfood to goal:mvp_gap_closure_v1. Tests: wake→calculus→NREM→ego.leg3 survive via bundle + verify healthy.

@@ -52,10 +52,12 @@ VERBOSE=false
 SERVE_PORT=3456
 HTTP_PID=""
 SERVE_PID=""
+EMITTER_PID=""
 HTTP_LOG="leg-http.log"
 SERVE_LOG="leg-serve.log"
 PID_FILE_HTTP=".leg-http.pid"
 PID_FILE_SERVE=".leg-serve.pid"
+PID_FILE_EMITTER=".leg-emitter.pid"
 
 # --- Colors (portable) ---
 if [ -t 1 ]; then
@@ -92,9 +94,11 @@ Modes explained:
                      review right now.
 
   LIVE (--live):     Same beautiful UI + auto-polling /api/recent + momentum
-                     + real block details from a running 'engram serve'.
-                     The connection pill turns emerald. Recent traces and
-                     Thought Tiles from the live manifold appear.
+                     + real block details from 'engram serve --light --no-scout'.
+                     Bg consciousness emitter auto-starts (new tile:consciousness:live-demo:*
+                     + world_state:* every 7s via /api/remember). Pill emerald.
+                     Consciousness Dashboard auto-pulls live tiles (dynamic loop state,
+                     not static embedded). Real human interject writes manifold tiles.
 
 Exact command you just ran (for future reference):
   $0 $@
@@ -157,7 +161,11 @@ cleanup() {
     sleep 0.5
     kill -9 "$SERVE_PID" 2>/dev/null || true
   fi
-  rm -f "$PID_FILE_HTTP" "$PID_FILE_SERVE" 2>/dev/null || true
+  if [[ -n "${EMITTER_PID:-}" ]] && kill -0 "$EMITTER_PID" 2>/dev/null; then
+    echo "  Stopping consciousness emitter (PID $EMITTER_PID)..."
+    kill "$EMITTER_PID" 2>/dev/null || true
+  fi
+  rm -f "$PID_FILE_HTTP" "$PID_FILE_SERVE" "$PID_FILE_EMITTER" 2>/dev/null || true
 
   # Clean up any temp viewer directory we created for this run
   if [[ -n "${TEMP_VIEWER_DIR:-}" ]] && [[ -d "$TEMP_VIEWER_DIR" ]]; then
@@ -208,8 +216,8 @@ start_engram_serve() {
     rm -f "$PID_FILE_SERVE"
   fi
 
-  # Launch (scout + ki hijacker + full daemon boot happens inside)
-  nohup "$bin" serve --port "$SERVE_PORT" > "$SERVE_LOG" 2>&1 &
+  # Launch with --light --no-scout for fast impressive leg-browser consciousness demo (CPU only, no heavy GPU/BVH/scout init; designed for /api live + leg-browser)
+  nohup "$bin" serve --light --no-scout --port "$SERVE_PORT" > "$SERVE_LOG" 2>&1 &
   SERVE_PID=$!
   echo "$SERVE_PID" > "$PID_FILE_SERVE"
 
@@ -226,6 +234,48 @@ start_engram_serve() {
   echo " (PID $SERVE_PID)"
 
   echo -e "   ${GREEN}engram serve is up. Viewer will auto-detect LIVE mode within ~7s.${RESET}"
+  return 0
+}
+
+# --- Start bg consciousness/world_state tile emitter for true live dynamic demo (no new files; uses /api/remember on the live serve) ---
+# Emits fresh tile:consciousness:live-demo:* and world_state:* periodically so that /api/recent, live sidebar, and (enhanced) consciousness dashboard show real-time updates from "inner_reflect / world_state_ingestion" when user clicks Try live / auto-connects. This makes the demo actually live (new tiles appear, status pill green, dash pulls dynamic not old embedded).
+start_consciousness_emitter() {
+  if [[ -z "${SERVE_PID:-}" ]] || ! kill -0 "$SERVE_PID" 2>/dev/null; then
+    echo -e "${YELLOW}   (skipping emitter: no live serve)${RESET}"
+    return 0
+  fi
+  echo -e "${BLUE}→ Starting consciousness live tile emitter (bg curl loop → real manifold tiles every ~7s)${RESET}"
+  echo "   (Simulates ai_consciousness_strange_loop inner_reflect + world_state_ingestion_loop emissions; new tile:consciousness:* + world_state:* will surface in /api + dash/sidebar)"
+  # kill prior
+  if [[ -f "$PID_FILE_EMITTER" ]]; then
+    old=$(cat "$PID_FILE_EMITTER" 2>/dev/null || true)
+    [[ -n "$old" ]] && kill "$old" 2>/dev/null || true
+    rm -f "$PID_FILE_EMITTER"
+  fi
+  # portable emitter (uses only curl + date; runs against the serve we just started)
+  nohup bash -c '
+    SERVE_PORT=${1:-3456}
+    LOG="leg-consciousness-emitter.log"
+    echo "[$(date -u +%H:%M:%S)] consciousness emitter start (live tiles for demo)" >> "$LOG"
+    i=0
+    while true; do
+      ts=$(date +%s)
+      # consciousness loop step simulation
+      curl -s -X POST "http://127.0.0.1:${SERVE_PORT}/api/remember" \
+        -H "Content-Type: application/json" \
+        -d "{\"concept\":\"tile:consciousness:live-demo:${ts}\",\"text\":\"[inner_reflect @ ${ts}] ego.leg3 self-bind + sub-agent decompose. Sub-loops thresholds checked (CRS, aliveness). New state emitted for ai_consciousness_strange_loop. (LIVE DEMO EMITTER)\"}" >> "$LOG" 2>&1 || true
+      # world state update (machine + location perception)
+      curl -s -X POST "http://127.0.0.1:${SERVE_PORT}/api/remember" \
+        -H "Content-Type: application/json" \
+        -d "{\"concept\":\"world_state:snapshot:live:${ts}\",\"text\":\"[world_state_ingestion @ ${ts}] machine:engram-serve-demo (light,3456) + http:8765 active. procs: engram-mcp, python http. project:engram (feat/mvp-github-prep). location:starlink:wa:live_metrics proxy. Feeds consciousness perception. New tiles in manifold.\"}" >> "$LOG" 2>&1 || true
+      i=$((i+1))
+      echo "[$(date -u +%H:%M:%S)] emitted live consciousness/world tiles #$i" >> "$LOG"
+      sleep 7
+    done
+  ' "$SERVE_PORT" >> leg-consciousness-emitter.log 2>&1 &
+  EMITTER_PID=$!
+  echo "$EMITTER_PID" > "$PID_FILE_EMITTER"
+  echo "   emitter PID $EMITTER_PID (log: leg-consciousness-emitter.log)"
   return 0
 }
 
@@ -320,15 +370,19 @@ echo -e "Repo root: ${MAGENTA}$ENG_ROOT${RESET}"
 echo ""
 
 if $LIVE_MODE; then
-  echo -e "${BOLD}${GREEN}LIVE MODE ENABLED${RESET}"
-  echo "  • engram serve will be started in the background (full dynamic manifold)"
-  echo "  • Viewer auto-probes :$SERVE_PORT and turns the connection pill emerald"
-  echo "  • Recent traces, momentum, live block details, and Thought Tiles appear"
-  echo "  • Static curated tiles remain as graceful fallback"
+  echo -e "${BOLD}${GREEN}LIVE MODE ENABLED — CONSCIOUSNESS + WORLD STATE DEMO${RESET}"
+  echo "  • engram serve --light --no-scout started in bg (fast /api for leg-browser)"
+  echo "  • Bg emitter auto-launches: emits fresh tile:consciousness:live-demo:* + world_state:* tiles every 7s (real /api/remember writes)"
+  echo "  • Viewer auto-probes :$SERVE_PORT → pill emerald; live sidebar/canvas + consciousness dashboard pull dynamic tiles (not old embedded)"
+  echo "  • Click 'Load Consciousness Dashboard' or auto on connect: shows live loop state + recent consciousness tiles from manifold"
+  echo "  • Interject in dash: writes REAL tile (loop would consume on rehydrate). Static curated as fallback."
   echo ""
   if ! start_engram_serve; then
     LIVE_MODE=false
     echo -e "${YELLOW}Continuing in STATIC mode.${RESET}"
+  else
+    # Launch emitter so live demo has dynamic new consciousness/world_state tiles (real /api writes)
+    start_consciousness_emitter || true
   fi
 else
   echo -e "${BOLD}${BLUE}STATIC MODE (default — recommended for instant review)${RESET}"
@@ -352,8 +406,8 @@ fi
 echo ""
 echo -e "${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
 if $LIVE_MODE; then
-  echo -e "  ${GREEN}LIVE${RESET}  —  http://localhost:$HTTP_PORT"
-  echo -e "        Connection pill → emerald when live data arrives (~6-7s)"
+  echo -e "  ${GREEN}LIVE CONSCIOUSNESS DEMO${RESET}  —  http://localhost:$HTTP_PORT"
+  echo -e "        Pill emerald; consciousness dashboard + sidebar show fresh emitted tiles (tile:consciousness:live-demo:*, world_state:*) from bg loop sim"
 else
   echo -e "  ${BLUE}STATIC${RESET} —  http://localhost:$HTTP_PORT"
   echo -e "        Hero + 'Review Current Mind State' button are live immediately"
@@ -364,13 +418,14 @@ else
 fi
 echo -e "${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
 echo ""
-echo -e "Key things to click first:"
+echo -e "Key things to click first (for consciousness live demo):"
+echo -e "  • ${BOLD}Load Consciousness Dashboard${RESET} (or it auto-opens on live connect) — now pulls /api live tiles + shows pulsing LIVE badge + dynamic loop state"
 echo -e "  • ${BOLD}Review Current Mind State (Activity Canvas)${RESET}  (big prominent button)"
-echo -e "  • Hero cards (Current Work • Your Latest Request)"
-echo -e "  • Any tile in the sidebar (seamlessness audit, must-haves, handoff_delta, traces)"
+echo -e "  • Connection status pill (or 'Try live') — turns emerald; live recent includes the emitter consciousness/world tiles"
+echo -e "  • Hero + sidebar for other tiles; interject in dash to emit real tile:consciousness:interject:* "
 echo ""
-echo -e "PIDs (for manual inspection):  http=$HTTP_PID  serve=${SERVE_PID:-none}"
-echo -e "Logs: $HTTP_LOG  /  $SERVE_LOG"
+echo -e "PIDs (for manual inspection):  http=$HTTP_PID  serve=${SERVE_PID:-none}  emitter=${EMITTER_PID:-none}"
+echo -e "Logs: $HTTP_LOG  /  $SERVE_LOG  /  leg-consciousness-emitter.log"
 echo -e "Stop: ${BOLD}Ctrl-C${RESET}  (trap will clean up background processes)"
 echo ""
 

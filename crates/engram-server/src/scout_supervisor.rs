@@ -39,13 +39,13 @@ pub fn boot() {
                     consecutive_failures += 1;
                     // Concrete improvement: reduce log spam on repeated port-8088 races (common with `engram serve` + leg-browser http.server).
                     // Only warn every 4th failure + first (prevents "hang" perception and need for user Keyboard interrupt).
-                    if consecutive_failures == 1 || consecutive_failures % 4 == 0 {
+                    if consecutive_failures == 1 || consecutive_failures.is_multiple_of(4) {
                         warn!("[SCOUT_SUPERVISOR] scout_daemon.py exited with {} (consecutive fails: {}). Restarting in 5s... (suppressing intermediate warnings; set ENGRAM_SCOUT_DAEMON or use --no-scout)", status, consecutive_failures);
                     }
                 }
                 Err(e) => {
                     consecutive_failures += 1;
-                    if consecutive_failures == 1 || consecutive_failures % 4 == 0 {
+                    if consecutive_failures == 1 || consecutive_failures.is_multiple_of(4) {
                         warn!("[SCOUT_SUPERVISOR] Failed to wait on scout_daemon.py: {} (consecutive: {}). Restarting...", e, consecutive_failures);
                     }
                 }

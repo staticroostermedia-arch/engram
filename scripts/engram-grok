@@ -37,4 +37,22 @@ else
     exit 1
 fi
 
+# --- Grok Build TUI / seamless native MCP support ---
+# When launching the MCP server for the TUI, first wait for the geometric
+# manifold to be past the fast-placeholder stage. This makes native
+# search_tool + use_tool (engram__mcp_engram_*) succeed reliably without the
+# "MCP server 'engram' not found" or early-warmup races that force the
+# python driver fallback.
+#
+# We use the new `wait-ready` subcommand (implemented in main.rs) which
+# polls backend_readiness until fully_initialized or a healthy hot set exists.
+if [[ " $* " == *" mcp "* ]]; then
+    # TUI-specific mode: block until ready, with generous timeout for large
+    # manifolds or first cold boot with OptiX/BVH.
+    echo "[engram-grok] Waiting for Enram geometric readiness before MCP handshake (TUI seamless path)..." >&2
+    "$REAL_ENGRAM" --store "$STORE" wait-ready --timeout 180 || {
+        echo "[engram-grok] wait-ready timed out or failed; proceeding with mcp anyway (may still hit early-ready guard)." >&2
+    }
+fi
+
 exec "$REAL_ENGRAM" --store "$STORE" "$@"
