@@ -147,8 +147,8 @@ pub trait VsaBackend: Send + Sync {
             .zip(prior_q.iter())
             .map(|(q, p)| (*q - *p).norm_sqr())
             .sum();
-        for i in 0..16 {
-            let diff = block.q[i] - prior_q[i];
+        for (i, &p) in prior_q.iter().enumerate().take(16) {
+            let diff = block.q[i] - p;
             block.err_residual_16d[i] = diff;
         }
         block.l2_norm_residual = l2_sq.sqrt();

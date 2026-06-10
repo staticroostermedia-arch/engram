@@ -239,13 +239,13 @@ impl CudaBackend {
         {
             unsafe {
                 let lib = libc::dlopen(
-                    b"libcuda.so.1\0".as_ptr() as *const libc::c_char,
+                    c"libcuda.so.1".as_ptr(),
                     libc::RTLD_NOW | libc::RTLD_GLOBAL,
                 );
                 if lib.is_null() { return false; }
 
                 // Step 1: cuInit(0) — mandatory before any other driver API call.
-                let init_sym = libc::dlsym(lib, b"cuInit\0".as_ptr() as *const libc::c_char);
+                let init_sym = libc::dlsym(lib, c"cuInit".as_ptr());
                 if init_sym.is_null() {
                     libc::dlclose(lib);
                     return false;
@@ -258,7 +258,7 @@ impl CudaBackend {
                 }
 
                 // Step 2: cuDeviceGetCount — now safe to call after cuInit.
-                let count_sym = libc::dlsym(lib, b"cuDeviceGetCount\0".as_ptr() as *const libc::c_char);
+                let count_sym = libc::dlsym(lib, c"cuDeviceGetCount".as_ptr());
                 if count_sym.is_null() {
                     libc::dlclose(lib);
                     return false;
@@ -277,6 +277,7 @@ impl CudaBackend {
     /// Ensure the BVH is populated, building it synchronously if needed.
     /// In normal operation the background build has already finished by the time
     /// any query arrives. This is only triggered on very early queries.
+    #[allow(dead_code)] // cfg-gated (CUDA/OptiX/Metal builds); not referenced on CPU-only or other cfgs
     fn ensure_bvh(&self) {
         if let Ok(guard) = self.bvh.read() {
             if guard.is_some() { return; }

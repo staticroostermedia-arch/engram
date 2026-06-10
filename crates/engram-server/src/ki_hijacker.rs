@@ -375,7 +375,7 @@ async fn bake_ki(store: &SharedStore, ki_dir: &PathBuf) -> anyhow::Result<()> {
             let fruit_boost = |m: &Memory| {
                 let f = compute_fruits_score(&m.provlog, &m.concept);
                 // composite: favor fruits but respect CRS floor
-                (m.crs * 0.55 + f * 0.45)
+                m.crs * 0.55 + f * 0.45
             };
             recent_reasoning_traces.sort_by(|a, b| {
                 fruit_boost(b).partial_cmp(&fruit_boost(a)).unwrap_or(std::cmp::Ordering::Equal)

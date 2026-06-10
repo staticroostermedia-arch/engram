@@ -209,7 +209,7 @@ pub fn extract_ast_items(file_path: &str, source: &str) -> Vec<AstItem> {
     };
 
     let mut cursor = QueryCursor::new();
-    let mut matches = cursor.matches(&query, tree.root_node(), source.as_bytes());
+    let matches = cursor.matches(&query, tree.root_node(), source.as_bytes());
 
     let mut items = Vec::new();
     let file_stem = std::path::Path::new(file_path)
@@ -221,7 +221,7 @@ pub fn extract_ast_items(file_path: &str, source: &str) -> Vec<AstItem> {
 
     let source_bytes = source.as_bytes();
 
-    while let Some(m) = matches.next() {
+    for m in matches {
         let mut name = String::new();
         let mut kind = ItemKind::Unknown("item".to_string());
         let mut node_opt = None;
@@ -311,7 +311,7 @@ fn extract_md_structure(file_path: &str, source: &str) -> Vec<AstItem> {
     let mut i = 0;
 
     // Capture leading frontmatter as special item (common in skills/*.md, some docs)
-    if lines.len() > 0 && lines[0].trim() == "---" {
+    if !lines.is_empty() && lines[0].trim() == "---" {
         let mut end = 1;
         while end < lines.len() {
             if lines[end].trim() == "---" {
@@ -381,8 +381,8 @@ fn extract_md_structure(file_path: &str, source: &str) -> Vec<AstItem> {
         }
 
         // Code fences ```lang or ``` 
-        if trimmed.starts_with("```") {
-            let lang = trimmed[3..].trim().to_string();
+        if let Some(stripped) = trimmed.strip_prefix("```") {
+            let lang = stripped.trim().to_string();
             let start_line = i;
             let mut end_line = i + 1;
             while end_line < lines.len() {

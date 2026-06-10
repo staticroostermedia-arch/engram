@@ -13,6 +13,7 @@ path = "src/main.rs"
 
 [features]
 default = []
+async-io = []                          # declared for ki_hijacker prototype / async read demos (silences unexpected_cfgs for the feature-gated fns)
 # Legacy override flags — seldom needed since build.rs auto-detects the best backend.
 # Use these only to force a specific backend on a multi-GPU machine:
 cuda  = ["engram-gpu/cuda-kernels", "engram-gpu/device_residency"]   # force CUDA + device_residency (cuFile/GPUDirect NVMe->GPU for hot; Tier 3 for NVMe-GPU design)

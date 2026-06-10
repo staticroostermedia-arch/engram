@@ -36,6 +36,7 @@ extern "C" {
         size: usize,
         kind: i32,
     ) -> i32;
+    #[allow(dead_code)] // only linked/used under engram_backend_cuda cfg on supported platforms
     fn cudaDeviceSynchronize() -> i32;
 }
 

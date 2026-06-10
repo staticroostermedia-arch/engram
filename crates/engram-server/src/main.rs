@@ -1,4 +1,8 @@
 #![recursion_limit = "512"]
+#![allow(unused_mut)]                 // many guard bindings from short-lock refactor are read-only after acquire; harmless, silences the bulk of the "does not need to be mutable" warnings
+#![allow(clippy::unnecessary_parens)] // tuple returns in Err arms and a few exprs are idiomatic; keeps code clear
+#![allow(clippy::type_complexity)]    // complex tuple types in KI bake (pinned + weighted) are inherent to the geometric payload; documented
+#![allow(clippy::ptr_arg)]            // &PathBuf in bake_ki is fine for the ki_dir usage; changing would cascade to callers
 
 //! Engram server — MCP + REST memory backend for AI agents.
 //!

@@ -347,6 +347,7 @@ fn detect_native_ptx_arch() -> String {
                     let sm: u32 = digits.parse().unwrap_or(0);
                     // compute_89 is the highest arch fully supported by OptiX PTX JIT
                     // on SM 8.x hardware. For SM 9+ use native target.
+                    #[allow(clippy::if_same_then_else)]
                     if sm >= 90 {
                         return format!("compute_{sm}");
                     } else if sm >= 86 {
@@ -365,7 +366,7 @@ fn compile_optix_host(sdk: &str) {
     cc::Build::new()
         .cpp(true)
         .flag("-std=c++17")
-        .flag(&format!("-I{sdk}/include"))
+        .flag(format!("-I{sdk}/include"))
         .flag("-I/usr/local/cuda/include")
         .flag("-DOPTIX_SDK_AVAILABLE")
         .file("src/optix_host.cpp")

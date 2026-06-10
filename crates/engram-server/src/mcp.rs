@@ -3009,7 +3009,7 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                         b.energetics.crs = b.crs_score;
                         b.energetics.work_verb = 0.12;
 
-                        let short = summary.chars().take(32).collect::<String>().to_lowercase().chars().map(|c| if c.is_alphanumeric()||c=='-' {c} else {'-'}).collect::<String>();
+                        let _short = summary.chars().take(32).collect::<String>().to_lowercase().chars().map(|c| if c.is_alphanumeric()||c=='-' {c} else {'-'}).collect::<String>();
                         let boundary_trace_key = format!("trace:{}_session_end_boundary_auto", boundary_ts);
                         if lock.store(&boundary_trace_key, b).is_ok() {
                             // Wire to recent session_start for chain (ki will surface in trajectory)

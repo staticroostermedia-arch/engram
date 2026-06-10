@@ -468,12 +468,11 @@ pub fn op_linguistic_compress(bundle: &LinguisticDiscourseBundle) -> [Complex32;
 /// **op_linguistic_decompress** — Reverse compress; reconstruct bundle while preserving homotopy.
 /// Uses unbind-style + normalize; caller checks CRS on roundtrip for homotopy type.
 /// Payload/zedos from mint preserved in roundtrip fidelity.
-pub fn op_linguistic_decompress(phase: &[Complex32; 8192], bundle: &LinguisticDiscourseBundle) -> LinguisticDiscourseBundle {
+pub fn op_linguistic_decompress(_phase: &[Complex32; 8192], bundle: &LinguisticDiscourseBundle) -> LinguisticDiscourseBundle {
     // reverse (simplified for additive MVP: structure preserved + phase-derived; full unbind would recover coeffs)
     // homotopy via CRS (cosine on re-compress) asserted in tests >=0.85
-    let mut out = bundle.clone();
     // text/coeffs/functor fidelity for roundtrip (payload side via mint_linguistic)
-    out
+    bundle.clone()
 }
 
 /// **fibered_linguistic_equivalence** — Compare two presentations (e.g. syntactic vs semantic).
