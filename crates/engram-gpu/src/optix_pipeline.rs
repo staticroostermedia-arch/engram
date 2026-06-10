@@ -16,21 +16,21 @@ mod ptx {
 #[allow(dead_code)]
 extern "C" {
     fn engram_optix_init(
-        aabb_data:    *const f32,
+        aabb_data: *const f32,
         n_primitives: u32,
-        ptx_is:       *const i8,
-        ptx_rg:       *const i8,
-        ptx_ah:       *const i8,
-        ptx_ms:       *const i8,
+        ptx_is: *const i8,
+        ptx_rg: *const i8,
+        ptx_ah: *const i8,
+        ptx_ms: *const i8,
     ) -> *mut c_void;
 
     fn engram_optix_query(
-        state:           *mut c_void,
+        state: *mut c_void,
         query_positions: *const f32,
-        n_queries:       u32,
-        max_hits:        u32,
-        hit_list_out:    *mut u64,
-        hit_counts_out:  *mut u32,
+        n_queries: u32,
+        max_hits: u32,
+        hit_list_out: *mut u64,
+        hit_counts_out: *mut u32,
     ) -> i32;
 
     fn engram_optix_free(state: *mut c_void);
@@ -98,7 +98,7 @@ impl OptixBvhPipeline {
 
     /// Query one 3D point, collect up to `max_hits` 1-based entry IDs.
     pub fn query_filter_optix(&self, query_3d: [f32; 3], max_hits: usize) -> Vec<u64> {
-        let mut hit_list  = vec![0u64; max_hits];
+        let mut hit_list = vec![0u64; max_hits];
         let mut hit_count = 0u32;
 
         let ret = unsafe {
@@ -124,17 +124,18 @@ impl OptixBvhPipeline {
     /// Build the flat AABB array from `ManifoldEntry` slice.
     ///
     /// Each entry maps to: center_3d ± AABB_RADIUS (200.0 — matches bvh.rs const).
-    pub fn aabb_from_entries(
-        entries: &[crate::bvh::ManifoldEntry],
-        radius: f32,
-    ) -> Vec<[f32; 6]> {
+    pub fn aabb_from_entries(entries: &[crate::bvh::ManifoldEntry], radius: f32) -> Vec<[f32; 6]> {
         entries
             .iter()
             .map(|e| {
                 let c = e.center_3d;
                 [
-                    c.x - radius, c.y - radius, c.z - radius,
-                    c.x + radius, c.y + radius, c.z + radius,
+                    c.x - radius,
+                    c.y - radius,
+                    c.z - radius,
+                    c.x + radius,
+                    c.y + radius,
+                    c.z + radius,
                 ]
             })
             .collect()
@@ -144,7 +145,9 @@ impl OptixBvhPipeline {
 impl Drop for OptixBvhPipeline {
     fn drop(&mut self) {
         if !self.handle.is_null() {
-            unsafe { engram_optix_free(self.handle); }
+            unsafe {
+                engram_optix_free(self.handle);
+            }
         }
     }
 }

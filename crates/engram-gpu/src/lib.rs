@@ -27,15 +27,15 @@
 //! The BVH is built once at startup and rebuilt incrementally as new blocks arrive.
 //! On GPU-less machines, `CudaBackend` transparently delegates to `CpuBackend`.
 
+pub mod backend;
 pub mod bvh;
 pub mod cuda_dispatch;
+pub mod metal_backend;
 #[cfg(engram_backend_cuda)]
 pub mod optix_pipeline;
-pub mod backend;
-pub mod metal_backend;
 
-pub use bvh::{BvhManifold, Float3, LBVHNode};
 pub use backend::CudaBackend;
+pub use bvh::{BvhManifold, Float3, LBVHNode};
 pub use metal_backend::MetalBackend;
 pub mod quant;
 
@@ -44,4 +44,3 @@ pub mod quant;
 pub mod wgpu_backend;
 #[cfg(engram_backend_wgpu)]
 pub use wgpu_backend::WgpuBackend;
-

@@ -98,11 +98,7 @@ pub fn ensure_cuda_runtime() -> bool {
 
 /// GPU BVH slab traversal for one query position. Returns file_offset IDs.
 #[cfg(engram_backend_cuda)]
-pub fn gpu_bvh_filter(
-    nodes: &[LBVHNode],
-    pos: Float3,
-    max_hits: usize,
-) -> Option<Vec<u64>> {
+pub fn gpu_bvh_filter(nodes: &[LBVHNode], pos: Float3, max_hits: usize) -> Option<Vec<u64>> {
     if !cuda_lean_enabled() || nodes.is_empty() {
         return None;
     }
@@ -132,15 +128,33 @@ pub fn gpu_bvh_filter(
             || cudaMalloc(&mut d_hits, hits_bytes) != 0
             || cudaMalloc(&mut d_counts, counts_bytes) != 0
         {
-            if !d_nodes.is_null() { let _ = cudaFree(d_nodes); }
-            if !d_rays.is_null() { let _ = cudaFree(d_rays); }
-            if !d_hits.is_null() { let _ = cudaFree(d_hits); }
-            if !d_counts.is_null() { let _ = cudaFree(d_counts); }
+            if !d_nodes.is_null() {
+                let _ = cudaFree(d_nodes);
+            }
+            if !d_rays.is_null() {
+                let _ = cudaFree(d_rays);
+            }
+            if !d_hits.is_null() {
+                let _ = cudaFree(d_hits);
+            }
+            if !d_counts.is_null() {
+                let _ = cudaFree(d_counts);
+            }
             return None;
         }
 
-        if cudaMemcpy(d_nodes, nodes.as_ptr() as *const _, nodes_bytes, CUDA_MEMCPY_HOST_TO_DEVICE) != 0
-            || cudaMemcpy(d_rays, &ray as *const _ as *const _, rays_bytes, CUDA_MEMCPY_HOST_TO_DEVICE) != 0
+        if cudaMemcpy(
+            d_nodes,
+            nodes.as_ptr() as *const _,
+            nodes_bytes,
+            CUDA_MEMCPY_HOST_TO_DEVICE,
+        ) != 0
+            || cudaMemcpy(
+                d_rays,
+                &ray as *const _ as *const _,
+                rays_bytes,
+                CUDA_MEMCPY_HOST_TO_DEVICE,
+            ) != 0
         {
             let _ = cudaFree(d_nodes);
             let _ = cudaFree(d_rays);
@@ -232,14 +246,30 @@ pub fn gpu_cosine_batch(
             || cudaMalloc(&mut d_cands, cb) != 0
             || cudaMalloc(&mut d_scores, sb) != 0
         {
-            if !d_query.is_null() { let _ = cudaFree(d_query); }
-            if !d_cands.is_null() { let _ = cudaFree(d_cands); }
-            if !d_scores.is_null() { let _ = cudaFree(d_scores); }
+            if !d_query.is_null() {
+                let _ = cudaFree(d_query);
+            }
+            if !d_cands.is_null() {
+                let _ = cudaFree(d_cands);
+            }
+            if !d_scores.is_null() {
+                let _ = cudaFree(d_scores);
+            }
             return None;
         }
 
-        if cudaMemcpy(d_query, query_flat.as_ptr() as *const _, qb, CUDA_MEMCPY_HOST_TO_DEVICE) != 0
-            || cudaMemcpy(d_cands, cand_flat.as_ptr() as *const _, cb, CUDA_MEMCPY_HOST_TO_DEVICE) != 0
+        if cudaMemcpy(
+            d_query,
+            query_flat.as_ptr() as *const _,
+            qb,
+            CUDA_MEMCPY_HOST_TO_DEVICE,
+        ) != 0
+            || cudaMemcpy(
+                d_cands,
+                cand_flat.as_ptr() as *const _,
+                cb,
+                CUDA_MEMCPY_HOST_TO_DEVICE,
+            ) != 0
         {
             let _ = cudaFree(d_query);
             let _ = cudaFree(d_cands);
@@ -284,17 +314,20 @@ pub fn upload_hot_q_to_device(q: &[Complex32; 8192]) -> Option<u64> {
     if !ensure_cuda_runtime() {
         return None;
     }
-    let flat: Vec<CudaComplex> = q
-        .iter()
-        .map(|c| CudaComplex { x: c.re, y: c.im })
-        .collect();
+    let flat: Vec<CudaComplex> = q.iter().map(|c| CudaComplex { x: c.re, y: c.im }).collect();
     let bytes = flat.len() * std::mem::size_of::<CudaComplex>();
     unsafe {
         let mut ptr: *mut std::ffi::c_void = std::ptr::null_mut();
         if cudaMalloc(&mut ptr, bytes) != 0 || ptr.is_null() {
             return None;
         }
-        if cudaMemcpy(ptr, flat.as_ptr() as *const _, bytes, CUDA_MEMCPY_HOST_TO_DEVICE) != 0 {
+        if cudaMemcpy(
+            ptr,
+            flat.as_ptr() as *const _,
+            bytes,
+            CUDA_MEMCPY_HOST_TO_DEVICE,
+        ) != 0
+        {
             let _ = cudaFree(ptr);
             return None;
         }

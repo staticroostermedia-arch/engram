@@ -1,0 +1,45 @@
+[workflow]
+name = "world_state_ingestion_loop"
+description = "Process for building and maintaining a live 'world state' / local context model: machine specs (CPU/GPU/RAM/OS/running services), project states (Engram on feat/mvp, CodeLand with llama.cpp + harnesses + models), locations and external (Starlink Washington live stream metrics, other user world items). Collects via safe commands/fs reads, avoids duplicate work by pre-recall (tile:world_state or machine: prefix, CRS>0.7 reuse), stores systematically in Engram as concepts (machine:*, gpu:*, project:*, location:*) + thought tiles (research_offload or state_machine snapshots) + relations (to goals, prior snapshots, consciousness_loop, info_gathering results). Ties directly to info_gathering_consolidation (reuse its gather/store/consolidate) and ai_consciousness inner_reflect (as perception source for 'my world'). Local Gemma (12B via :11435 or smaller scout) can synthesize raw dumps. Enables harnesses (Hermies/triadic) + local model to monitor sub-tasks, research, manage streams/X crawls with persistent geometric memory. Subvisor oversight, part of consciousness strange loop for grounded self/world model."
+primary_goal = "goal:engram_consciousness_loop_v1"
+max_iterations = 2
+
+[wake]
+ritual = "engram-wake-up"
+tools = ["mcp_engram_session_start", "mcp_engram_recall", "mcp_engram_get_backend_readiness"]
+
+[execute]
+steps = [
+  { name = "pre_audit_and_threshold", desc = "Recall anchors for 'machine:*', 'world_state:*', 'project:engram', 'gpu:*', 'location:starlink'. If recent high-CRS match, reuse/consolidate snapshot instead of full recollect. Check parent uncertainty (e.g. from consciousness inner_reflect). Record quick_trace.", subagent = "world_auditor" },
+  { name = "collect_machine_state", desc = "Run safe local cmds: uname, lscpu, free -h, nvidia-smi (or lspci), df -h, ps aux for key procs (llama, mcp, engram), /etc/os-release, hostname. Parse to structured. For GPU: exact names, total/free VRAM, utilization. Store raw + summary.", subagent = "machine_collector" },
+  { name = "collect_projects_and_code_state", desc = "For key dirs (Engram, CodeLand): git status/branch/rev, Cargo.toml version/desc, key files (processes/meta/*.toml count, crates, scripts), ls models/harnesses. Spatial/context_for_edit on key paths if code. Note harnesses (triadic, pipboy, harness_jit.leg3).", subagent = "project_collector" },
+  { name = "collect_user_world_locations", desc = "Ingest provided (Starlink Washington live stream setup/status/metrics if accessible via local API/script), other fs/env hints for locations/projects. Use tools (web if public Starlink status) then engram. Pre-recall to dedup.", subagent = "location_collector" },
+  { name = "collect_starlink", desc = "Starlink-specific collector (WA live stream from user setup): if local endpoint known (e.g. curl http://starlink-wa-local/api/status or user-provided), fetch metrics (latency, speed, outages, satellites), remember as 'location:starlink:wa:live_metrics:ts' with structured payload {ts, status, download_mbps, upload_mbps, latency_ms, outages, source}. Use public web/Starlink updates + X as proxy until local endpoint ready (as in current pilot with factory/launches/X posts). Relate to world_state and prior. This enables harness monitoring of the WA stream without dup work.", subagent = "starlink_collector" },
+  { name = "synthesize_and_store", desc = "Optional: use local Gemma (direct :11435 chat or scout for summary) on raw dumps for nice 'world_state narrative'. Then mcp_engram_remember as 'machine:a-monad:specs:ts', 'gpu:rtx-5060-ti:16gb', 'project:engram:world', 'location:starlink:wa:stream', 'world_state:snapshot:YYYYMMDD-HHMM'. batch_remember + relate to primary goal, to consciousness_loop, to prior world_state, to any info_gather results. Create thought_tile (state_machine or research_offload) with payload {machine, gpus, projects, locations, ts, source: 'local_collect'}. Promote hot.", subagent = "storer_synthesizer" },
+  { name = "consolidate_and_lawfulness", desc = "Update related (merge specs), NREM in handoff, scar low-value. verify_manifold + subvisor. outer_feedback to parent (consciousness or harness). Handoff with session_end + tile write + COMPRESS.", subagent = "consolidator_checker" }
+]
+
+subvisor = "gemma-integration"  # or consciousness_loop; reuses monitor/gemma-integration.subvisor.toml or extend
+
+[trace]
+at = ["every step", "thresholds", "store decisions"]
+tools = ["mcp_engram_quick_trace", "mcp_engram_remember", "mcp_engram_relate", "mcp_engram_update", "mcp_engram_thought_tile_create"]
+
+[spatial]
+on = ["project code or process files inspected"]
+tools = ["mcp_engram_context_for_edit", "mcp_engram_recall_in_file"]
+
+[thought-tiles]
+create = { title = "World State Snapshot", type = "state_machine", goal_context = "goal:engram_consciousness_loop_v1" }
+write_results = true
+
+[handoff]
+ritual = "engram-session-end"
+tools = ["mcp_engram_session_end", "mcp_engram_thought_tile_write_result", "mcp_engram_promote_hot"]
+prepare_compression = true
+
+[update]
+description = "mcp_engram_update for evolving world model (e.g. GPU free mem changes, project version bumps) while preserving relations/momentum."
+
+[subvisor_extension]
+note = "H1 oversight on collect/store (invariants: pre-recall before full collect, all stored items related to at least one anchor (goal or machine: or project:), crs>=0.74 for snapshots, use local Gemma only for synthesis not raw storage). Kill on dup_work_detected or integrity drop. Monitored: collect_*, synthesize_and_store. Ties to info_gathering pre-recall + consciousness perception step. Enables local 12B + harness to have grounded, non-flat world model for sub-task mgmt, stream monitoring, X research (x_* results -> tiles via this or info_gather)."

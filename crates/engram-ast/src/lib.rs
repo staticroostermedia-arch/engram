@@ -7,7 +7,7 @@
 //! - **Embed label** = First 2 lines of the block (signature) as semantic distillation
 //! - **Full source** = Complete node source for the provlog
 
-use tree_sitter::{Language, Parser, Query, QueryCursor, Node};
+use tree_sitter::{Language, Node, Parser, Query, QueryCursor};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ItemKind {
@@ -26,13 +26,13 @@ impl ItemKind {
     pub fn as_str(&self) -> &str {
         match self {
             ItemKind::Function => "fn",
-            ItemKind::Struct   => "struct",
-            ItemKind::Enum     => "enum",
-            ItemKind::Trait    => "trait",
-            ItemKind::Impl     => "impl",
-            ItemKind::Class    => "class",
-            ItemKind::Method   => "method",
-            ItemKind::Interface=> "interface",
+            ItemKind::Struct => "struct",
+            ItemKind::Enum => "enum",
+            ItemKind::Trait => "trait",
+            ItemKind::Impl => "impl",
+            ItemKind::Class => "class",
+            ItemKind::Method => "method",
+            ItemKind::Interface => "interface",
             ItemKind::Unknown(s) => s.as_str(),
         }
     }
@@ -57,7 +57,10 @@ impl AstItem {
         if self.doc_comment.is_empty() {
             format!("{}: {}", self.concept, self.signature)
         } else {
-            format!("{}: {} — {}", self.concept, self.doc_comment, self.signature)
+            format!(
+                "{}: {} — {}",
+                self.concept, self.doc_comment, self.signature
+            )
         }
     }
 }
@@ -67,7 +70,8 @@ fn extract_preceding_comments(source_bytes: &[u8], mut node: Node) -> String {
     let mut comments = Vec::new();
     while let Some(prev) = node.prev_sibling() {
         if prev.kind().contains("comment") {
-            if let Ok(text) = std::str::from_utf8(&source_bytes[prev.start_byte()..prev.end_byte()]) {
+            if let Ok(text) = std::str::from_utf8(&source_bytes[prev.start_byte()..prev.end_byte()])
+            {
                 comments.push(text.trim().to_string());
             }
             node = prev;
@@ -87,7 +91,10 @@ struct LangConfig {
 
 impl LangConfig {
     fn new(language: Language, query_str: &'static str) -> Self {
-        Self { language, query_str }
+        Self {
+            language,
+            query_str,
+        }
     }
 }
 
@@ -101,14 +108,14 @@ fn get_config(ext: &str) -> Option<LangConfig> {
             (enum_item name: (type_identifier) @name) @enum
             (trait_item name: (type_identifier) @name) @trait
             (impl_item type: (type_identifier) @name) @impl
-            "#
+            "#,
         )),
         "py" => Some(LangConfig::new(
             tree_sitter_python::LANGUAGE.into(),
             r#"
             (function_definition name: (identifier) @name) @fn
             (class_definition name: (identifier) @name) @class
-            "#
+            "#,
         )),
         "ts" | "tsx" => Some(LangConfig::new(
             tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
@@ -118,7 +125,7 @@ fn get_config(ext: &str) -> Option<LangConfig> {
             (interface_declaration name: (type_identifier) @name) @interface
             (method_definition name: (property_identifier) @name) @method
             (lexical_declaration (variable_declarator name: (identifier) @name value: (arrow_function))) @fn
-            "#
+            "#,
         )),
         "js" | "jsx" => Some(LangConfig::new(
             tree_sitter_javascript::LANGUAGE.into(),
@@ -127,7 +134,7 @@ fn get_config(ext: &str) -> Option<LangConfig> {
             (class_declaration name: (identifier) @name) @class
             (method_definition name: (property_identifier) @name) @method
             (lexical_declaration (variable_declarator name: (identifier) @name value: (arrow_function))) @fn
-            "#
+            "#,
         )),
         "go" => Some(LangConfig::new(
             tree_sitter_go::LANGUAGE.into(),
@@ -136,7 +143,7 @@ fn get_config(ext: &str) -> Option<LangConfig> {
             (method_declaration name: (field_identifier) @name) @method
             (type_declaration (type_spec name: (type_identifier) @name type: (struct_type))) @struct
             (type_declaration (type_spec name: (type_identifier) @name type: (interface_type))) @interface
-            "#
+            "#,
         )),
         "java" => Some(LangConfig::new(
             tree_sitter_java::LANGUAGE.into(),
@@ -144,7 +151,7 @@ fn get_config(ext: &str) -> Option<LangConfig> {
             (class_declaration name: (identifier) @name) @class
             (interface_declaration name: (identifier) @name) @interface
             (method_declaration name: (identifier) @name) @method
-            "#
+            "#,
         )),
         "c" => Some(LangConfig::new(
             tree_sitter_c::LANGUAGE.into(),
@@ -152,7 +159,7 @@ fn get_config(ext: &str) -> Option<LangConfig> {
             (function_definition declarator: (function_declarator declarator: (identifier) @name)) @fn
             (struct_specifier name: (type_identifier) @name) @struct
             (enum_specifier name: (type_identifier) @name) @enum
-            "#
+            "#,
         )),
         "cpp" | "cc" | "cxx" | "h" | "hpp" => Some(LangConfig::new(
             tree_sitter_cpp::LANGUAGE.into(),
@@ -162,7 +169,7 @@ fn get_config(ext: &str) -> Option<LangConfig> {
             (class_specifier name: (type_identifier) @name) @class
             (struct_specifier name: (type_identifier) @name) @struct
             (enum_specifier name: (type_identifier) @name) @enum
-            "#
+            "#,
         )),
         _ => None,
     }
@@ -229,7 +236,9 @@ pub fn extract_ast_items(file_path: &str, source: &str) -> Vec<AstItem> {
         for capture in m.captures {
             let capture_name = query.capture_names()[capture.index as usize];
             if capture_name == "name" {
-                if let Ok(n) = std::str::from_utf8(&source_bytes[capture.node.start_byte()..capture.node.end_byte()]) {
+                if let Ok(n) = std::str::from_utf8(
+                    &source_bytes[capture.node.start_byte()..capture.node.end_byte()],
+                ) {
                     name = n.to_string();
                 }
             } else {
@@ -253,22 +262,29 @@ pub fn extract_ast_items(file_path: &str, source: &str) -> Vec<AstItem> {
             if !name.is_empty() {
                 let start = node.start_byte();
                 let end = node.end_byte();
-                
+
                 // Extract 2D coordinates for the AABB mapping
                 let start_pos = (node.start_position().row, node.start_position().column);
                 let end_pos = (node.end_position().row, node.end_position().column);
 
-                let full_source = std::str::from_utf8(&source_bytes[start..end]).unwrap_or("").to_string();
+                let full_source = std::str::from_utf8(&source_bytes[start..end])
+                    .unwrap_or("")
+                    .to_string();
 
                 // Signature is roughly the first line or two of the node
                 let first_newline = full_source.find('\n').unwrap_or(full_source.len());
                 let mut sig_end = first_newline;
-                if sig_end < full_source.len() - 1 && full_source.chars().filter(|c| *c == '{').count() > 0 {
+                if sig_end < full_source.len() - 1
+                    && full_source.chars().filter(|c| *c == '{').count() > 0
+                {
                     if let Some(brace) = full_source.find('{') {
-                         sig_end = sig_end.max(brace + 1);
+                        sig_end = sig_end.max(brace + 1);
                     }
                 }
-                let signature = full_source[0..sig_end.min(full_source.len())].replace('\n', " ").trim().to_string();
+                let signature = full_source[0..sig_end.min(full_source.len())]
+                    .replace('\n', " ")
+                    .trim()
+                    .to_string();
 
                 let doc_comment = extract_preceding_comments(source_bytes, node);
 
@@ -361,7 +377,10 @@ fn extract_md_structure(file_path: &str, source: &str) -> Vec<AstItem> {
                     }
                     let full_source = lines[start_line..end_line].join("\n");
                     let start_pos = (start_line, 0);
-                    let end_pos = (end_line.saturating_sub(1), lines[end_line.saturating_sub(1)].len());
+                    let end_pos = (
+                        end_line.saturating_sub(1),
+                        lines[end_line.saturating_sub(1)].len(),
+                    );
                     let concept = format!("{}__section__{}", file_stem, name)
                         .to_lowercase()
                         .replace(|c: char| !c.is_alphanumeric() && c != '_', "_");
@@ -380,7 +399,7 @@ fn extract_md_structure(file_path: &str, source: &str) -> Vec<AstItem> {
             }
         }
 
-        // Code fences ```lang or ``` 
+        // Code fences ```lang or ```
         if let Some(stripped) = trimmed.strip_prefix("```") {
             let lang = stripped.trim().to_string();
             let start_line = i;
@@ -394,8 +413,15 @@ fn extract_md_structure(file_path: &str, source: &str) -> Vec<AstItem> {
             }
             let full_source = lines[start_line..end_line].join("\n");
             let start_pos = (start_line, 0);
-            let end_pos = (end_line.saturating_sub(1), lines[end_line.saturating_sub(1)].len());
-            let code_name = if lang.is_empty() { "code".to_string() } else { lang.clone() };
+            let end_pos = (
+                end_line.saturating_sub(1),
+                lines[end_line.saturating_sub(1)].len(),
+            );
+            let code_name = if lang.is_empty() {
+                "code".to_string()
+            } else {
+                lang.clone()
+            };
             let concept = format!("{}__code__{}", file_stem, code_name)
                 .to_lowercase()
                 .replace(|c: char| !c.is_alphanumeric() && c != '_', "_");
@@ -440,13 +466,14 @@ fn extract_toml_structure(file_path: &str, source: &str) -> Vec<AstItem> {
 
         // Array of tables [[name]]
         if line.starts_with("[[") && line.ends_with("]]") {
-            let name = line[2..line.len()-2].trim().to_string();
+            let name = line[2..line.len() - 2].trim().to_string();
             let mut end_line = i + 1;
             if !name.is_empty() {
                 let start_line = i;
                 while end_line < lines.len() {
                     let next = lines[end_line].trim();
-                    if (next.starts_with('[') && !next.starts_with("[[")) || next.starts_with("[[") {
+                    if (next.starts_with('[') && !next.starts_with("[[")) || next.starts_with("[[")
+                    {
                         break;
                     }
                     end_line += 1;
@@ -463,7 +490,10 @@ fn extract_toml_structure(file_path: &str, source: &str) -> Vec<AstItem> {
                     full_source,
                     concept,
                     start_pos: (start_line, 0),
-                    end_pos: (end_line.saturating_sub(1), lines[end_line.saturating_sub(1)].len()),
+                    end_pos: (
+                        end_line.saturating_sub(1),
+                        lines[end_line.saturating_sub(1)].len(),
+                    ),
                 });
             }
             i = end_line;
@@ -472,7 +502,7 @@ fn extract_toml_structure(file_path: &str, source: &str) -> Vec<AstItem> {
 
         // Table [name] or [name.sub]
         if line.starts_with('[') && line.ends_with(']') && !line.starts_with("[[") {
-            let name = line[1..line.len()-1].trim().to_string();
+            let name = line[1..line.len() - 1].trim().to_string();
             let mut end_line = i + 1;
             if !name.is_empty() {
                 let start_line = i;
@@ -495,7 +525,10 @@ fn extract_toml_structure(file_path: &str, source: &str) -> Vec<AstItem> {
                     full_source,
                     concept,
                     start_pos: (start_line, 0),
-                    end_pos: (end_line.saturating_sub(1), lines[end_line.saturating_sub(1)].len()),
+                    end_pos: (
+                        end_line.saturating_sub(1),
+                        lines[end_line.saturating_sub(1)].len(),
+                    ),
                 });
             }
             i = end_line;
@@ -505,7 +538,8 @@ fn extract_toml_structure(file_path: &str, source: &str) -> Vec<AstItem> {
         // Bare top-level key = value (simple key items for small tomls)
         if let Some(eq) = line.find('=') {
             let key = line[..eq].trim().to_string();
-            if !key.is_empty() && !key.contains('[') && !key.contains('.') {  // top level only, rough
+            if !key.is_empty() && !key.contains('[') && !key.contains('.') {
+                // top level only, rough
                 let start_line = i;
                 let end_line = i + 1;
                 let full_source = lines[start_line..end_line].join("\n");
@@ -520,7 +554,10 @@ fn extract_toml_structure(file_path: &str, source: &str) -> Vec<AstItem> {
                     full_source,
                     concept,
                     start_pos: (start_line, 0),
-                    end_pos: (end_line.saturating_sub(1), lines[end_line.saturating_sub(1)].len()),
+                    end_pos: (
+                        end_line.saturating_sub(1),
+                        lines[end_line.saturating_sub(1)].len(),
+                    ),
                 });
             }
         }

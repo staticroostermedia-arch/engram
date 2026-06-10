@@ -31,39 +31,52 @@
 //! }
 //! ```
 
-pub mod types;
-pub mod ops;
-pub mod encode;
-pub mod storage;
-pub mod mmap;
 pub mod backend;
-pub mod index;
+pub mod encode;
 pub mod genesis;
+pub mod index;
+pub mod mmap;
+pub mod ops;
+pub mod storage;
+pub mod types;
 
+pub use backend::{CpuBackend, SheafBackend, VsaBackend};
+pub use genesis::{
+    AGENT_GENESIS_TEXT, KEPLER_GATE, SACRED_FREQUENCY_HZ, SACRED_PHI, SACRED_PI, SACRED_VESICA,
+    SACRED_ZETA_CRITICAL,
+};
+pub use ops::{apply_frame, cosine_similarity, frame_combine, op_add, op_bind};
 pub use types::{
-    HolographicBlock, Leg3Pointer, LegFooter, Logenergetics,
-    BLOCK_SIZE, DIMENSION,
-    // ZEDOS epistemic tags — exposed so downstream storage tools can work with the full format
-    ZEDOS_DECLARATIVE, ZEDOS_EPISODIC, ZEDOS_OPERATIONAL,
-    ZEDOS_BODY, ZEDOS_VERBATIM, ZEDOS_PRAXIS, ZEDOS_RELATION, ZEDOS_HYPOTHESIS,
-    // CodeLand Phase 4 NREM/ego.leg3 integration (Tier 5 subjective deltas + energy)
-    ZEDOS_NREM_CENTROID, ZEDOS_SYNTHESIS, LAW_CONSTANT,
-    // External pointer support (smart refs for >256KB data, guardrail-compliant)
-    ZEDOS_POINTER,
-    // Phase 2 WS2-B: richer CLS TRAINING tag for NREM bias + MCP surface (child goal sub1)
-    ZEDOS_TRAINING,
+    HolographicBlock,
+    Leg3Pointer,
+    LegFooter,
+    Logenergetics,
     // WS3-A Substrate Phase 2: live Geosphere 5th coordinate runtime register
     // (SymplecticState + reserved persistence tag; no HolographicBlock layout impact)
-    SymplecticState, ZEDOS_GEOSPHERE,
+    SymplecticState,
+    BLOCK_SIZE,
+    DIMENSION,
+    LAW_CONSTANT,
+    ZEDOS_BODY,
+    // ZEDOS epistemic tags — exposed so downstream storage tools can work with the full format
+    ZEDOS_DECLARATIVE,
+    ZEDOS_EPISODIC,
+    ZEDOS_GEOSPHERE,
+    ZEDOS_HYPOTHESIS,
+    // CodeLand Phase 4 NREM/ego.leg3 integration (Tier 5 subjective deltas + energy)
+    ZEDOS_NREM_CENTROID,
+    ZEDOS_OPERATIONAL,
     // Phase 2.2 VSA Calculus + ZEDOS_OPERATOR: explicit VSA ops as first-class tagged
     // instances (for sheaf/harmonics consumption). Tag only; layout invariant preserved.
     ZEDOS_OPERATOR,
-};
-pub use ops::{op_add, op_bind, cosine_similarity, frame_combine, apply_frame};
-pub use backend::{VsaBackend, CpuBackend, SheafBackend};
-pub use genesis::{
-    SACRED_PI, SACRED_VESICA, SACRED_PHI, SACRED_ZETA_CRITICAL,
-    SACRED_FREQUENCY_HZ, KEPLER_GATE, AGENT_GENESIS_TEXT,
+    // External pointer support (smart refs for >256KB data, guardrail-compliant)
+    ZEDOS_POINTER,
+    ZEDOS_PRAXIS,
+    ZEDOS_RELATION,
+    ZEDOS_SYNTHESIS,
+    // Phase 2 WS2-B: richer CLS TRAINING tag for NREM bias + MCP surface (child goal sub1)
+    ZEDOS_TRAINING,
+    ZEDOS_VERBATIM,
 };
 
 /// `Complex32` — a 32-bit complex number. The fundamental unit of the phase vector.

@@ -48,7 +48,9 @@ fn main() {
                 return;
             }
             "cpu" => {
-                println!("cargo:warning=engram: ENGRAM_FORCE_BACKEND=cpu — forcing pure CPU backend.");
+                println!(
+                    "cargo:warning=engram: ENGRAM_FORCE_BACKEND=cpu — forcing pure CPU backend."
+                );
                 return;
             }
             "cuda" | "rocm" => {
@@ -60,7 +62,10 @@ fn main() {
 
     // ── Probe CUDA ────────────────────────────────────────────────────────────
     if let Some(nvcc_path) = which_compiler("nvcc", "CUDA_HOME") {
-        println!("cargo:warning=engram: CUDA detected (nvcc: {}). Compiling GPU kernels.", nvcc_path.display());
+        println!(
+            "cargo:warning=engram: CUDA detected (nvcc: {}). Compiling GPU kernels.",
+            nvcc_path.display()
+        );
         println!("cargo:rustc-cfg=engram_backend_cuda");
 
         // ── Phase 8: OptiX RT-Core BVH — gated on OPTIX_SDK_PATH ──────────
@@ -70,9 +75,11 @@ fn main() {
             // Validate path before attempting compilation — avoids hard panic on placeholder paths.
             let optix_h = std::path::Path::new(&sdk).join("include").join("optix.h");
             if !optix_h.exists() {
-                println!("cargo:warning=engram: OPTIX_SDK_PATH={sdk} — optix.h not found. \
+                println!(
+                    "cargo:warning=engram: OPTIX_SDK_PATH={sdk} — optix.h not found. \
                           Install the real OptiX SDK from https://developer.nvidia.com/optix \
-                          and re-export OPTIX_SDK_PATH. Falling back to software BVH.");
+                          and re-export OPTIX_SDK_PATH. Falling back to software BVH."
+                );
                 cc::Build::new()
                     .cpp(true)
                     .flag("-std=c++17")
@@ -109,7 +116,10 @@ fn main() {
 
     // ── Probe ROCm ────────────────────────────────────────────────────────────
     if let Some(hipcc_path) = which_compiler("hipcc", "ROCM_PATH") {
-        println!("cargo:warning=engram: ROCm detected (hipcc: {}). Compiling HIP kernels.", hipcc_path.display());
+        println!(
+            "cargo:warning=engram: ROCm detected (hipcc: {}). Compiling HIP kernels.",
+            hipcc_path.display()
+        );
         println!("cargo:rustc-cfg=engram_backend_rocm");
         compile_rocm(&hipcc_path);
         return;
@@ -123,7 +133,9 @@ fn main() {
     }
 
     // ── WebGPU fallback ───────────────────────────────────────────────────────
-    println!("cargo:warning=engram: No CUDA/ROCm/Metal detected. Activating WebGPU (wgpu) backend.");
+    println!(
+        "cargo:warning=engram: No CUDA/ROCm/Metal detected. Activating WebGPU (wgpu) backend."
+    );
     println!("cargo:rustc-cfg=engram_backend_wgpu");
 }
 
@@ -131,7 +143,7 @@ fn main() {
 
 fn compile_cuda(nvcc_path: &std::path::Path) {
     let kernel_dir = std::path::Path::new("kernels");
-    let out_dir    = std::path::PathBuf::from(std::env::var("OUT_DIR").unwrap());
+    let out_dir = std::path::PathBuf::from(std::env::var("OUT_DIR").unwrap());
 
     let kernels = ["arkade_8k.cu", "bvh_traverse.cu"];
     let mut obj_files = Vec::new();
@@ -139,11 +151,14 @@ fn compile_cuda(nvcc_path: &std::path::Path) {
     for kernel in &kernels {
         let src = kernel_dir.join(kernel);
         if !src.exists() {
-            println!("cargo:warning=engram: kernel source {} not found — skipping.", src.display());
+            println!(
+                "cargo:warning=engram: kernel source {} not found — skipping.",
+                src.display()
+            );
             continue;
         }
         let stem = kernel.trim_end_matches(".cu");
-        let obj  = out_dir.join(format!("{stem}.o"));
+        let obj = out_dir.join(format!("{stem}.o"));
 
         let status = std::process::Command::new(nvcc_path)
             .args([
@@ -153,10 +168,12 @@ fn compile_cuda(nvcc_path: &std::path::Path) {
                 "--generate-code=arch=compute_86,code=sm_86",
                 "--generate-code=arch=compute_89,code=sm_89",
                 "--generate-code=arch=compute_120,code=sm_120",
-                "-Xcompiler", "-fPIC",
+                "-Xcompiler",
+                "-fPIC",
                 "-c",
                 src.to_str().unwrap(),
-                "-o", obj.to_str().unwrap(),
+                "-o",
+                obj.to_str().unwrap(),
             ])
             .status()
             .expect("failed to exec nvcc");
@@ -172,7 +189,9 @@ fn compile_cuda(nvcc_path: &std::path::Path) {
         let lib_path = out_dir.join("libengram_kernels.a");
         let mut ar = std::process::Command::new("ar");
         ar.arg("crs").arg(&lib_path);
-        for obj in &obj_files { ar.arg(obj); }
+        for obj in &obj_files {
+            ar.arg(obj);
+        }
         ar.status().expect("failed to exec ar");
 
         println!("cargo:rustc-link-search=native={}", out_dir.display());
@@ -189,7 +208,7 @@ fn compile_cuda(nvcc_path: &std::path::Path) {
 
 fn compile_rocm(hipcc_path: &std::path::Path) {
     let kernel_dir = std::path::Path::new("kernels");
-    let out_dir    = std::path::PathBuf::from(std::env::var("OUT_DIR").unwrap());
+    let out_dir = std::path::PathBuf::from(std::env::var("OUT_DIR").unwrap());
 
     let kernels = ["arkade_8k.hip"];
     let mut obj_files = Vec::new();
@@ -197,14 +216,24 @@ fn compile_rocm(hipcc_path: &std::path::Path) {
     for kernel in &kernels {
         let src = kernel_dir.join(kernel);
         if !src.exists() {
-            println!("cargo:warning=engram: kernel source {} not found — skipping.", src.display());
+            println!(
+                "cargo:warning=engram: kernel source {} not found — skipping.",
+                src.display()
+            );
             continue;
         }
         let stem = kernel.trim_end_matches(".hip");
-        let obj  = out_dir.join(format!("{stem}.o"));
+        let obj = out_dir.join(format!("{stem}.o"));
 
         let status = std::process::Command::new(hipcc_path)
-            .args(["-O3", "-fPIC", "-c", src.to_str().unwrap(), "-o", obj.to_str().unwrap()])
+            .args([
+                "-O3",
+                "-fPIC",
+                "-c",
+                src.to_str().unwrap(),
+                "-o",
+                obj.to_str().unwrap(),
+            ])
             .status()
             .expect("failed to exec hipcc");
 
@@ -219,7 +248,9 @@ fn compile_rocm(hipcc_path: &std::path::Path) {
         let lib_path = out_dir.join("libengram_rocm_kernels.a");
         let mut ar = std::process::Command::new("ar");
         ar.arg("crs").arg(&lib_path);
-        for obj in &obj_files { ar.arg(obj); }
+        for obj in &obj_files {
+            ar.arg(obj);
+        }
         ar.status().expect("failed to exec ar");
 
         println!("cargo:rustc-link-search=native={}", out_dir.display());
@@ -247,9 +278,9 @@ fn compile_optix_ptx(nvcc: &std::path::Path, sdk: &str) -> bool {
 
     let programs = [
         ("optix_intersect", "OPTIX_INTERSECT_PTX"),
-        ("optix_rg",        "OPTIX_RG_PTX"),
-        ("optix_ah",        "OPTIX_AH_PTX"),
-        ("optix_ms",        "OPTIX_MS_PTX"),
+        ("optix_rg", "OPTIX_RG_PTX"),
+        ("optix_ah", "OPTIX_AH_PTX"),
+        ("optix_ms", "OPTIX_MS_PTX"),
     ];
 
     let mut ptx_rs = String::from("// AUTO-GENERATED by build.rs — do not edit\n");
@@ -292,15 +323,15 @@ fn compile_optix_ptx(nvcc: &std::path::Path, sdk: &str) -> bool {
                 &format!("--gpu-architecture={optix_ptx_arch}"),
                 &format!("-I{sdk}/include"),
                 src.to_str().unwrap(),
-                "-o", ptx_path.to_str().unwrap(),
+                "-o",
+                ptx_path.to_str().unwrap(),
             ])
             .stderr(std::process::Stdio::null()) // suppress ptxas validation noise
             .status()
             .expect("nvcc not found");
 
         // Check the file was written (nvcc writes PTX before ptxas validation)
-        let ptx_ok = ptx_path.exists()
-            && ptx_path.metadata().map(|m| m.len()).unwrap_or(0) > 50;
+        let ptx_ok = ptx_path.exists() && ptx_path.metadata().map(|m| m.len()).unwrap_or(0) > 50;
 
         if ptx_ok {
             ptx_rs.push_str(&format!(
@@ -382,12 +413,16 @@ fn compile_optix_host(sdk: &str) {
 fn which_compiler(binary_name: &str, env_home: &str) -> Option<std::path::PathBuf> {
     if let Ok(home) = std::env::var(env_home) {
         let candidate = std::path::Path::new(&home).join("bin").join(binary_name);
-        if candidate.exists() { return Some(candidate); }
+        if candidate.exists() {
+            return Some(candidate);
+        }
     }
     if let Ok(path_var) = std::env::var("PATH") {
         for dir in std::env::split_paths(&path_var) {
             let candidate = dir.join(binary_name);
-            if candidate.exists() { return Some(candidate); }
+            if candidate.exists() {
+                return Some(candidate);
+            }
         }
     }
     None

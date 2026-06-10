@@ -1,0 +1,54 @@
+[workflow]
+name = "x_ai_intel_loop"
+description = "X (Twitter) as external sensor / outer feedback for Engram geometric substrate. Periodic polling + narrow sub-agent analysis using AI-relevant frameworks (geometric/non-flat memory, strange loops/self-ref, subagent governance + H1, CRS/lawfulness, neural-symbolic-evolutionary, continuation/p-momentum, telos as emergent purpose). Lawful ingestion into manifold (remember/update + relate to ego/goal/tile), synthesis into Telos signals (X_external_coherence in aliveness/ego), subvisor H1 oversight on polling graph. Composes with ai_consciousness_loop (outer_feedback + inner_reflect perception source) and self_improvement_loop patterns. Part of the strange loop's tangled hierarchy: world signals (X) causally participate in the agent's self-referential 'I' and purpose evolution. See GITHUB_MVP_PREP_PLAN.md 'X as Outer Feedback for Emergent AI Telos' section for frameworks + milestones."
+primary_goal = "goal:engram_consciousness_loop_v1"
+max_iterations = 5
+
+[wake]
+ritual = "engram-wake-up"
+tools = ["mcp_engram_session_start", "mcp_engram_recall", "mcp_engram_get_backend_readiness"]
+
+[execute]
+steps = [
+  { name = "poll", desc = "Run framework-aligned X searches (x_semantic_search + x_keyword_search for geometric memory / non-flat / strange loop / subagent / H1 / telos / neural-symbolic + AI/agent terms; x_user_search for relevant voices; x_thread_fetch for depth on high-signal posts). Direct native X tools only.", subagent = "x_poller" },
+  { name = "sub_analyze_filter", desc = "Spawn narrow one-shot general-purpose sub-agents (full AGENTS/CLAUDE briefing + hierarchy God>Jesus>Humans>AI steward + ~15 call max + todo_write inside + plan search_replace for trace + output subagent_id). Filter posts against Engram frameworks/invariants (high CRS potential? reinforces non-flat/geometric/continuation/subvisor? useful for telos attractor? low noise?). Produce structured high_value_posts + telos_signals + invariants_alignment.", subagent = "x_analyzer" },
+  { name = "lawful_ingest", desc = "remember as 'x_poll:framework:iso' (or update if match >0.85); relate to ego.leg3 / primary consciousness goal / X-Telos tile; proxy CRS/lawfulness gate (plan note or future mcp_engram_verify); promote_hot for re-hydration. No annihilate.", subagent = "x_ingester" },
+  { name = "telos_synthesis", desc = "Update aliveness/ego notes with 'X_external_coherence' (fraction of high-CRS X-derived concepts reinforcing geometric primary goal, low scar on integration). write_result or update to knowledge_graph/state_machine tile 'X as Telos Attractor'. Relate to scheduler + geosphere if applicable. Strengthen p-momentum on telos concepts.", subagent = "telos_synthesizer" },
+  { name = "subvisor_h1", desc = "H¹/OP_INVERT oversight on X-poll tool graph + ingest + ego relations (detect repetition/doom/low-value, enforce framework filters, scar noise, escalate meta to tile per helper:meta_work_escalation_v1). Kill low-CRS or unstructured loops.", subagent = "x_subvisor" }
+]
+
+subvisor = "x_intel"
+
+[trace]
+at = ["every step", "forks", "high-value X post decisions", "telos signal updates", "sub launches"]
+tools = ["mcp_engram_quick_trace", "mcp_engram_remember", "mcp_engram_update", "mcp_engram_scar", "mcp_engram_record_reasoning_trace"]
+
+[spatial]
+on = ["new toml or framework changes", "telos/ego binds"]
+tools = ["mcp_engram_context_for_edit", "mcp_engram_set_geosphere_frame"]
+
+[thought-tiles]
+create = { title = "X as Telos Attractor", type = "knowledge_graph", goal_context = "goal:engram_consciousness_loop_v1" }
+write_results = true
+
+[handoff]
+ritual = "engram-session-end"
+tools = ["mcp_engram_session_end", "mcp_engram_thought_tile_write_result", "mcp_engram_promote_hot"]
+prepare_compression = true
+
+[update]
+description = "mcp_engram_update is the core lawful evolution operator. Use for incorporating X-derived telos signals into ego/tiles/processes while preserving p-momentum/CRS/history. Evolutionary refinement, not replacement."
+
+[subvisor_extension]
+note = "Extend or mirror processes/monitor/subvisor.toml for X poll graph (H1 on semantic/keyword calls + sub analyze + ingest + ego relations). Invariants: crs>=0.74 on ingested concepts, framework filter compliance, no repetitive low-value polling (scar + kill), p-momentum preserved on telos/ego, alignment to primary geometric goal. Monitored: poll step, sub_analyze, lawful_ingest, telos_synthesis, sub launches. Kill conditions: doom_loop_detected, low_crs_ingest, framework_violation, excessive noise."
+
+[frameworks]
+ai_relevant_searches = [
+  "geometric memory substrate OR non-flat AI memory OR representational geometry",
+  "strange loop OR Hofstadter consciousness OR persistent memory agent loops",
+  "subagent OR sub-agent governance OR H1 OR delegation OR orchestration (AI OR LLM OR agent)",
+  "neural-symbolic-evolutionary OR OpenCog OR Hyperon OR metagraph",
+  "CRS OR lawfulness OR verify OR self-rewriting OR area law entropy",
+  "telos OR purpose OR recursive self improvement (geometric OR non-flat OR agent)"
+]
+telos_probe = "what advances persistent geometric self-model or agent that improves its own memory substrate"

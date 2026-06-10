@@ -74,7 +74,9 @@ pub fn write_block<P: AsRef<Path>>(path: P, block: &HolographicBlock) -> std::io
         }
         Box::from_raw(ptr)
     };
-    unsafe { std::ptr::copy_nonoverlapping(block, &mut *boxed, 1); }
+    unsafe {
+        std::ptr::copy_nonoverlapping(block, &mut *boxed, 1);
+    }
 
     // Toryx Periodic Boundary Condition: close the standing spiral
     boxed.q[8191] = boxed.q[0];
@@ -92,7 +94,9 @@ pub fn write_block<P: AsRef<Path>>(path: P, block: &HolographicBlock) -> std::io
 /// Falls back to UTF-8 parsing for legacy blocks without Cap'n Proto framing.
 pub fn read_provlog(block: &HolographicBlock) -> String {
     let mut slice = &block.payload[..];
-    if let Ok(message) = capnp::serialize::read_message(&mut slice, capnp::message::ReaderOptions::new()) {
+    if let Ok(message) =
+        capnp::serialize::read_message(&mut slice, capnp::message::ReaderOptions::new())
+    {
         if let Ok(plog) = message.get_root::<provlog_capnp::prov_log::Reader>() {
             if let Ok(text) = plog.get_source_text() {
                 if let Ok(string) = text.to_string() {
@@ -103,7 +107,11 @@ pub fn read_provlog(block: &HolographicBlock) -> String {
     }
 
     // Fallback: raw UTF-8 up to first null (for legacy non-unified stalks prior to the Great Reminting)
-    let end = block.payload.iter().position(|&b| b == 0).unwrap_or(block.payload.len());
+    let end = block
+        .payload
+        .iter()
+        .position(|&b| b == 0)
+        .unwrap_or(block.payload.len());
     String::from_utf8_lossy(&block.payload[..end]).into_owned()
 }
 
@@ -114,10 +122,10 @@ pub fn write_provlog(block: &mut HolographicBlock, text: &str) {
         let mut plog = message.init_root::<provlog_capnp::prov_log::Builder>();
         plog.set_source_text(text);
         plog.set_text_data(());
-        
+
         // Export Thermodynamic factors from Engram directly into the Capnp block schema
         plog.set_ego_coherence(block.energetics.crs);
-        
+
         // Map Praxis logic
         if block.zedos_tag == crate::types::ZEDOS_PRAXIS {
             plog.set_is_praxis(true);
@@ -127,7 +135,7 @@ pub fn write_provlog(block: &mut HolographicBlock, text: &str) {
     let mut buf = Vec::new();
     capnp::serialize::write_message(&mut buf, &message).unwrap();
     let len = buf.len().min(block.payload.len());
-    
+
     // Wipe previous trailing bytes to avoid Cap'n Proto parse confusion
     block.payload.fill(0);
     block.payload[..len].copy_from_slice(&buf[..len]);
@@ -145,7 +153,7 @@ pub fn write_provlog(block: &mut HolographicBlock, text: &str) {
 // This is the Tier 3 complement to device_residency (cuFile/nvidia-fs direct GPU path).
 // Goal: non-blocking direct I/O for the hottest paths, feeding GPU buffers with
 // minimal CPU involvement. See handoff micro-plan and helper:async_io_design_v1.
-// 
+//
 // Small autonomous exploration spike start (post-dual-lens baseline):
 // - Prototype a basic io_uring submission for 256KB aligned reads/writes.
 // - Preserve Toryx PBC contract on writes (CPU copy for checksums may still be needed).
@@ -302,10 +310,18 @@ pub async fn async_read_block<P: AsRef<std::path::Path> + Send + 'static>(
         .await
         .map_err(std::io::Error::other)??;
     let elapsed = start.elapsed();
-    tracing::debug!("[async-io] read_block took {:?} (path: {:?})", elapsed, path.as_ref());
+    tracing::debug!(
+        "[async-io] read_block took {:?} (path: {:?})",
+        elapsed,
+        path.as_ref()
+    );
     // Basic instrumentation hook for future metrics (e.g., hot vs cold, compression windows)
     if elapsed > std::time::Duration::from_millis(50) {
-        tracing::info!("[async-io] slow read_block {:?} for path {:?}", elapsed, path.as_ref());
+        tracing::info!(
+            "[async-io] slow read_block {:?} for path {:?}",
+            elapsed,
+            path.as_ref()
+        );
     }
     Ok(inner)
 }
@@ -321,9 +337,17 @@ pub async fn async_write_block<P: AsRef<std::path::Path> + Send + 'static>(
         .await
         .map_err(std::io::Error::other)??;
     let elapsed = start.elapsed();
-    tracing::debug!("[async-io] write_block took {:?} (path: {:?})", elapsed, path.as_ref());
+    tracing::debug!(
+        "[async-io] write_block took {:?} (path: {:?})",
+        elapsed,
+        path.as_ref()
+    );
     if elapsed > std::time::Duration::from_millis(50) {
-        tracing::info!("[async-io] slow write_block {:?} for path {:?}", elapsed, path.as_ref());
+        tracing::info!(
+            "[async-io] slow write_block {:?} for path {:?}",
+            elapsed,
+            path.as_ref()
+        );
     }
     Ok(())
 }

@@ -31,7 +31,8 @@ impl LegView {
                 std::io::ErrorKind::InvalidData,
                 format!(
                     "LEG file is {} bytes, expected {} (256KB)",
-                    meta.len(), BLOCK_SIZE
+                    meta.len(),
+                    BLOCK_SIZE
                 ),
             ));
         }
@@ -50,8 +51,13 @@ impl LegView {
             return Err(std::io::Error::last_os_error());
         }
         // Hint: random access pattern (BVH refine step)
-        unsafe { libc::madvise(ptr, BLOCK_SIZE, libc::MADV_RANDOM); }
-        Ok(Self { ptr: ptr as *const u8, len: BLOCK_SIZE })
+        unsafe {
+            libc::madvise(ptr, BLOCK_SIZE, libc::MADV_RANDOM);
+        }
+        Ok(Self {
+            ptr: ptr as *const u8,
+            len: BLOCK_SIZE,
+        })
     }
 
     /// Borrow the raw bytes of the block.
@@ -69,7 +75,10 @@ impl LegView {
     pub fn as_block(&self) -> &HolographicBlock {
         // M1 minimal safe guard added to unsafe .leg3 mmap path (as_block; open already size-checks).
         // Guard 1: len re-assert after ptr.
-        debug_assert_eq!(self.len, BLOCK_SIZE, "M1: .leg3 mmap len != BLOCK_SIZE post-open (should be impossible)");
+        debug_assert_eq!(
+            self.len, BLOCK_SIZE,
+            "M1: .leg3 mmap len != BLOCK_SIZE post-open (should be impossible)"
+        );
         // Guard 2: non-destructive re-read first 4 bytes (via as_bytes) + assert plausibility vs expected ZEDOS/Holographic (from types::ZEDOS_* + HolographicBlock layout).
         let bytes = self.as_bytes();
         if bytes.len() >= 4 {
@@ -99,6 +108,8 @@ impl LegView {
 
 impl Drop for LegView {
     fn drop(&mut self) {
-        unsafe { libc::munmap(self.ptr as *mut libc::c_void, self.len); }
+        unsafe {
+            libc::munmap(self.ptr as *mut libc::c_void, self.len);
+        }
     }
 }
