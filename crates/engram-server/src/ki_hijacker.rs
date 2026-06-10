@@ -379,7 +379,7 @@ async fn bake_ki(store: &SharedStore, ki_dir: &PathBuf) -> anyhow::Result<()> {
             })
             .collect();
         // Sort newest first
-        recent.sort_by(|a, b| b.2.cmp(&a.2));
+        recent.sort_by_key(|b| std::cmp::Reverse(b.2));
 
         // EPISODIC-tagged memories (ZEDOS_EPISODIC = 0xA) — decisions made this session
         let mut all = s.recall(

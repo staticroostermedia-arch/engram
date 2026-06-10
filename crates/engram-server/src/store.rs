@@ -188,7 +188,7 @@ impl AccessIndex {
     pub fn recent(&self, n: usize) -> Vec<(String, u64)> {
         let mut entries: Vec<(String, u64)> =
             self.map.iter().map(|(k, v)| (k.clone(), *v)).collect();
-        entries.sort_by(|a, b| b.1.cmp(&a.1));
+        entries.sort_by_key(|b| std::cmp::Reverse(b.1));
         entries.truncate(n);
         entries
     }
@@ -1802,7 +1802,7 @@ impl StoreHandle {
                 entries.push((mtime, stem.to_string()));
             }
         }
-        entries.sort_by(|a, b| b.0.cmp(&a.0));
+        entries.sort_by_key(|b| std::cmp::Reverse(b.0));
         entries.into_iter().take(max).map(|(_, s)| s).collect()
     }
 
