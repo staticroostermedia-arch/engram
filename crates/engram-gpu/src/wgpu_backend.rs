@@ -93,11 +93,13 @@ impl HotBlockCache {
         self.blocks.len()
     }
 
+    #[allow(dead_code)] // reserved for paged hot-cache load path (GPU hand-off patch)
     fn as_slice(&self) -> &[PackedBlock] {
         &self.blocks
     }
 
     // Stub for on-demand load from CPU backend (paged).
+    #[allow(dead_code)] // reserved for paged hot-cache load path (GPU hand-off patch)
     fn load_if_needed(&mut self, _concept: &str, _cpu: &CpuBackend) {
         // TODO: real paged load from disk/CPU only on miss; for patch keeps hot set small.
     }
@@ -135,7 +137,8 @@ impl HotBlockCache {
 
 /// WebGPU-accelerated backend: INT8 Poincaré hyperbolic distance search.
 pub struct WgpuBackend {
-    /// Filesystem path to the `.leg` manifold directory.
+    /// Filesystem path to the `.leg` manifold directory (retained for future GDS/cuFile residency).
+    #[allow(dead_code)]
     store_path: PathBuf,
     /// CPU backend — handles encode / store / forget / list / fetch.
     cpu: CpuBackend,
@@ -434,7 +437,7 @@ impl WgpuBackend {
             cpass.set_pipeline(&self.pipeline);
             cpass.set_bind_group(0, &bind_group, &[]);
             // dispatch_workgroups = ceil(n / 256)
-            cpass.dispatch_workgroups(((n as u32) + 255) / 256, 1, 1);
+            cpass.dispatch_workgroups((n as u32).div_ceil(256), 1, 1);
         }
         encoder.copy_buffer_to_buffer(&scores_buf, 0, &readback_buf, 0, scores_bytes);
         self.queue.submit(std::iter::once(encoder.finish()));
@@ -462,6 +465,7 @@ impl WgpuBackend {
     /// Binds the pre-uploaded resident db_buf directly (from rebuild_resident).
     /// No host flat, no create_buffer_init for db (per Codeland CudaBuffer + direct bind).
     /// Identical non-db code as dispatch_chunk for query_buf, scores, config, bind, submit, readback.
+    #[allow(dead_code)] // device-resident dispatch path (sub 010 / Codeland); wired when hot residency enabled
     fn dispatch_with_device(
         &self,
         query_packed: &[u32; 96],
@@ -547,7 +551,7 @@ impl WgpuBackend {
             });
             cpass.set_pipeline(&self.pipeline);
             cpass.set_bind_group(0, &bind_group, &[]);
-            cpass.dispatch_workgroups(((n as u32) + 255) / 256, 1, 1);
+            cpass.dispatch_workgroups((n as u32).div_ceil(256), 1, 1);
         }
         encoder.copy_buffer_to_buffer(&scores_buf, 0, &readback_buf, 0, scores_bytes);
         self.queue.submit(std::iter::once(encoder.finish()));
@@ -618,7 +622,7 @@ impl VsaBackend for WgpuBackend {
         // Sync INT8 paged/hot cache (GPU hand-off patch)
         let mut cache = self.db.write().expect("db lock poisoned");
         if let Some(entry) = cache.blocks.iter_mut().find(|e| e.concept == concept) {
-            entry.packed = Box::new(packed_arr);
+            *entry.packed = packed_arr;
             entry.crs = crs;
             entry.provlog = provlog;
         } else {

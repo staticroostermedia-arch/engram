@@ -750,7 +750,10 @@ impl Backend {
             Backend::Gpu(b) => b.promote_to_high_priority(concept, last_accessed),
             #[cfg(engram_backend_metal)]
             Backend::Metal(b) => b.promote_to_high_priority(concept, last_accessed),
-            _ => self.fetch_block(concept),
+            _ => {
+                let _ = last_accessed;
+                self.fetch_block(concept)
+            }
         }
     }
 
@@ -760,7 +763,10 @@ impl Backend {
             Backend::Gpu(b) => b.is_hot(concept),
             #[cfg(engram_backend_metal)]
             Backend::Metal(b) => b.is_hot(concept),
-            _ => false,
+            _ => {
+                let _ = concept;
+                false
+            }
         }
     }
 
@@ -1044,7 +1050,24 @@ impl StoreHandle {
                     );
                     Backend::Metal(MetalBackend::new(&expanded))
                 }
-                #[cfg(not(any(engram_backend_cuda, engram_backend_metal)))]
+                #[cfg(all(
+                    engram_backend_wgpu,
+                    not(engram_backend_cuda),
+                    not(engram_backend_metal)
+                ))]
+                {
+                    tracing::info!("engram-gpu: WgpuBackend selected (WebGPU INT8 search)");
+                    match WgpuBackend::new(&expanded) {
+                        Ok(wgpu) => Backend::Wgpu(wgpu),
+                        Err(e) => {
+                            tracing::warn!(
+                                "engram-gpu: WgpuBackend init failed ({e}) — falling back to CPU"
+                            );
+                            Backend::Single(CpuBackend::new(&expanded))
+                        }
+                    }
+                }
+                #[cfg(not(any(engram_backend_cuda, engram_backend_metal, engram_backend_wgpu)))]
                 {
                     Backend::Single(CpuBackend::new(&expanded))
                 }
@@ -2630,6 +2653,7 @@ impl StoreHandle {
         // (framed BVH/OptiX candidate filtering + 8192D scoring) without extra locks in hot path.
         // All behind existing high_priority; no layout change; O_DIRECT cold untouched.
         // Explicit geo:* names + per-artifact geo_context:* snapshots for consumption by other WS.
+        #[cfg(any(engram_backend_cuda, engram_backend_metal))]
         if let Ok(geo) = self.geosphere.read() {
             let snap_name = if raw.starts_with("geo_snapshot:")
                 || raw == "active_symplectic_state"
@@ -2787,7 +2811,10 @@ impl StoreHandle {
             Backend::Gpu(b) => b.is_geo_hot(name),
             #[cfg(engram_backend_metal)]
             Backend::Metal(b) => b.is_geo_hot(name),
-            _ => false,
+            _ => {
+                let _ = name;
+                false
+            }
         }
     }
 
@@ -2798,7 +2825,10 @@ impl StoreHandle {
             Backend::Gpu(b) => b.fetch_geo_high_priority(name),
             #[cfg(engram_backend_metal)]
             Backend::Metal(b) => b.fetch_geo_high_priority(name),
-            _ => None,
+            _ => {
+                let _ = name;
+                None
+            }
         }
     }
 
