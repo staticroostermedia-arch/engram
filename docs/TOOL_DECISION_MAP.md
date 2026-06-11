@@ -241,6 +241,24 @@ See [MCP_TOOLS_REFERENCE.md](MCP_TOOLS_REFERENCE.md) for parameter detail. Quick
 
 ---
 
+## Grok Build slash commands
+
+| Command | Layer | Maps to |
+|---------|-------|---------|
+| `/engram-wake` | 0 | `session_start` |
+| `/engram-edit` | 0 | `context_for_edit` + recall + trace |
+| `/engram-recall` | 0 | `recall(scope=anchors)` |
+| `/engram-trace` | 0–1 | `quick_trace` (+ `scar` if dead end) |
+| `/engram-session-end` | 0 | `session_end` |
+| `/engram-deep` | 0→2 | `set_memory_mode(deep)` + power tools |
+| `/engram-update` | 1 | `recall` → `update` write path |
+| `/engram-momentum` | 2 | `query_with_momentum` |
+| `/engram-relate` | 1–2 | `relate` → `search_by_relation` → `visualize` |
+
+Plugin: `grok-plugin-engram/commands/`
+
+---
+
 ## Related
 
 - [AGENT_MEMORY_CONTRACT.md](AGENT_MEMORY_CONTRACT.md) — 8-tool highway

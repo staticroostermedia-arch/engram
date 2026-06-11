@@ -33,6 +33,9 @@ Or use the installer script from repo root:
 | `/engram-trace` | Significant decision fork |
 | `/engram-session-end` | End of session — structured handoff for next wake |
 | `/engram-deep` | Rare — full manifold / relation exploration |
+| `/engram-update` | Refine existing concept — recall → `update` (never forget+remember) |
+| `/engram-momentum` | Arc direction — what's trending after anchors fail |
+| `/engram-relate` | Graph edge between two concepts + optional visualize |
 
 In a Grok session, run `/engram-wake` first (or `mcp_engram_session_start`).
 

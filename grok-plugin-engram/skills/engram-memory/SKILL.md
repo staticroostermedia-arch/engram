@@ -36,6 +36,9 @@ Per-ritual skills (`engram-wake-up`, `engram-working-memory`, `engram-session-en
 | `/engram-trace` | `quick_trace` at a fork |
 | `/engram-session-end` | `session_end` structured packet |
 | `/engram-deep` | `set_memory_mode(deep)` — sparingly |
+| `/engram-update` | `recall` → `update` write path |
+| `/engram-momentum` | `query_with_momentum` after anchors fail |
+| `/engram-relate` | `relate` + optional `search_by_relation` / `visualize` |
 
 ## Every session
 
