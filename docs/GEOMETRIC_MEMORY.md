@@ -17,7 +17,7 @@ Engram is a **persistent geometric (non-flat) memory engine** for AI agents.
 
 - **VSA Calculus**: OP_ADD (blending), OP_BIND (role-filler, invertible, compositional).
 
-- **Sheaf Gluing**: Relations (OP_BIND) + H¹ handlers from declarative processes/*.toml (category table: OP_ADD, OP_GEOMETRIC_PRODUCT, OP_INVERT, OP_IS_SYMBOLIC_OF). See processes/ and design/processes/ (ritual, harness, operator, monitor, process).
+- **Sheaf Gluing**: Relations (OP_BIND) + H¹ handlers from declarative processes/*.toml (category table: OP_ADD, OP_GEOMETRIC_PRODUCT, OP_INVERT, OP_IS_SYMBOLIC_OF). See processes/ (ritual, harness, operator, monitor, process).
 
 - **Spatial AABB / Item 1.5**: tree-sitter AST extraction on save (watcher). `context_for_file`, `recall_in_file`, `force_spatial_ingest`. Code Edit Ritual requires pre/post recon.
 
@@ -39,6 +39,6 @@ Engram is a **persistent geometric (non-flat) memory engine** for AI agents.
 ### Runtime guards (M1)
 as_block now has 2 guards (len debug_assert + non-destructive first-4-bytes via as_bytes assert for ZEDOS/Holographic magic plausibility); open enforces BLOCK_SIZE; layout asserts in types.rs:436+ ; still requires valid writer per .leg3 contract. CRS/p-momentum preserved as no mutation here.
 
-See also: MANIFESTO.md, docs/2026-06_Substrate_CS_Gap_Closure_Roadmap.md, architecture.md, praxis_as_protocol_spec.md, processes/ (declarative tomls for rituals/harness/etc.), GITHUB_MVP_PREP_PLAN.md.
+See also: MANIFESTO.md, docs/2026-06_Substrate_CS_Gap_Closure_Roadmap.md, architecture.md, processes/ (declarative tomls for rituals/harness/etc.), docs/SUBSTRATE_WINS_PLAN.md.
 
 For external agents: BYOP (Build Your Own Perspective) on the neutral substrate.

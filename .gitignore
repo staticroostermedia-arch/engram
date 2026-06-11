@@ -30,6 +30,7 @@ test_hypothesis.rs
 # Scratch test files
 test_hypothesis.rs
 sem_search.rs
+/sem_search.rs
 
 # Internal handoff / private notes (not for public GH MVP)
 *handoff*

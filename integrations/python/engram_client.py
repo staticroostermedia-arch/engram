@@ -402,8 +402,7 @@ for the REST fallback surface when available). Copy this module into your agent 
 
 See also:
 - AGENT_INTEGRATION_GUIDE.md (core ritual reference, de-emphasized here for externals)
-- docs/praxis_as_protocol_spec.md (A/D/R triad, protocol_type)
-- docs/reasoning_functors_as_praxis_extension.md
+- docs/RITUALS.md (A/D/R triad in traces, Code Edit Ritual)
 - coordination tile: tile:knowledge_graph_phase-1-cross-workstream-coordination--ws1-hot-p (updated by this subagent)
 
 All artifacts (this code, patterns, recs) are also recorded as living tiles/traces in the manifold

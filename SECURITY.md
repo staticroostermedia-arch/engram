@@ -15,7 +15,7 @@ Engram is a **geometric (non-flat) memory substrate** (HolographicBlocks, VSA, s
 - **Spatial / Provenance**: AABB + Merkle + provlog in every block; force_spatial_ingest for bootstrap. Tamper-evident by design.
 - **Continuation & Handoff**: session_end with COMPRESS + traces ensures lawful state transfer; no flat overwrites.
 
-See [docs/GEOMETRIC_MEMORY.md](docs/GEOMETRIC_MEMORY.md), [docs/RITUALS.md](docs/RITUALS.md), [docs/GITHUB_MVP_PREP_PLAN.md](docs/GITHUB_MVP_PREP_PLAN.md) (prep includes these notes), and processes/ for declarative sheaf.
+See [docs/GEOMETRIC_MEMORY.md](docs/GEOMETRIC_MEMORY.md), [docs/RITUALS.md](docs/RITUALS.md), [docs/AGENT_MEMORY_CONTRACT.md](docs/AGENT_MEMORY_CONTRACT.md), and processes/ for declarative sheaf.
 
 Vulns affecting invariants (.leg3, CRS gates, allowed transforms, unit hypersphere) or ritual anchors are high priority. Report with reproduction using current build (`target/debug/engram`).
 

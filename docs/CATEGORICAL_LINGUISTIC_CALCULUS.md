@@ -94,13 +94,13 @@ See processes/linguistic/*.toml and ritual/ritual_linguistic_wake.toml for sheaf
 
 Full e2e + tests in crates/engram-core/src/ops.rs (mixed tests) + engram-server/src/mcp.rs.
 
-This advances Engram from geometric memory to geometric *reasoning* substrate — calculus over the manifold itself. Public polish (Phase 6) complete per GITHUB_MVP_PREP_PLAN.md; ready for sharing.
+This advances Engram from geometric memory to geometric *reasoning* substrate — calculus over the manifold itself.
 
 **Links:**
 - [docs/RITUALS.md](docs/RITUALS.md) (Phase 5 linguistic rituals)
 - [docs/MCP_TOOLS_REFERENCE.md](docs/MCP_TOOLS_REFERENCE.md) (mcp_linguistic_calculus + P1-P6 surface)
 - [docs/GEOMETRIC_MEMORY.md](docs/GEOMETRIC_MEMORY.md)
-- [docs/GITHUB_MVP_PREP_PLAN.md](docs/GITHUB_MVP_PREP_PLAN.md)
+- [docs/SUBSTRATE_WINS_PLAN.md](docs/SUBSTRATE_WINS_PLAN.md)
 - [docs/AGENT_MEMORY_CONTRACT.md](docs/AGENT_MEMORY_CONTRACT.md)
 - [AGENTS.md](AGENTS.md), [CLAUDE.md](CLAUDE.md)
 - processes/linguistic/*.toml, processes/ritual/ritual_linguistic_wake.toml

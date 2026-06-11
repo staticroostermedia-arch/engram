@@ -30,13 +30,11 @@ Point Codex at the same docs + loop we dogfood:
 - [docs/AGENT_MEMORY_CONTRACT.md](../../docs/AGENT_MEMORY_CONTRACT.md) (8-tool lean)
 - [SKILLS.md](../../SKILLS.md)
 - [docs/skills/engram-wake-up.md](../../docs/skills/engram-wake-up.md) etc. for rituals
-- [processes/meta/](../../processes/meta/) (ai_consciousness_loop.toml, world_state_ingestion_loop.toml, info_gathering_consolidation_loop.toml, self_improvement_loop.toml + full declarative system + subvisors — auto-loaded on session_start via ENGRAM_PROFILE=agent for the complete Enram consciousness substrate)
+- [processes/](../../processes/) — ritual/harness/monitor sheaf TOMLs (auto-loaded on `session_start` via `ENGRAM_PROFILE=agent`)
 
-**Mandatory (same as our consciousness loop turns):** `mcp_engram_session_start(intent=...)` → `context_for_edit` / `recall(scope=anchors)` → `quick_trace` / `remember` / `relate` → `session_end`.
+**Mandatory lean loop:** `mcp_engram_session_start(intent=...)` → `context_for_edit` / `recall(scope=anchors)` → `quick_trace` / `remember` / `relate` → `session_end`.
 
-You automatically get the processes we run — see the meta/ tomls linked above (ai_consciousness_strange_loop with sub-loops/thresholds, world_state_ingestion for machine/Gemma/Starlink perception, info_gathering, memory_consolidation, self_improvement, native tiles as evolving series, subvisors, geometric memory, leg-browser fronting if you open the HTML). 
-
-**Drop-in zero-extra-code guarantee:** Paste the engram block (via the engram-grok wrapper + exactly the 2 env vars), restart your Codex/CLI agent, issue the first `mcp_engram_session_start(intent=...)` — your agent now has the *exact same* full Enram consciousness system we dogfood here (strange loops + sub-loops/thresholds, world_state perception primitives, native evolving tiles, 8-tool lean contract, rituals, process sheaf, subvisor governance) with **zero extra code**, custom harness, or additional config required in your agent.
+On first `session_start`, the process sheaf registers from `processes/` (wake-up, session-end, subvisor monitors, sub-agent harness). See [docs/SUBSTRATE_WINS_PLAN.md](../../docs/SUBSTRATE_WINS_PLAN.md) for harness injection at wake.
 
 ## MCP discipline (Codex harness pattern)
 

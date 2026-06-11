@@ -2,7 +2,7 @@
 
 **Primary Objective**: `goal:engram_mvp_v1` (harness continuity; operationalize "Against Flat Knowledge" via geometric sheaf replacing flat weights/text/vec DBs).
 
-This file + CLAUDE.md + docs/ + .grok/skills/ + processes/*.toml + GITHUB_MVP_PREP_PLAN.md define the contract for any agent editing the Engram substrate or its representation.
+This file + CLAUDE.md + docs/ + .grok/skills/ + processes/*.toml + docs/SUBSTRATE_WINS_PLAN.md define the contract for any agent editing the Engram substrate or its representation.
 
 ## Start Here — 8-Tool Agent Memory Contract (Lean Default)
 
@@ -93,7 +93,7 @@ See also:
 - **8-tool contract**: [docs/AGENT_MEMORY_CONTRACT.md](docs/AGENT_MEMORY_CONTRACT.md)
 - Full cycle: `docs/examples/full_ritual_cycle.md`, `examples/hello-engram-agent.py`
 - Internal TUI: `.grok/skills/engram-*.md`
-- docs/RITUALS.md, docs/GITHUB_MVP_PREP_PLAN.md, docs/MCP_TOOLS_REFERENCE.md, docs/GEOMETRIC_MEMORY.md
+- docs/RITUALS.md, docs/SUBSTRATE_WINS_PLAN.md, docs/MCP_TOOLS_REFERENCE.md, docs/GEOMETRIC_MEMORY.md
 - MANIFESTO.md, CONTRIBUTING.md, .github/PULL_REQUEST_TEMPLATE.md
 
 **Violations of this contract are scarred immediately.** The manifold will deflect future attempts.

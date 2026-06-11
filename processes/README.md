@@ -1,6 +1,6 @@
 # Process Sheaf — `processes/`
 
-Declarative TOMLs that define Engram's **process sheaf**: rituals, harnesses, operators, monitors, linguistic calculus, and meta arcs. At `mcp_engram_session_start`, the loader walks registered subdirs and registers `[process]` blocks as `process:engram.*` keys with live `requires` / `produces` / `uses_mcp_tool` relations.
+Declarative TOMLs that define Engram's **process sheaf**: rituals, harnesses, operators, monitors, linguistic calculus. At `mcp_engram_session_start`, the loader walks registered subdirs and registers `[process]` blocks as `process:engram.*` keys with live `requires` / `produces` / `uses_mcp_tool` relations.
 
 ## Loader subdirs (sheaf-registered)
 
@@ -9,29 +9,23 @@ The loader in `crates/engram-server/src/mcp.rs` (`load_process_sheaf`) walks:
 | Subdir | Role |
 |--------|------|
 | `ritual/` | Wake, session-end, NREM, code-edit anchors |
-| `harness/` | CI / spatial recon harnesses |
+| `harness/` | CI / spatial recon / sub-agent launch & relay |
 | `operator/` | Momentum query, manifold ops |
 | `monitor/` | Subvisor H¹ oversight, manifold health |
 | `process/` | Session-end and cross-cutting process defs |
 | `linguistic/` | Linguistic calculus + fibered equivalence |
-| `meta/` | Meta arcs with `[process]` (e.g. marketplace prep) |
 
-**Requirement:** Each sheaf TOML must have a `[process]` section with a **unique** `name` (e.g. `agent:engram.monitor.gemma-integration`). Names map to keys: `agent:engram.*` → `process:engram.*`.
+**Requirement:** Each sheaf TOML must have a `[process]` section with a **unique** `name` (e.g. `agent:engram.monitor.sub-agent`). Names map to keys: `agent:engram.*` → `process:engram.*`.
 
 ## Workflow-only (not auto-loaded)
 
 | Location | Purpose |
 |----------|---------|
 | `workflow/` | Human/agent orchestration loops (`[workflow]` only, no `[process]`) |
-| `meta/*_loop.toml` | Recursive work-loop schemas (`[workflow]` without `[process]`) |
 
 These files document **how to run** a multi-step arc (wake → execute → trace → handoff). They are **not** registered at session start. Pair them with a monitor subvisor TOML in `monitor/` when H¹ oversight is needed.
 
-Example: `workflow/complete-gemma-integration.toml` + `monitor/gemma-integration.subvisor.toml`.
-
 ### Sub-agent trio (WS-5)
-
-Generic orchestrator ↔ sub-agent governance uses **three roles** (plus base subvisor):
 
 | Role | File | Registered key |
 |------|------|----------------|
@@ -40,7 +34,11 @@ Generic orchestrator ↔ sub-agent governance uses **three roles** (plus base su
 | **Relay steps** (sub-agent playbook) | `workflow/sub_agent_relay_v1.toml` | workflow-only |
 | **Monitor** (H¹ while running) | `monitor/sub-agent.subvisor.toml` | `process:engram.monitor.sub-agent` |
 
-Orchestrator: recall launch harness → spawn narrow `Task` with `prompt_template` → poll via monitor subvisor → review relay tile/trace in manifold. Sub-agent: follow relay workflow; tag traces with `process_context=process:engram.harness.sub-agent-relay`. See [docs/SUBSTRATE_WINS_PLAN.md](../docs/SUBSTRATE_WINS_PLAN.md) WS-5.
+See [docs/examples/sub_agent_governance.md](../docs/examples/sub_agent_governance.md) and [docs/SUBSTRATE_WINS_PLAN.md](../docs/SUBSTRATE_WINS_PLAN.md) WS-5.
+
+## Archived (not loaded)
+
+Speculative meta loops and one-off integrations live in [`design/archive/`](../design/archive/) — not scanned at `session_start`.
 
 ## Subvisor TOMLs
 

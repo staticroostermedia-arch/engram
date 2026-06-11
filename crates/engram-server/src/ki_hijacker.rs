@@ -696,7 +696,7 @@ async fn bake_ki(store: &SharedStore, ki_dir: &PathBuf) -> anyhow::Result<()> {
 
     // Fast lookup for richer per-goal trace excerpts (no repeated scans)
 
-    // 2026-06 Ritual Evolution: Full meta-arc tile escalation detection (per helper:meta_work_escalation_v1, helper:current_meta_arc, plan in GITHUB_MVP_PREP_PLAN.md).
+    // 2026-06 Ritual Evolution: Full meta-arc tile escalation detection (per helper:meta_work_escalation_v1, helper:current_meta_arc, docs/SUBSTRATE_WINS_PLAN.md).
     // Scans recent concepts for active design: or multi-phase progress: / mvp_prep arcs.
     // Checks for absence of recent tile: (knowledge_graph, formal_spec, etc.) or current_meta_arc.
     // If gap: will inject "RECOGNITION PROMPT" into KI context.md for wake-up.

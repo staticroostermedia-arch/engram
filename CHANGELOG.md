@@ -51,7 +51,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Gaps vs popular memory GitHub best practices (hero/comparison/examples/templates/CI/docs/AGENTS/CHANGELOG) identified via sub-agent recon + supervisor + narrow audit (see GITHUB_MVP_PREP_PLAN.md for details, scars for sub-agent governance lessons).
 
-See [docs/GITHUB_MVP_PREP_PLAN.md](docs/GITHUB_MVP_PREP_PLAN.md) for full execution log, sub-agent IDs, gap matrix, success criteria.
+See [docs/SUBSTRATE_WINS_PLAN.md](docs/SUBSTRATE_WINS_PLAN.md) for harness injection roadmap and success criteria.
 
 ## [0.4.0] - 2026-06 (MVP Sheaf / Rituals / Geometric Substrate)
 

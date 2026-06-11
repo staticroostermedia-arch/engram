@@ -34,7 +34,7 @@ Engram is not a vector database. It is a **persistent geometric memory engine** 
 - **Spatial + ritual discipline**: AABB AST on save, mandatory Code Edit Ritual, process sheaf (toml category/H¹ gluing), sub-agent governance — code and memory stay coherent.
 - **Hardware-native non-flat scale**: 8192D phase tensors + VSA + sheaf on real storage survives 200k+ blocks without OOM or semantic flattening.
 
-**See also:** [docs/GITHUB_MVP_PREP_PLAN.md](docs/GITHUB_MVP_PREP_PLAN.md) (current prep for public representation) and [MANIFESTO.md](MANIFESTO.md).
+**See also:** [docs/SUBSTRATE_WINS_PLAN.md](docs/SUBSTRATE_WINS_PLAN.md) (harness injection roadmap) and [MANIFESTO.md](MANIFESTO.md).
 
 No cloud. No API keys. Runs on your machine via MCP — **8 essential tools** for daily agent work, 62 total for power users ([tier reference](docs/MCP_TOOLS_REFERENCE.md)). Build: `cargo build -p engram-server && target/debug/engram --version`.
 
@@ -140,7 +140,7 @@ This advances Engram from geometric memory to geometric *reasoning* substrate (c
 | MCP / Agent Native | 8-tool lean contract + 66 MCP tools tiered, process sheaf | API/ SDK | gRPC/REST clients | API |
 | Self-Model / Lawfulness | CRS gates, lawfulness metrics, scars deflect | Logging | Metrics | Eval hooks |
 
-(Emulates polish from popular while preserving Engram's non-flat identity. Full details + gaps closed in [docs/GITHUB_MVP_PREP_PLAN.md](docs/GITHUB_MVP_PREP_PLAN.md).)
+(Emulates polish from popular while preserving Engram's non-flat identity. Runtime plan: [docs/SUBSTRATE_WINS_PLAN.md](docs/SUBSTRATE_WINS_PLAN.md).)
 
 ---
 
@@ -281,7 +281,7 @@ The deepest demonstration of continuity remains the primary TUI ritual path. Hig
 
 ## 📁 Runnable Examples (Phase 2+)
 
-See `examples/` (created/enhanced per GITHUB_MVP_PREP_PLAN.md) for immediately usable / runnable against **current build** (`target/debug/engram` or MCP):
+See `examples/` for immediately usable / runnable against **current build** (`target/debug/engram` or MCP):
 
 - `examples/mcp_client.py` — Full session_start (loads sheaf), remember/recall/relate/visualize/verify_manifold + session_end (COMPRESS). Adapt from integrations/python/engram_client.py.
 - `examples/ritual_verify.md` — Code Edit Ritual v1 + working-memory steps + scar/verify_block_lawfulness/trace examples (executable in TUI or via client).
@@ -520,7 +520,7 @@ See [PATENT-NOTICE.md](PATENT-NOTICE.md) for full details.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) and [.github/PULL_REQUEST_TEMPLATE.md](.github/PULL_REQUEST_TEMPLATE.md) (full ritual/spatial/manifold/verify/build checklist).
 
-**Always use current build during dev/prep:** `target/debug/engram` (or `cargo run -p engram-server`) — verified fresh via `cargo build` before edits (see GITHUB_MVP_PREP_PLAN.md execution log + Phase 0/3).
+**Always use current build during dev/prep:** `target/debug/engram` (or `cargo run -p engram-server`) — verified fresh via `cargo build` before edits.
 
 **Dogfooding (engram self-use):** "Dogfood" / "dogfooding" here means using Engram's own geometric tools and rituals *on the work itself* — e.g. `remember`/`relate`/`record_reasoning_trace`/`goal_*`/`scar`/`verify_*`/`spatial` calls + full wake/working-memory/session-end to track prep decisions, edits, and state as first-class manifold geometry. This makes meta-work (like this GitHub MVP prep) part of the living self-model for future agent continuity. See engram-working-memory discipline and AGENTS.md.
 
@@ -548,13 +548,13 @@ h1_handler = "OP_IS_SYMBOLIC_OF"
 list = ["mcp_engram_session_start", "mcp_engram_relate", ...]
 ```
 
-Lean wake optimization (FAST session_start 0.04s, query_pure FAST_ANCHOR for ritual anchors, incremental spatial delta, process toml as executable sheaf with uses_mcp_tool relations): declarative processes/ritual/*.toml + dynamic loader in crates/engram-server/src/mcp.rs (hot preload at session_start, registers process:engram.* + live RELATION gluing via requires/produces/uses_mcp_tool) enable pure-geo query_pure (no file fallback) + incremental_spatial_ingest (mtime delta vs full force) for lean rehydrate while preserving ritual lawfulness, subvisor H¹, CRS gates. See hand-off in GITHUB_MVP_PREP_PLAN.md.
+Lean wake optimization (FAST session_start, harness injection, incremental spatial delta, process toml as executable sheaf with uses_mcp_tool relations): declarative processes/ritual/*.toml + dynamic loader in crates/engram-server/src/mcp.rs (hot preload at session_start, registers process:engram.* + live RELATION gluing via requires/produces/uses_mcp_tool) enable pure-geo query_pure (no file fallback) + incremental_spatial_ingest (mtime delta vs full force) for lean rehydrate while preserving ritual lawfulness, subvisor H¹, CRS gates. See [docs/HARNESS_INJECTION.md](docs/HARNESS_INJECTION.md).
 
 See:
 - Manifesto + live processes/ (dynamic loader at session_start registers them with relations).
 - AGENT_INTEGRATION_GUIDE.md (Processes as Sheaf Sections).
 - .grok/skills/ + engram-working-memory for the discipline that makes it geometric.
-- GITHUB_MVP_PREP_PLAN.md for execution (GPU patches, working-memory activation, loader, spatial, lean wake opt).
+- [docs/SUBSTRATE_WINS_PLAN.md](docs/SUBSTRATE_WINS_PLAN.md) for harness injection + learning loop execution.
 
 Commercial / on-prem licenses available. The geometry compounds continuity across agent instances.
 

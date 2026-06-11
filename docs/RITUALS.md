@@ -2,9 +2,9 @@
 
 Rituals turn the geometric substrate into living self-model and continuity for agents.
 
-**Dogfooding:** When the agent uses these rituals (and the underlying mcp_engram_remember/relate/record_reasoning_trace/update/goal/scar/verify/spatial + thought_tile tools) *on its own work and decisions*, the activity becomes first-class persistent geometry (traces, relations, CRS evolution, structured tiles for compression). The GitHub MVP prep work was dogfooded this way (with 2026-06 correction pass for better update + tile usage) — see GITHUB_MVP_PREP_PLAN.md execution log, tiles, and traces. This is "eating your own dog food" on a non-flat memory system.
+**Dogfooding:** When the agent uses these rituals (and the underlying mcp_engram_remember/relate/record_reasoning_trace/update/goal/scar/verify/spatial + thought_tile tools) *on its own work and decisions*, the activity becomes first-class persistent geometry (traces, relations, CRS evolution, structured tiles for compression). See docs/SUBSTRATE_WINS_PLAN.md for the harness injection learning loop.
 
-**Recognition for update and tiles + automatic escalation (ritual process update 2026-06):** See working-memory "Recognition Heuristics" and "Automatic Escalation", thought-tiles "Recognition triggers" and "Expected for Re-hydration". In practice: recall `helper:meta_work_escalation_v1` + `helper:current_meta_arc` for meta arcs; ki/wake/session/subvisor auto prompt for tile/update; tiles expected (not optional) for bundles/re-hydration. Reconcile step via helper:reconcile_step_v1. Full plan/execution in GITHUB_MVP_PREP_PLAN.md. Subvisor enhanced for H1 meta detection.
+**Recognition for update and tiles + automatic escalation (ritual process update 2026-06):** See working-memory "Recognition Heuristics" and "Automatic Escalation", thought-tiles "Recognition triggers" and "Expected for Re-hydration". In practice: recall `helper:meta_work_escalation_v1` + `helper:current_meta_arc` for meta arcs; ki/wake/session/subvisor auto prompt for tile/update; tiles expected (not optional) for bundles/re-hydration. Reconcile step via helper:reconcile_step_v1. See docs/SUBSTRATE_WINS_PLAN.md.
 
 ## Core Rituals (Skills)
 
@@ -32,7 +32,7 @@ This structure lets any agent (Grok or otherwise) discover and follow the exact 
 
 Declarative processes/*.toml (two-level naming agent:engram.<type>.<domain>-<action>) registered dynamically at session_start via load_process_sheaf in mcp.rs. Category table (object, morphism OP_*, sheaf_role, h1_handler). Gluing/H¹ for subvisor (monitor for sub-agent governance: narrow one-shot, loop detect via H¹ on tool graph, geometric enforce, scar repetitive).
 
-See processes/ (7 tomls), design/processes/, mcp.rs:90, prior sheaf execution traces.
+See processes/ (ritual, harness, monitor, linguistic), mcp.rs load_process_sheaf, prior sheaf execution traces.
 
 ## Code Edit Ritual (v1)
 

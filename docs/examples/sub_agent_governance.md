@@ -56,7 +56,7 @@ See:
 - processes/monitor/sub-agent.subvisor.toml
 - processes/monitor/subvisor.toml (base subvisor + 2026-06 meta notes)
 - processes/monitor/manifold-health.toml (related lawfulness H1)
-- docs/GITHUB_MVP_PREP_PLAN.md (detailed sub-agent history: local recon cancelled after 7 calls/15s doom loop; supervisor succeeded; scars recorded: subagent_launch_failure_doom_loop...)
+- docs/SUBSTRATE_WINS_PLAN.md WS-5 (sub-agent TOML trio + governance)
 - ki_hijacker.py (hooks for intent_dirty + subvisor H1 flags)
 - mcp.py (process sheaf loader registers subvisor at start)
 - engram-working-memory.md (Automatic Escalation section)

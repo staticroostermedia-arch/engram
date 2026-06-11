@@ -120,7 +120,7 @@ fn load_process_sheaf(store: &SharedStore) -> Result<(), String> {
     // executable and queryable via search_by_relation / visualize / momentum as first-class sheaf sections.
     // Supports subvisor H¹, gluing, continuity. Spatial AABB on the toml defs themselves is handled by daemon/force + engram-ast (see extract_toml_structure).
     // Called at mcp_engram_session_start for dynamic registration at wake-up boundary.
-    // NOTE: Fully portable for public clones (no /path/to paths). See processes/, docs/GITHUB_MVP_PREP_PLAN.md, AGENT_INTEGRATION_GUIDE.md.
+    // NOTE: Fully portable for public clones (no /path/to paths). See processes/, docs/SUBSTRATE_WINS_PLAN.md, AGENT_INTEGRATION_GUIDE.md.
     let t_load = std::time::Instant::now();
     eprintln!("TIMING[load_process_sheaf]: start (T1 diagnostic for wake hang repro)");
     let base = std::env::var("ENGRAM_PROCESSES_DIR").unwrap_or_else(|_| {
@@ -135,7 +135,6 @@ fn load_process_sheaf(store: &SharedStore) -> Result<(), String> {
         "monitor",
         "process",
         "linguistic",
-        "meta",
     ];
     // Phase 2 – Sheaf Gluing & Spacetime Integration (additive only, no core changes to .leg3/VSA/MCP base, reuse h1_handler/OP_IS_SYMBOLIC_OF/OP_GEOMETRIC_PRODUCT patterns per audit; sub-agent handoff; file:130):
     // - Add "linguistic" to walk (subdirs array).
@@ -879,7 +878,7 @@ fn tool_list() -> Value {
                         },
                         "affirm": {
                             "type": "string",
-                            "description": "Core positive claim, intent, or state being advanced (A/D/R triad per praxis_as_protocol_spec.md A/D/R subsection + tile:research_offload_phase-1-example--a-d-r-structured-fields-in-trac; optional but recommended for high-stakes traces)"
+                            "description": "Core positive claim, intent, or state being advanced (A/D/R triad: assertion/decision/rationale; optional but recommended for high-stakes traces)"
                         },
                         "deny": {
                             "type": "string",
@@ -932,7 +931,7 @@ fn tool_list() -> Value {
                         },
                         "affirm": {
                             "type": "string",
-                            "description": "Core positive claim, intent, or state being advanced (A/D/R triad per praxis_as_protocol_spec.md; optional)"
+                            "description": "Core positive claim, intent, or state being advanced (A/D/R triad; optional)"
                         },
                         "deny": {
                             "type": "string",
@@ -6661,13 +6660,11 @@ mod tests {
 
         // Unique [process].name per subvisor + meta sheaf (no monitor.unknown collision)
         let unique_keys = [
-            "process:engram.monitor.gemma-integration",
             "process:engram.monitor.memory-consolidation",
             "process:engram.monitor.self-improvement",
             "process:engram.monitor.sub-agent",
             "process:engram.harness.sub-agent-launch",
             "process:engram.harness.sub-agent-relay",
-            "process:engram.meta.grok_marketplace_prep",
         ];
         {
             let lock = store.lock().unwrap();
@@ -6712,9 +6709,9 @@ mod tests {
         let manifest = env!("CARGO_MANIFEST_DIR");
         let manifest_path = std::path::Path::new(manifest);
         let root = manifest_path.parent().unwrap().parent().unwrap();
-        let self_toml = root.join("processes/meta/self_improvement_loop.toml");
+        let self_toml = root.join("design/archive/processes/meta/self_improvement_loop.toml");
         let content = std::fs::read_to_string(&self_toml)
-            .expect("processes/meta/self_improvement_loop.toml must exist and be readable for test data (via CARGO_MANIFEST_DIR)");
+            .expect("design/archive/processes/meta/self_improvement_loop.toml must exist and be readable for test data (via CARGO_MANIFEST_DIR)");
         let value: toml::Value =
             toml::from_str(&content).expect("meta self_improvement toml must parse as valid toml");
         let wf = value.get("workflow").expect("has [workflow]");
@@ -6734,7 +6731,7 @@ mod tests {
         let store: SharedStore = open_store(&tmp);
         {
             let mut l = store.lock().unwrap();
-            let _ = l.remember("test:self_improvement_step_sim", "One simulated self-improvement step (audit) using processes/meta/self_improvement_loop.toml fixture for engram-server test coverage.");
+            let _ = l.remember("test:self_improvement_step_sim", "One simulated self-improvement step (audit) using design/archive/processes/meta/self_improvement_loop.toml fixture for engram-server test coverage.");
             // also relate for sheaf/relation coverage in sim
             let _ = l.relate(
                 "test:self_improvement_step_sim",

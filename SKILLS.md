@@ -59,7 +59,7 @@ This gives you the same geometric continuation, self-model, and lawfulness we us
 
 **Dogfooding**: The best way to use Enram is to use these rituals *on your own development/meta-work*. The manifold will compound your agent's capability.
 
-See also `docs/AGENT_MEMORY_CONTRACT.md` (8-tool contract), `docs/GEOMETRIC_MEMORY.md`, `docs/RITUALS.md`, `docs/MCP_TOOLS_REFERENCE.md`, `design/agent_memory_mvp_plan.md`, `docs/GITHUB_MVP_PREP_PLAN.md` (execution history + sub-agent governance lessons).
+See also `docs/AGENT_MEMORY_CONTRACT.md` (8-tool contract), `docs/GEOMETRIC_MEMORY.md`, `docs/RITUALS.md`, `docs/MCP_TOOLS_REFERENCE.md`, `design/agent_memory_mvp_plan.md`, `docs/SUBSTRATE_WINS_PLAN.md` (harness injection + sub-agent governance).
 
 ---
 
