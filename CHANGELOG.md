@@ -5,7 +5,24 @@ All notable changes to Engram (geometric non-flat memory substrate).
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] - 2026-06
+## [Unreleased]
+
+## [0.5.0] - 2026-06-10
+
+### Added
+- **Categorical linguistic calculus (P1–P6):** Native reasoning over words/discourse bundles with synthetic differentiate/integrate/operadic ops, homotopy coherence, and fibered CRS guards — inside the same geometric sheaf as numeric phases and code ASTs.
+- **Mixed number/word support:** Bridge linguistic coefficients and numeric phase tensors under `mixed_class_mixing_guard` (CRS ≥ 0.74; scar on violation).
+- **Real agent workflow integration:** `processes/meta/*.toml` workflow fixtures, MCP tests for self-improvement loop simulation, process sheaf load + dispatch integration tests.
+- **`docs/CATEGORICAL_LINGUISTIC_CALCULUS.md`:** Full P1–P6 surface, beginner walkthrough, and lifecycle diagram.
+
+### Changed
+- **Public polish:** README “What is EngramGrok?” intro, copy-paste calculus examples, Mermaid memory lifecycle; CONTRIBUTING quick checklist; CI fixes for wgpu-only runners (GitHub Actions green on ubuntu).
+- Version bump from 0.4.0 → 0.5.0 for public sharing readiness.
+
+### Fixed
+- CI: committed missing `processes/meta/` test fixtures; clippy/fmt gates for Rust 1.96; wgpu backend selection on no-CUDA runners.
+
+## [0.5.0-prep] - 2026-06 (feat/mvp-github-prep branch work, now released as 0.5.0)
 
 ### Added
 - **Agent Memory MVP (Phase A):** 8-tool lean contract — `docs/AGENT_MEMORY_CONTRACT.md`, `docs/GROK_BUILD_MEMORY.md`, `design/agent_memory_mvp_plan.md`.

@@ -22,7 +22,9 @@ Rituals turn the geometric substrate into living self-model and continuity for a
 - **engram-session-end**: ... (as before).
 - **engram-goal** + **engram-thought-tiles**: See the dedicated skills/ files + working-memory Item 2 section.
 
-Others (harness-gate, lawfulness-metrics, substrate tools, etc.): See MCP_TOOLS_REFERENCE.md and the individual skills when needed.\n\n**Runnable demos & governance**: root SKILLS.md, docs/examples/full_ritual_cycle.md (complete wake->meta(tiles+sub-agent gov)->end->rehydrate), docs/examples/sub_agent_governance.md (H¹, narrow, escalation, doom prevention), examples/hello-engram-agent.py (loads skills + loop).
+Others (harness-gate, lawfulness-metrics, substrate tools, etc.): See MCP_TOOLS_REFERENCE.md and the individual skills when needed.
+
+**Runnable demos & governance**: root SKILLS.md, docs/examples/full_ritual_cycle.md (complete wake→meta (tiles+sub-agent gov)→end→rehydrate), docs/examples/sub_agent_governance.md (H¹, narrow, escalation, doom prevention), examples/hello-engram-agent.py (loads skills + loop).
 
 This structure lets any agent (Grok or otherwise) discover and follow the exact rituals we dogfood without depending on the private .grok/ TUI config.
 

@@ -7,6 +7,10 @@
 [![Patent Pending](https://img.shields.io/badge/Patent-Pending-orange)](PATENT-NOTICE.md)
 [![Geometric Memory](https://img.shields.io/badge/Geometric-Non--flat%20sheaf%20%2B%20rituals-8A2BE2)](docs/GEOMETRIC_MEMORY.md)
 
+## What is EngramGrok?
+
+**EngramGrok** is a local, persistent memory engine for AI agents — not a vector database or a pile of markdown files. It stores memories as fixed 256KB geometric blocks (phase tensors + momentum + cryptographic provenance), lets agents reason over them with VSA calculus (including mixed word+number categorical calculus), and keeps continuity across sessions via rituals, NREM consolidation, and structured handoffs. No cloud. No API keys. Wire it through MCP and your agent wakes up where it left off.
+
 > **Persistent geometric memory for AI agents — one-call wake, anchor-first recall, edit-scoped spatial context, structured handoff. 8 essential MCP tools (62 total for power users). Hardware-native 256KB HolographicBlocks (q/p/CRS/Merkle), VSA/sheaf gluing, spatial AABB, rituals, NREM/ego.leg3. Runs local. Survives 200k-block stores without OOM. See [docs/AGENT_MEMORY_CONTRACT.md](docs/AGENT_MEMORY_CONTRACT.md), [docs/GROK_BUILD_MEMORY.md](docs/GROK_BUILD_MEMORY.md), [docs/GEOMETRIC_MEMORY.md](docs/GEOMETRIC_MEMORY.md).**
 
 **New here?**
