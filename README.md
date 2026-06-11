@@ -238,7 +238,7 @@ See the new `docs/skills/` directory:
 - `docs/skills/engram-session-end.md` — Terminal momentum handoff (crystallize traces/goals/anchors, COMPRESS markers, hot promotion, legominism high-lineage, produce continuation target).
 - `docs/skills/engram-thought-tiles.md` — Structured offload (when mandatory for meta, types, promote_hot).
 
-**Load these files** (or the full content) into your agent's context when starting Enram-integrated work. They are the published "source code" for the ritual layer on top of the 55+ MCP tools.
+**Load these files** (or the full content) into your agent's context when starting Engram-integrated work. They are the published "source code" for the ritual layer on top of the MCP surface (8 essential, 66 tiered).
 
 See also:
 - `docs/RITUALS.md` for the full overview + Code Edit Ritual + subvisor/governance.
@@ -275,7 +275,9 @@ The primary deep demonstration is still the TUI embodiment, but the public surfa
 6. Audit: `search_by_relation` + `visualize` on your subgraphs (H¹ holes, scar density per PGFS helper).
 7. Iterate: `update` (preserve history), relate new artifacts.
 
-See full details + MCP surface (55+ tools: `thought_tile_create`, `quick_trace`/`record_reasoning_trace`, `relate`, `search_by_relation`, `visualize`, `scar`, `verify_*`, goals, spatial, process:engram.*, etc. — full list in docs/MCP_TOOLS_REFERENCE.md) and Python client in the linked artifacts. **Use is more important than understanding upfront.**\n\n**Top-level discovery for agents**: See root `SKILLS.md` (index + links to `docs/skills/`, `docs/examples/sub_agent_governance.md`, `docs/examples/full_ritual_cycle.md`, `examples/hello-engram-agent.py`). Load the skills/ protocols and follow the full cycle demos.
+See full details + MCP surface (66 tools: 8 essential + power tier — `thought_tile_create`, `quick_trace`, `relate`, `verify_*`, goals, spatial, harness injection, etc. — full list in docs/MCP_TOOLS_REFERENCE.md) and Python client in the linked artifacts. **Use is more important than understanding upfront.**
+
+**Top-level discovery for agents**: See root `SKILLS.md` (index + links to `docs/skills/`, `docs/examples/sub_agent_governance.md`, `docs/examples/full_ritual_cycle.md`, `examples/hello-engram-agent.py`). Load the skills/ protocols and follow the full cycle demos.
 
 The deepest demonstration of continuity remains the primary TUI ritual path. High-quality external use (yours) will reveal the deeper mathematical structure.
 
@@ -339,7 +341,7 @@ It mints exactly **one memory block per public semantic item** (functions, struc
 
 ---
 
-## 🧰 MCP Tools Reference (55+ Engram MCP tools as of 2026 — surface evolves; see docs/MCP_TOOLS_REFERENCE.md for categorized full list + examples)
+## MCP Tools Reference (66 tools — 8 essential; see docs/MCP_TOOLS_REFERENCE.md)
 
 **Mandatory for all MCP use (engram + grok_com_github etc.):** Call `search_tool` **first** (by tool name) to get the exact live input schema. Then `use_tool` with *only* the returned parameters. Never guess.
 

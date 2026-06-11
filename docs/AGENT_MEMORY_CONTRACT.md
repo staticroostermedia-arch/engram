@@ -300,7 +300,7 @@ mcp_engram_session_end(summary="<decisions, files, next steps>")
 - [docs/skills/engram-working-memory.md](skills/engram-working-memory.md) — edit loop with `context_for_edit`
 - [docs/skills/engram-session-end.md](skills/engram-session-end.md) — handoff packet protocol
 - [design/agent_memory_mvp_plan.md](../design/agent_memory_mvp_plan.md) — implementation phases A1–A6
-- [docs/MCP_TOOLS_REFERENCE.md](MCP_TOOLS_REFERENCE.md) — all 55+ tools
+- [docs/MCP_TOOLS_REFERENCE.md](MCP_TOOLS_REFERENCE.md) — all 66 tools (8 essential)
 
 ---
 

@@ -87,6 +87,6 @@ See git log and in-manifold traces (trace:* , goal:*) for pre-sheaf history. Pri
 - Blocking waits/allocs, device loss, full RAM in wgpu, unused projection in Metal.
 - Wake-up clarity bottlenecks (via declarative processes/ + geometry-first paths noted).
 
-See GITHUB_MVP_PREP_PLAN.md for detailed execution, traces, spatial hygiene, dogfood under working-memory + Code Edit Ritual. Primary goal:1780419540. Related to engram_manifesto, ritual anchors, processes/ (sheaf sections).
+See docs/SUBSTRATE_WINS_PLAN.md for harness injection roadmap. Related to engram_manifesto, ritual anchors, processes/ (sheaf sections).
 
 ## [0.4.0] - 2026-06 (MVP Sheaf / Rituals / Geometric Substrate) [prior]

@@ -49,7 +49,7 @@ Narrow one-shot only (single action, mcp geometric first, Primary Objective + ne
 
 verify_manifold_integrity, verify_block_lawfulness, genesis, spatial_status, ki freshness. metric:wake_up_verification_<iso> + trend. overall_lawful + score.
 
-See SKILL.md files in .grok/skills/, GITHUB_MVP_PREP_PLAN.md, 2026-06_Substrate_CS_Gap_Closure_Roadmap.md, engram-wake-up/SKILL.md (Phase 1.5), working-memory/SKILL.md (Code Edit + hygiene).
+See docs/skills/, docs/SUBSTRATE_WINS_PLAN.md, 2026-06_Substrate_CS_Gap_Closure_Roadmap.md.
 
 For external agents: follow rituals for lawful use of the substrate.
 
@@ -61,7 +61,7 @@ Additive P5 (coord + sub5): `processes/ritual/ritual_linguistic_wake.toml` + ext
 - Integrates NREM (produces ego.leg3 + hot + linguistic crs gate 0.85 + homotopy fibered check) with mcp linguistic calculus surface (P3 compress/de/fibered + P4 calculus ops) + session.
 - load_process_sheaf (mcp.rs) picks "ritual" dir (and linguistic/) at wake; P5 tomls now present + active.
 - Full pipeline survival: Leg3 mint linguistic (P1) → op compress/diff/operad (P3/P4 via mcp_linguistic_calculus etc) → decompress → NREM (toml + promote/records) → ego.leg3 (verify/concept high CRS) with homotopy/text-coeff fidelity >=0.85.
-- Dogfood: traces/relates to goal:mvp_gap_closure_v1; see Phase 6 sub-agent, e2e test in crates/engram-server/src/mcp.rs, MCP_TOOLS_REFERENCE.md, GITHUB_MVP_PREP_PLAN.md.
+- Dogfood: traces/relates to active goals; see Phase 6 e2e test in crates/engram-server/src/mcp.rs, MCP_TOOLS_REFERENCE.md, SUBSTRATE_WINS_PLAN.md.
 
 These close the categorical/linguistic calculus loop for geometric self-model (non-flat).
 

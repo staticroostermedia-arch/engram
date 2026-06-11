@@ -13,9 +13,9 @@ version     = "0.5.0"
 edition     = "2021"
 authors     = ["Aric Goodman <StaticRoosterMedia@gmail.com>", "Static Rooster Media <StaticRoosterMedia@gmail.com>"]
 license     = "AGPL-3.0-only"
-repository  = "https://github.com/StaticRoosterMedia/engram"
-homepage    = "https://engram.dev"
-description = "Persistent geometric (non-flat) memory substrate for AI agents. Hardware-native 256KB HolographicBlocks on NVMe (O_DIRECT/GPUDirect), 8192D phase vectors, VSA calculus (OP_ADD/OP_BIND), spatial AABB (tree-sitter), sheaf gluing (relations/H¹ from processes/*.toml), CRS Lyapunov, scars, verify/lawfulness gates, NREM/ego.leg3 consolidation, continuation bundles, 55+ MCP tools. Rituals for integrity (wake-up, working-memory, session-end, code-edit). Rust + MCP server. No cloud."
+repository  = "https://github.com/staticroostermedia-arch/engram"
+homepage    = "https://github.com/staticroostermedia-arch/engram"
+description = "Persistent geometric (non-flat) memory for AI agents. 256KB HolographicBlocks, VSA/sheaf, spatial AABB, harness injection at wake, 8-tool lean contract (66 MCP tools tiered). Rituals, CRS lawfulness, session handoff. Rust + MCP. No cloud."
 keywords    = ["ai-memory", "geometric-memory", "mcp", "rituals", "spatial-memory", "non-flat", "manifold", "agent-memory", "vector-symbolic-architecture", "holographic-memory", "continuation-bundles", "lawfulness", "geosphere", "subvisor", "sheaf"]
 categories  = ["science", "data-structures", "command-line-utilities", "development-tools"]
 

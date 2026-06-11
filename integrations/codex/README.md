@@ -38,6 +38,6 @@ On first `session_start`, the process sheaf registers from `processes/` (wake-up
 
 ## MCP discipline (Codex harness pattern)
 
-Always `search_tool` first (for live schema) then `use_tool` with exact qualified name (e.g. "engram__mcp_engram_remember"). Never guess params. This is enforced and what makes native Enram reliable for agents like us.
+Always `search_tool` first (for live schema) then `use_tool` with exact qualified name (e.g. "engram__mcp_engram_remember"). Never guess params. This is enforced and what makes native Engram reliable for agents.
 
 See also [../README.md](../README.md) for the full ecosystem table (Cursor, Claude, etc. all use the identical engram block + contract).

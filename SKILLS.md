@@ -1,6 +1,6 @@
-# Enram Agent Skills & Rituals
+# Engram Agent Skills & Rituals
 
-**For AI agents (Grok, Claude, custom, etc.) using the Enram MCP server:**
+**For AI agents (Grok, Claude, custom, etc.) using the Engram MCP server:**
 
 This is the canonical entry point for the published ritual protocols.
 
@@ -57,7 +57,7 @@ See `docs/examples/full_ritual_cycle.md` (or the python equiv) for a complete ru
 
 This gives you the same geometric continuation, self-model, and lawfulness we use internally.
 
-**Dogfooding**: The best way to use Enram is to use these rituals *on your own development/meta-work*. The manifold will compound your agent's capability.
+**Dogfooding**: The best way to use Engram is to use these rituals *on your own development/meta-work*. The manifold will compound your agent's capability.
 
 See also `docs/AGENT_MEMORY_CONTRACT.md` (8-tool contract), `docs/GEOMETRIC_MEMORY.md`, `docs/RITUALS.md`, `docs/MCP_TOOLS_REFERENCE.md`, `design/agent_memory_mvp_plan.md`, `docs/SUBSTRATE_WINS_PLAN.md` (harness injection + sub-agent governance).
 

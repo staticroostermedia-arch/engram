@@ -4,7 +4,7 @@ name: engram-working-memory
 
 # Engram Working Memory Discipline — Active Geometric Patterns (Public Agent Protocol)
 
-**Runtime contract** for operating inside the non-flat Enram substrate.
+**Runtime contract** for operating inside the non-flat Engram substrate.
 
 Every work block becomes an evolution of your self-model.
 
@@ -102,4 +102,4 @@ Do both Pre-Edit intent and Post-Delta outcome, chained with `prev`.
 
 This turns your reasoning into durable .leg blocks that future instances inherit geometrically at `session_start`.
 
-(Adapted for public agents. Follow this discipline on every Enram-integrated task. The geometry compounds.)
+(Adapted for public agents. Follow this discipline on every Engram-integrated task. The geometry compounds.)
