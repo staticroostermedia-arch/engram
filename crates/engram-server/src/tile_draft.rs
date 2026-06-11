@@ -79,7 +79,8 @@ pub fn collect_goal_traces(store: &mut StoreHandle, goal: &str) -> Vec<String> {
         }
     }
     for (concept, _) in store.access_index.recent(200) {
-        if concept.starts_with("trace:") && seen.insert(concept.clone())
+        if concept.starts_with("trace:")
+            && seen.insert(concept.clone())
             && store
                 .search_relations(&concept, Some("serves"), "to")
                 .iter()
