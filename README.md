@@ -1,4 +1,4 @@
-# Engram
+# EngramGrok
 
 [![Build Status](https://github.com/staticroostermedia-arch/engram/actions/workflows/rust.yml/badge.svg)](https://github.com/staticroostermedia-arch/engram/actions)
 [![MCP](https://img.shields.io/badge/MCP-Native-blue)](https://github.com/modelcontextprotocol)
@@ -7,9 +7,19 @@
 [![Patent Pending](https://img.shields.io/badge/Patent-Pending-orange)](PATENT-NOTICE.md)
 [![Geometric Memory](https://img.shields.io/badge/Geometric-Non--flat%20sheaf%20%2B%20rituals-8A2BE2)](docs/GEOMETRIC_MEMORY.md)
 
-> **Engram** is the project. **EngramGrok** is the Grok Build integration (plugin + lean MCP profile). Same substrate — different entry paths.
+**Persistent geometric memory for AI agents.**
 
-**Local geometric memory for AI agents** — not a vector database or a pile of markdown files. One-call wake with **harness injection** (`suggested_actions` at `session_start`), anchor-first recall, edit-scoped spatial context, structured session handoff. **8 essential MCP tools** (66 tiered for power users). Runs on your machine. No cloud. No API keys.
+EngramGrok is a local, hardware-native memory substrate that gives AI agents coherent, long-term memory with structure-preserving compression, synthetic calculus over both words and numbers, and true continuity across cold shutdowns.
+
+Unlike vector databases or simple logs, Engram uses fixed-size holographic blocks, VSA operations, sheaf gluing, and categorical reasoning to maintain meaning and relationships even after heavy compression and long-running sessions.
+
+It is designed as a drop-in backend for any LLM (Grok, Claude, Llama, etc.) via the Model Context Protocol (MCP) and is fully open for anyone to build on.
+
+EngramGrok is particularly well-suited for:
+- Long-running agentic systems
+- Games with persistent LLM characters
+- Personalized AI companions
+- Any application needing coherent, evolving memory beyond simple vector stores
 
 | Start here | Doc |
 |------------|-----|
@@ -87,6 +97,32 @@ flowchart LR
   E --> H[session_end handoff]
   H --> W
 ```
+
+## Categorical Linguistic Calculus
+
+EngramGrok now supports native **synthetic calculus over linguistic structures** — including mixed number + word operations — all inside the geometric memory manifold.
+
+Key capabilities:
+- Structure-preserving compression and decompression of language while preserving homotopy coherence (meaning up to coherent deformation).
+- Synthetic operations: differentiate, integrate, and operadic composition on word bundles.
+- Mixed number + word reasoning with clearly defined bridging morphisms and class-mixing guards.
+- Full persistence via NREM consolidation and ego.leg3 self-modeling.
+
+### Quick Example
+```rust
+// Build a linguistic bundle + mixed expression
+let bundle = LinguisticDiscourseBundle { ... };
+let mixed = op_mixed_linguistic_number_scale(&num_phase, &word);
+
+// Run calculus and store result
+let delta = op_linguistic_differentiate(&bundle);
+let result = op_linguistic_integrate(&[bundle, delta]);
+
+// Store with full continuity
+let _ = Leg3Pointer::mint_linguistic(&result, true); // promotes toward ego.leg3
+```
+
+All operations return CRS (Coherence-Reliability Score) and can be verified with `mcp_engram_verify_manifold_integrity`.
 
 ---
 
