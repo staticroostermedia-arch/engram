@@ -45,14 +45,43 @@ jobs:
       run: sudo apt-get update && sudo apt-get install -y capnproto python3
     - name: Build engram-server (CPU-only for headless harness, no wgpu link)
       run: cargo build -p engram-server --no-default-features --features cpu-only
+    - name: MCP smoke test (pre-harness)
+      env:
+        ENGRAM_FORCE_CPU_BACKEND: "1"
+        ENGRAM_DISABLE_SHEAF: "1"
+        ENGRAM_KI_DISABLE: "1"
+        ENGRAM_PROFILE: agent
+        RUST_BACKTRACE: "1"
+      run: |
+        set -euo pipefail
+        test -x target/debug/engram
+        file target/debug/engram
+        ldd target/debug/engram || true
+        STORE=$(mktemp -d)
+        printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"ci-smoke","version":"0"}}}' \
+          | timeout 8 target/debug/engram --store "$STORE" mcp 2>smoke-mcp.stderr || {
+            echo "::error::MCP smoke test failed — stderr:"
+            cat smoke-mcp.stderr
+            exit 1
+          }
+        head -30 smoke-mcp.stderr
+        rm -rf "$STORE"
     - name: Run agent-memory harness (required)
       env:
         ENGRAM_FORCE_CPU_BACKEND: "1"
         ENGRAM_DISABLE_SHEAF: "1"
         ENGRAM_KI_DISABLE: "1"
+        ENGRAM_PROFILE: agent
+        RUST_BACKTRACE: "1"
       run: |
-        STABLE_BIN=target/debug/engram \
-        tools/test-harness/bin/engram-harness.sh --suite agent-memory --timeout 120
+        STABLE_BIN="$(pwd)/target/debug/engram" \
+        tools/test-harness/bin/engram-harness.sh --suite agent-memory --timeout 120 || {
+          echo "::group::Harness stderr dumps"
+          find /tmp -maxdepth 1 -name 'engram-harness-*.stderr.log' -print -exec cat {} \; 2>/dev/null || true
+          find tools/test-harness/logs -name '*.stderr.log' -print -exec cat {} \; 2>/dev/null || true
+          echo "::endgroup::"
+          exit 1
+        }
     - name: Upload harness results
       if: always()
       uses: actions/upload-artifact@v4

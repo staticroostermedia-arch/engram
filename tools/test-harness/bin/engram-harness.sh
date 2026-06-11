@@ -75,7 +75,8 @@ DEV_BIN="${DEV_BIN:-target/debug/engram}"                 # prefers local build;
 REPRO_BIN="${REPRO_BIN:-/path/to/your/local/engram}"     # may or may not exist; selection logic below handles
 
 # Common env for launches (matches production stable usage)
-DEFAULT_KI_DIR="/path/to/your/ki/artifacts"   # override for your setup
+DEFAULT_KI_DIR="${ENGRAM_KI_ARTIFACTS_DIR:-$HARNESS_ROOT/.ki-artifacts}"
+mkdir -p "$DEFAULT_KI_DIR" 2>/dev/null || true
 DEFAULT_STORE_BASE="/path/to/your/engram/stalks/"   # used only for reference; harness ALWAYS uses isolated temps
 
 # Colors

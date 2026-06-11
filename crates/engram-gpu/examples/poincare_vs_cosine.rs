@@ -9,14 +9,16 @@
 //! Run:
 //!   cargo run --example poincare_vs_cosine --features wgpu-backend -p engram-gpu
 
-// This example requires the wgpu-backend feature. Guard the entire contents.
-#[cfg(not(feature = "wgpu-backend"))]
+// Requires WebGPU backend at compile time (build.rs sets engram_backend_wgpu).
+// On macOS/Metal or cpu-only CI builds the stub main compiles instead.
+#[cfg(not(engram_backend_wgpu))]
 fn main() {
-    eprintln!("This example requires the wgpu-backend feature.");
-    eprintln!("Run: cargo run --example poincare_vs_cosine --features wgpu-backend -p engram-gpu");
+    eprintln!("This example requires the WebGPU backend (engram_backend_wgpu).");
+    eprintln!("On macOS the Metal backend is selected instead — use CpuBackend benchmarks.");
+    eprintln!("Run on Linux: cargo run --example poincare_vs_cosine --features wgpu-backend -p engram-gpu");
 }
 
-#[cfg(feature = "wgpu-backend")]
+#[cfg(engram_backend_wgpu)]
 mod inner {
     use engram_core::backend::{CpuBackend, Memory, VsaBackend};
     use engram_gpu::WgpuBackend;
@@ -213,7 +215,7 @@ mod inner {
     }
 }
 
-#[cfg(feature = "wgpu-backend")]
+#[cfg(engram_backend_wgpu)]
 fn main() {
     inner::run();
 }

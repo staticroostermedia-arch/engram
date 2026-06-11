@@ -17,6 +17,10 @@ wgpu-backend = ["dep:wgpu", "dep:pollster"]
 device_residency = []  # Tier 3: future cuFile / GPUDirect Storage / direct GPU memory residency for items in high_priority_cache (CPU removal from hottest paths)
 cpu-only = []  # marker: build engram-server with --no-default-features for headless CI (no wgpu link)
 
+[[example]]
+name = "poincare_vs_cosine"
+required-features = ["wgpu-backend"]
+
 [dependencies]
 engram-core  = { path = "../engram-core", default-features = false }
 num-complex  = { workspace = true }

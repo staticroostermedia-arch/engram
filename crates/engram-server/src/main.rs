@@ -215,6 +215,10 @@ fn main() -> anyhow::Result<()> {
             let store_for_upgrade = store.clone();
             let real_path = cli.store.clone();
             std::thread::spawn(move || {
+                // Brief pause so stdio MCP can finish initialize/handshake before heavy
+                // backend work (StoreHandle::new, daemon, BVH). Prevents CI harness races
+                // where the subprocess aborts before the client sees any stderr/logs.
+                std::thread::sleep(std::time::Duration::from_millis(1200));
                 tracing::info!("[MCP-FAST] Starting full manifold initialization in background...");
                 maybe_defer_bvh_for_large_store(&real_path);
 
