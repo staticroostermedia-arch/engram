@@ -1,7 +1,8 @@
 # xAI Grok Build Marketplace Submission — engram-geometric
 
-**Plugin id:** `engram-geometric`  
-**Repo subdirectory:** `grok-plugin-engram/` (or full repo with plugin at root path)  
+**Plugin id:** `engram` (or `engram-geometric` for disambiguation)  
+**Repo subdirectory:** `grok-plugin-engram/` (self-contained plugin bundle with .mcp.json + plugin.json)  
+**Current status:** v0.5.0 tag on polished state; remote registration via xai-org/plugin-marketplace (Option A).  
 **Plan:** [design/GROK_MARKETPLACE_EXCELLENCE_PLAN.md](../design/GROK_MARKETPLACE_EXCELLENCE_PLAN.md)
 
 ---
@@ -23,28 +24,22 @@ Fork https://github.com/xai-org/plugin-marketplace and add to `.grok-plugin/mark
 
 ```json
 {
-  "name": "engram-geometric",
-  "description": "Local geometric memory for Grok Build: one-call wake, anchor-first recall, edit-scoped code context (context_for_edit), structured session handoff. 8-tool lean contract — survives 200k-block stores without OOM. Not a vector DB wrapper.",
+  "name": "engram",
+  "description": "Persistent geometric memory substrate with categorical linguistic calculus and mixed number/word reasoning for AI agents. Local, one-call wake (session_start + harness injection), spatial code context (context_for_edit), structured session handoff. 8-tool lean contract. Not a vector DB or flat RAG.",
   "category": "development",
   "source": {
     "source": "url",
-    "url": "https://github.com/staticroostermedia-arch/engram.git",
-    "sha": "REPLACE_WITH_FULL_40_CHAR_COMMIT_SHA"
+    "url": "https://github.com/staticroostermedia-arch/engram",
+    "sha": "eb1732fa05d9efefb26f6aeb3c842e26c866cacf"
   },
   "homepage": "https://github.com/staticroostermedia-arch/engram",
-  "keywords": [
-    "memory",
-    "persistent-memory",
-    "mcp",
-    "session-handoff",
-    "geometric-memory",
-    "code-context",
-    "engram-geometric"
-  ],
-  "author": "Static Rooster Media",
-  "tags": ["memory", "mcp", "local-first"]
+  "keywords": ["memory", "mcp", "agent", "geometric", "calculus", "geometric-memory", "session-handoff"],
+  "version": "0.5.0",
+  "author": "staticroostermedia-arch"
 }
 ```
+
+(Note: matches the real .grok-plugin/marketplace.json format and the v0.5.0 tag target commit. Use this exact sha for the initial remote registration.)
 
 Pin SHA:
 
