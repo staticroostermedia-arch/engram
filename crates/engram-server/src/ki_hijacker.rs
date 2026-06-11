@@ -696,7 +696,7 @@ async fn bake_ki(store: &SharedStore, ki_dir: &PathBuf) -> anyhow::Result<()> {
 
     // Fast lookup for richer per-goal trace excerpts (no repeated scans)
 
-    // 2026-06 Ritual Evolution: Full meta-arc tile escalation detection (per helper:meta_work_escalation_v1, helper:current_meta_arc, plan in GITHUB_MVP_PREP_PLAN.md).
+    // 2026-06 Ritual Evolution: Full meta-arc tile escalation detection (per helper:meta_work_escalation_v1, helper:current_meta_arc, docs/SUBSTRATE_WINS_PLAN.md).
     // Scans recent concepts for active design: or multi-phase progress: / mvp_prep arcs.
     // Checks for absence of recent tile: (knowledge_graph, formal_spec, etc.) or current_meta_arc.
     // If gap: will inject "RECOGNITION PROMPT" into KI context.md for wake-up.
@@ -1405,6 +1405,26 @@ async fn bake_ki(store: &SharedStore, ki_dir: &PathBuf) -> anyhow::Result<()> {
     // Write to disk
     let context_path = ki_dir.join("context.md");
     std::fs::write(&context_path, md.as_bytes())?;
+
+    // WS-1: Cursor ambient wake queue when KI dir lives under .cursor/
+    if ki_dir.to_string_lossy().contains(".cursor") {
+        if let Ok(mut hlock) = store.lock() {
+            let primary_goal = hlock
+                .fetch_block_high_priority("primary_goal")
+                .and_then(|b| {
+                    let text = engram_core::storage::read_provlog(&b);
+                    text.lines()
+                        .find(|l| l.starts_with("**goal:**"))
+                        .map(|l| l.replace("**goal:**", "").trim().to_string())
+                });
+            let wake_md = crate::harness_injection::format_suggested_actions_markdown(
+                &mut hlock,
+                primary_goal.as_deref(),
+            );
+            let wake_path = ki_dir.parent().unwrap_or(ki_dir).join("engram-wake.md");
+            let _ = std::fs::write(&wake_path, wake_md.as_bytes());
+        }
+    }
 
     // Update timestamps.json
     let ki_root = ki_dir.parent().unwrap_or(ki_dir);

@@ -1,0 +1,26 @@
+name: Rust macOS (optional)
+
+# macOS hosted runners queue for hours on free tiers — do not block PR merge.
+# Run on demand or before releases; ubuntu + agent-memory harness is the required gate.
+
+on:
+  workflow_dispatch:
+  push:
+    tags: [ "v*" ]
+
+jobs:
+  build-and-test-macos:
+    runs-on: macos-latest
+    continue-on-error: true
+    steps:
+    - uses: actions/checkout@v4
+    - name: Install dependencies
+      run: brew install capnp
+    - name: Build
+      run: cargo build --verbose
+    - name: Run tests
+      run: cargo test --verbose
+    - name: Clippy
+      run: cargo clippy -- -D warnings
+    - name: Format check
+      run: cargo fmt -- --check

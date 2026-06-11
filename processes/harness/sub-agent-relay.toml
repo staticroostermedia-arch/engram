@@ -1,0 +1,52 @@
+# agent:engram.harness.sub-agent-relay
+# Sub-agent-side harness: mandatory relay artifacts back to manifold for orchestrator review.
+# Executable steps live in processes/workflow/sub_agent_relay_v1.toml.
+
+[process]
+name = "agent:engram.harness.sub-agent-relay"
+zedos_type = "harness"
+phase_seed = "0xSUBAGENTRELAY202606"
+
+[category]
+object = "sub_agent_relay"
+morphism = "OP_ADD"
+sheaf_role = "Sub-agent relay contract: every run ends with relay trace + research_offload report tile related to goal; orchestrator reviews before continuing arc."
+h1_handler = "OP_IS_SYMBOLIC_OF"
+
+[mcp_tools]
+list = [
+  "mcp_engram_quick_trace",
+  "mcp_engram_thought_tile_create",
+  "mcp_engram_relate",
+  "mcp_engram_session_end"
+]
+
+[requires]
+list = [
+  "process:engram.harness.sub-agent-launch",
+  "process:engram.monitor.sub-agent",
+  "ritual:engram.working-memory"
+]
+
+[produces]
+list = [
+  "trace:*_subagent_relay",
+  "tile:*_subagent_report",
+  "trace:*_subagent_handoff"
+]
+
+[invariants]
+list = [
+  "relay_trace_required",
+  "report_tile_or_explicit_failure_trace",
+  "process_context_on_relay",
+  "json_report_in_justification"
+]
+
+[timeout_ms]
+value = 10000
+
+[notes]
+# Sub-agents set process_context=process:engram.harness.sub-agent-relay on all relay traces.
+# Orchestrator verifies via search_by_relation(goal, serves, from) on report tiles
+# or process_metrics fulfillment once WS-3 ships.

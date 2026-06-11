@@ -2,6 +2,15 @@
 
 We welcome contributions to Engram. Since this is a hardware-native memory engine with a strict binary format, there are a few rules to follow to keep the physics correct.
 
+## Quick checklist (before you open a PR)
+
+- [ ] `cargo test --workspace` passes
+- [ ] `cargo clippy --workspace -- -D warnings` passes (CI enforces this)
+- [ ] `cargo fmt -- --check` passes
+- [ ] No changes to the fixed 256KB `HolographicBlock` layout without a version bump + migration
+- [ ] README / `docs/MCP_TOOLS_REFERENCE.md` updated if you add or rename MCP tools
+- [ ] Use `update` on existing memories — never `forget` + `remember` for the same concept
+
 ---
 
 ## Development Setup

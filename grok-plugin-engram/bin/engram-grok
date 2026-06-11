@@ -1,0 +1,39 @@
+#!/bin/bash
+# engram-grok (plugin) — resolves binary for Grok marketplace installs.
+# Search order: ENGRAM_BINARY > ~/.local/bin/engram > monorepo target/debug > PATH
+
+set -euo pipefail
+
+PLUGIN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+STORE="${ENGRAM_STORE:-$HOME/.engram/stalks/}"
+
+export ENGRAM_PROFILE="${ENGRAM_PROFILE:-agent}"
+export ENGRAM_STORE="$STORE"
+
+export LD_LIBRARY_PATH="/usr/local/cuda/lib64:/usr/local/cuda-13.1/lib64:/usr/lib/x86_64-linux-gnu:${LD_LIBRARY_PATH:-}"
+export CUDA_HOME="${CUDA_HOME:-/usr/local/cuda}"
+export CUDA_PATH="${CUDA_PATH:-/usr/local/cuda}"
+export PATH="/usr/local/cuda/bin:/usr/local/cuda-13.1/bin:${PATH:-}"
+
+if [ -n "${ENGRAM_BINARY:-}" ] && [ -x "${ENGRAM_BINARY}" ]; then
+  REAL_ENGRAM="${ENGRAM_BINARY}"
+elif [ -x "$HOME/.local/bin/engram" ]; then
+  REAL_ENGRAM="$HOME/.local/bin/engram"
+elif [ -x "$PLUGIN_ROOT/../../target/debug/engram" ]; then
+  REAL_ENGRAM="$(cd "$PLUGIN_ROOT/../../target/debug" && pwd)/engram"
+elif [ -x "$PLUGIN_ROOT/../target/debug/engram" ]; then
+  REAL_ENGRAM="$(cd "$PLUGIN_ROOT/../target/debug" && pwd)/engram"
+elif command -v engram >/dev/null 2>&1; then
+  REAL_ENGRAM="$(command -v engram)"
+else
+  echo "ERROR: engram binary not found." >&2
+  echo "  Run: ./scripts/install-engram-plugin.sh (from Engram repo root)" >&2
+  echo "  Or:  cargo install --path crates/engram-server" >&2
+  exit 1
+fi
+
+if [[ " $* " == *" mcp "* ]]; then
+  echo "[engram-grok] Fast MCP path (no wait-ready) for Grok startup_timeout…" >&2
+fi
+
+exec "$REAL_ENGRAM" --store "$STORE" "$@"

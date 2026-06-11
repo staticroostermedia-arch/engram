@@ -2,11 +2,11 @@
 name: engram-skills-for-agents
 ---
 
-# Enram Skills for Agents (Public Ritual Protocols)
+# Engram Skills for Agents (Public Ritual Protocols)
 
 These are the operational skills and rituals that power the Engram geometric memory system for AI agents.
 
-**If you are an agent (Grok, Claude, custom, etc.) using Enram:**
+**If you are an agent (Grok, Claude, custom, etc.) using Engram:**
 - Connect to the `engram` MCP server (see main README and docs/MCP_TOOLS_REFERENCE.md).
 - **Load these skills** at the start of your context or when beginning work on an Engram-integrated project.
 - Follow them exactly for wake-up, working memory discipline, session termination, thought tiles, goal management, and spatial/Code Edit rituals.
@@ -14,7 +14,8 @@ These are the operational skills and rituals that power the Engram geometric mem
 
 ## Core Ritual Loop (8-tool lean — all ecosystems)
 
-**Contract:** [docs/AGENT_MEMORY_CONTRACT.md](../AGENT_MEMORY_CONTRACT.md)
+**Contract:** [docs/AGENT_MEMORY_CONTRACT.md](../AGENT_MEMORY_CONTRACT.md)  
+**Full map:** [docs/TOOL_DECISION_MAP.md](../TOOL_DECISION_MAP.md) (Layers 0–4, write path, read escalation)
 
 1. **Wake:** `session_start(intent)` — one call (see `engram-wake-up.md`).
 2. **Work:** `context_for_edit` → `recall(anchors)` → `quick_trace` / `remember` (`engram-working-memory.md`).
@@ -27,11 +28,11 @@ These are the operational skills and rituals that power the Engram geometric mem
 - Spatial (Item 1.5): **lean:** `context_for_edit(path)`; **deep:** optional `watch_workspace` once per project.
 - Lawfulness: `mcp_engram_verify_manifold_integrity`, block lawfulness.
 
-See the full [docs/RITUALS.md](../RITUALS.md) for overview, [docs/MCP_TOOLS_REFERENCE.md](../MCP_TOOLS_REFERENCE.md) for all 55+ tools, and [docs/GEOMETRIC_MEMORY.md](../GEOMETRIC_MEMORY.md) for the non-flat model.
+See the full [docs/RITUALS.md](../RITUALS.md) for overview, [docs/MCP_TOOLS_REFERENCE.md](../MCP_TOOLS_REFERENCE.md) for all 66 tools (8 essential), and [docs/GEOMETRIC_MEMORY.md](../GEOMETRIC_MEMORY.md) for the non-flat model.
 
-**Dogfooding note**: The Engram team uses these rituals *on the development of Enram itself*. Your agents should too.
+**Dogfooding note**: Use these rituals on your own task work — the substrate records traces and handoff for the next session.
 
-These files are the published "source code" for agent behavior on top of the Enram substrate.
+These files are the published "source code" for agent behavior on top of the Engram substrate.
 
 ## Quick Start for a New Agent Instance
 

@@ -2,11 +2,11 @@
 
 **Primary Objective**: `goal:engram_mvp_v1` (harness continuity; operationalize "Against Flat Knowledge" via geometric sheaf replacing flat weights/text/vec DBs).
 
-This file + CLAUDE.md + docs/ + .grok/skills/ + processes/*.toml + GITHUB_MVP_PREP_PLAN.md define the contract for any agent editing the Engram substrate or its representation.
+This file + CLAUDE.md + docs/ + .grok/skills/ + processes/*.toml + docs/SUBSTRATE_WINS_PLAN.md define the contract for any agent editing the Engram substrate or its representation.
 
 ## Start Here — 8-Tool Agent Memory Contract (Lean Default)
 
-**Read first:** [docs/AGENT_MEMORY_CONTRACT.md](docs/AGENT_MEMORY_CONTRACT.md)
+**Read first:** [docs/AGENT_MEMORY_CONTRACT.md](docs/AGENT_MEMORY_CONTRACT.md) · **All 66 tools:** [docs/TOOL_DECISION_MAP.md](docs/TOOL_DECISION_MAP.md) · **Harness injection:** [docs/HARNESS_INJECTION.md](docs/HARNESS_INJECTION.md) · **Roadmap:** [docs/SUBSTRATE_WINS_PLAN.md](docs/SUBSTRATE_WINS_PLAN.md)
 
 | Phase | Tools |
 |-------|-------|
@@ -74,7 +74,18 @@ See processes/, mcp.rs, docs/RITUALS.md.
 - Use todo_write for complex multi-step.
 - For MCP in harnesses: ALWAYS `search_tool` first (exact schema), then `use_tool` (qualified name e.g. engram__mcp_engram_...).
 - Hot promotion for high-value artifacts: `promote_hot`.
-- **Do not delete MCP tools** — tier in documentation only; 62 tools remain for power users.
+- **Do not delete MCP tools** — tier in documentation only; 66 tools remain for power users (62 `mcp_engram_*` + 4 linguistic).
+
+## Agent discipline — tools must be called
+
+Documentation alone does not create memory. **Every session:**
+
+1. `mcp_engram_session_start(intent)` — first call, every chat/restart.
+2. `mcp_engram_context_for_edit(path)` — before editing any file in `crates/`, `processes/`, `docs/`, `grok-plugin-engram/`.
+3. `mcp_engram_quick_trace` — at every significant fork (design choice, commit boundary).
+4. `mcp_engram_session_end(summary, prepare_compression=true)` — end of every work block.
+
+If you completed substantive work without calling these tools, the substrate has no geometric record — treat that as a contract violation. Slash commands (`/engram-wake`, `/engram-edit`, `/engram-trace`, `/engram-session-end`) exist to make invocation habitual.
 
 See also:
 - **Public agent rituals**: [SKILLS.md](SKILLS.md) + `docs/skills/`
@@ -82,7 +93,7 @@ See also:
 - **8-tool contract**: [docs/AGENT_MEMORY_CONTRACT.md](docs/AGENT_MEMORY_CONTRACT.md)
 - Full cycle: `docs/examples/full_ritual_cycle.md`, `examples/hello-engram-agent.py`
 - Internal TUI: `.grok/skills/engram-*.md`
-- docs/RITUALS.md, docs/GITHUB_MVP_PREP_PLAN.md, docs/MCP_TOOLS_REFERENCE.md, docs/GEOMETRIC_MEMORY.md
+- docs/RITUALS.md, docs/SUBSTRATE_WINS_PLAN.md, docs/MCP_TOOLS_REFERENCE.md, docs/GEOMETRIC_MEMORY.md
 - MANIFESTO.md, CONTRIBUTING.md, .github/PULL_REQUEST_TEMPLATE.md
 
 **Violations of this contract are scarred immediately.** The manifold will deflect future attempts.

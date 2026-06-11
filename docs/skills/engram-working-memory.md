@@ -4,7 +4,7 @@ name: engram-working-memory
 
 # Engram Working Memory Discipline — Active Geometric Patterns (Public Agent Protocol)
 
-**Runtime contract** for operating inside the non-flat Enram substrate.
+**Runtime contract** for operating inside the non-flat Engram substrate.
 
 Every work block becomes an evolution of your self-model.
 
@@ -48,6 +48,8 @@ Every work block becomes an evolution of your self-model.
 | End block | `session_end` (handoff packet) | `promote_hot_batch` |
 
 **Cost-Aware**: Momentum and full BVH are high-latency. Lean mode avoids them by default.
+
+**Full 66-tool map:** [TOOL_DECISION_MAP.md](../TOOL_DECISION_MAP.md) — write path, read escalation, goals/tiles/linguistic layers.
 
 ---
 
@@ -100,4 +102,4 @@ Do both Pre-Edit intent and Post-Delta outcome, chained with `prev`.
 
 This turns your reasoning into durable .leg blocks that future instances inherit geometrically at `session_start`.
 
-(Adapted for public agents. Follow this discipline on every Enram-integrated task. The geometry compounds.)
+(Adapted for public agents. Follow this discipline on every Engram-integrated task. The geometry compounds.)

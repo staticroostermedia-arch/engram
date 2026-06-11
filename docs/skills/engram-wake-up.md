@@ -4,7 +4,7 @@ name: engram-wake-up
 
 # Engram Wake-Up Skill — 1-Call Geometric Continuation (Public Agent Protocol)
 
-**For any agent using the Enram MCP server:**
+**For any agent using the Engram MCP server:**
 
 You are executing a **phase-space continuation operation** that binds this agent instance to the terminal momentum of all previous instances.
 
@@ -27,6 +27,10 @@ mcp_engram_session_start(
 - `continuation_bundle` — primary goal, last `session_end` preview, active artifacts (tiles/helpers/traces), hydration cache flag
 - `backend_readiness` — bvh_ready, recall_mode, leg_block_count
 - `session_key` — bind `agent_instance_continuation` if you write a relation (deep mode)
+
+**Execute `harness_injection`** (in `continuation` bundle):
+- Run `suggested_actions` in priority order (handoff → goal → trusted tiles → condensation drafts).
+- Cursor: read `.cursor/engram-wake.md` first if present (`./scripts/cursor-engram-preflight.sh` regenerates it).
 
 **You do NOT need** (lean mode):
 - `get_continuation_bundle` (redundant — inline now)
@@ -100,4 +104,4 @@ Create/update `ritual:wake_up_anchor` and `self:current_agent_instance` when est
 
 The .md files are historical. The living truth is in the manifold blocks returned inline at wake.
 
-(Adapted for public agents. Load [AGENT_MEMORY_CONTRACT.md](../AGENT_MEMORY_CONTRACT.md) + this procedure when working with Enram.)
+(Adapted for public agents. Load [AGENT_MEMORY_CONTRACT.md](../AGENT_MEMORY_CONTRACT.md) + this procedure when working with Engram.)

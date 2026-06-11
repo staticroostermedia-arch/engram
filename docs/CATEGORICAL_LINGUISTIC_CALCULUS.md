@@ -3,6 +3,36 @@
 
 Engram now supports native categorical reasoning directly over linguistic structures (words, discourse bundles, morphisms) and mixed with numeric phase tensors — all inside the same geometric sheaf as numbers and code ASTs. This is not bolted-on vector search; it is structure-preserving synthetic calculus (differentiate, integrate, operadic compose) with homotopy coherence, fibered class-mixing guards, and CRS Lyapunov stability, persisted via .leg3 + NREM/ego.leg3.
 
+## Beginner-Friendly Walkthrough
+
+**In one sentence:** You give Engram a bundle of words (each with a small coefficient vector), ask it to *differentiate* or *integrate* that bundle like calculus on language, optionally mix in numbers, and it returns a new bundle plus a CRS coherence score — all stored in the same geometric memory as your code and goals.
+
+**Smallest example (differentiate one word):**
+
+```json
+mcp_linguistic_calculus({
+  "operation": "differentiate",
+  "bundle": {
+    "bundle_id": "hello",
+    "words": [{ "text": "hello", "coeff": [0.9, 0.1, 0, 0, 0, 0, 0, 0] }],
+    "patches": []
+  }
+})
+```
+
+Returns something like `{ "crs": 0.87, "result": { "bundle_id": "hello", "word_count": 1 } }`. CRS ≥ 0.74 means the operation stayed lawful; ≥ 0.85 is required for NREM/ego.leg3 promotion.
+
+**Memory lifecycle (word + number mixed):**
+
+```mermaid
+flowchart LR
+    A[Mint bundle<br/>words + optional numeric phase] --> B[Compress to phase<br/>op_linguistic_compress]
+    B --> C[Calculus op<br/>differentiate / integrate / operadic]
+    C --> D[Decompress + verify CRS]
+    D --> E[NREM + ego.leg3<br/>if CRS ≥ 0.85]
+    E -->|next session| A
+```
+
 ## Geometric and Sheaf Foundation
 - Built on HolographicBlock (.leg3 256KB q-phase 8192D + p-momentum + CRS + BLAKE3 Merkle + AABB).
 - VSA calculus (OP_ADD superpose, OP_BIND, OP_GEOMETRIC_PRODUCT for fibered gluing).
@@ -64,13 +94,13 @@ See processes/linguistic/*.toml and ritual/ritual_linguistic_wake.toml for sheaf
 
 Full e2e + tests in crates/engram-core/src/ops.rs (mixed tests) + engram-server/src/mcp.rs.
 
-This advances Engram from geometric memory to geometric *reasoning* substrate — calculus over the manifold itself. Public polish (Phase 6) complete per GITHUB_MVP_PREP_PLAN.md; ready for sharing.
+This advances Engram from geometric memory to geometric *reasoning* substrate — calculus over the manifold itself.
 
 **Links:**
 - [docs/RITUALS.md](docs/RITUALS.md) (Phase 5 linguistic rituals)
 - [docs/MCP_TOOLS_REFERENCE.md](docs/MCP_TOOLS_REFERENCE.md) (mcp_linguistic_calculus + P1-P6 surface)
 - [docs/GEOMETRIC_MEMORY.md](docs/GEOMETRIC_MEMORY.md)
-- [docs/GITHUB_MVP_PREP_PLAN.md](docs/GITHUB_MVP_PREP_PLAN.md)
+- [docs/SUBSTRATE_WINS_PLAN.md](docs/SUBSTRATE_WINS_PLAN.md)
 - [docs/AGENT_MEMORY_CONTRACT.md](docs/AGENT_MEMORY_CONTRACT.md)
 - [AGENTS.md](AGENTS.md), [CLAUDE.md](CLAUDE.md)
 - processes/linguistic/*.toml, processes/ritual/ritual_linguistic_wake.toml

@@ -1,0 +1,76 @@
+# Workflow-only: sub-agent execution + mandatory relay back to manifold.
+# NOT auto-loaded as process block — pair with harness + monitor TOMLs.
+# Orchestrator launches via processes/harness/sub-agent-launch.toml prompt_template.
+
+[workflow]
+name = "sub_agent_relay_v1"
+description = "Sub-agent wake → narrow execute → relay report tile/trace → handoff for orchestrator review."
+primary_goal = "goal:mvp_gap_closure_v1"
+max_iterations = 1
+process_context = "process:engram.harness.sub-agent-relay"
+
+[wake]
+ritual = "engram-wake-up"
+tools = ["mcp_engram_session_start", "mcp_engram_recall"]
+intent_template = "Sub-agent one-shot: {one_action}"
+scope = "anchors"
+
+[execute]
+steps = [
+  { name = "geometric_entry", desc = "context_for_edit or recall_in_file on target path before broad reads", tools = ["mcp_engram_context_for_edit", "mcp_engram_recall_in_file"] },
+  { name = "narrow_action", desc = "Single scoped action only — no exploration", subagent = "one-shot" },
+  { name = "fork_traces", desc = "quick_trace every decision with process_context", tools = ["mcp_engram_quick_trace"] }
+]
+subvisor = "process:engram.monitor.sub-agent"
+max_calls = 20
+
+[relay]
+# Mandatory — orchestrator reviews these artifacts in manifold.
+at = ["completion", "kill", "timeout"]
+tools = ["mcp_engram_quick_trace", "mcp_engram_thought_tile_create", "mcp_engram_relate"]
+process_context = "process:engram.harness.sub-agent-relay"
+
+trace_contract = { decision_point = "sub_agent_relay", required_fields = ["status", "task_id", "summary", "artifacts", "trace_ids"] }
+
+report_tile = { type = "research_offload", title_template = "Sub-agent report: {one_action}", goal_context = "goal:mvp_gap_closure_v1" }
+
+relations = [
+  { from = "report_tile", to = "goal:mvp_gap_closure_v1", label = "serves" },
+  { from = "report_tile", to = "trace:*_subagent_relay", label = "documents" },
+  { from = "orchestrator", to = "report_tile", label = "reviews" }
+]
+
+report_json_schema = """
+{
+  "status": "success | partial | failed | killed",
+  "task_id": "string",
+  "one_action": "string",
+  "summary": "string",
+  "artifacts": ["paths or concept ids"],
+  "trace_ids": ["trace:..."],
+  "tile_id": "tile:... or null",
+  "friction": ["scar-worthy notes"],
+  "process_context": "process:engram.harness.sub-agent-relay"
+}
+"""
+
+[trace]
+at = ["wake", "execute.forks", "relay"]
+tools = ["mcp_engram_quick_trace"]
+process_context = "process:engram.harness.sub-agent-relay"
+
+[handoff]
+ritual = "engram-session-end"
+tools = ["mcp_engram_session_end"]
+prepare_compression = false
+note = "Sub-agent session_end is lightweight; orchestrator owns full session_end with synthesis."
+
+[orchestrator_review]
+# What the main agent does after sub completes.
+steps = [
+  "read report tile or relay trace via mcp_engram_read_concept",
+  "quick_trace decision_point=orchestrator_sub_review with prev=relay trace",
+  "relate synthesis trace → goal + process:engram.harness.sub-agent-launch",
+  "scar if relay missing or doom loop detected",
+  "optional: mint verified_sequence tile from successful sub arc (WS-4)"
+]

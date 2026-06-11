@@ -327,7 +327,7 @@ This is part of **Item 1.5 (Spatial Discipline Adoption)** — making sure the s
 
 1. Bind the watcher: `mcp_engram_watch_workspace("/path/to/project")`
 2. Check current state via the `item1.5_spatial_ingestion_state_engram` block
-3. Run the bootstrap tool on priority directories (see `scripts/item1.5_bootstrap_commands.md` for ready-to-paste calls)
+3. Run the bootstrap tool on priority directories (`scripts/bootstrap_spatial.sh`, `scripts/check_spatial_status.sh`)
 4. Verify with `context_for_file` + `recall_in_file` on key files
 5. Update the state block with results and timestamp
 
@@ -557,7 +557,7 @@ Dynamic loader in `mcp.rs` (at `session_start`) parses with toml crate, register
 
 See:
 - `processes/` (7+ live: wake-up, session-end, momentum-query with two-stage notes, subvisor H¹, spatial-recon, etc.)
-- `docs/GITHUB_MVP_PREP_PLAN.md` + recent GPU hand-off execution (loader enhancement, working-memory activation).
+- `docs/SUBSTRATE_WINS_PLAN.md` + `docs/HARNESS_INJECTION.md` (harness injection, loader, working-memory).
 - `engram_manifesto` (the geometry).
 - `.grok/skills/engram-working-memory/SKILL.md` (the runtime contract).
 

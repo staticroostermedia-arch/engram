@@ -10,20 +10,13 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # Required gate — ubuntu is fast and matches agent-memory harness environment.
   build-and-test:
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
     - name: Install dependencies
-      run: |
-        if [ "$RUNNER_OS" == "Linux" ]; then
-          sudo apt-get update && sudo apt-get install -y capnproto
-        elif [ "$RUNNER_OS" == "macOS" ]; then
-          brew install capnp
-        fi
+      run: sudo apt-get update && sudo apt-get install -y capnproto
     - name: Build
       run: cargo build --verbose
     - name: Run tests
@@ -33,21 +26,60 @@ jobs:
     - name: Format check
       run: cargo fmt -- --check
 
-  mcp-harness-and-ritual:
+  agent-memory-harness:
+    name: MCP agent-memory (marketplace gate)
     runs-on: ubuntu-latest
+    env:
+      # Headless CI has no CUDA/display — wgpu init aborts (SIGABRT). Force CPU backend at compile time.
+      ENGRAM_FORCE_BACKEND: cpu
     steps:
     - uses: actions/checkout@v4
     - name: Install dependencies
-      run: sudo apt-get update && sudo apt-get install -y capnproto
-    - name: Build
-      run: cargo build
-    - name: Run MCP harness (current build verification)
+      run: sudo apt-get update && sudo apt-get install -y capnproto python3
+    - name: Build engram-server (CPU-only for headless harness, no wgpu link)
+      run: cargo build -p engram-server --no-default-features --features cpu-only
+    - name: MCP smoke test (pre-harness)
+      env:
+        ENGRAM_FORCE_CPU_BACKEND: "1"
+        ENGRAM_DISABLE_SHEAF: "1"
+        ENGRAM_KI_DISABLE: "1"
+        ENGRAM_NREM_DISABLE: "1"
+        ENGRAM_PROFILE: agent
+        RUST_BACKTRACE: "1"
       run: |
-        # Uses target/debug/engram (current build from Phase 0 double-check)
-        if [ -f tools/test-harness/bin/engram-harness.sh ]; then
-          tools/test-harness/bin/engram-harness.sh || echo "Harness run (may require setup; verifies current binary/MCP/continuation as per build_check)"
-        else
-          echo "Harness script not present in this prep state; verified via cargo + engram MCP in plan execution (target/debug/engram 0.4.0 fresh Jun 2)"
-        fi
-    - name: Verify manifold + spatial + lawfulness (ritual dogfood via engram MCP if available in CI)
-      run: echo "In full CI would invoke mcp_engram_verify_manifold_integrity, spatial_status, genesis etc. (as done in Phase 0 engram records); current build confirmed healthy in prep."
+        set -euo pipefail
+        test -x target/debug/engram
+        file target/debug/engram
+        ldd target/debug/engram || true
+        STORE=$(mktemp -d)
+        printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"ci-smoke","version":"0"}}}' \
+          | timeout 8 target/debug/engram --store "$STORE" mcp 2>smoke-mcp.stderr || {
+            echo "::error::MCP smoke test failed — stderr:"
+            cat smoke-mcp.stderr
+            exit 1
+          }
+        head -30 smoke-mcp.stderr
+        rm -rf "$STORE"
+    - name: Run agent-memory harness (required)
+      env:
+        ENGRAM_FORCE_CPU_BACKEND: "1"
+        ENGRAM_DISABLE_SHEAF: "1"
+        ENGRAM_KI_DISABLE: "1"
+        ENGRAM_NREM_DISABLE: "1"
+        ENGRAM_PROFILE: agent
+        RUST_BACKTRACE: "1"
+      run: |
+        STABLE_BIN="$(pwd)/target/debug/engram" \
+        tools/test-harness/bin/engram-harness.sh --suite agent-memory --timeout 120 || {
+          echo "::group::Harness stderr dumps"
+          find /tmp -maxdepth 1 -name 'engram-harness-*.stderr.log' -print -exec cat {} \; 2>/dev/null || true
+          find tools/test-harness/logs -name '*.stderr.log' -print -exec cat {} \; 2>/dev/null || true
+          echo "::endgroup::"
+          exit 1
+        }
+    - name: Upload harness results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: agent-memory-harness-results
+        path: tools/test-harness/results/*agent-memory*.json

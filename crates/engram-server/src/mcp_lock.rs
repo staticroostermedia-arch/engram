@@ -23,9 +23,11 @@ impl McpStoreLock {
         let hash = blake3::hash(expanded.as_bytes());
         let lock_path = lock_dir.join(format!("mcp-{}.lock", &hash.to_hex()[..16]));
 
+        // Do NOT truncate before flock — a failed competitor would wipe the holder's PID
+        // from the lock file (observed when grok mcp doctor spawns while TUI holds MCP).
         let mut file = OpenOptions::new()
             .create(true)
-            .truncate(true)
+            .truncate(false)
             .read(true)
             .write(true)
             .open(&lock_path)?;
@@ -37,13 +39,18 @@ impl McpStoreLock {
             let ret = unsafe { libc::flock(fd, libc::LOCK_EX | libc::LOCK_NB) };
             if ret != 0 {
                 let other_pid = std::fs::read_to_string(&lock_path).unwrap_or_default();
+                let holder_hint = if other_pid.trim().is_empty() {
+                    "unknown (lock file empty — live holder still owns flock; check: pgrep -af 'engram.*mcp')"
+                } else {
+                    other_pid.trim()
+                };
                 anyhow::bail!(
                     "Another engram MCP server is already running on store '{expanded}'.\n\
                      Lock: {}\n\
                      Holder PID (from lock file): {}\n\
                      Fix: restart your IDE/TUI (one MCP instance per store), or stop the other process.",
                     lock_path.display(),
-                    other_pid.trim()
+                    holder_hint
                 );
             }
         }

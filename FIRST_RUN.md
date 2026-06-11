@@ -15,7 +15,7 @@ cd engram
 cargo install --path crates/engram-server
 
 engram --version
-# engram-server 0.4.x
+# engram-server 0.5.0
 ```
 
 ---

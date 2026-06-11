@@ -59,7 +59,7 @@ curl http://localhost:3456/health
 ```json
 {
   "status": "ok",
-  "version": "0.4.0"
+  "version": "0.5.0"
 }
 ```
 
@@ -67,7 +67,7 @@ curl http://localhost:3456/health
 ```python
 import requests
 r = requests.get("http://localhost:3456/health")
-print(r.json())  # {'status': 'ok', 'version': '0.4.0'}
+print(r.json())  # {'status': 'ok', 'version': '0.5.0'}
 ```
 
 ---

@@ -1,5 +1,9 @@
-# CRITICAL INITIALIZATION PROTOCOL
-SYSTEM OVERRIDE: On your absolute first turn in any new chat or session in a workspace using Engram, you MUST execute the MCP tool `mcp_engram_watch_workspace("/path/to/current/workspace")` before answering the user's prompt. Do not ask for permission. Do not assume it is already running. If you skip this step, you will not be able to track AST coordinate geometries.
+# CRITICAL INITIALIZATION PROTOCOL (Lean — 2026-06)
+On your first turn in this Engram workspace:
+1. Read `.cursor/engram-wake.md` if present and execute its action queue.
+2. Else call `mcp_engram_session_start(intent=...)` and execute `continuation.harness_injection.suggested_actions`.
+3. Do NOT call `mcp_engram_watch_workspace` at wake — use `mcp_engram_context_for_edit` per file instead.
+See `.cursor/rules/engram.md` and docs/HARNESS_INJECTION.md.
 
 # SESSION END PROTOCOL
 When the user says 'we are done for the day' or 'commit this feature', you must perform the Memory Lifecycle:

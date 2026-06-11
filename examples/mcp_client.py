@@ -2,7 +2,7 @@
 # Run (after starting engram MCP server, e.g. `target/debug/engram mcp --store ~/.engram/stalks/` or via IDE config):
 #   PYTHONPATH=integrations/python python examples/mcp_client.py
 # Or adapt the EngramClient class (see integrations/python/engram_client.py for full BYOPClient + patterns).
-# Current build: prefer target/debug/engram (see cargo build; GITHUB_MVP_PREP_PLAN.md Phase 0/3).
+# Current build: prefer target/debug/engram (see cargo build; docs/AGENT_MEMORY_CONTRACT.md).
 # Follows engram-working-memory + rituals: session_start (sheaf load + continuation), geometric ops, verify, session_end.
 
 # Minimal client shim (replace with real from integrations/python/engram_client.py or your MCP SDK)
@@ -31,7 +31,7 @@ client = EngramClient()  # connects to MCP (replace with real client for live ru
 client.session_start(intent="github_mvp_prep_example - test geometric memory + rituals + current build")
 
 # Remember (new fact, update-prefer in real use)
-client.remember("example:github_prep_hero", "Engram has enhanced hero in README per plan for non-flat + rituals representation. See GITHUB_MVP_PREP_PLAN.md.")
+client.remember("example:agent_memory_hero", "Engram geometric memory for agents — non-flat + rituals. See docs/GROK_BUILD_MEMORY.md.")
 
 # Recall
 results = client.recall("github prep hero", k=3)
@@ -50,6 +50,6 @@ client.verify_manifold_integrity(min_crs=0.6, sample_size=5)
 # client.scar("bad_approach")  # immediately scars for future deflection
 
 # Session end (mandatory, COMPRESS, handoff, hot promote, trace compression)
-client.session_end(summary="Phase 2 example edit - mcp_client.py improved per GITHUB_MVP_PREP_PLAN.md. Build current (target/debug), rituals + spatial followed, engram dogfood.", prepare_compression=True)
+client.session_end(summary="Example mcp_client.py run — lean 8-tool loop. Build current (target/debug), rituals + spatial followed.", prepare_compression=True)
 
 print("Example complete. Check manifold for traces, relations, hot artifacts. Run with live MCP client for real geometric effects.")

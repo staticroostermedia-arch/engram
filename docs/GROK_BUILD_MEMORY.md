@@ -16,14 +16,14 @@ Flat RAG (vectors + chunks) gives agents **retrieval**. Engram gives agents **co
 | Code = grep/RAG | `context_for_edit` — AST AABB + related traces per file |
 | No trust model | CRS tiers, scars, lawfulness verify |
 
-**The Grok Build integration story:** Engram is already an MCP server. Grok Build spawns it once per workspace. Agents follow an **8-tool contract** — not 62 tools, not a 5-tool wake cathedral.
+**The Grok Build integration story:** Engram is already an MCP server. Grok Build spawns it once per workspace. Agents follow an **8-tool contract** — not 66 tools, not a 5-tool wake cathedral.
 
 ---
 
 ## The 8-tool contract (ship this in Grok Build docs)
 
 ```
-WAKE   → session_start(intent)              # inline continuation bundle + readiness
+WAKE   → session_start(intent)              # inline continuation + harness_injection.suggested_actions
 WORK   → context_for_edit(path)             # before editing a file
        → recall(query, scope="anchors")     # goals/traces when stuck
        → quick_trace / remember             # forks and facts
@@ -32,7 +32,7 @@ PROBE  → get_backend_readiness              # lean vs deep, RSS-safe mode
 MODE   → set_memory_mode("deep")            # only when full recall needed
 ```
 
-**Load for every agent:** [`docs/AGENT_MEMORY_CONTRACT.md`](AGENT_MEMORY_CONTRACT.md) + [`SKILLS.md`](../SKILLS.md)
+**Load for every agent:** [`docs/AGENT_MEMORY_CONTRACT.md`](AGENT_MEMORY_CONTRACT.md) (8-tool highway) + [`docs/TOOL_DECISION_MAP.md`](TOOL_DECISION_MAP.md) (full 66-tool map) + [`SKILLS.md`](../SKILLS.md)
 
 ---
 
@@ -57,7 +57,7 @@ Use `scripts/engram-grok` — sets `ENGRAM_PROFILE=agent` (lean CUDA, deferred B
 
 See [`integrations/README.md`](../integrations/README.md) for Cursor, Claude, Antigravity, Codex.
 
-**Validated on:** 181k `.leg` blocks, ~230MB RSS, <2s lean wake, transport stable.
+**Validated on:** 183k+ `.leg` blocks, ~230MB RSS, <600ms lean wake (harness), transport stable. `agent-memory` suite green including `harness_injection` queue.
 
 ---
 

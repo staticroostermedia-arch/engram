@@ -65,8 +65,8 @@ All the requirements in one script:
 - `--side-by-side` — spawns stable + dev in parallel isolated stores, identical workload, automatic diff of alive/failure counts + timings.
 - `--repro-pre-fix` — simulates the exact old wrapper logic (cargo-first preference order, **no** aggressive duplicate killing, no forced `.leg-http.pid` cleanup, different KI env handling). Use this to re-create the pre-fix state on demand.
 - `--observe` — spawns background log tails (grep for MCP-FAST, Pipeline, LBVH, Transport, starvation, etc.) + ps/lsof/fd monitor on the store.
-- `--record-results` — emits ready-to-paste `mcp_engram_remember` / `relate` commands (with proper goal_context) plus a ready-to-append snippet for the living `Engram_Build_Launch_Configuration.md`.
-- `--pre-swap-validate` — **The one-command implementation of the Mandatory Pre-Binary-Swap Validation Protocol** (see the dedicated section in `Engram_Build_Launch_Configuration.md`). Forces strict side-by-side + high-iteration heavy suites (including momentum + lifetime + continuity metrics) + observe + record-results. This is the gate you must pass before any `cargo install` that could become your daily driver. Hard-fails on transport deaths or major regressions.
+- `--record-results` — emits ready-to-paste `mcp_engram_remember` / `relate` commands (with proper goal_context) plus a ready-to-append snippet for the living `tools/test-harness/README.md (harness results)`.
+- `--pre-swap-validate` — **The one-command implementation of the Mandatory Pre-Binary-Swap Validation Protocol** (see the dedicated section in `tools/test-harness/README.md (harness results)`). Forces strict side-by-side + high-iteration heavy suites (including momentum + lifetime + continuity metrics) + observe + record-results. This is the gate you must pass before any `cargo install` that could become your daily driver. Hard-fails on transport deaths or major regressions.
 - Duplicate launch contention test is always exercised.
 - Clean trap + PID management modeled on the proven `scripts/leg` launcher.
 
@@ -135,7 +135,7 @@ All runs are completely isolated from `~/.engram/stalks/`. The stable binary is 
 
 7. **Closed feedback loop into the living system**:
    - `--record-results` produces `mcp_engram_*` calls that become first-class episodic + relational artifacts (with goal_context linking to codeland handoff + MCP work).
-   - Emits a ready-to-append section for `docs/Engram_Build_Launch_Configuration.md`.
+   - Emits a ready-to-append section for `docs/tools/test-harness/README.md (harness results)`.
    - Results JSONs are themselves candidates for `mcp_engram_force_spatial_ingest` + `context_for_file`.
 
 8. **Integration with engram-tui** — The harness never touches the production stable store. After any harness run that flags a regression you simply run `engram-tui` (which self-heals duplicates + relaunches the known-good binary) and continue.
@@ -156,11 +156,11 @@ Any edit to these scripts or the client must follow the established Code Edit Ri
 - Post-edit spatial impact + `mcp_engram_force_spatial_ingest` on the harness dir.
 - Update this README + the living config only via the harness's own `--record-results` path where possible.
 
-This harness itself was created under that discipline (multiple pre-edit recon calls on the target files, the Engram_Build_Launch_Configuration.md, mcp.rs, main.rs, the stable launcher, and the subagent diagnostic notes in the manifold).
+This harness itself was created under that discipline (multiple pre-edit recon calls on the target files, the tools/test-harness/README.md (harness results), mcp.rs, main.rs, the stable launcher, and the subagent diagnostic notes in the manifold).
 
 ## References (Living Sources)
 
-- `docs/Engram_Build_Launch_Configuration.md` (the single source of truth for binary state, the ac3509a9 adoption, the transport incident, and the engram-tui wrapper).
+- `docs/tools/test-harness/README.md (harness results)` (the single source of truth for binary state, the ac3509a9 adoption, the transport incident, and the engram-tui wrapper).
 - `~/.engram-ac3509a9/bin/engram` + `~/bin/engram-tui` (the fixed production path).
 - `crates/engram-server/src/mcp.rs` and `main.rs` (the fast-path + tool implementations exercised by every suite).
 - `scripts/leg` (proven patterns for robust bg launch, PID files, traps, binary resolution — heavily reused here).

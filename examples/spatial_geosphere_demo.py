@@ -2,7 +2,7 @@
 # Demonstrates Item 1.5 spatial (force/context/recall_in_file) + geosphere frames + momentum (core of geometric non-flat).
 # Run: PYTHONPATH=integrations/python python examples/spatial_geosphere_demo.py
 #   (assumes engram MCP server running with current build: target/debug/engram or `cargo run -p engram-server`)
-# Per GITHUB_MVP_PREP_PLAN.md Phase 2: 'spatial_geosphere_demo'. Follows full Code Edit Ritual + working-memory.
+# spatial_geosphere_demo — follows Code Edit Ritual + working-memory (docs/skills/engram-working-memory.md).
 # Pre: watch + context + trace (this file); post: recontext + delta trace + relate/remember_solution.
 #
 # PATH NOTE (for GitHub/public clones): All workspace paths are now parameterized. Edit the WORKSPACE var
@@ -45,7 +45,7 @@ client.force_spatial_ingest([
     f"{WORKSPACE}/crates/engram-server/src/mcp.rs",
     f"{WORKSPACE}/crates/engram-server/src/store.rs",
     f"{WORKSPACE}/README.md",
-    f"{WORKSPACE}/docs/GITHUB_MVP_PREP_PLAN.md"
+    f"{WORKSPACE}/docs/GEOMETRIC_MEMORY.md"
 ], recursive=False)
 client.context_for_file(f"{WORKSPACE}/crates/engram-server/src/mcp.rs")  # pre recon
 client.recall_in_file("mcp", 100, 150)  # example AABB range (adjust from actual context)
@@ -53,13 +53,13 @@ client.recall_in_file("mcp", 100, 150)  # example AABB range (adjust from actual
 # === Core Demo ===
 client.set_geosphere_frame({"note": "demo frame for github prep spatial", "harmonic": 432})
 client.query_with_momentum("github mvp prep spatial geosphere ritual")  # directional p-tensor
-client.context_for_file(f"{WORKSPACE}/docs/GITHUB_MVP_PREP_PLAN.md")
+client.context_for_file(f"{WORKSPACE}/docs/GEOMETRIC_MEMORY.md")
 
 # === Ritual Post ===
 # (In real: re-call context/recall, record delta trace chained prev, relate to goal, remember_solution, scar friction)
 client.spatial_status()
 print("Spatial + geosphere demo complete. In live: expect AST nodes, CRS, momentum signals, item1.5 updates.")
-print("See docs/GEOMETRIC_MEMORY.md (spatial AABB, force, geosphere), RITUALS.md (Code Edit), GITHUB_MVP_PREP_PLAN.md.")
+print("See docs/GEOMETRIC_MEMORY.md (spatial AABB, force, geosphere), docs/RITUALS.md (Code Edit).")
 # session_end in full client usage
 
 # To make more live: after starting server, use the MCP tools directly in your agent env (search first).
