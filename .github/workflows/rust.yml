@@ -33,21 +33,22 @@ jobs:
     - name: Format check
       run: cargo fmt -- --check
 
-  mcp-harness-and-ritual:
+  agent-memory-harness:
+    name: MCP agent-memory (marketplace gate)
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
     - name: Install dependencies
-      run: sudo apt-get update && sudo apt-get install -y capnproto
-    - name: Build
-      run: cargo build
-    - name: Run MCP harness (current build verification)
+      run: sudo apt-get update && sudo apt-get install -y capnproto python3
+    - name: Build engram-server
+      run: cargo build -p engram-server
+    - name: Run agent-memory harness (required)
       run: |
-        # Uses target/debug/engram (current build from Phase 0 double-check)
-        if [ -f tools/test-harness/bin/engram-harness.sh ]; then
-          tools/test-harness/bin/engram-harness.sh || echo "Harness run (may require setup; verifies current binary/MCP/continuation as per build_check)"
-        else
-          echo "Harness script not present in this prep state; verified via cargo + engram MCP in plan execution (target/debug/engram 0.4.0 fresh Jun 2)"
-        fi
-    - name: Verify manifold + spatial + lawfulness (ritual dogfood via engram MCP if available in CI)
-      run: echo "In full CI would invoke mcp_engram_verify_manifold_integrity, spatial_status, genesis etc. (as done in Phase 0 engram records); current build confirmed healthy in prep."
+        STABLE_BIN=target/debug/engram \
+        tools/test-harness/bin/engram-harness.sh --suite agent-memory --timeout 120
+    - name: Upload harness results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: agent-memory-harness-results
+        path: tools/test-harness/results/*agent-memory*.json

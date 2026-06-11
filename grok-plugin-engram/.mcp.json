@@ -1,0 +1,13 @@
+{
+  "_comment": "Canonical Engram MCP for Grok plugin install. Uses bin/engram-grok in plugin root. Run scripts/install-engram-plugin.sh if binary missing.",
+  "mcpServers": {
+    "engram": {
+      "command": "./bin/engram-grok",
+      "args": ["mcp"],
+      "env": {
+        "ENGRAM_STORE": "~/.engram/stalks/",
+        "ENGRAM_PROFILE": "agent"
+      }
+    }
+  }
+}
