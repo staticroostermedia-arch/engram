@@ -241,19 +241,33 @@ See [MCP_TOOLS_REFERENCE.md](MCP_TOOLS_REFERENCE.md) for parameter detail. Quick
 
 ---
 
-## Grok Build slash commands
+## Slash commands (agent primary user — 20)
 
-| Command | Layer | Maps to |
-|---------|-------|---------|
-| `/engram-wake` | 0 | `session_start` |
-| `/engram-edit` | 0 | `context_for_edit` + recall + trace |
-| `/engram-recall` | 0 | `recall(scope=anchors)` |
-| `/engram-trace` | 0–1 | `quick_trace` (+ `scar` if dead end) |
-| `/engram-session-end` | 0 | `session_end` |
-| `/engram-deep` | 0→2 | `set_memory_mode(deep)` + power tools |
-| `/engram-update` | 1 | `recall` → `update` write path |
-| `/engram-momentum` | 2 | `query_with_momentum` |
-| `/engram-relate` | 1–2 | `relate` → `search_by_relation` → `visualize` |
+Each command = one **decision moment**, not one tool. Full agent guide: [grok-plugin-engram/commands/README.md](../grok-plugin-engram/commands/README.md)
+
+| Moment | Command | Layer | MCP core |
+|--------|---------|-------|----------|
+| Session start | `/engram-wake` | 0 | `session_start` |
+| Session end | `/engram-session-end` | 0 | `session_end` |
+| Before file edit | `/engram-edit` | 0 | `context_for_edit` + recall + trace |
+| Stuck | `/engram-recall` | 0 | `recall(anchors)` |
+| Full concept body | `/engram-read` | 2 | `read_concept` |
+| Probe readiness | `/engram-ready` | 0 | `get_backend_readiness` |
+| Decision fork | `/engram-trace` | 0–1 | `quick_trace` |
+| Refine existing | `/engram-update` | 1 | `recall` → `update` |
+| New concept | `/engram-remember` | 1 | `recall` → `remember` |
+| Verified fix | `/engram-solution` | 1 | `remember_solution` |
+| Dead end | `/engram-scar` | 1 | `scar` |
+| Graph edge | `/engram-relate` | 1 | `relate` |
+| Trending | `/engram-momentum` | 2 | `query_with_momentum` |
+| Similar (geo) | `/engram-pure` | 2 | `query_pure` |
+| Graph explore | `/engram-graph` | 2 | `search_by_relation` + `visualize` |
+| Meta arc | `/engram-tile` | 3 | `thought_tile_create` |
+| Goal focus | `/engram-goal` | 3 | `goal_set_primary` / `goal_list` |
+| Deep mode | `/engram-deep` | 0→2 | `set_memory_mode(deep)` |
+| Lean restore | `/engram-lean` | 0 | `set_memory_mode(lean)` |
+| Lawfulness | `/engram-verify` | 3 | `verify_manifold_integrity` |
+| Spatial recovery | `/engram-ingest` | 4 | `force_spatial_ingest` / `incremental` |
 
 Plugin: `grok-plugin-engram/commands/`
 

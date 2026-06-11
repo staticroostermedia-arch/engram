@@ -10,4 +10,6 @@ Only when lean recall is insufficient (meta arcs, relation graphs, lawfulness au
 3. Optionally call `mcp_engram_search_by_relation` or `mcp_engram_query_with_momentum` for the user's topic.
 4. Warn the user: deep mode may trigger heavier recall and BVH work on large stores.
 
-Do **not** call `watch_workspace` or `rebuild_bvh` automatically. Return to lean with `set_memory_mode("lean")` when the deep task is done unless the user wants to stay in deep.
+Do **not** call `watch_workspace` or `rebuild_bvh` automatically.
+
+When deep work is done, run `/engram-lean` (or `set_memory_mode("lean")`) before handoff unless the user wants deep to persist.

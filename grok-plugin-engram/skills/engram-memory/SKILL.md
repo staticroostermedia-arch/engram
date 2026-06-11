@@ -1,120 +1,73 @@
 ---
 name: engram-memory
 description: >
-  Engram geometric memory — 8-tool lean contract for Grok Build. Use at session
-  start (wake), before file edits, when recalling goals/traces, and at session end
-  (handoff). Do not call watch_workspace or rebuild_bvh unless user explicitly asks.
+  Engram geometric memory for AI agents — slash commands map decision moments
+  to MCP rituals. You are the primary user. Lean highway + power escalation.
 metadata:
-  short-description: "Geometric memory — wake, edit context, handoff"
+  short-description: "Geometric memory — full slash command index"
 ---
 
-# Engram Memory — 8-Tool Contract
+# Engram Memory — Agent Primary User
 
-You have **persistent geometric memory** via the Engram MCP server. Follow this contract — not all 66 tools (62 `mcp_engram_*` + 4 linguistic).
+**You are the primary user.** Use slash commands as triggers — each runs a full MCP ritual. Full map: `docs/TOOL_DECISION_MAP.md` · Index: `grok-plugin-engram/commands/README.md`
 
-## Agent discipline (non-negotiable)
+## Non-negotiable every session
 
-**Calling tools is the product.** Reading this skill without invoking MCP leaves no geometric record.
+| Trigger | Command |
+|---------|---------|
+| Start | `/engram-wake` |
+| End | `/engram-session-end` |
 
-| Trigger | You MUST call |
-|---------|---------------|
-| Session / task start | `mcp_engram_session_start` or `/engram-wake` |
-| Before any file edit | `mcp_engram_context_for_edit` or `/engram-edit` |
-| Stuck / need goals | `mcp_engram_recall(scope=anchors)` or `/engram-recall` |
-| Decision fork | `mcp_engram_quick_trace` or `/engram-trace` |
-| End of block | `mcp_engram_session_end` or `/engram-session-end` |
+## Work loop
 
-Per-ritual skills (`engram-wake-up`, `engram-working-memory`, `engram-session-end`) expand each row. Use slash commands when you would otherwise skip the tool call.
+| Trigger | Command |
+|---------|---------|
+| Before file edit | `/engram-edit` |
+| Stuck on goals/decisions | `/engram-recall` |
+| Preview truncated | `/engram-read` |
+| Recall feels weak | `/engram-ready` |
+| Decision fork | `/engram-trace` |
 
-## Slash commands (Grok Build plugin)
+## Write path (ONE per persist)
 
-| Command | Ritual |
-|---------|--------|
-| `/engram-wake` | `session_start` + continuation report |
-| `/engram-edit` | `context_for_edit` + anchor recall + pre-edit trace |
-| `/engram-recall` | `recall(scope=anchors)` when stuck |
-| `/engram-trace` | `quick_trace` at a fork |
-| `/engram-session-end` | `session_end` structured packet |
-| `/engram-deep` | `set_memory_mode(deep)` — sparingly |
-| `/engram-update` | `recall` → `update` write path |
-| `/engram-momentum` | `query_with_momentum` after anchors fail |
-| `/engram-relate` | `relate` + optional `search_by_relation` / `visualize` |
+| Trigger | Command |
+|---------|---------|
+| Refine existing (>0.85) | `/engram-update` |
+| New concept | `/engram-remember` |
+| Verified fix | `/engram-solution` |
+| Dead end | `/engram-scar` |
+| Graph edge | `/engram-relate` |
 
-## Every session
+## Read escalation
 
-### 1. Wake (mandatory first call)
+| Trigger | Command |
+|---------|---------|
+| Trending / evolving | `/engram-momentum` |
+| Geometric similarity | `/engram-pure` |
+| Graph explore | `/engram-graph` |
 
-```
-mcp_engram_session_start(intent="<your objective for this session>")
-```
+## Meta & mode
 
-Returns inline: `continuation_bundle`, `backend_readiness`, `session_key`.
+| Trigger | Command |
+|---------|---------|
+| Multi-phase arc | `/engram-tile` |
+| Goal focus | `/engram-goal` |
+| Deep exploration | `/engram-deep` |
+| Back to lean | `/engram-lean` |
+| Lawfulness check | `/engram-verify` |
+| Spatial recovery | `/engram-ingest` |
 
-Read `continuation_bundle.primary_goal` and state: *"Continuing from …"*
+## Agent discipline
 
-### 2. Before editing a file
+Calling tools **is** the product. Documentation without MCP calls leaves no geometric record.
 
-```
-mcp_engram_context_for_edit(path="/absolute/path/to/file")
-```
+**Cursor throttle:** wake + edit on substrate paths + session-end minimum; escalate at forks.  
+**Grok Build throttle:** invoke liberally — edit every file, trace every fork, update design/progress blocks.
 
-### 3. When stuck — anchors first
+**Never** `forget` + `remember` on the same concept.
 
-```
-mcp_engram_recall(query="<goal or trace keywords>", scope="anchors", k=5)
-```
-
-### 4. At forks
-
-```
-mcp_engram_quick_trace(decision="...", why="...", goal_context="goal:...")
-```
-
-### 5. Persist — write path (recall first)
-
-```
-mcp_engram_recall(query="...", scope="anchors")   # always first
-# score >0.85 on existing concept → mcp_engram_update (NOT remember)
-# no match → mcp_engram_remember
-# verified fix → mcp_engram_remember_solution
-# dead end → mcp_engram_scar
-```
-
-### 5b. Escalate read (when anchors fail)
-
-| Situation | Tool |
-|-----------|------|
-| Preview too short | `read_concept` |
-| Arc direction / trend | `query_with_momentum` |
-| Geometric similarity | `query_pure` |
-| Graph neighborhood | `search_by_relation` → `visualize` |
-| Meta multi-phase arc | `thought_tile_create` |
-| CRS / lawfulness doubt | `verify_manifold_integrity` |
-
-**Full map:** `docs/TOOL_DECISION_MAP.md` (all 66 tools, mermaid diagrams)
-
-### 6. End (mandatory)
-
-```
-mcp_engram_session_end(summary="<decisions, files, open questions>", prepare_compression=true)
-```
-
-## Probe / mode
-
-- `mcp_engram_get_backend_readiness()` — after wake if recall seems bounded
-- `mcp_engram_set_memory_mode(mode="deep")` — only for full-manifold exploration
-
-## Do NOT at wake (lean default)
-
-| Avoid | Why |
-|-------|-----|
-| `watch_workspace` | RAM spike on large repos |
-| `rebuild_bvh` | Minutes + GB RAM |
-| `summarize` | Redundant — inline in session_start |
-| `list_concepts` | Full store scan |
-
-## Full docs (repo)
+## Docs
 
 - `docs/AGENT_MEMORY_CONTRACT.md` — 8-tool highway
-- `docs/TOOL_DECISION_MAP.md` — **all 66 tools**, write path, Grok vs Cursor throttle
+- `docs/TOOL_DECISION_MAP.md` — all 66 tools + mermaid
 - `docs/GROK_BUILD_MEMORY.md`

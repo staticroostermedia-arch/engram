@@ -7,7 +7,8 @@ This is the canonical entry point for the published ritual protocols.
 ## Start Here — 8-Tool Agent Memory Contract
 
 **Read this first:** [docs/AGENT_MEMORY_CONTRACT.md](docs/AGENT_MEMORY_CONTRACT.md)  
-**Full tool map (66 tools):** [docs/TOOL_DECISION_MAP.md](docs/TOOL_DECISION_MAP.md)
+**Full tool map (66 tools):** [docs/TOOL_DECISION_MAP.md](docs/TOOL_DECISION_MAP.md)  
+**Slash commands (agent primary user):** [grok-plugin-engram/commands/README.md](grok-plugin-engram/commands/README.md)
 
 The minimal agent path on large stores (181k+ blocks):
 

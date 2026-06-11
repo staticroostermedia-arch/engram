@@ -2,6 +2,8 @@
 
 **Not another vector database.** Local geometric memory with structured session handoff, CRS-gated blocks, and edit-scoped code context.
 
+**Primary user: the AI agent.** Slash commands map decision moments → MCP rituals. See [commands/README.md](commands/README.md).
+
 ## Install
 
 ### From this repo (development)
@@ -23,23 +25,50 @@ Or use the installer script from repo root:
 ./scripts/install-engram-plugin.sh
 ```
 
-### Ritual slash commands
+## Slash commands (20)
 
+### Session boundary
 | Command | When |
 |---------|------|
-| `/engram-wake` | Start of session — continuation bundle |
-| `/engram-edit` | Before editing a file — spatial + anchor context |
-| `/engram-recall` | Stuck — goals/traces/rituals first |
-| `/engram-trace` | Significant decision fork |
-| `/engram-session-end` | End of session — structured handoff for next wake |
-| `/engram-deep` | Rare — full manifold / relation exploration |
-| `/engram-update` | Refine existing concept — recall → `update` (never forget+remember) |
-| `/engram-momentum` | Arc direction — what's trending after anchors fail |
-| `/engram-relate` | Graph edge between two concepts + optional visualize |
+| `/engram-wake` | Start — continuation bundle |
+| `/engram-session-end` | End — structured handoff |
 
-In a Grok session, run `/engram-wake` first (or `mcp_engram_session_start`).
+### Work loop
+| Command | When |
+|---------|------|
+| `/engram-edit` | Before editing a file |
+| `/engram-recall` | Stuck — goals/traces first |
+| `/engram-read` | Full concept body after recall |
+| `/engram-ready` | Probe recall mode / BVH |
+| `/engram-trace` | Decision fork |
 
-Expected: continuation bundle + `fully_initialized: true` within ~30s on first cold boot.
+### Write path
+| Command | When |
+|---------|------|
+| `/engram-update` | Refine existing concept |
+| `/engram-remember` | New concept (no match) |
+| `/engram-solution` | Verified fix → praxis |
+| `/engram-scar` | Dead end repulsion |
+| `/engram-relate` | Graph edge between concepts |
+
+### Read escalation
+| Command | When |
+|---------|------|
+| `/engram-momentum` | What's trending |
+| `/engram-pure` | Geometric similarity |
+| `/engram-graph` | Graph walk + visualize |
+
+### Meta & mode
+| Command | When |
+|---------|------|
+| `/engram-tile` | Multi-phase meta arc |
+| `/engram-goal` | Goal stack / primary |
+| `/engram-deep` | Full manifold (sparingly) |
+| `/engram-lean` | Return to fast default |
+| `/engram-verify` | Lawfulness check |
+| `/engram-ingest` | Spatial recovery |
+
+Run `/engram-wake` first in every session.
 
 ## Why Engram vs flat memory
 
@@ -50,13 +79,15 @@ Expected: continuation bundle + `fully_initialized: true` within ~30s on first c
 | Grep/RAG for code | `context_for_edit` — AST spatial + related traces |
 | No trust model | CRS tiers + lawfulness verify |
 
-## 8-tool contract
+## Skills & docs
 
-Wake → `session_start` · Work → `context_for_edit` + `recall` + `quick_trace` · End → `session_end`
+**Skills:** `engram-memory` (index) · `engram-wake-up` · `engram-working-memory` · `engram-session-end`
 
-**Skills:** `engram-memory` (overview + discipline table) · `engram-wake-up` · `engram-working-memory` · `engram-session-end`
+- [docs/AGENT_MEMORY_CONTRACT.md](../docs/AGENT_MEMORY_CONTRACT.md) — 8-tool highway
+- [docs/TOOL_DECISION_MAP.md](../docs/TOOL_DECISION_MAP.md) — all 66 tools
+- [commands/README.md](commands/README.md) — agent moment → command map
 
-See [docs/AGENT_MEMORY_CONTRACT.md](../docs/AGENT_MEMORY_CONTRACT.md) (8-tool highway) and [docs/TOOL_DECISION_MAP.md](../docs/TOOL_DECISION_MAP.md) (all 66 tools — `update`, momentum, relation, tiles). **Tools must be called** — documentation alone does not persist memory.
+**Tools must be called** — documentation alone does not persist memory.
 
 ## Troubleshooting
 
