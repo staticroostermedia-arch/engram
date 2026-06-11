@@ -36,13 +36,20 @@ jobs:
   agent-memory-harness:
     name: MCP agent-memory (marketplace gate)
     runs-on: ubuntu-latest
+    env:
+      # Headless CI has no CUDA/display — wgpu init aborts (SIGABRT). Force CPU backend at compile time.
+      ENGRAM_FORCE_BACKEND: cpu
     steps:
     - uses: actions/checkout@v4
     - name: Install dependencies
       run: sudo apt-get update && sudo apt-get install -y capnproto python3
-    - name: Build engram-server
+    - name: Build engram-server (CPU-only for headless harness)
       run: cargo build -p engram-server
     - name: Run agent-memory harness (required)
+      env:
+        ENGRAM_FORCE_CPU_BACKEND: "1"
+        ENGRAM_DISABLE_SHEAF: "1"
+        ENGRAM_KI_DISABLE: "1"
       run: |
         STABLE_BIN=target/debug/engram \
         tools/test-harness/bin/engram-harness.sh --suite agent-memory --timeout 120

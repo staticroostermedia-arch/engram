@@ -115,6 +115,7 @@ class MCPTestClient:
         # Isolated harness stores must not load production sheaf.toml multi-stalk config.
         self.env.setdefault("ENGRAM_DISABLE_SHEAF", "1")
         self.env.setdefault("ENGRAM_FORCE_CPU_BACKEND", "1")
+        self.env.setdefault("ENGRAM_KI_DISABLE", "1")
         self.env.setdefault("ENGRAM_PROFILE", "agent")
         if env_overrides:
             self.env.update(env_overrides)
@@ -176,7 +177,7 @@ class MCPTestClient:
     def start(self) -> bool:
         if self.proc:
             return True
-        cmd = [self.binary, "mcp", "--store", self.store_dir]
+        cmd = [self.binary, "--store", self.store_dir, "mcp"]
         self._log(f"Spawning: {' '.join(cmd)} (stderr -> {self.stderr_log})")
         try:
             self.proc = subprocess.Popen(
