@@ -1,6 +1,6 @@
 # MCP Tools Reference
 
-Engram exposes **62 MCP tools**. Most agents should use **8** — see [`AGENT_MEMORY_CONTRACT.md`](AGENT_MEMORY_CONTRACT.md).
+Engram exposes **66 MCP tools** (62 `mcp_engram_*` + 4 linguistic). Most agents should use **8** — see [`AGENT_MEMORY_CONTRACT.md`](AGENT_MEMORY_CONTRACT.md).
 
 Tools are grouped by tier:
 

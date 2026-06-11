@@ -265,7 +265,7 @@ The next instance's `session_start` surfaces `handoff_packet` fields inside `con
 | `mcp_engram_query_pure` / `query_with_momentum` | Extra wake round-trips | Deep mode or anchor recall returned empty |
 | `mcp_engram_summarize` | Duplicates bundle artifacts | Deep mode orientation pass |
 | `mcp_engram_incremental_spatial_ingest` | Bundled via `session_start(include_spatial=true)` | Explicit path bootstrap |
-| `mcp_engram_list` / `list_concepts` | Full store scan on 181k+ blocks | Never in lean; use `recall(scope=anchors)` |
+| `mcp_engram_list_concepts` | Full store scan on 181k+ blocks | Never in lean; use `recall(scope=anchors)` |
 | `mcp_engram_force_spatial_ingest` | Full force ingest (81+ files) | Cold bootstrap only, deep mode |
 
 **Rule of thumb:** If the 8-tool path answers your question, stop. Escalate to power tools deliberately, then return to lean.

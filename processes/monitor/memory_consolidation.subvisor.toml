@@ -1,0 +1,37 @@
+# agent:engram.monitor.memory-consolidation
+# H¹ subvisor for memory_consolidation_loop (meta workflow).
+
+[process]
+name = "agent:engram.monitor.memory-consolidation"
+zedos_type = "monitor"
+phase_seed = "0xMEMCONSUB202606"
+
+[category]
+object = "subvisor"
+morphism = "OP_INVERT"
+sheaf_role = "Prevents over-ablation or loss of critical high-CRS/pinned memories during consolidation."
+h1_handler = "OP_IS_SYMBOLIC_OF"
+
+[mcp_tools]
+list = ["mcp_engram_forget_old", "mcp_engram_scar", "mcp_engram_verify_manifold_integrity"]
+
+[requires]
+list = ["process:engram.monitor.subvisor", "process:engram.ritual.nrem-consolidation"]
+
+[produces]
+list = ["scar:*_memory_consolidation", "trace:*_consolidation_oversight"]
+
+[invariants]
+list = ["pinned_never_ablated_without_override", "manifold_integrity_preserved", "crs_0.74_gate"]
+
+[subvisor]
+name = "memory_consolidation"
+description = "H1 subvisor for memory_consolidation_loop. Prevents over-ablation or loss of critical high-CRS/pinned memories."
+h1 = "OP_INVERT"
+monitored_tools = ["ablate", "consolidate", "mcp_engram_forget_old", "mcp_engram_scar"]
+invariants = [
+  "pinned (CRS=1.0) memories never ablated without explicit override + verify",
+  "post-ablation manifold_integrity >= pre-ablation",
+  "no ablation of active goal-related or recent high-value traces"
+]
+kill_conditions = ["critical_memory_targeted", "integrity_drop", "over_ablation"]

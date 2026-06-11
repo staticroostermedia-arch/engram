@@ -137,7 +137,7 @@ This advances Engram from geometric memory to geometric *reasoning* substrate (c
 | Continuation | Bundles, session_end handoff, hot path, ego.leg3/NREM | Session state | None | Workflow state |
 | Declarative Processes | 7+ tomls (ritual/harness/operator/monitor/subvisor) registered at start | Config | None | YAML flows |
 | Hardware Native | 256KB .leg3, O_DIRECT, GPUDirect, LBVH, 8192D phase | CPU/GPU vectors | Index on CPU/GPU | LLM + vector |
-| MCP / Agent Native | 8-tool lean contract + 62 MCP tools tiered, process sheaf | API/ SDK | gRPC/REST clients | API |
+| MCP / Agent Native | 8-tool lean contract + 66 MCP tools tiered, process sheaf | API/ SDK | gRPC/REST clients | API |
 | Self-Model / Lawfulness | CRS gates, lawfulness metrics, scars deflect | Logging | Metrics | Eval hooks |
 
 (Emulates polish from popular while preserving Engram's non-flat identity. Full details + gaps closed in [docs/GITHUB_MVP_PREP_PLAN.md](docs/GITHUB_MVP_PREP_PLAN.md).)

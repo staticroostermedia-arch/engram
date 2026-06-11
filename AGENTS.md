@@ -74,7 +74,18 @@ See processes/, mcp.rs, docs/RITUALS.md.
 - Use todo_write for complex multi-step.
 - For MCP in harnesses: ALWAYS `search_tool` first (exact schema), then `use_tool` (qualified name e.g. engram__mcp_engram_...).
 - Hot promotion for high-value artifacts: `promote_hot`.
-- **Do not delete MCP tools** — tier in documentation only; 62 tools remain for power users.
+- **Do not delete MCP tools** — tier in documentation only; 66 tools remain for power users (62 `mcp_engram_*` + 4 linguistic).
+
+## Agent discipline — tools must be called
+
+Documentation alone does not create memory. **Every session:**
+
+1. `mcp_engram_session_start(intent)` — first call, every chat/restart.
+2. `mcp_engram_context_for_edit(path)` — before editing any file in `crates/`, `processes/`, `docs/`, `grok-plugin-engram/`.
+3. `mcp_engram_quick_trace` — at every significant fork (design choice, commit boundary).
+4. `mcp_engram_session_end(summary, prepare_compression=true)` — end of every work block.
+
+If you completed substantive work without calling these tools, the substrate has no geometric record — treat that as a contract violation. Slash commands (`/engram-wake`, `/engram-edit`, `/engram-trace`, `/engram-session-end`) exist to make invocation habitual.
 
 See also:
 - **Public agent rituals**: [SKILLS.md](SKILLS.md) + `docs/skills/`

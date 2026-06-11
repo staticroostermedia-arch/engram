@@ -16,7 +16,7 @@ h1_handler = "OP_GEOMETRIC_PRODUCT"
 list = ["mcp_engram_session_start", "mcp_engram_context_for_edit", "mcp_engram_record_reasoning_trace", "mcp_engram_verify_manifold_integrity", "mcp_engram_quick_trace", "mcp_engram_remember", "mcp_engram_relate"]
 
 [requires]
-list = ["__system_state__", "ritual:wake_up_anchor", "process:linguistic-calculus", "ritual:nrem-consolidation"]
+list = ["__system_state__", "ritual:wake_up_anchor", "process:engram.linguistic.linguistic-calculus", "process:engram.ritual.nrem-consolidation"]
 
 [produces]
 list = ["ego.leg3", "linguistic_bundle_high_crs", "trace:*_linguistic_wake", "NREM_promoted_linguistic"]

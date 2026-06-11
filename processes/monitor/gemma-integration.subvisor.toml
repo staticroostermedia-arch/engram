@@ -1,0 +1,32 @@
+# agent:engram.monitor.gemma-integration
+# H¹ subvisor for complete-gemma-integration workflow (see processes/workflow/).
+
+[process]
+name = "agent:engram.monitor.gemma-integration"
+zedos_type = "monitor"
+phase_seed = "0xGEMMASUB202606"
+
+[category]
+object = "subvisor"
+morphism = "OP_INVERT"
+sheaf_role = "H¹ oversight for Gemma integration loop: convert, launch, embed update, test stack. Kill on doom loop or CRS failure."
+h1_handler = "OP_IS_SYMBOLIC_OF"
+
+[mcp_tools]
+list = ["mcp_engram_scar", "mcp_engram_quick_trace", "mcp_engram_verify_manifold_integrity"]
+
+[requires]
+list = ["process:engram.monitor.subvisor", "goal:mvp_gap_closure_v1"]
+
+[produces]
+list = ["scar:*_gemma_subvisor", "trace:*_gemma_oversight"]
+
+[invariants]
+list = ["crs_0.74_gate", "no_infinite_loop", "embeddings_endpoint_healthy"]
+
+[subvisor]
+name = "gemma-integration"
+description = "H1 oversight for complete-gemma-integration work loop + world_state_ingestion + Starlink collector. Use OP_INVERT to monitor tool graph for convert/launch/update/test/world_state/collect steps, kill on doom loop or error."
+h1 = "OP_INVERT"
+monitored_tools = ["convert", "launch", "update", "test", "world_state_ingestion", "starlink_collect", "pre_audit_and_threshold", "synthesize_and_store"]
+invariants = ["no infinite loop", "success on convert and test", "pre-recall before full collect for machine/world facts", "embeddings endpoint healthy for Engram projection", "crs>=0.74 on stored world snapshots"]

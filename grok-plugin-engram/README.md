@@ -51,7 +51,9 @@ Expected: continuation bundle + `fully_initialized: true` within ~30s on first c
 
 Wake → `session_start` · Work → `context_for_edit` + `recall` + `quick_trace` · End → `session_end`
 
-See skill `engram-memory` and [docs/AGENT_MEMORY_CONTRACT.md](../docs/AGENT_MEMORY_CONTRACT.md).
+**Skills:** `engram-memory` (overview + discipline table) · `engram-wake-up` · `engram-working-memory` · `engram-session-end`
+
+See [docs/AGENT_MEMORY_CONTRACT.md](../docs/AGENT_MEMORY_CONTRACT.md). **Tools must be called** — documentation alone does not persist memory.
 
 ## Troubleshooting
 

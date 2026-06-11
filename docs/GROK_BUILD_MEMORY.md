@@ -16,7 +16,7 @@ Flat RAG (vectors + chunks) gives agents **retrieval**. Engram gives agents **co
 | Code = grep/RAG | `context_for_edit` — AST AABB + related traces per file |
 | No trust model | CRS tiers, scars, lawfulness verify |
 
-**The Grok Build integration story:** Engram is already an MCP server. Grok Build spawns it once per workspace. Agents follow an **8-tool contract** — not 62 tools, not a 5-tool wake cathedral.
+**The Grok Build integration story:** Engram is already an MCP server. Grok Build spawns it once per workspace. Agents follow an **8-tool contract** — not 66 tools, not a 5-tool wake cathedral.
 
 ---
 

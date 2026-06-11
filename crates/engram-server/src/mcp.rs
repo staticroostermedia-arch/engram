@@ -135,6 +135,7 @@ fn load_process_sheaf(store: &SharedStore) -> Result<(), String> {
         "monitor",
         "process",
         "linguistic",
+        "meta",
     ];
     // Phase 2 – Sheaf Gluing & Spacetime Integration (additive only, no core changes to .leg3/VSA/MCP base, reuse h1_handler/OP_IS_SYMBOLIC_OF/OP_GEOMETRIC_PRODUCT patterns per audit; sub-agent handoff; file:130):
     // - Add "linguistic" to walk (subdirs array).
@@ -174,6 +175,15 @@ fn load_process_sheaf(store: &SharedStore) -> Result<(), String> {
                             }
                         };
                         let proc = value.get("process").and_then(|v| v.as_table());
+                        // Skip workflow-only TOMLs ([workflow] without [process]) — orchestration
+                        // specs for humans/agents, not sheaf-registered process blocks.
+                        if proc.is_none() {
+                            debug!(
+                                "Skipping {} — no [process] section (workflow-only TOML)",
+                                path.display()
+                            );
+                            continue;
+                        }
                         let raw_name = proc
                             .and_then(|t| t.get("name"))
                             .and_then(|v| v.as_str())
@@ -6483,6 +6493,24 @@ mod tests {
                     .is_some()
         };
         assert!(has_registered, "load_process_sheaf must have parsed real *.toml (incl. processes/monitor/* for self_improvement) and stored/registered process:engram.* keys + created relates");
+
+        // Unique [process].name per subvisor + meta sheaf (no monitor.unknown collision)
+        let unique_keys = [
+            "process:engram.monitor.gemma-integration",
+            "process:engram.monitor.memory-consolidation",
+            "process:engram.monitor.self-improvement",
+            "process:engram.meta.grok_marketplace_prep",
+        ];
+        {
+            let lock = store.lock().unwrap();
+            for key in &unique_keys {
+                assert!(
+                    lock.fetch_block_high_priority(key).is_some(),
+                    "expected sheaf registration for unique process key: {}",
+                    key
+                );
+            }
+        }
 
         let _ = std::fs::remove_dir_all(&tmp);
     }

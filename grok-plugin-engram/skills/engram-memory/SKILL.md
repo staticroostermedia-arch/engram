@@ -10,7 +10,21 @@ metadata:
 
 # Engram Memory — 8-Tool Contract
 
-You have **persistent geometric memory** via the Engram MCP server. Follow this contract — not all 62 tools.
+You have **persistent geometric memory** via the Engram MCP server. Follow this contract — not all 66 tools (62 `mcp_engram_*` + 4 linguistic).
+
+## Agent discipline (non-negotiable)
+
+**Calling tools is the product.** Reading this skill without invoking MCP leaves no geometric record.
+
+| Trigger | You MUST call |
+|---------|---------------|
+| Session / task start | `mcp_engram_session_start` or `/engram-wake` |
+| Before any file edit | `mcp_engram_context_for_edit` or `/engram-edit` |
+| Stuck / need goals | `mcp_engram_recall(scope=anchors)` or `/engram-recall` |
+| Decision fork | `mcp_engram_quick_trace` or `/engram-trace` |
+| End of block | `mcp_engram_session_end` or `/engram-session-end` |
+
+Per-ritual skills (`engram-wake-up`, `engram-working-memory`, `engram-session-end`) expand each row. Use slash commands when you would otherwise skip the tool call.
 
 ## Slash commands (Grok Build plugin)
 

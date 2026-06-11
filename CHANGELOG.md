@@ -44,7 +44,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **Public agent path:** README, AGENTS.md, FIRST_RUN.md, SKILLS.md, wake-up skill, `integrations/workflows/wake_up.md`, MCP configs — all lead with 8-tool lean contract (not mandatory `watch_workspace` at wake).
-- `docs/MCP_TOOLS_REFERENCE.md` — Essential / Power / Lean-avoid tiers (62 tools retained, not deleted).
+- `docs/MCP_TOOLS_REFERENCE.md` — Essential / Power / Lean-avoid tiers (66 tools retained, not deleted).
 - Public surface now explicitly represents current MVP uniques (geometric sheaf + rituals + subvisor + spatial + continuation + lawfulness + process sheaf) vs flat vector/RAG clones.
 - CI triggers expanded; build hygiene enforced (target/debug/engram preferred).
 
