@@ -76,6 +76,7 @@ impl EngramProfile {
         Self::set_default("ENGRAM_DEFER_BVH", "1");
         Self::set_default("ENGRAM_DEFER_WATCH_INGEST", "1");
         Self::set_default("ENGRAM_KI_LEAN", "1");
+        Self::set_default("ENGRAM_NREM_DISABLE", "1");
         Self::set_default("ENGRAM_KI_TICK_SECS", "300");
         Self::set_default("ENGRAM_LEAN_RECALL_POOL", "4000");
         Self::set_default("ENGRAM_LEAN_ANCHOR_POOL", "800");

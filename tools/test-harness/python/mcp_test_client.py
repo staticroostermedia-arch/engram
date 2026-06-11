@@ -116,6 +116,7 @@ class MCPTestClient:
         self.env.setdefault("ENGRAM_DISABLE_SHEAF", "1")
         self.env.setdefault("ENGRAM_FORCE_CPU_BACKEND", "1")
         self.env.setdefault("ENGRAM_KI_DISABLE", "1")
+        self.env.setdefault("ENGRAM_NREM_DISABLE", "1")
         self.env.setdefault("ENGRAM_PROFILE", "agent")
         if env_overrides:
             self.env.update(env_overrides)

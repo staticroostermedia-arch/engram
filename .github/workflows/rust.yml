@@ -50,6 +50,7 @@ jobs:
         ENGRAM_FORCE_CPU_BACKEND: "1"
         ENGRAM_DISABLE_SHEAF: "1"
         ENGRAM_KI_DISABLE: "1"
+        ENGRAM_NREM_DISABLE: "1"
         ENGRAM_PROFILE: agent
         RUST_BACKTRACE: "1"
       run: |
@@ -71,6 +72,7 @@ jobs:
         ENGRAM_FORCE_CPU_BACKEND: "1"
         ENGRAM_DISABLE_SHEAF: "1"
         ENGRAM_KI_DISABLE: "1"
+        ENGRAM_NREM_DISABLE: "1"
         ENGRAM_PROFILE: agent
         RUST_BACKTRACE: "1"
       run: |
