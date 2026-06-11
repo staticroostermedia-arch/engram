@@ -12,6 +12,17 @@ metadata:
 
 You have **persistent geometric memory** via the Engram MCP server. Follow this contract — not all 62 tools.
 
+## Slash commands (Grok Build plugin)
+
+| Command | Ritual |
+|---------|--------|
+| `/engram-wake` | `session_start` + continuation report |
+| `/engram-edit` | `context_for_edit` + anchor recall + pre-edit trace |
+| `/engram-recall` | `recall(scope=anchors)` when stuck |
+| `/engram-trace` | `quick_trace` at a fork |
+| `/engram-handoff` | `session_end` structured packet |
+| `/engram-deep` | `set_memory_mode(deep)` — sparingly |
+
 ## Every session
 
 ### 1. Wake (mandatory first call)

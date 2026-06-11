@@ -23,9 +23,18 @@ Or use the installer script from repo root:
 ./scripts/install-engram-plugin.sh
 ```
 
-### First wake
+### Ritual slash commands
 
-In a Grok session, run `/engram-wake` or ask the agent to call `mcp_engram_session_start`.
+| Command | When |
+|---------|------|
+| `/engram-wake` | Start of session — continuation bundle |
+| `/engram-edit` | Before editing a file — spatial + anchor context |
+| `/engram-recall` | Stuck — goals/traces/rituals first |
+| `/engram-trace` | Significant decision fork |
+| `/engram-handoff` | End of session — structured handoff for next wake |
+| `/engram-deep` | Rare — full manifold / relation exploration |
+
+In a Grok session, run `/engram-wake` first (or `mcp_engram_session_start`).
 
 Expected: continuation bundle + `fully_initialized: true` within ~30s on first cold boot.
 
