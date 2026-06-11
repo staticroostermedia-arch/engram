@@ -71,6 +71,15 @@ enum Commands {
         no_genesis: bool,
     },
 
+    /// Block until the geometric store is loaded and ready (for engram-grok / TUI MCP launcher).
+    /// Performs full StoreHandle init (not the MCP fast-placeholder). Warms large manifolds
+    /// before the stdio MCP subprocess starts so native use_tool sees a healthy backend sooner.
+    WaitReady {
+        /// Max seconds to wait for full store initialization (default 180)
+        #[arg(long, default_value_t = 180)]
+        timeout: u64,
+    },
+
     /// Run as a REST HTTP server
     Serve {
         /// Port to listen on
@@ -134,6 +143,51 @@ fn main() -> anyhow::Result<()> {
         .build()?;
 
     match cli.command {
+        Commands::WaitReady { timeout } => {
+            use std::sync::mpsc;
+            use std::time::Duration;
+
+            profile::EngramProfile::from_env().apply();
+            maybe_defer_bvh_for_large_store(&cli.store);
+
+            tracing::info!(
+                "[wait-ready] Loading store at '{}' (timeout {}s) before MCP spawn…",
+                cli.store,
+                timeout
+            );
+
+            let path = cli.store.clone();
+            let (tx, rx) = mpsc::channel();
+            std::thread::spawn(move || {
+                let store = store::StoreHandle::new(&path);
+                store.mark_fully_initialized();
+                let readiness = store.backend_readiness();
+                let hot = store.hot_concepts().len();
+                let _ = tx.send((readiness, hot));
+            });
+
+            match rx.recv_timeout(Duration::from_secs(timeout)) {
+                Ok((readiness, hot)) => {
+                    tracing::info!(
+                        "[wait-ready] Store ready (hot_concepts={}, readiness={})",
+                        hot,
+                        readiness
+                    );
+                }
+                Err(mpsc::RecvTimeoutError::Timeout) => {
+                    tracing::error!(
+                        "[wait-ready] Timed out after {}s — MCP may start on fast-placeholder; \
+                         poll mcp_engram_get_backend_readiness after wake.",
+                        timeout
+                    );
+                    std::process::exit(1);
+                }
+                Err(mpsc::RecvTimeoutError::Disconnected) => {
+                    tracing::error!("[wait-ready] Init thread exited before signaling readiness");
+                    std::process::exit(1);
+                }
+            }
+        }
         Commands::Mcp { no_genesis } => {
             profile::EngramProfile::from_env().apply();
             let _mcp_lock = mcp_lock::McpStoreLock::acquire(&cli.store)?;
