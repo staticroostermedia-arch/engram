@@ -273,8 +273,17 @@ Plugin: `grok-plugin-engram/commands/`
 
 ---
 
+## Harness injection (automatic)
+
+`session_start` and `context_for_edit` embed `harness_injection` — `suggested_actions`, `trace_chain`, `trusted_tiles`, `condensation_hints`. See [HARNESS_INJECTION.md](HARNESS_INJECTION.md).
+
+**Pipeline:** traces at forks → chain accumulates → tile condenses → trusted JIT at next wake.
+
+---
+
 ## Related
 
+- [HARNESS_INJECTION.md](HARNESS_INJECTION.md) — traces → tiles → JIT playbooks
 - [AGENT_MEMORY_CONTRACT.md](AGENT_MEMORY_CONTRACT.md) — 8-tool highway
 - [GROK_BUILD_MEMORY.md](GROK_BUILD_MEMORY.md) — Grok Build pitch
 - [MCP_TOOLS_REFERENCE.md](MCP_TOOLS_REFERENCE.md) — tiers + parameters

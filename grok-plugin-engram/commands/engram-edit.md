@@ -9,6 +9,8 @@ Run the Engram **edit-scoped working memory** ritual for the file the user is ab
 2. Call `mcp_engram_context_for_edit` with `path`, and `auto_ingest: true` if the file may be new to spatial memory.
 3. Call `mcp_engram_recall` with `scope: "anchors"` using keywords from the file path + task (goals, traces, rituals).
 4. Call `mcp_engram_quick_trace` with `decision` (what you plan to change), `why`, and spatial context = the file path.
-5. Summarize for the user: related goals/traces, spatial hits, and your edit intent.
+5. Read `harness_injection` in the response: if `last_session_touched` or `open_scars`, follow `suggested_actions`.
+6. After substantive edits, call `mcp_engram_quick_trace` (post-edit delta).
+7. Summarize for the user: related goals/traces, spatial hits, scars, and edit intent.
 
 Do **not** call `watch_workspace` or `rebuild_bvh` unless the user explicitly requests deep spatial ingest.

@@ -28,6 +28,7 @@
 
 pub mod daemon;
 pub mod ki_hijacker;
+mod harness_injection;
 mod mcp;
 mod mcp_lock;
 mod profile;

@@ -2,7 +2,11 @@
 
 **You (the AI) are the primary user.** Each command maps to one **decision moment** — not one MCP tool. Run the full ritual inside each command file.
 
-**Map of all 66 tools:** [docs/TOOL_DECISION_MAP.md](../../docs/TOOL_DECISION_MAP.md)
+**Map of all 66 tools:** [docs/TOOL_DECISION_MAP.md](../../docs/TOOL_DECISION_MAP.md)  
+**Harness injection (auto context):** [docs/HARNESS_INJECTION.md](../../docs/HARNESS_INJECTION.md)
+
+At wake: execute `continuation.harness_injection.suggested_actions` before grep/read.  
+At edit: read `harness_injection` on `context_for_edit` response (scars, last-session-touched).
 
 ---
 

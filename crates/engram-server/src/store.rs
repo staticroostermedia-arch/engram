@@ -2418,13 +2418,16 @@ impl StoreHandle {
             })
         };
 
+        let harness = crate::harness_injection::build_harness_bundle(self);
+
         let bundle = serde_json::json!({
             "primary_goal": primary_goal_name,
             "last_session_end": last_session_end,
             "hydration_cache_present": hydration_cache_present,
             "structured_handoff": structured_handoff,
             "active_artifacts": active_tiles,
-            "recall_hint": "Read structured_handoff first via mcp_engram_read_concept, then recall each concept in active_artifacts.",
+            "recall_hint": "Execute suggested_actions in order, then read structured_handoff.",
+            "harness_injection": harness,
             "cached_at": now,
         });
         self.continuation_bundle_cached_at = now;
@@ -3684,6 +3687,9 @@ impl StoreHandle {
                 "end": line_end,
             });
         }
+
+        result["harness_injection"] =
+            crate::harness_injection::build_file_injection(self, file_path, &stem);
 
         result
     }
