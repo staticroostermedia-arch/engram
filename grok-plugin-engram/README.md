@@ -31,7 +31,7 @@ Or use the installer script from repo root:
 | `/engram-edit` | Before editing a file — spatial + anchor context |
 | `/engram-recall` | Stuck — goals/traces/rituals first |
 | `/engram-trace` | Significant decision fork |
-| `/engram-handoff` | End of session — structured handoff for next wake |
+| `/engram-session-end` | End of session — structured handoff for next wake |
 | `/engram-deep` | Rare — full manifold / relation exploration |
 
 In a Grok session, run `/engram-wake` first (or `mcp_engram_session_start`).

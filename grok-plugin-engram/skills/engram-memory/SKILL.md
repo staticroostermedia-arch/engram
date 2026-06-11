@@ -20,7 +20,7 @@ You have **persistent geometric memory** via the Engram MCP server. Follow this 
 | `/engram-edit` | `context_for_edit` + anchor recall + pre-edit trace |
 | `/engram-recall` | `recall(scope=anchors)` when stuck |
 | `/engram-trace` | `quick_trace` at a fork |
-| `/engram-handoff` | `session_end` structured packet |
+| `/engram-session-end` | `session_end` structured packet |
 | `/engram-deep` | `set_memory_mode(deep)` — sparingly |
 
 ## Every session
