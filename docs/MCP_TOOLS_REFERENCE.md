@@ -2,6 +2,8 @@
 
 Engram exposes **66 MCP tools** (62 `mcp_engram_*` + 4 linguistic). Most agents should use **8** — see [`AGENT_MEMORY_CONTRACT.md`](AGENT_MEMORY_CONTRACT.md).
 
+**Decision map (all 66):** [`TOOL_DECISION_MAP.md`](TOOL_DECISION_MAP.md) — when to escalate to `update`, `query_with_momentum`, `search_by_relation`, goals, tiles, linguistic tools.
+
 Tools are grouped by tier:
 
 | Tier | Count | Use when |

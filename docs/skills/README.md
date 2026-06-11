@@ -14,7 +14,8 @@ These are the operational skills and rituals that power the Engram geometric mem
 
 ## Core Ritual Loop (8-tool lean — all ecosystems)
 
-**Contract:** [docs/AGENT_MEMORY_CONTRACT.md](../AGENT_MEMORY_CONTRACT.md)
+**Contract:** [docs/AGENT_MEMORY_CONTRACT.md](../AGENT_MEMORY_CONTRACT.md)  
+**Full map:** [docs/TOOL_DECISION_MAP.md](../TOOL_DECISION_MAP.md) (Layers 0–4, write path, read escalation)
 
 1. **Wake:** `session_start(intent)` — one call (see `engram-wake-up.md`).
 2. **Work:** `context_for_edit` → `recall(anchors)` → `quick_trace` / `remember` (`engram-working-memory.md`).

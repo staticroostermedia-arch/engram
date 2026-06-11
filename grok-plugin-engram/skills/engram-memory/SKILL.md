@@ -67,11 +67,28 @@ mcp_engram_recall(query="<goal or trace keywords>", scope="anchors", k=5)
 mcp_engram_quick_trace(decision="...", why="...", goal_context="goal:...")
 ```
 
-### 5. New facts only (recall first; if match >0.85 use update)
+### 5. Persist — write path (recall first)
 
 ```
-mcp_engram_remember(concept="...", text="...")
+mcp_engram_recall(query="...", scope="anchors")   # always first
+# score >0.85 on existing concept → mcp_engram_update (NOT remember)
+# no match → mcp_engram_remember
+# verified fix → mcp_engram_remember_solution
+# dead end → mcp_engram_scar
 ```
+
+### 5b. Escalate read (when anchors fail)
+
+| Situation | Tool |
+|-----------|------|
+| Preview too short | `read_concept` |
+| Arc direction / trend | `query_with_momentum` |
+| Geometric similarity | `query_pure` |
+| Graph neighborhood | `search_by_relation` → `visualize` |
+| Meta multi-phase arc | `thought_tile_create` |
+| CRS / lawfulness doubt | `verify_manifold_integrity` |
+
+**Full map:** `docs/TOOL_DECISION_MAP.md` (all 66 tools, mermaid diagrams)
 
 ### 6. End (mandatory)
 
@@ -95,5 +112,6 @@ mcp_engram_session_end(summary="<decisions, files, open questions>", prepare_com
 
 ## Full docs (repo)
 
-- `docs/AGENT_MEMORY_CONTRACT.md`
+- `docs/AGENT_MEMORY_CONTRACT.md` — 8-tool highway
+- `docs/TOOL_DECISION_MAP.md` — **all 66 tools**, write path, Grok vs Cursor throttle
 - `docs/GROK_BUILD_MEMORY.md`

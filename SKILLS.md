@@ -6,7 +6,8 @@ This is the canonical entry point for the published ritual protocols.
 
 ## Start Here — 8-Tool Agent Memory Contract
 
-**Read this first:** [docs/AGENT_MEMORY_CONTRACT.md](docs/AGENT_MEMORY_CONTRACT.md)
+**Read this first:** [docs/AGENT_MEMORY_CONTRACT.md](docs/AGENT_MEMORY_CONTRACT.md)  
+**Full tool map (66 tools):** [docs/TOOL_DECISION_MAP.md](docs/TOOL_DECISION_MAP.md)
 
 The minimal agent path on large stores (181k+ blocks):
 

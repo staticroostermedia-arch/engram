@@ -32,7 +32,7 @@ PROBE  → get_backend_readiness              # lean vs deep, RSS-safe mode
 MODE   → set_memory_mode("deep")            # only when full recall needed
 ```
 
-**Load for every agent:** [`docs/AGENT_MEMORY_CONTRACT.md`](AGENT_MEMORY_CONTRACT.md) + [`SKILLS.md`](../SKILLS.md)
+**Load for every agent:** [`docs/AGENT_MEMORY_CONTRACT.md`](AGENT_MEMORY_CONTRACT.md) (8-tool highway) + [`docs/TOOL_DECISION_MAP.md`](TOOL_DECISION_MAP.md) (full 66-tool map) + [`SKILLS.md`](../SKILLS.md)
 
 ---
 

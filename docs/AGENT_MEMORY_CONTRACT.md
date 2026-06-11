@@ -4,7 +4,9 @@
 **Audience:** Any AI agent using the Engram MCP server  
 **Principle:** Lean by default, deep on demand. Eight tools cover wake → work → handoff on large stores (181k+ blocks) without ritual tax or RAM death.
 
-> **55+ tools still exist.** Power tools (`query_with_momentum`, `visualize`, `thought_tile_create`, `verify_manifold_integrity`, …) remain available. This contract is the **minimal path** agents should follow unless deep mode or a specific task requires more.
+> **58 more tools exist** (66 total). Power tools (`update`, `query_with_momentum`, `search_by_relation`, `remember_solution`, `scar`, `thought_tile_create`, …) remain available. This contract is the **Layer 0 highway** — not the full map.
+
+**Full decision map:** [TOOL_DECISION_MAP.md](TOOL_DECISION_MAP.md) — mermaid flows for all 66 tools, write path (`update` vs `remember`), read escalation, and Grok Build vs Cursor throttle.
 
 ---
 
@@ -37,7 +39,7 @@
 
 **`quick_trace(decision, why, …)`** — Same quality as `record_reasoning_trace` with fewer fields. Produces chained `trace:*` blocks the next wake surfaces first.
 
-**`remember(concept, text)`** — New concept only. Always `recall` first; if score > 0.85 on an existing concept, use `update` instead (power tool, not in the 8).
+**`remember(concept, text)`** — New concept only. Always `recall` first; if score > 0.85 on an existing concept, use `update` instead (Layer 1 — see [write path](TOOL_DECISION_MAP.md#write-path-non-negotiable)).
 
 **`session_end(summary, prepare_compression?)`** — Mandatory last call. Commits episodic terminal state and returns a **structured handoff packet** (JSON) for machine-readable continuation.
 

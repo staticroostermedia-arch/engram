@@ -53,7 +53,7 @@ Wake → `session_start` · Work → `context_for_edit` + `recall` + `quick_trac
 
 **Skills:** `engram-memory` (overview + discipline table) · `engram-wake-up` · `engram-working-memory` · `engram-session-end`
 
-See [docs/AGENT_MEMORY_CONTRACT.md](../docs/AGENT_MEMORY_CONTRACT.md). **Tools must be called** — documentation alone does not persist memory.
+See [docs/AGENT_MEMORY_CONTRACT.md](../docs/AGENT_MEMORY_CONTRACT.md) (8-tool highway) and [docs/TOOL_DECISION_MAP.md](../docs/TOOL_DECISION_MAP.md) (all 66 tools — `update`, momentum, relation, tiles). **Tools must be called** — documentation alone does not persist memory.
 
 ## Troubleshooting
 

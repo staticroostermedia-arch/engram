@@ -49,6 +49,8 @@ Every work block becomes an evolution of your self-model.
 
 **Cost-Aware**: Momentum and full BVH are high-latency. Lean mode avoids them by default.
 
+**Full 66-tool map:** [TOOL_DECISION_MAP.md](../TOOL_DECISION_MAP.md) — write path, read escalation, goals/tiles/linguistic layers.
+
 ---
 
 ## Spatial-Manifold Change Discipline (Mandatory for Edits)
