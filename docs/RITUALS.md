@@ -65,12 +65,9 @@ Additive P5 (coord + sub5): `processes/ritual/ritual_linguistic_wake.toml` + ext
 
 These close the categorical/linguistic calculus loop for geometric self-model (non-flat).
 
-## Phase 6: Public Polish + Documentation (CATEGORICAL_LINGUISTIC_CALCULUS.md, README, final refs)
+## Phase 6: Public documentation (linguistic calculus)
 
-Additive Phase 6 (Sub-agent 1, 3-iter loop per handoff): 
-- New public file `docs/CATEGORICAL_LINGUISTIC_CALCULUS.md` (overview of “Calculus over Words”, geometric/sheaf foundation, full P1–P6 surface with exact refs to ZEDOS_LINGUISTIC 0x4C etc/types.rs/ops.rs/processes/linguistic/*.toml + ritual_linguistic_wake.toml, mcp_linguistic_calculus + mixed ops usage exs with CRS 0.85+/0.87, word/number bridging, full NREM/ego.leg3 lifecycle + invariants/CRS gates, “How to Try” with build/MCP/session_start/verify/hygiene + link to examples/hello-engram-agent.py, links to RITUALS §Phase5 / MCP_TOOLS / GEOMETRIC_MEMORY / GITHUB_MVP_PREP_PLAN / AGENTS).
-- README.md: prominent new “Categorical Linguistic Calculus” section placed after Memory Model (~l41) with short mcp ex (differentiate), mixed bridge ex, “How to try the new calculus” (cargo + target/debug/engram --version, MCP wire, session_start, mcp call, extend python ex, verify), link to full doc, note on advancing to geometric *reasoning* substrate + Phase 6 polish complete.
-- Updates to this RITUALS.md (this Phase 6 section), MCP_TOOLS_REFERENCE.md (linguistic section), GITHUB_MVP_PREP_PLAN.md (exec log appends x3 iters with hygiene verbatim, CRS, sub_id 019eb27f-d94f-7ea0-b580-36adb41c19c8, readiness).
-- Full e2e ready (mint mixed → P3 compress → P4 calc/mixed bridges → decompress → P5 NREM/ego promotion CRS0.85+ homotopy/fidelity + class-mix guard), public docs polished, ready for sharing. Hygiene (cargo test -p engram-core -p engram-server, check, target/debug/engram 0.4.0 + ls, mcp verify) + mcp verify at start + end each iter. Dogfood: quick_trace/remember/relate/plan appends to goal:mvp_gap_closure_v1 + prior linguistic traces. Narrow (3 iters, pre context/read/grep, additive only, no core edits). CRS gates passed. Sub calls narrow.
-
-See new CATEGORICAL_LINGUISTIC_CALCULUS.md for public “How to try”. All invariants (.leg3/CRS/p-mom/VSA/sheaf/H¹) preserved. Ready for Sub-agent 2 commit+push.
+- [`CATEGORICAL_LINGUISTIC_CALCULUS.md`](CATEGORICAL_LINGUISTIC_CALCULUS.md) — public overview, CRS gates, how to try.
+- [`MCP_TOOLS_REFERENCE.md`](MCP_TOOLS_REFERENCE.md) — linguistic tool surface (P1–P5).
+- E2e: `cargo test -p engram-server` (linguistic pipeline + CRS ≥ 0.85).
+- Invariants unchanged: .leg3 layout, p-momentum on `update`, sheaf/H¹ from `processes/linguistic/*.toml`.

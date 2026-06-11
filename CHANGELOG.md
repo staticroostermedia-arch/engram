@@ -29,7 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `mcp_engram_context_for_edit`, `mcp_engram_set_memory_mode`, inline `session_start` bundle, structured `session_end` handoff packet.
 - `integrations/grok-build/mcp.json` — safe MCP defaults for large stores; `scripts/engram-grok` launcher.
 - Lean perf flags: `ENGRAM_MEMORY_MODE`, `ENGRAM_DEFER_BVH`, `ENGRAM_DEFER_WATCH_INGEST`, `mcp_lock.rs` for duplicate MCP safety.
-- **Categorical Linguistic Calculus + Mixed Number/Word Support (P1–P6 + mixed arc):** Synthetic homotopy-coherent categorical reasoning over words/discourse + bridged numeric phases (ZEDOS_LINGUISTIC* + Linguistic* structs/mint in types.rs; VSA mixed ops + fibered CRS guards/class-mixing in ops.rs; mcp_linguistic_calculus dispatch + load in mcp.rs; processes/linguistic/*.toml + ritual_linguistic_wake.toml; full e2e mint→P3 compress→P4 calc→decompress→NREM/ego.leg3 with CRS>=0.85 homotopy/fidelity/roundtrip). New `docs/CATEGORICAL_LINGUISTIC_CALCULUS.md`; README polish (30s onboarding, short copy-paste exs, Mermaid lifecycle, punchier comparison bullets); RITUALS/MCP_TOOLS/plan Phase 6 updates + CHANGELOG. See prior handoffs (sub IDs, CRS gates) and GITHUB_MVP_PREP_PLAN.md.
+- **Categorical Linguistic Calculus + Mixed Number/Word Support (P1–P6 + mixed arc):** Synthetic homotopy-coherent categorical reasoning over words/discourse + bridged numeric phases (ZEDOS_LINGUISTIC* + Linguistic* structs/mint in types.rs; VSA mixed ops + fibered CRS guards/class-mixing in ops.rs; mcp_linguistic_calculus dispatch + load in mcp.rs; processes/linguistic/*.toml + ritual_linguistic_wake.toml; full e2e mint→P3 compress→P4 calc→decompress→NREM/ego.leg3 with CRS>=0.85 homotopy/fidelity/roundtrip). New `docs/CATEGORICAL_LINGUISTIC_CALCULUS.md`; README polish (30s onboarding, short copy-paste exs, Mermaid lifecycle, punchier comparison bullets); RITUALS/MCP_TOOLS Phase 6 updates + CHANGELOG.
 - Full GitHub MVP prep for public representation (feat/mvp-github-prep-2026-06 branch):
   - Enhanced README with geometric Memory Model section, comparison table (vs mem0/Letta/chroma/qdrant/ragflow/milvus), badges, runnable examples section, links to new docs, 55+ MCP updates, build hygiene notes.
   - New docs/: GEOMETRIC_MEMORY.md (HolographicBlock, VSA, sheaf/H¹, spatial AABB, invariants), RITUALS.md (wake/working-memory/session-end + Code Edit Ritual v1 + sub-agent governance + lawfulness), MCP_TOOLS_REFERENCE.md (categorized 55+ tools).
@@ -49,7 +49,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI triggers expanded; build hygiene enforced (target/debug/engram preferred).
 
 ### Fixed
-- Gaps vs popular memory GitHub best practices (hero/comparison/examples/templates/CI/docs/AGENTS/CHANGELOG) identified via sub-agent recon + supervisor + narrow audit (see GITHUB_MVP_PREP_PLAN.md for details, scars for sub-agent governance lessons).
+- Gaps vs popular memory GitHub best practices (hero/comparison/examples/templates/CI/docs/AGENTS/CHANGELOG) identified via sub-agent recon + supervisor + narrow audit (see docs/SUBSTRATE_WINS_PLAN.md for harness injection follow-through).
 
 See [docs/SUBSTRATE_WINS_PLAN.md](docs/SUBSTRATE_WINS_PLAN.md) for harness injection roadmap and success criteria.
 

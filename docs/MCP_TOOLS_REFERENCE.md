@@ -131,7 +131,7 @@ All phases wired additively in `tool_list()` + `dispatch`/`handle_tool_call` (mc
 
 Full e2e (mint→compress→differentiate→operadic→decompress→NREM→ego.leg3 roundtrip CRS>=0.85 + homotopy/text-coeff fidelity) in mcp.rs tests + hygiene. Used by P5 rituals (wake/NREM). See RITUALS.md §Phase5, processes/ritual/ritual_linguistic_wake.toml.
 
-**Phase 6 public polish complete (Sub-agent 1, 3-iter plan/edit/verify loop):** Added dedicated `docs/CATEGORICAL_LINGUISTIC_CALCULUS.md` (full geometric/sheaf/ritual/P1-6 story + 3 bridging exs with CRS numbers + how to try + links); prominent README section after Memory Model (mcp_linguistic_calculus ex + mixed scale/bridge + roundtrip NREM/ego + “How to try” + hygiene + link); additive updates to RITUALS.md (new Phase 6 section), this ref, GITHUB_MVP_PREP_PLAN.md (exec log with sub_id=019eb27f-d94f-7ea0-b580-36adb41c19c8, hygiene verbatim from cargo test 23+ok / check / target/debug/engram 0.4.0 + ls / verify, CRS 0.85+, iter details, readiness). All e2e tests green, manifold ready (verify high-CRS sampled; prior gates 0.85+ in mixed lifecycle), public sharing prepared on feat/mvp-github-prep-2026-06. No core changes; invariants held (.leg3/CRS/sheaf). Dogfooded via session_start/recall/context/quick_trace + final remember/relate to goal:mvp_gap_closure_v1. Narrow sub calls. See CATEGORICAL_LINGUISTIC_CALCULUS.md + RITUALS Phase 5/6 for full.
+**Public docs:** Overview and examples in [`CATEGORICAL_LINGUISTIC_CALCULUS.md`](CATEGORICAL_LINGUISTIC_CALCULUS.md). E2e coverage in `crates/engram-server/src/mcp.rs` tests (CRS ≥ 0.85 roundtrip). Ritual wiring: `processes/ritual/ritual_linguistic_wake.toml`.
 
 ---
 

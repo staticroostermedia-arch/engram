@@ -327,7 +327,7 @@ This is part of **Item 1.5 (Spatial Discipline Adoption)** — making sure the s
 
 1. Bind the watcher: `mcp_engram_watch_workspace("/path/to/project")`
 2. Check current state via the `item1.5_spatial_ingestion_state_engram` block
-3. Run the bootstrap tool on priority directories (see `scripts/bootstrap_spatial.sh` and `docs/item1.5_progress.md`)
+3. Run the bootstrap tool on priority directories (`scripts/bootstrap_spatial.sh`, `scripts/check_spatial_status.sh`)
 4. Verify with `context_for_file` + `recall_in_file` on key files
 5. Update the state block with results and timestamp
 
