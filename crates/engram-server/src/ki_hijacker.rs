@@ -1406,6 +1406,26 @@ async fn bake_ki(store: &SharedStore, ki_dir: &PathBuf) -> anyhow::Result<()> {
     let context_path = ki_dir.join("context.md");
     std::fs::write(&context_path, md.as_bytes())?;
 
+    // WS-1: Cursor ambient wake queue when KI dir lives under .cursor/
+    if ki_dir.to_string_lossy().contains(".cursor") {
+        if let Ok(mut hlock) = store.lock() {
+            let primary_goal = hlock
+                .fetch_block_high_priority("primary_goal")
+                .and_then(|b| {
+                    let text = engram_core::storage::read_provlog(&b);
+                    text.lines()
+                        .find(|l| l.starts_with("**goal:**"))
+                        .map(|l| l.replace("**goal:**", "").trim().to_string())
+                });
+            let wake_md = crate::harness_injection::format_suggested_actions_markdown(
+                &mut hlock,
+                primary_goal.as_deref(),
+            );
+            let wake_path = ki_dir.parent().unwrap_or(ki_dir).join("engram-wake.md");
+            let _ = std::fs::write(&wake_path, wake_md.as_bytes());
+        }
+    }
+
     // Update timestamps.json
     let ki_root = ki_dir.parent().unwrap_or(ki_dir);
     let timestamps = serde_json::json!({

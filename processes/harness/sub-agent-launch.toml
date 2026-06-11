@@ -1,0 +1,107 @@
+# agent:engram.harness.sub-agent-launch
+# Orchestrator-side harness: how the main agent launches narrow sub-agents.
+# Pair with processes/workflow/sub_agent_relay_v1.toml (sub execution + relay)
+# and processes/monitor/sub-agent.subvisor.toml (live H¹ oversight).
+
+[process]
+name = "agent:engram.harness.sub-agent-launch"
+zedos_type = "harness"
+phase_seed = "0xSUBAGENTLAUNCH202606"
+
+[category]
+object = "sub_agent_launch"
+morphism = "OP_ADD"
+sheaf_role = "Orchestrator launch contract: narrow one-shot Task/spawn only, bind process_context + goal + task_id, pair with sub-agent relay workflow and monitor subvisor."
+h1_handler = "OP_IS_SYMBOLIC_OF"
+
+[mcp_tools]
+list = [
+  "mcp_engram_session_start",
+  "mcp_engram_recall",
+  "mcp_engram_quick_trace",
+  "mcp_engram_thought_tile_create",
+  "mcp_engram_relate",
+  "mcp_engram_process_metrics"
+]
+
+[requires]
+list = [
+  "process:engram.monitor.subvisor",
+  "process:engram.monitor.sub-agent",
+  "process:engram.harness.sub-agent-relay",
+  "helper:meta_work_escalation_v1"
+]
+
+[produces]
+list = [
+  "trace:*_subagent_launch",
+  "tile:*_subagent_brief",
+  "trace:*_orchestrator_fork"
+]
+
+[invariants]
+list = [
+  "narrow_one_shot_only",
+  "max_calls_20",
+  "geometric_mcp_first",
+  "task_id_captured",
+  "process_context_on_every_trace"
+]
+
+[timeout_ms]
+value = 30000
+
+[launch]
+# Human/agent contract — not machine-parsed by load_process_sheaf; copy into Task prompt.
+orchestrator_role = "main_agent"
+subagent_tool = "Task"  # Grok/Cursor background subagent
+max_calls = 20
+background = true
+capture_task_id = true
+
+prompt_template = """
+NARROW ONE-SHOT SUB-AGENT (process:engram.harness.sub-agent-relay)
+
+Primary objective: {one_action}
+Goal context: {goal_context}
+Process context (set on every trace): process:engram.harness.sub-agent-relay
+
+MANDATORY wake:
+1. mcp_engram_session_start(intent="{one_action}")
+2. mcp_engram_recall(query="{one_action}", scope="anchors")
+
+MANDATORY execution:
+- One action only. No broad list_dir/grep on large trees.
+- Geometric MCP first (context_for_edit / recall_in_file) before filesystem reads.
+- quick_trace at every fork with process_context=process:engram.harness.sub-agent-relay
+
+MANDATORY relay (end of run — see processes/workflow/sub_agent_relay_v1.toml):
+- quick_trace decision_point="sub_agent_relay" with structured JSON report in justification
+- thought_tile_create type=research_offload title="Sub-agent report: {one_action}"
+- relate report tile → goal:{goal_context} and trace:*_subagent_relay
+
+DO NOT: explore; repeat failed paths; omit task_id or report JSON.
+
+Return JSON:
+{{ "status": "success|partial|failed|killed", "task_id": "...", "summary": "...", "artifacts": [], "trace_ids": [], "tile_id": null, "friction": [] }}
+"""
+
+pre_launch_trace = "quick_trace decision_point=subagent_launch with task_id, subagent_type, one_action, process_context=process:engram.harness.sub-agent-launch"
+
+[monitor]
+# While sub-agent runs — orchestrator polls; subvisor TOML defines kill rules.
+while_running = [
+  "poll Task output / background shell by task_id",
+  "mcp_engram_process_metrics(process_key=process:engram.monitor.sub-agent) when WS-3 shipped",
+  "kill on doom loop signal or max_calls exceeded"
+]
+on_complete = [
+  "read sub-agent JSON report or fallback (git diff, artifacts, MCP state)",
+  "quick_trace decision_point=subagent_supervisor_synthesis process_context=process:engram.harness.sub-agent-launch",
+  "scar on doom loop or missing relay tile"
+]
+
+[notes]
+# Orchestrator reads this harness at launch time via recall(process:engram.harness.sub-agent-launch)
+# or trusted verified_sequence tile referencing these steps.
+# Fulfillment measured via process_metrics once realized_by edges exist (WS-3).

@@ -29,6 +29,19 @@ These files document **how to run** a multi-step arc (wake → execute → trace
 
 Example: `workflow/complete-gemma-integration.toml` + `monitor/gemma-integration.subvisor.toml`.
 
+### Sub-agent trio (WS-5)
+
+Generic orchestrator ↔ sub-agent governance uses **three roles** (plus base subvisor):
+
+| Role | File | Registered key |
+|------|------|----------------|
+| **Launch** (orchestrator) | `harness/sub-agent-launch.toml` | `process:engram.harness.sub-agent-launch` |
+| **Relay** (sub-agent contract) | `harness/sub-agent-relay.toml` | `process:engram.harness.sub-agent-relay` |
+| **Relay steps** (sub-agent playbook) | `workflow/sub_agent_relay_v1.toml` | workflow-only |
+| **Monitor** (H¹ while running) | `monitor/sub-agent.subvisor.toml` | `process:engram.monitor.sub-agent` |
+
+Orchestrator: recall launch harness → spawn narrow `Task` with `prompt_template` → poll via monitor subvisor → review relay tile/trace in manifold. Sub-agent: follow relay workflow; tag traces with `process_context=process:engram.harness.sub-agent-relay`. See [docs/SUBSTRATE_WINS_PLAN.md](../docs/SUBSTRATE_WINS_PLAN.md) WS-5.
+
 ## Subvisor TOMLs
 
 Files named `*.subvisor.toml` under `monitor/` are full sheaf processes (they include `[process]` + `[subvisor]`). Each must have a distinct `[process].name` — never rely on the subdir fallback (`agent:engram.monitor.unknown`), which collides across files.

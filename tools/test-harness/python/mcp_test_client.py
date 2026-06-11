@@ -588,6 +588,54 @@ class MCPTestClient:
                 "and helper:session_handoff_latest not found"
             )
 
+        # Substrate wins: harness_injection must be present after handoff (WS-1 gate)
+        # Use session_start JSON (reliable parse) — get_continuation_bundle wraps prose around JSON.
+        inject_resp = self.call_tool(
+            "mcp_engram_session_start",
+            {"intent": "Harness agent-memory — harness_injection gate check"},
+            timeout=60.0,
+        )
+        inject_data = self._parse_tool_json(inject_resp) or {}
+        cont = inject_data.get("continuation") or inject_data
+        harness = cont.get("harness_injection") or {}
+        suggested = harness.get("suggested_actions") or []
+        if not harness:
+            failures.append("continuation_bundle.harness_injection missing (substrate wins regression)")
+        elif not suggested:
+            failures.append(
+                "harness_injection.suggested_actions empty after session_end handoff "
+                "(expected prioritized wake queue)"
+            )
+        else:
+            assertions.append(f"harness_injection.suggested_actions len={len(suggested)}")
+        if harness.get("agent_discipline"):
+            assertions.append("harness_injection.agent_discipline present")
+
+        # Substrate wins tools registered (WS-2/WS-3) — list check + process_metrics smoke
+        tools_resp = self._send_request("tools/list", {}, timeout=30.0)
+        tool_names = set()
+        if "result" in tools_resp:
+            for t in tools_resp["result"].get("tools", []):
+                tool_names.add(t.get("name", ""))
+        for required in (
+            "mcp_engram_thought_tile_draft_from_chain",
+            "mcp_engram_process_metrics",
+        ):
+            if required not in tool_names:
+                failures.append(f"{required} missing from tools/list")
+            else:
+                assertions.append(f"{required} registered")
+        pm_resp = self.call_tool(
+            "mcp_engram_process_metrics",
+            {"process_key": "process:engram.harness.sub-agent-launch"},
+            timeout=30.0,
+        )
+        pm_data = self._parse_tool_json(pm_resp)
+        if "error" in pm_resp or not pm_data.get("process_key"):
+            failures.append("mcp_engram_process_metrics smoke call failed")
+        else:
+            assertions.append("mcp_engram_process_metrics smoke ok")
+
         passed = (
             len(failures) == 0
             and agg.get("failed", 1) == 0

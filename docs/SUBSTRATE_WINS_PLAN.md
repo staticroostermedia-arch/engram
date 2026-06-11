@@ -1,6 +1,6 @@
 # Substrate Wins Plan — Harness Injection & Learning Loop
 
-**Status:** Plan (2026-06-11)  
+**Status:** Implemented (2026-06-11) — WS-4/2/3/5 runtime + WS-1 Cursor bundle
 **Goal:** `goal:mvp_gap_closure_v1`  
 **Depends on:** [HARNESS_INJECTION.md](HARNESS_INJECTION.md) (shipped `1c80f77e`), [TOOL_DECISION_MAP.md](TOOL_DECISION_MAP.md)
 
@@ -44,6 +44,7 @@ flowchart TB
 | **WS-2** Auto-tile draft | `condensation_hint` includes machine-ready payload + optional one-click mint |
 | **WS-3** Process metrics | Per `process:engram.*` trace/tile/praxis fulfillment ratios |
 | **WS-4** `verified_sequence` | Typed step schema agents execute mechanically |
+| **WS-5** Sub-agent TOML trio | Launch harness + relay harness/workflow + monitor subvisor — orchestrator can spawn, poll, and review geometrically |
 
 ---
 
@@ -55,13 +56,17 @@ flowchart LR
   WS2["WS-2 auto-tile draft"]
   WS3["WS-3 process metrics"]
   WS1["WS-1 Cursor auto-wake"]
+  WS5["WS-5 sub-agent TOML trio"]
 
   WS4 --> WS2
   WS2 --> WS1
   WS3 --> WS1
+  WS3 --> WS5
+  WS4 --> WS5
+  WS5 --> WS1
 ```
 
-**Recommended order:** WS-4 → WS-2 → WS-3 (parallel with WS-2 tail) → WS-1
+**Recommended order:** WS-4 → WS-2 → WS-3 (parallel with WS-2 tail) → WS-5 → WS-1
 
 ---
 
@@ -320,6 +325,99 @@ cargo test -p engram-server verified_sequence_validation
 
 ---
 
+## WS-5 — Sub-agent TOML trio (launch · relay · monitor)
+
+### Problem
+
+Sub-agents are governed in prose (`docs/examples/sub_agent_governance.md`, `monitor/subvisor.toml`) but orchestrators lack **declarative, loadable contracts** for:
+
+1. **How to launch** (narrow prompt, task_id, process_context, max_calls)
+2. **How subs relay back** (mandatory trace + report tile JSON for manifold review)
+3. **How to monitor while running** (poll task_id, H¹ doom-loop kill, `process_metrics`)
+
+### Solution — three TOML roles
+
+```mermaid
+flowchart TB
+  ORCH["Orchestrator (main agent)"]
+  LAUNCH["harness/sub-agent-launch.toml"]
+  MON["monitor/sub-agent.subvisor.toml"]
+  RELAY_H["harness/sub-agent-relay.toml"]
+  RELAY_W["workflow/sub_agent_relay_v1.toml"]
+  MAN["Manifold review"]
+
+  ORCH -->|"recall + Task prompt"| LAUNCH
+  ORCH -->|"poll task_id"| MON
+  LAUNCH -->|"spawn background sub"| RELAY_W
+  RELAY_W -->|"quick_trace + tile"| RELAY_H
+  RELAY_H --> MAN
+  MON -->|"scar/kill on doom"| MAN
+  ORCH -->|"synthesis trace"| MAN
+```
+
+| File | Loader | Role |
+|------|--------|------|
+| `processes/harness/sub-agent-launch.toml` | sheaf (`[process]`) | Orchestrator launch contract: prompt template, task_id, pre-launch trace, poll/kill hooks |
+| `processes/harness/sub-agent-relay.toml` | sheaf (`[process]`) | Sub-agent relay contract: `process_context` for relay traces/tiles; `[produces]` wildcards for metrics |
+| `processes/workflow/sub_agent_relay_v1.toml` | workflow-only | Executable wake → execute → relay → handoff steps for the sub-agent |
+| `processes/monitor/sub-agent.subvisor.toml` | sheaf + `[subvisor]` | H¹ oversight: doom-loop signals, kill actions, orchestrator poll checklist |
+
+### Orchestrator loop (after WS-3/WS-4)
+
+```
+recall(process:engram.harness.sub-agent-launch)
+  → quick_trace(process_context=...launch) with task_id
+  → Task(background, prompt from [launch].prompt_template)
+  → poll output + process_metrics(process:engram.monitor.sub-agent)
+  → on complete: read report tile / relay trace
+  → quick_trace(orchestrator_sub_review) + relate → goal
+  → optional: verified_sequence tile from successful sub arc
+```
+
+### Sub-agent loop
+
+```
+session_start(intent=one_action)
+  → follow workflow/sub_agent_relay_v1.toml
+  → every fork: quick_trace(process_context=process:engram.harness.sub-agent-relay)
+  → end: relay trace + research_offload tile + relate → goal
+  → session_end (lightweight)
+```
+
+### Phases
+
+#### Phase 5A — TOML templates (this PR, docs-only)
+
+| Task | File |
+|------|------|
+| Launch harness | `processes/harness/sub-agent-launch.toml` |
+| Relay harness | `processes/harness/sub-agent-relay.toml` |
+| Relay workflow | `processes/workflow/sub_agent_relay_v1.toml` |
+| Monitor subvisor | `processes/monitor/sub-agent.subvisor.toml` |
+| Index | `processes/README.md`, `docs/examples/sub_agent_governance.md` |
+
+#### Phase 5B — Runtime wiring (depends WS-3)
+
+| Task | File | Change |
+|------|------|--------|
+| `process_context` param | `quick_trace`, `thought_tile_create` | Accept + emit `realized_by` → relay/launch/monitor keys |
+| Metrics | `process_metrics` | Fulfillment for `trace:*_subagent_relay`, `scar:*_subagent_loop` |
+| Trusted tile | `harness_injection` | Suggest launch playbook when goal involves sub-agent work |
+
+#### Phase 5C — Mechanical replay (depends WS-4)
+
+Mint `verified_sequence` tiles referencing launch + relay steps; `/engram-execute-tile` for orchestrator replay.
+
+### Verification gate WS-5
+
+```bash
+cargo test -p engram-server test_load_process_sheaf_registers_from_processes_dir
+# Assert keys: process:engram.harness.sub-agent-launch, .sub-agent-relay, .monitor.sub-agent
+# Workflow TOML parses but is NOT registered (no [process])
+```
+
+---
+
 ## Cross-cutting: decision trees over time
 
 | Time scale | Artifact | Mechanism |
@@ -329,6 +427,7 @@ cargo test -p engram-server verified_sequence_validation
 | Per arc (6+ traces) | `condensation_hint` + draft | WS-2 |
 | Per arc (condensed) | `tile:verified_sequence` | WS-4 |
 | Per process | `process_metrics` | WS-3 |
+| Per sub-agent run | launch + relay + monitor TOMLs | WS-5 |
 | Per wake | `suggested_actions` | WS-1 + existing injection |
 
 **Feedback:** Low `fulfillment_ratio` on `process:engram.ritual.wake-up` → tighten wake TOML or scar non-compliance in subvisor docs.
@@ -345,6 +444,7 @@ cargo test -p engram-server verified_sequence_validation
 | PR-4 | `process-metrics` | WS-3A–B | M |
 | PR-5 | `cursor-preflight-ki` | WS-1C | M |
 | PR-6 | `execute-tile-command` | WS-4C + WS-1D | S |
+| PR-7 | `sub-agent-toml-trio` | WS-5A (+ 5B after WS-3) | S |
 
 ---
 
@@ -371,7 +471,8 @@ cargo test -p engram-server verified_sequence_validation
 | Cursor sessions with non-empty `.cursor/engram-wake.md` after preflight | 100% when handoff exists |
 | `condensation_hint` includes `draft_payload` when fired | 100% |
 | `verified_sequence` tiles validate at create | enforced |
-| `process_metrics` returns data for all 15 sheaf processes | yes |
+| `process_metrics` returns data for all sheaf processes (incl. sub-agent trio) | yes |
+| Sub-agent run produces relay trace + report tile | enforced via workflow + monitor |
 | Agent-memory harness green | CI required |
 
 ---

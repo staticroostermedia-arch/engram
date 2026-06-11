@@ -30,17 +30,31 @@ Enram provides first-class governance via the declarative process sheaf + subvis
 
 - **Scar + Trace for learning**: Every doom loop or friction produces scar (active repulsion) + trace with lessons (narrow scope, task_ids, visible state fallback).
 
+## Declarative TOML trio (WS-5)
+
+| Phase | TOML | Who |
+|-------|------|-----|
+| Launch | `processes/harness/sub-agent-launch.toml` | Orchestrator |
+| Execute + relay | `processes/workflow/sub_agent_relay_v1.toml` + `processes/harness/sub-agent-relay.toml` | Sub-agent |
+| Monitor | `processes/monitor/sub-agent.subvisor.toml` | Orchestrator (poll while sub runs) |
+
+Orchestrator recalls `process:engram.harness.sub-agent-launch` for the `prompt_template`, captures `task_id`, and traces with `process_context=process:engram.harness.sub-agent-launch`. Sub-agent sets `process_context=process:engram.harness.sub-agent-relay` on relay traces and mints a `research_offload` report tile. Monitor subvisor defines doom-loop signals and kill actions; `process_metrics` (WS-3) measures fulfillment of `[produces]` wildcards.
+
 ## Example Flow (from prep history + toml)
 
-1. Main agent: recall helpers, decide sub-task (e.g. recon of GH popular patterns).
-2. Launch narrow sub-agent (background, prompt includes: one-action, MCP first, Primary Objective, report, no doom examples, max calls).
-3. Sub runs (or gets killed by subvisor/monitor).
-4. Supervisor: get output or fallback (artifacts, MCP state, ls), synthesize report + scar if needed.
-5. Main: record trace of sub outcome + lessons, relate to goal, perhaps mint tile for the arc.
+1. Main agent: recall helpers + `process:engram.harness.sub-agent-launch`, decide sub-task (e.g. recon of GH popular patterns).
+2. `quick_trace` launch fork with `task_id`; spawn narrow sub-agent (background, prompt from `[launch].prompt_template`).
+3. Poll sub output; `process:engram.monitor.sub-agent` subvisor watches for doom loops.
+4. Sub completes relay workflow: `trace:*_subagent_relay` + `tile:*_subagent_report` related to goal.
+5. Orchestrator: read report tile, `quick_trace` synthesis, scar if relay missing.
 6. Subvisor H¹ inverts the tool graph (repetitive broad calls -> scar/trace for escalation).
 
 See:
-- processes/monitor/subvisor.toml (full spec + 2026-06 meta notes)
+- processes/harness/sub-agent-launch.toml
+- processes/harness/sub-agent-relay.toml
+- processes/workflow/sub_agent_relay_v1.toml
+- processes/monitor/sub-agent.subvisor.toml
+- processes/monitor/subvisor.toml (base subvisor + 2026-06 meta notes)
 - processes/monitor/manifold-health.toml (related lawfulness H1)
 - docs/GITHUB_MVP_PREP_PLAN.md (detailed sub-agent history: local recon cancelled after 7 calls/15s doom loop; supervisor succeeded; scars recorded: subagent_launch_failure_doom_loop...)
 - ki_hijacker.py (hooks for intent_dirty + subvisor H1 flags)

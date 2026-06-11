@@ -23,7 +23,7 @@ Flat RAG (vectors + chunks) gives agents **retrieval**. Engram gives agents **co
 ## The 8-tool contract (ship this in Grok Build docs)
 
 ```
-WAKE   → session_start(intent)              # inline continuation bundle + readiness
+WAKE   → session_start(intent)              # inline continuation + harness_injection.suggested_actions
 WORK   → context_for_edit(path)             # before editing a file
        → recall(query, scope="anchors")     # goals/traces when stuck
        → quick_trace / remember             # forks and facts
@@ -57,7 +57,7 @@ Use `scripts/engram-grok` — sets `ENGRAM_PROFILE=agent` (lean CUDA, deferred B
 
 See [`integrations/README.md`](../integrations/README.md) for Cursor, Claude, Antigravity, Codex.
 
-**Validated on:** 181k `.leg` blocks, ~230MB RSS, <2s lean wake, transport stable.
+**Validated on:** 183k+ `.leg` blocks, ~230MB RSS, <600ms lean wake (harness), transport stable. `agent-memory` suite green including `harness_injection` queue.
 
 ---
 

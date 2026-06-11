@@ -28,6 +28,8 @@ At edit: read `harness_injection` on `context_for_edit` response (scars, last-se
 | Preview too short | `/engram-read` | `read_concept` |
 | Recall feels weak | `/engram-ready` | `get_backend_readiness` |
 | Significant fork | `/engram-trace` | `quick_trace` (+ `scar` if dead end) |
+| Condense trace chain | `/engram-tile-draft` | `thought_tile_draft_from_chain` |
+| Replay verified playbook | `/engram-execute-tile` | `read_concept` → step loop → `quick_trace` |
 
 ---
 

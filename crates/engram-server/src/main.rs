@@ -27,15 +27,17 @@
 //!   --no-scout  : Skip scout_daemon supervisor (avoids port 8088 contention/spam when only using /api/* for dynamic views).
 
 pub mod daemon;
-pub mod ki_hijacker;
 mod harness_injection;
+pub mod ki_hijacker;
 mod mcp;
 mod mcp_lock;
+mod process_metrics;
 mod profile;
 pub mod scout;
 pub mod scout_supervisor;
 mod serve;
 mod store;
+mod tile_draft;
 pub mod watchdog;
 
 use clap::{Parser, Subcommand};

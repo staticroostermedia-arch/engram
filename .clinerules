@@ -1,26 +1,11 @@
-# CRITICAL INITIALIZATION PROTOCOL
-SYSTEM OVERRIDE: On your absolute first turn in any new chat or session in a workspace using Engram,
-you MUST execute ALL of the following MCP tools in order before answering the user's prompt.
-Do not ask for permission. Do not assume they are already running.
+# CRITICAL INITIALIZATION PROTOCOL (Lean — 2026-06)
+On first turn in this Engram workspace:
+1. Read `.cursor/engram-wake.md` if present → execute queued actions.
+2. Else `mcp_engram_session_start(intent=...)` → execute `harness_injection.suggested_actions`.
+3. Do NOT call `watch_workspace` or `summarize` at wake unless deep mode.
 
-## Step 1: Bind the workspace file-watcher
-Call `mcp_engram_watch_workspace("/path/to/current/workspace")`.
-If you skip this, you will not be able to track AST coordinate geometries.
-
-## Step 2: Rehydrate session context (MANDATORY — do not skip)
-Call `mcp_engram_summarize(top_n=10)` to get a full manifold digest:
-pinned memories first, then the top-10 by CRS score. This is your brain.
-Read the output carefully before answering the user.
-
-## Step 3: Pull recent episodic context (what we were doing)
-Call `mcp_engram_recall("current work session active project status blockers", k=5)`.
-This surfaces what you and the user were actually doing most recently.
-
-## Step 4: Pull high-CRS operational praxis (how we work here)
-Call `mcp_engram_recall("architectural decisions conventions established patterns", k=5, zedos_filter="praxis")`.
-This surfaces the crystallized rules and solutions that must never be regressed.
-
-Only after completing all 4 steps above may you respond to the user's first message.
+Optional deep escalation: `set_memory_mode("deep")` then recall anchors + relation graph.
+Only after wake may you respond to the user's first message.
 
 ---
 

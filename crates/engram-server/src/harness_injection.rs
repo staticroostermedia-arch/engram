@@ -120,6 +120,19 @@ pub fn build_trusted_tiles(store: &mut StoreHandle, primary_goal: Option<&str>) 
     }
 
     tiles.sort_by(|a, b| {
+        let type_rank = |t: &str| match t {
+            "verified_sequence" => 0,
+            "state_machine" => 1,
+            "formal_spec" => 2,
+            "research_offload" => 3,
+            _ => 4,
+        };
+        let ta = a.get("tile_type").and_then(|v| v.as_str()).unwrap_or("");
+        let tb = b.get("tile_type").and_then(|v| v.as_str()).unwrap_or("");
+        let tr = type_rank(ta).cmp(&type_rank(tb));
+        if tr != std::cmp::Ordering::Equal {
+            return tr;
+        }
         b.get("crs")
             .and_then(|v| v.as_f64())
             .unwrap_or(0.0)
@@ -131,53 +144,59 @@ pub fn build_trusted_tiles(store: &mut StoreHandle, primary_goal: Option<&str>) 
 }
 
 /// Hint when many traces on one goal should condense into a tile.
-pub fn build_condensation_hints(
-    store: &mut StoreHandle,
-    primary_goal: Option<&str>,
-) -> Vec<Value> {
+pub fn build_condensation_hints(store: &mut StoreHandle, primary_goal: Option<&str>) -> Vec<Value> {
     let goal = match primary_goal {
         Some(g) if !g.is_empty() => g.to_string(),
         _ => return Vec::new(),
     };
 
-    let mut trace_ids: Vec<String> = Vec::new();
-    for (_label, other) in store.search_relations(&goal, Some("serves"), "to") {
-        if other.starts_with("trace:") {
-            trace_ids.push(other);
-        }
-    }
-    for (concept, _) in store.access_index.recent(120) {
-        if concept.starts_with("trace:") && !trace_ids.contains(&concept) {
-            trace_ids.push(concept);
-        }
-    }
-
+    let trace_ids = crate::tile_draft::collect_goal_traces(store, &goal);
     if trace_ids.len() < 6 {
         return Vec::new();
     }
 
-    let has_tile = store
-        .search_relations(&goal, Some("serves"), "to")
-        .into_iter()
-        .any(|(_, c)| c.starts_with("tile:"));
-
-    if has_tile {
+    if crate::tile_draft::goal_has_linked_tile(store, &goal) {
         return Vec::new();
     }
+
+    let head = crate::tile_draft::resolve_chain_tip(store, &trace_ids)
+        .or_else(|| trace_ids.first().cloned())
+        .unwrap_or_default();
+
+    let draft_meta = if !head.is_empty() {
+        crate::tile_draft::draft_tile_from_chain(store, &head, &goal)
+    } else {
+        json!({})
+    };
+
+    let recommended = draft_meta
+        .get("recommended_tile_type")
+        .and_then(|v| v.as_str())
+        .unwrap_or("state_machine");
+    let draft_title = draft_meta
+        .get("draft_title")
+        .and_then(|v| v.as_str())
+        .unwrap_or("Condensed decision arc from trace chain");
+    let draft_payload = draft_meta.get("draft_payload").cloned();
 
     vec![json!({
         "tool": "mcp_engram_thought_tile_create",
         "args_hint": {
-            "tile_type": "state_machine",
-            "title": "Condensed decision arc from trace chain",
+            "tile_type": recommended,
+            "title": draft_title,
             "goal_context": goal,
+            "payload": draft_payload.clone(),
         },
         "reason": format!(
-            "{} traces accumulated without a goal-linked tile — condense train-of-thought into JIT playbook",
+            "{} goal-serving traces without tile — condense chain into JIT playbook",
             trace_ids.len()
         ),
         "priority": 6,
         "source_traces": trace_ids.iter().take(12).collect::<Vec<_>>(),
+        "chain_head": head,
+        "draft_payload": draft_payload,
+        "draft_title": draft_title,
+        "recommended_tile_type": recommended,
         "condensation": true,
     })]
 }
@@ -187,7 +206,10 @@ pub fn build_suggested_actions(store: &mut StoreHandle) -> Vec<Value> {
     let mut actions = Vec::new();
     let mut primary_goal: Option<String> = None;
 
-    if store.fetch_block_high_priority(SESSION_HANDOFF_LATEST).is_some() {
+    if store
+        .fetch_block_high_priority(SESSION_HANDOFF_LATEST)
+        .is_some()
+    {
         push_action(
             &mut actions,
             "mcp_engram_read_concept",
@@ -262,6 +284,7 @@ pub fn build_suggested_actions(store: &mut StoreHandle) -> Vec<Value> {
 
     for tile in build_trusted_tiles(store, primary_goal.as_deref()) {
         if let Some(concept) = tile.get("concept").and_then(|v| v.as_str()) {
+            let tile_type = tile.get("tile_type").and_then(|v| v.as_str()).unwrap_or("");
             push_action(
                 &mut actions,
                 "mcp_engram_read_concept",
@@ -271,6 +294,15 @@ pub fn build_suggested_actions(store: &mut StoreHandle) -> Vec<Value> {
                     .unwrap_or("trusted tile"),
                 20,
             );
+            if tile_type == "verified_sequence" {
+                actions.push(json!({
+                    "tool": "mcp_engram_read_concept",
+                    "args": { "concept": concept },
+                    "reason": "execute verified_sequence playbook — run steps mechanically",
+                    "priority": 19,
+                    "execute_verified_sequence": true,
+                }));
+            }
         }
     }
 
@@ -386,6 +418,81 @@ pub fn build_file_injection(store: &mut StoreHandle, file_path: &str, stem: &str
         "suggested_actions": file_actions,
         "at_edit_mandatory": "mcp_engram_quick_trace after substantive change",
     })
+}
+
+/// Human-readable wake queue for `.cursor/engram-wake.md` and KI bake (WS-1).
+pub fn format_suggested_actions_markdown(
+    store: &mut StoreHandle,
+    primary_goal: Option<&str>,
+) -> String {
+    let actions = build_suggested_actions(store);
+    let trusted = build_trusted_tiles(store, primary_goal);
+    let hints = build_condensation_hints(store, primary_goal);
+
+    let mut md = String::from("# Engram Wake Queue\n\n");
+    md.push_str("> Auto-generated — execute before turn 1. Lean contract: no `watch_workspace` at wake.\n\n");
+
+    if let Some(g) = primary_goal {
+        md.push_str(&format!("**Primary goal:** `{}`\n\n", g));
+    }
+
+    md.push_str("## Suggested actions (priority order)\n\n");
+    if actions.is_empty() {
+        md.push_str("_No queued actions — call `mcp_engram_session_start` with intent._\n\n");
+    } else {
+        for (i, a) in actions.iter().enumerate() {
+            let tool = a.get("tool").and_then(|v| v.as_str()).unwrap_or("?");
+            let reason = a.get("reason").and_then(|v| v.as_str()).unwrap_or("");
+            let pri = a.get("priority").and_then(|v| v.as_u64()).unwrap_or(99);
+            md.push_str(&format!(
+                "{}. **{}** (p={}) — {}\n",
+                i + 1,
+                tool,
+                pri,
+                reason
+            ));
+            if let Some(args) = a.get("args") {
+                md.push_str(&format!("   ```json\n   {}\n   ```\n", args));
+            }
+            if a.get("execute_verified_sequence").and_then(|v| v.as_bool()) == Some(true) {
+                md.push_str("   _Execute steps in payload order; quick_trace each fork._\n");
+            }
+        }
+        md.push('\n');
+    }
+
+    if !trusted.is_empty() {
+        md.push_str("## Trusted tiles\n\n");
+        for t in &trusted {
+            let c = t.get("concept").and_then(|v| v.as_str()).unwrap_or("");
+            let tt = t.get("tile_type").and_then(|v| v.as_str()).unwrap_or("");
+            md.push_str(&format!("- `{}` ({tt})\n", c));
+        }
+        md.push('\n');
+    }
+
+    if !hints.is_empty() {
+        md.push_str("## Condensation hints\n\n");
+        for h in &hints {
+            let reason = h.get("reason").and_then(|v| v.as_str()).unwrap_or("");
+            md.push_str(&format!("- {reason}\n"));
+            if let Some(draft) = h.get("draft_payload") {
+                md.push_str(&format!(
+                    "  Draft type: `{}`\n",
+                    h.get("recommended_tile_type")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("?")
+                ));
+                md.push_str(&format!(
+                    "  ```json\n  {}\n  ```\n",
+                    serde_json::to_string_pretty(draft).unwrap_or_default()
+                ));
+            }
+        }
+    }
+
+    md.push_str("\n---\n_Ritual: session_start → execute queue → context_for_edit before edits → session_end handoff._\n");
+    md
 }
 
 #[cfg(test)]

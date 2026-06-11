@@ -28,6 +28,10 @@ mcp_engram_session_start(
 - `backend_readiness` — bvh_ready, recall_mode, leg_block_count
 - `session_key` — bind `agent_instance_continuation` if you write a relation (deep mode)
 
+**Execute `harness_injection`** (in `continuation` bundle):
+- Run `suggested_actions` in priority order (handoff → goal → trusted tiles → condensation drafts).
+- Cursor: read `.cursor/engram-wake.md` first if present (`./scripts/cursor-engram-preflight.sh` regenerates it).
+
 **You do NOT need** (lean mode):
 - `get_continuation_bundle` (redundant — inline now)
 - `query_pure` / `query_with_momentum` (unless bundle is empty)
