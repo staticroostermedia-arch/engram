@@ -4,7 +4,9 @@
 **Audience:** Any AI agent using the Engram MCP server  
 **Principle:** Lean by default, deep on demand. Eight tools cover wake → work → handoff on large stores (181k+ blocks) without ritual tax or RAM death.
 
-> **55+ tools still exist.** Power tools (`query_with_momentum`, `visualize`, `thought_tile_create`, `verify_manifold_integrity`, …) remain available. This contract is the **minimal path** agents should follow unless deep mode or a specific task requires more.
+> **58 more tools exist** (66 total). Power tools (`update`, `query_with_momentum`, `search_by_relation`, `remember_solution`, `scar`, `thought_tile_create`, …) remain available. This contract is the **Layer 0 highway** — not the full map.
+
+**Full decision map:** [TOOL_DECISION_MAP.md](TOOL_DECISION_MAP.md) — mermaid flows for all 66 tools, write path (`update` vs `remember`), read escalation, and Grok Build vs Cursor throttle.
 
 ---
 
@@ -37,7 +39,7 @@
 
 **`quick_trace(decision, why, …)`** — Same quality as `record_reasoning_trace` with fewer fields. Produces chained `trace:*` blocks the next wake surfaces first.
 
-**`remember(concept, text)`** — New concept only. Always `recall` first; if score > 0.85 on an existing concept, use `update` instead (power tool, not in the 8).
+**`remember(concept, text)`** — New concept only. Always `recall` first; if score > 0.85 on an existing concept, use `update` instead (Layer 1 — see [write path](TOOL_DECISION_MAP.md#write-path-non-negotiable)).
 
 **`session_end(summary, prepare_compression?)`** — Mandatory last call. Commits episodic terminal state and returns a **structured handoff packet** (JSON) for machine-readable continuation.
 
@@ -265,7 +267,7 @@ The next instance's `session_start` surfaces `handoff_packet` fields inside `con
 | `mcp_engram_query_pure` / `query_with_momentum` | Extra wake round-trips | Deep mode or anchor recall returned empty |
 | `mcp_engram_summarize` | Duplicates bundle artifacts | Deep mode orientation pass |
 | `mcp_engram_incremental_spatial_ingest` | Bundled via `session_start(include_spatial=true)` | Explicit path bootstrap |
-| `mcp_engram_list` / `list_concepts` | Full store scan on 181k+ blocks | Never in lean; use `recall(scope=anchors)` |
+| `mcp_engram_list_concepts` | Full store scan on 181k+ blocks | Never in lean; use `recall(scope=anchors)` |
 | `mcp_engram_force_spatial_ingest` | Full force ingest (81+ files) | Cold bootstrap only, deep mode |
 
 **Rule of thumb:** If the 8-tool path answers your question, stop. Escalate to power tools deliberately, then return to lean.
@@ -298,7 +300,7 @@ mcp_engram_session_end(summary="<decisions, files, next steps>")
 - [docs/skills/engram-working-memory.md](skills/engram-working-memory.md) — edit loop with `context_for_edit`
 - [docs/skills/engram-session-end.md](skills/engram-session-end.md) — handoff packet protocol
 - [design/agent_memory_mvp_plan.md](../design/agent_memory_mvp_plan.md) — implementation phases A1–A6
-- [docs/MCP_TOOLS_REFERENCE.md](MCP_TOOLS_REFERENCE.md) — all 55+ tools
+- [docs/MCP_TOOLS_REFERENCE.md](MCP_TOOLS_REFERENCE.md) — all 66 tools (8 essential)
 
 ---
 

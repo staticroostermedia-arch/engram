@@ -1,0 +1,39 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+    env:
+      ENGRAM_FORCE_BACKEND: cpu
+    steps:
+    - uses: actions/checkout@v4
+    - name: Install dependencies
+      run: sudo apt-get update && sudo apt-get install -y capnproto
+    - name: Build release binary (headless-safe, no wgpu)
+      run: cargo build -p engram-server --release --no-default-features --features cpu-only
+    - name: Agent-memory harness gate
+      run: |
+        STABLE_BIN=target/release/engram \
+        tools/test-harness/bin/engram-harness.sh --suite agent-memory --timeout 120
+    - name: Package binary
+      run: |
+        mkdir -p dist
+        cp target/release/engram dist/engram-linux-x86_64
+        cp scripts/engram-grok dist/
+        cp scripts/install-engram-plugin.sh dist/
+        cp scripts/engram-mcp-health.sh dist/
+        chmod +x dist/engram-grok dist/install-engram-plugin.sh dist/engram-mcp-health.sh
+        tar -czvf engram-${{ github.ref_name }}-linux-x86_64.tar.gz -C dist .
+    - name: Upload release asset
+      uses: softprops/action-gh-release@v2
+      with:
+        files: engram-${{ github.ref_name }}-linux-x86_64.tar.gz
+        generate_release_notes: true

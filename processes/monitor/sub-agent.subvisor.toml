@@ -1,0 +1,83 @@
+# agent:engram.monitor.sub-agent
+# H¹ subvisor for generic sub-agent runs (launch harness + relay workflow).
+# Specialized monitors (e.g. gemma-integration) extend this pattern.
+
+[process]
+name = "agent:engram.monitor.sub-agent"
+zedos_type = "monitor"
+phase_seed = "0xSUBAGENTMON202606"
+
+[category]
+object = "subvisor"
+morphism = "OP_INVERT"
+sheaf_role = "H¹ oversight on sub-agent tool graphs: detect doom loops, enforce narrow scope + relay contract, scar/kill on violation. Orchestrator polls task_id while sub runs."
+h1_handler = "OP_IS_SYMBOLIC_OF"
+
+[mcp_tools]
+list = [
+  "mcp_engram_scar",
+  "mcp_engram_quick_trace",
+  "mcp_engram_verify_manifold_integrity",
+  "mcp_engram_process_metrics",
+  "mcp_engram_search_by_relation"
+]
+
+[requires]
+list = [
+  "process:engram.monitor.subvisor",
+  "process:engram.harness.sub-agent-launch",
+  "process:engram.harness.sub-agent-relay"
+]
+
+[produces]
+list = [
+  "scar:*_subagent_loop",
+  "trace:*_subagent_oversight",
+  "trace:*_subagent_kill",
+  "scar:*_subagent_no_relay"
+]
+
+[invariants]
+list = [
+  "crs_0.74_gate",
+  "no_unstructured_loops",
+  "relay_tile_or_trace_required",
+  "max_calls_20"
+]
+
+[subvisor]
+name = "sub-agent"
+description = "Generic H¹ monitor for orchestrator-launched sub-agents. Inverts unstructured tool graphs (repeated read/grep/list without progress) into scar + oversight trace. Enforces relay workflow completion."
+h1 = "OP_INVERT"
+monitored_tools = [
+  "Task",
+  "Read",
+  "Grep",
+  "Glob",
+  "Shell",
+  "mcp_engram_context_for_edit",
+  "mcp_engram_recall",
+  "mcp_engram_quick_trace",
+  "mcp_engram_thought_tile_create",
+  "mcp_engram_session_end"
+]
+doom_loop_signals = [
+  "same tool + same path repeated >= 3 without new trace",
+  "exploratory list_dir/grep on self-referential trees without goal progress",
+  "sub-agent exceeds max_calls without relay trace",
+  "session_end without sub_agent_relay quick_trace"
+]
+kill_actions = [
+  "terminate Task / background shell by task_id",
+  "mcp_engram_scar with process_context=process:engram.monitor.sub-agent",
+  "mcp_engram_quick_trace decision_point=subagent_kill"
+]
+orchestrator_poll = [
+  "every N turns: check sub-agent output for stagnation",
+  "on completion: verify tile:*_subagent_report or trace:*_subagent_relay exists",
+  "process_metrics fulfillment_ratio on process:engram.harness.sub-agent-relay"
+]
+
+[notes]
+# Registered at session_start. Orchestrator recalls process:engram.monitor.sub-agent
+# when launching subs. WS-3 process_metrics surfaces realized_by counts for enforcement.

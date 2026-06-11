@@ -2,7 +2,7 @@
 name: engram-thought-tiles
 ---
 
-# Enram Thought Tiles (Public Agent Protocol)
+# Engram Thought Tiles (Public Agent Protocol)
 
 Thought Tiles are structured, compressible, high-value artifacts (textual functors + optional visualizations) optimized for agent recall, momentum, NREM, ki_hijacker, and continuation bundles.
 

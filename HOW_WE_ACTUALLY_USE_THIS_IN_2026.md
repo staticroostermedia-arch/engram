@@ -24,13 +24,17 @@ Clone this for the tools, rituals, docs, and review surface. Keep the mind state
    cargo install --path crates/engram-cli
    ```
 
-2. Add the MCP server to your Grok Build / TUI configuration:
+2. Add the MCP server to your Grok Build / Cursor configuration (use `scripts/engram-grok` for lean agent profile):
    ```json
    {
      "mcpServers": {
        "engram": {
-         "command": "engram",
-         "args": ["mcp", "--store", "~/.engram/stalks/"]
+         "command": "/path/to/engram/scripts/engram-grok",
+         "args": ["mcp"],
+         "env": {
+           "ENGRAM_STORE": "~/.engram/stalks/",
+           "ENGRAM_PROFILE": "agent"
+         }
        }
      }
    }
@@ -126,7 +130,7 @@ The living `engram-session-end` skill is the executable version.
 
 ### Human Review Surface
 Use `./scripts/leg` (or `--live`).  
-It is currently the best way for a human (or a non-technical spouse) to see what the agent is actually carrying forward. STATIC mode is already useful for reviewing recent structured work. The dual text + rich HTML Thought Tiles and tighter integration with living goals are active areas of improvement from the current wave.
+It is the best way for a human reviewer to see what the agent is carrying forward. STATIC mode is useful for reviewing recent structured work (traces, goals, tiles). Dynamic `--live` mode improves as harness injection and tile integration mature.
 
 ## Honest Current State (as of this handoff)
 
@@ -171,6 +175,6 @@ The Inheritance Principle is not poetry. It is the operational result of doing t
 
 ---
 
-*Created as the primary canonical handoff document after a full multi-agent documentation alignment audit (May/June 2026). The goal was to make the workspace actually usable for a non-technical spouse on a maxed-out Mac Mini 4 with Grok Build, and for future Grok instances that simply want persistent, low-friction continuity.*
+*Practical operating guide for Grok Build / Cursor agents using Engram. For the xAI pitch and 8-tool contract, start with [docs/GROK_BUILD_MEMORY.md](docs/GROK_BUILD_MEMORY.md) and [docs/AGENT_MEMORY_CONTRACT.md](docs/AGENT_MEMORY_CONTRACT.md).*
 
 *All other documentation in this tree should be read with the understanding that large parts of it predate the current ritual hardening, the binding scar-on-tool-failure-rollover rule, Rule 6 expensive-tool hygiene, the emphasis on structured traces as serial self-model, and the explicit primacy of the four living skills.*

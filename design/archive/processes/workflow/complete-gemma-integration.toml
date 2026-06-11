@@ -1,0 +1,35 @@
+[workflow]
+name = "complete-gemma-integration"
+description = "First work loop to complete Gemma-4-12B integration (convert GGUF, launch server 11435, update Enram embed for 3840, test Hermes+bridge+new model+Engram). Assigned to close the loop for future work loops."
+primary_goal = "goal:mvp_gap_closure_v1"
+max_iterations = 1
+
+[wake]
+ritual = "engram-wake-up"
+tools = ["mcp_engram_session_start"]
+
+[execute]
+steps = [
+  { name = "verify", desc = "Gemma ready (23G safetensors, 3840 hidden)", subagent = "verify-gemma" },
+  { name = "convert", desc = "HF to GGUF", subagent = "convert-gemma" },
+  { name = "launch", desc = "llama-server on 11435", subagent = "launch-server" },
+  { name = "update-embed", desc = "Update Enram store.rs embed to 11435, model gemma-4-12B, note 3840 dim", subagent = "update-embed" },
+  { name = "test", desc = "Test full stack Hermes bridge + new model + Engram", subagent = "test-stack" }
+]
+subvisor = "monitor"
+
+[trace]
+at = ["steps", "forks"]
+tools = ["mcp_engram_quick_trace", "mcp_engram_remember", "mcp_engram_update"]
+
+[spatial]
+on = ["update-embed"]
+tools = ["mcp_engram_context_for_edit"]
+
+[thought-tiles]
+create = { title = "Gemma Integration Work Loop", type = "progress", goal_context = "goal:mvp_gap_closure_v1" }
+
+[handoff]
+ritual = "engram-session-end"
+tools = ["mcp_engram_session_end", "mcp_engram_thought_tile_write_result"]
+prepare_compression = true

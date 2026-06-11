@@ -27,14 +27,17 @@
 //!   --no-scout  : Skip scout_daemon supervisor (avoids port 8088 contention/spam when only using /api/* for dynamic views).
 
 pub mod daemon;
+mod harness_injection;
 pub mod ki_hijacker;
 mod mcp;
 mod mcp_lock;
+mod process_metrics;
 mod profile;
 pub mod scout;
 pub mod scout_supervisor;
 mod serve;
 mod store;
+mod tile_draft;
 pub mod watchdog;
 
 use clap::{Parser, Subcommand};
@@ -69,6 +72,15 @@ enum Commands {
         /// Skip seeding alignment genesis blocks on first boot
         #[arg(long, default_value_t = false)]
         no_genesis: bool,
+    },
+
+    /// Block until the geometric store is loaded and ready (for engram-grok / TUI MCP launcher).
+    /// Performs full StoreHandle init (not the MCP fast-placeholder). Warms large manifolds
+    /// before the stdio MCP subprocess starts so native use_tool sees a healthy backend sooner.
+    WaitReady {
+        /// Max seconds to wait for full store initialization (default 180)
+        #[arg(long, default_value_t = 180)]
+        timeout: u64,
     },
 
     /// Run as a REST HTTP server
@@ -134,6 +146,51 @@ fn main() -> anyhow::Result<()> {
         .build()?;
 
     match cli.command {
+        Commands::WaitReady { timeout } => {
+            use std::sync::mpsc;
+            use std::time::Duration;
+
+            profile::EngramProfile::from_env().apply();
+            maybe_defer_bvh_for_large_store(&cli.store);
+
+            tracing::info!(
+                "[wait-ready] Loading store at '{}' (timeout {}s) before MCP spawn…",
+                cli.store,
+                timeout
+            );
+
+            let path = cli.store.clone();
+            let (tx, rx) = mpsc::channel();
+            std::thread::spawn(move || {
+                let store = store::StoreHandle::new(&path);
+                store.mark_fully_initialized();
+                let readiness = store.backend_readiness();
+                let hot = store.hot_concepts().len();
+                let _ = tx.send((readiness, hot));
+            });
+
+            match rx.recv_timeout(Duration::from_secs(timeout)) {
+                Ok((readiness, hot)) => {
+                    tracing::info!(
+                        "[wait-ready] Store ready (hot_concepts={}, readiness={})",
+                        hot,
+                        readiness
+                    );
+                }
+                Err(mpsc::RecvTimeoutError::Timeout) => {
+                    tracing::error!(
+                        "[wait-ready] Timed out after {}s — MCP may start on fast-placeholder; \
+                         poll mcp_engram_get_backend_readiness after wake.",
+                        timeout
+                    );
+                    std::process::exit(1);
+                }
+                Err(mpsc::RecvTimeoutError::Disconnected) => {
+                    tracing::error!("[wait-ready] Init thread exited before signaling readiness");
+                    std::process::exit(1);
+                }
+            }
+        }
         Commands::Mcp { no_genesis } => {
             profile::EngramProfile::from_env().apply();
             let _mcp_lock = mcp_lock::McpStoreLock::acquire(&cli.store)?;
@@ -161,6 +218,10 @@ fn main() -> anyhow::Result<()> {
             let store_for_upgrade = store.clone();
             let real_path = cli.store.clone();
             std::thread::spawn(move || {
+                // Brief pause so stdio MCP can finish initialize/handshake before heavy
+                // backend work (StoreHandle::new, daemon, BVH). Prevents CI harness races
+                // where the subprocess aborts before the client sees any stderr/logs.
+                std::thread::sleep(std::time::Duration::from_millis(1200));
                 tracing::info!("[MCP-FAST] Starting full manifold initialization in background...");
                 maybe_defer_bvh_for_large_store(&real_path);
 

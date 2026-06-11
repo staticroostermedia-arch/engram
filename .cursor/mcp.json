@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "engram": {
+      "command": "${workspaceFolder}/scripts/engram-grok",
+      "args": ["mcp"],
+      "env": {
+        "ENGRAM_STORE": "~/.engram/stalks/",
+        "ENGRAM_PROFILE": "agent",
+        "ENGRAM_KI_ARTIFACTS_DIR": "${workspaceFolder}/.cursor/engram-ki"
+      },
+      "disabled": false
+    }
+  }
+}

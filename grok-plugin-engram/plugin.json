@@ -1,0 +1,18 @@
+{
+  "name": "engram-geometric",
+  "version": "0.5.0",
+  "description": "Local geometric memory for Grok Build: one-call wake, anchor recall, edit-scoped code context, structured session handoff. 8-tool lean contract.",
+  "author": {
+    "name": "Engram / Static Rooster Media"
+  },
+  "homepage": "https://github.com/staticroostermedia-arch/engram",
+  "keywords": [
+    "memory",
+    "persistent-memory",
+    "mcp",
+    "session-handoff",
+    "geometric-memory",
+    "code-context"
+  ],
+  "category": "development"
+}

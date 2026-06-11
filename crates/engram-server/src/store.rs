@@ -188,7 +188,7 @@ impl AccessIndex {
     pub fn recent(&self, n: usize) -> Vec<(String, u64)> {
         let mut entries: Vec<(String, u64)> =
             self.map.iter().map(|(k, v)| (k.clone(), *v)).collect();
-        entries.sort_by(|a, b| b.1.cmp(&a.1));
+        entries.sort_by_key(|b| std::cmp::Reverse(b.1));
         entries.truncate(n);
         entries
     }
@@ -750,7 +750,10 @@ impl Backend {
             Backend::Gpu(b) => b.promote_to_high_priority(concept, last_accessed),
             #[cfg(engram_backend_metal)]
             Backend::Metal(b) => b.promote_to_high_priority(concept, last_accessed),
-            _ => self.fetch_block(concept),
+            _ => {
+                let _ = last_accessed;
+                self.fetch_block(concept)
+            }
         }
     }
 
@@ -760,7 +763,10 @@ impl Backend {
             Backend::Gpu(b) => b.is_hot(concept),
             #[cfg(engram_backend_metal)]
             Backend::Metal(b) => b.is_hot(concept),
-            _ => false,
+            _ => {
+                let _ = concept;
+                false
+            }
         }
     }
 
@@ -1044,7 +1050,24 @@ impl StoreHandle {
                     );
                     Backend::Metal(MetalBackend::new(&expanded))
                 }
-                #[cfg(not(any(engram_backend_cuda, engram_backend_metal)))]
+                #[cfg(all(
+                    engram_backend_wgpu,
+                    not(engram_backend_cuda),
+                    not(engram_backend_metal)
+                ))]
+                {
+                    tracing::info!("engram-gpu: WgpuBackend selected (WebGPU INT8 search)");
+                    match WgpuBackend::new(&expanded) {
+                        Ok(wgpu) => Backend::Wgpu(wgpu),
+                        Err(e) => {
+                            tracing::warn!(
+                                "engram-gpu: WgpuBackend init failed ({e}) — falling back to CPU"
+                            );
+                            Backend::Single(CpuBackend::new(&expanded))
+                        }
+                    }
+                }
+                #[cfg(not(any(engram_backend_cuda, engram_backend_metal, engram_backend_wgpu)))]
                 {
                     Backend::Single(CpuBackend::new(&expanded))
                 }
@@ -1779,7 +1802,7 @@ impl StoreHandle {
                 entries.push((mtime, stem.to_string()));
             }
         }
-        entries.sort_by(|a, b| b.0.cmp(&a.0));
+        entries.sort_by_key(|b| std::cmp::Reverse(b.0));
         entries.into_iter().take(max).map(|(_, s)| s).collect()
     }
 
@@ -2395,13 +2418,16 @@ impl StoreHandle {
             })
         };
 
+        let harness = crate::harness_injection::build_harness_bundle(self);
+
         let bundle = serde_json::json!({
             "primary_goal": primary_goal_name,
             "last_session_end": last_session_end,
             "hydration_cache_present": hydration_cache_present,
             "structured_handoff": structured_handoff,
             "active_artifacts": active_tiles,
-            "recall_hint": "Read structured_handoff first via mcp_engram_read_concept, then recall each concept in active_artifacts.",
+            "recall_hint": "Execute suggested_actions in order, then read structured_handoff.",
+            "harness_injection": harness,
             "cached_at": now,
         });
         self.continuation_bundle_cached_at = now;
@@ -2630,6 +2656,7 @@ impl StoreHandle {
         // (framed BVH/OptiX candidate filtering + 8192D scoring) without extra locks in hot path.
         // All behind existing high_priority; no layout change; O_DIRECT cold untouched.
         // Explicit geo:* names + per-artifact geo_context:* snapshots for consumption by other WS.
+        #[cfg(any(engram_backend_cuda, engram_backend_metal))]
         if let Ok(geo) = self.geosphere.read() {
             let snap_name = if raw.starts_with("geo_snapshot:")
                 || raw == "active_symplectic_state"
@@ -2787,7 +2814,10 @@ impl StoreHandle {
             Backend::Gpu(b) => b.is_geo_hot(name),
             #[cfg(engram_backend_metal)]
             Backend::Metal(b) => b.is_geo_hot(name),
-            _ => false,
+            _ => {
+                let _ = name;
+                false
+            }
         }
     }
 
@@ -2798,7 +2828,10 @@ impl StoreHandle {
             Backend::Gpu(b) => b.fetch_geo_high_priority(name),
             #[cfg(engram_backend_metal)]
             Backend::Metal(b) => b.fetch_geo_high_priority(name),
-            _ => None,
+            _ => {
+                let _ = name;
+                None
+            }
         }
     }
 
@@ -3654,6 +3687,9 @@ impl StoreHandle {
                 "end": line_end,
             });
         }
+
+        result["harness_injection"] =
+            crate::harness_injection::build_file_injection(self, file_path, &stem);
 
         result
     }

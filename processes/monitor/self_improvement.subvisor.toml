@@ -1,0 +1,37 @@
+# agent:engram.monitor.self-improvement
+# H¹ subvisor for self_improvement_loop (meta workflow).
+
+[process]
+name = "agent:engram.monitor.self-improvement"
+zedos_type = "monitor"
+phase_seed = "0xSELFIMPSUB202606"
+
+[category]
+object = "subvisor"
+morphism = "OP_INVERT"
+sheaf_role = "Monitors self-modification proposals for low CRS, doom loops, and invariant breaks."
+h1_handler = "OP_IS_SYMBOLIC_OF"
+
+[mcp_tools]
+list = ["mcp_engram_update", "mcp_engram_scar", "mcp_engram_verify_manifold_integrity", "mcp_engram_record_reasoning_trace"]
+
+[requires]
+list = ["process:engram.monitor.subvisor"]
+
+[produces]
+list = ["scar:*_self_improvement", "trace:*_self_improvement_oversight"]
+
+[invariants]
+list = ["crs_after_change_gte_0.74", "no_infinite_self_modification", "manifold_integrity_preserved"]
+
+[subvisor]
+name = "self_improvement"
+description = "H1 subvisor for self_improvement_loop. Monitors tool graph and sub-agent proposals for critical failure modes."
+h1 = "OP_INVERT"
+monitored_tools = ["propose_improvements", "safe_test", "adopt_or_scar", "mcp_engram_update"]
+invariants = [
+  "crs_after_change >= 0.74 for adopted changes",
+  "no infinite self-modification without human review",
+  "manifold_integrity preserved (call verify before/after)"
+]
+kill_conditions = ["low_crs_proposal", "doom_loop_detected", "verify_failure"]

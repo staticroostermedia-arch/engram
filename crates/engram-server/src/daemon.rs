@@ -177,32 +177,34 @@ pub fn spawn(store: SharedStore) -> Arc<DaemonControl> {
         let mut flush_interval = tokio::time::interval(Duration::from_secs(60));
 
         // ── Phase 3 Epoch IX: NREM Dream Consolidation (Item 1 Ego Intent) ─────
+        // Set ENGRAM_NREM_DISABLE=1 for lean MCP / CI harness (avoids immediate genesis
+        // consolidation stack overflow on fresh runners without ego.leg3).
+        let nrem_disabled = std::env::var("ENGRAM_NREM_DISABLE").as_deref() == Ok("1");
+        if nrem_disabled {
+            info!("[NREM] ENGRAM_NREM_DISABLE=1 — dream consolidation disabled.");
+        }
         // Frequency is configurable via ENGRAM_NREM_INTERVAL_MINUTES (default 360 = 6h for
         // long-term stability on large manifolds). For responsive Primary Intent / goal
         // influence during daily TUI use, 60–120 minutes is recommended now that we have
         // mass capping + relation-driven goal biasing.
-        //
-        // On each tick:
-        //   1. Scan high-CRS blocks.
-        //   2. OP_ADD-superpose (with goal bias + mass cap applied).
-        //   3. Write to `~/.engram/ego.leg3`.
-        //   4. Hot-swap via refresh_ego_q().
         let nrem_minutes: u64 = std::env::var("ENGRAM_NREM_INTERVAL_MINUTES")
             .ok()
             .and_then(|v| v.parse().ok())
             .unwrap_or(360);
         let mut nrem_interval = tokio::time::interval(Duration::from_secs(nrem_minutes * 60));
-        nrem_interval.tick().await; // skip the immediate first tick at startup
+        if !nrem_disabled {
+            nrem_interval.tick().await; // skip the immediate first tick at startup
 
-        // If ego.leg3 does not exist yet, trigger an immediate NREM pass to seed it.
-        let ego_path = std::env::var("HOME")
-            .map(|h| PathBuf::from(h).join(".engram").join("ego.leg3"))
-            .unwrap_or_default();
-        if !ego_path.exists() {
-            info!(
-                "[NREM] ego.leg3 missing on startup — triggering immediate genesis consolidation."
-            );
-            run_nrem_consolidation(&store);
+            // If ego.leg3 does not exist yet, trigger an immediate NREM pass to seed it.
+            let ego_path = std::env::var("HOME")
+                .map(|h| PathBuf::from(h).join(".engram").join("ego.leg3"))
+                .unwrap_or_default();
+            if !ego_path.exists() {
+                info!(
+                    "[NREM] ego.leg3 missing on startup — triggering immediate genesis consolidation."
+                );
+                run_nrem_consolidation(&store);
+            }
         }
 
         // ── Integration Inbox Scanner (Phase 5) ──────────────────────────────
@@ -273,7 +275,7 @@ pub fn spawn(store: SharedStore) -> Arc<DaemonControl> {
                     lock.access_index.flush_if_dirty();
                 }
 
-                _ = nrem_interval.tick() => {
+                _ = nrem_interval.tick(), if !nrem_disabled => {
                     run_nrem_consolidation(&store);
                 }
 

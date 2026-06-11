@@ -4,7 +4,7 @@
 **Date**: 2026-05-26
 **Related Documents**:
 - `conv_task_elevate_praxis_to_operational_protocols.md` (main living task + Execution Package)
-- `praxis_as_protocol_spec.md`
+- `docs/RITUALS.md` (A/D/R trace triad)
 - `post_rebuild_formal_logging_checklist.md`
 
 ---

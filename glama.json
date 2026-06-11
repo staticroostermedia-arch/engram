@@ -1,134 +1,20 @@
 {
   "$schema": "https://glama.ai/mcp/schemas/server.json",
-  "name": "Engram MCP (Local Vector Database)",
-  "description": "Engram is a robust, local vector database and persistent memory system for AI agents. It gives agents long-term semantic memory (HolographicBlock phase-vector store) that runs entirely on your local machine using the Model Context Protocol. Supports CPU, CUDA GPU, and Apple Silicon Metal backends. Features: semantic nearest-neighbor recall, knowledge graph edges, CRS confidence scoring, session summaries, and a background file-watcher daemon for automatic workspace ingestion.",
-  "keywords": ["vector-db", "memory", "semantic", "local", "mcp", "persistent-memory", "knowledge-graph", "embeddings", "rag", "llm-memory"],
-  "license": "MIT",
-  "maintainers": [
-    "staticroostermedia-arch"
-  ],
+  "name": "Engram MCP (Geometric Agent Memory)",
+  "description": "Local geometric memory for AI agents — not a flat vector DB. 256KB HolographicBlocks with CRS lawfulness, one-call session_start with harness injection, context_for_edit for code, structured session handoff. 8-tool lean contract; 66 MCP tools for power users. CPU/CUDA/Metal. AGPL-3.0.",
+  "keywords": ["agent-memory", "geometric-memory", "mcp", "persistent-memory", "session-handoff", "spatial-memory", "rituals", "non-flat", "holographic-memory"],
+  "license": "AGPL-3.0",
+  "maintainers": ["staticroostermedia-arch"],
   "repository": "https://github.com/staticroostermedia-arch/engram",
   "categories": ["knowledge-and-memory"],
   "tools": [
-    {
-      "name": "recall",
-      "description": "Search persistent memory by semantic similarity. Returns ranked HolographicBlock memories."
-    },
-    {
-      "name": "remember",
-      "description": "Encode text and store it as a persistent HolographicBlock memory under a concept name."
-    },
-    {
-      "name": "mcp_engram_update",
-      "description": "Update an existing memory block. Evaluates Lyapunov stability drift between old and new vector encodings."
-    },
-    {
-      "name": "mcp_engram_forget",
-      "description": "Permanently delete a memory block from the manifold."
-    },
-    {
-      "name": "mcp_engram_read_concept",
-      "description": "Fetch the full, un-truncated text body of a specific memory block by concept name."
-    },
-    {
-      "name": "mcp_engram_session_start",
-      "description": "Call at the start of every session. Validates manifold integrity and initializes the session epistemic state."
-    },
-    {
-      "name": "mcp_engram_session_end",
-      "description": "Call at the end of every session. Commits a session summary as a ZEDOS_PRAXIS block."
-    },
-    {
-      "name": "mcp_engram_recall_recent",
-      "description": "Return the N most recently accessed memories, sorted by access time."
-    },
-    {
-      "name": "mcp_engram_summarize",
-      "description": "Return a project-state digest: all pinned memories first, then the top N by CRS score."
-    },
-    {
-      "name": "mcp_engram_pin",
-      "description": "Set a concept's CRS to 1.0 and lock it so the Autophagy Daemon never evicts it."
-    },
-    {
-      "name": "mcp_engram_relate",
-      "description": "Create a directional knowledge graph edge between two concepts using VSA OP_BIND."
-    },
-    {
-      "name": "mcp_engram_search_by_relation",
-      "description": "Traverse the knowledge graph. Find all concepts related to a seed concept."
-    },
-    {
-      "name": "mcp_engram_visualize",
-      "description": "Render a BFS subgraph from a seed concept as a Mermaid diagram."
-    },
-    {
-      "name": "mcp_engram_stats",
-      "description": "Return a health report of the geometric manifold: total memories, pinned count, CRS distribution, disk usage."
-    },
-    {
-      "name": "mcp_engram_remember_solution",
-      "description": "Store a crystallized error→solution pair as a ZEDOS_PRAXIS block, auto-pinned to CRS=1.0."
-    },
-    {
-      "name": "mcp_engram_context_for_file",
-      "description": "Surfaces the top 5 memories most relevant to a file path, including AST-ingested functions and structs."
-    },
-    {
-      "name": "mcp_engram_watch_workspace",
-      "description": "Bind an OS file-watcher to a workspace directory for automatic AST extraction."
-    },
-    {
-      "name": "mcp_engram_list_namespaces",
-      "description": "List all available memory namespaces and which one is currently active."
-    },
-    {
-      "name": "mcp_engram_set_namespace",
-      "description": "Switch to a project-specific memory namespace. Creates the namespace if it does not exist."
-    },
-    {
-      "name": "mcp_engram_export",
-      "description": "Export the manifold as a portable JSON array for backup or migration."
-    },
-    {
-      "name": "mcp_engram_import",
-      "description": "Restore memories from a JSON array previously exported by mcp_engram_export."
-    },
-    {
-      "name": "mcp_engram_query_with_momentum",
-      "description": "Momentum-assisted recall that blends semantic similarity with conceptual trajectory."
-    },
-    {
-      "name": "mcp_engram_track_user",
-      "description": "Track a user interaction in the persistent User Model using 90/10 EMA superposition."
-    },
-    {
-      "name": "mcp_engram_recall_in_file",
-      "description": "Spatial recall: find all AST concepts defined within a specific line range of a file."
-    },
-    {
-      "name": "mcp_engram_batch_remember",
-      "description": "Store multiple memories in a single call. Faster than calling remember() N times."
-    },
-    {
-      "name": "mcp_engram_genesis",
-      "description": "Inspect or re-seed the alignment genesis blocks (PRAXIS-tagged memories at CRS=1.0)."
-    },
-    {
-      "name": "mcp_engram_scar",
-      "description": "Call when a hypothesis fails. Creates a geometric repeller to avoid the same bad solution again."
-    },
-    {
-      "name": "mcp_engram_verify_behavior",
-      "description": "Report empirical success/failure data against a ZEDOS_HYPOTHESIS block."
-    },
-    {
-      "name": "mcp_engram_forget_old",
-      "description": "Manually trigger autophagy: evict all non-pinned memories below a CRS threshold."
-    },
-    {
-      "name": "list_concepts",
-      "description": "List all concept names currently stored in memory."
-    }
+    { "name": "mcp_engram_session_start", "description": "One-call wake: continuation bundle + harness_injection suggested_actions." },
+    { "name": "mcp_engram_context_for_edit", "description": "Edit-scoped spatial + memory context for a file path." },
+    { "name": "mcp_engram_recall", "description": "Anchor-first or episodic recall (scope=anchors for goals/traces)." },
+    { "name": "mcp_engram_quick_trace", "description": "Record a decision fork with prev-chain support." },
+    { "name": "mcp_engram_remember", "description": "Store a new concept (recall first; prefer update if match)." },
+    { "name": "mcp_engram_session_end", "description": "Structured handoff packet for the next session." },
+    { "name": "mcp_engram_update", "description": "Lawful evolution of an existing block (Lyapunov drift)." },
+    { "name": "mcp_engram_relate", "description": "Knowledge graph edge via VSA OP_BIND." }
   ]
 }

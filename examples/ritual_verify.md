@@ -27,4 +27,4 @@ mcp_engram_session_end with summary referencing this + plan + build confirm. pre
 
 Also: mcp_engram_remember_solution for wins, mcp_engram_scar for dead-ends, mcp_engram_relate to goal.
 
-Run in TUI (preferred for full ritual) or via MCP client. See GITHUB_MVP_PREP_PLAN.md Phase 2/3 + docs/RITUALS.md. Current build hygiene enforced.
+Run in TUI (preferred for full ritual) or via MCP client. See docs/RITUALS.md + docs/skills/. Current build hygiene enforced.

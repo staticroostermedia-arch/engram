@@ -5,20 +5,25 @@
 
 use crate::bvh::{Float3, LBVHNode};
 use num_complex::Complex32;
+#[cfg(engram_backend_cuda)]
 use std::sync::atomic::AtomicBool;
 // Ordering only used under cuda cfg; silence warning on wgpu/metal builds
 #[cfg_attr(not(feature = "cuda-kernels"), allow(unused_imports))]
 use std::sync::atomic::Ordering;
 
+#[cfg(engram_backend_cuda)]
 static CUDA_RUNTIME_OK: AtomicBool = AtomicBool::new(false);
+#[cfg(engram_backend_cuda)]
 static CUDA_INIT_TRIED: AtomicBool = AtomicBool::new(false);
 
+#[cfg(engram_backend_cuda)]
 #[repr(C)]
 struct CudaRay {
     origin: [f32; 3],
     direction: [f32; 3],
 }
 
+#[cfg(engram_backend_cuda)]
 #[repr(C)]
 struct CudaComplex {
     x: f32,
@@ -60,7 +65,9 @@ extern "C" {
     );
 }
 
+#[cfg(engram_backend_cuda)]
 const CUDA_MEMCPY_HOST_TO_DEVICE: i32 = 1;
+#[cfg(engram_backend_cuda)]
 const CUDA_MEMCPY_DEVICE_TO_HOST: i32 = 2;
 
 /// True when CUDA lean dispatch is enabled (default unless ENGRAM_CUDA_LEAN=0).

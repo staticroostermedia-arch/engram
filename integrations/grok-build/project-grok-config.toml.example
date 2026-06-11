@@ -1,0 +1,14 @@
+# Copy to .grok/config.toml in your Engram repo (file is gitignored locally).
+# Matches grok-plugin-engram canonical launcher.
+
+[mcp_servers.engram]
+command = "/path/to/Engram/scripts/engram-grok"
+args = ["mcp"]
+enabled = true
+
+[mcp_servers.engram.env]
+ENGRAM_STORE = "/home/a/.engram/stalks/"
+ENGRAM_PROFILE = "agent"
+
+[plugins]
+enabled = ["engram-geometric"]

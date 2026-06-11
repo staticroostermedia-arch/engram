@@ -5,14 +5,31 @@ All notable changes to Engram (geometric non-flat memory substrate).
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] - 2026-06
+## [Unreleased]
+
+## [0.5.0] - 2026-06-10
+
+### Added
+- **Categorical linguistic calculus (P1–P6):** Native reasoning over words/discourse bundles with synthetic differentiate/integrate/operadic ops, homotopy coherence, and fibered CRS guards — inside the same geometric sheaf as numeric phases and code ASTs.
+- **Mixed number/word support:** Bridge linguistic coefficients and numeric phase tensors under `mixed_class_mixing_guard` (CRS ≥ 0.74; scar on violation).
+- **Real agent workflow integration:** `processes/meta/*.toml` workflow fixtures, MCP tests for self-improvement loop simulation, process sheaf load + dispatch integration tests.
+- **`docs/CATEGORICAL_LINGUISTIC_CALCULUS.md`:** Full P1–P6 surface, beginner walkthrough, and lifecycle diagram.
+
+### Changed
+- **Public polish:** README “What is EngramGrok?” intro, copy-paste calculus examples, Mermaid memory lifecycle; CONTRIBUTING quick checklist; CI fixes for wgpu-only runners (GitHub Actions green on ubuntu).
+- Version bump from 0.4.0 → 0.5.0 for public sharing readiness.
+
+### Fixed
+- CI: committed missing `processes/meta/` test fixtures; clippy/fmt gates for Rust 1.96; wgpu backend selection on no-CUDA runners.
+
+## [0.5.0-prep] - 2026-06 (feat/mvp-github-prep branch work, now released as 0.5.0)
 
 ### Added
 - **Agent Memory MVP (Phase A):** 8-tool lean contract — `docs/AGENT_MEMORY_CONTRACT.md`, `docs/GROK_BUILD_MEMORY.md`, `design/agent_memory_mvp_plan.md`.
 - `mcp_engram_context_for_edit`, `mcp_engram_set_memory_mode`, inline `session_start` bundle, structured `session_end` handoff packet.
 - `integrations/grok-build/mcp.json` — safe MCP defaults for large stores; `scripts/engram-grok` launcher.
 - Lean perf flags: `ENGRAM_MEMORY_MODE`, `ENGRAM_DEFER_BVH`, `ENGRAM_DEFER_WATCH_INGEST`, `mcp_lock.rs` for duplicate MCP safety.
-- **Categorical Linguistic Calculus + Mixed Number/Word Support (P1–P6 + mixed arc):** Synthetic homotopy-coherent categorical reasoning over words/discourse + bridged numeric phases (ZEDOS_LINGUISTIC* + Linguistic* structs/mint in types.rs; VSA mixed ops + fibered CRS guards/class-mixing in ops.rs; mcp_linguistic_calculus dispatch + load in mcp.rs; processes/linguistic/*.toml + ritual_linguistic_wake.toml; full e2e mint→P3 compress→P4 calc→decompress→NREM/ego.leg3 with CRS>=0.85 homotopy/fidelity/roundtrip). New `docs/CATEGORICAL_LINGUISTIC_CALCULUS.md`; README polish (30s onboarding, short copy-paste exs, Mermaid lifecycle, punchier comparison bullets); RITUALS/MCP_TOOLS/plan Phase 6 updates + CHANGELOG. See prior handoffs (sub IDs, CRS gates) and GITHUB_MVP_PREP_PLAN.md.
+- **Categorical Linguistic Calculus + Mixed Number/Word Support (P1–P6 + mixed arc):** Synthetic homotopy-coherent categorical reasoning over words/discourse + bridged numeric phases (ZEDOS_LINGUISTIC* + Linguistic* structs/mint in types.rs; VSA mixed ops + fibered CRS guards/class-mixing in ops.rs; mcp_linguistic_calculus dispatch + load in mcp.rs; processes/linguistic/*.toml + ritual_linguistic_wake.toml; full e2e mint→P3 compress→P4 calc→decompress→NREM/ego.leg3 with CRS>=0.85 homotopy/fidelity/roundtrip). New `docs/CATEGORICAL_LINGUISTIC_CALCULUS.md`; README polish (30s onboarding, short copy-paste exs, Mermaid lifecycle, punchier comparison bullets); RITUALS/MCP_TOOLS Phase 6 updates + CHANGELOG.
 - Full GitHub MVP prep for public representation (feat/mvp-github-prep-2026-06 branch):
   - Enhanced README with geometric Memory Model section, comparison table (vs mem0/Letta/chroma/qdrant/ragflow/milvus), badges, runnable examples section, links to new docs, 55+ MCP updates, build hygiene notes.
   - New docs/: GEOMETRIC_MEMORY.md (HolographicBlock, VSA, sheaf/H¹, spatial AABB, invariants), RITUALS.md (wake/working-memory/session-end + Code Edit Ritual v1 + sub-agent governance + lawfulness), MCP_TOOLS_REFERENCE.md (categorized 55+ tools).
@@ -27,14 +44,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **Public agent path:** README, AGENTS.md, FIRST_RUN.md, SKILLS.md, wake-up skill, `integrations/workflows/wake_up.md`, MCP configs — all lead with 8-tool lean contract (not mandatory `watch_workspace` at wake).
-- `docs/MCP_TOOLS_REFERENCE.md` — Essential / Power / Lean-avoid tiers (62 tools retained, not deleted).
+- `docs/MCP_TOOLS_REFERENCE.md` — Essential / Power / Lean-avoid tiers (66 tools retained, not deleted).
 - Public surface now explicitly represents current MVP uniques (geometric sheaf + rituals + subvisor + spatial + continuation + lawfulness + process sheaf) vs flat vector/RAG clones.
 - CI triggers expanded; build hygiene enforced (target/debug/engram preferred).
 
 ### Fixed
-- Gaps vs popular memory GitHub best practices (hero/comparison/examples/templates/CI/docs/AGENTS/CHANGELOG) identified via sub-agent recon + supervisor + narrow audit (see GITHUB_MVP_PREP_PLAN.md for details, scars for sub-agent governance lessons).
+- Gaps vs popular memory GitHub best practices (hero/comparison/examples/templates/CI/docs/AGENTS/CHANGELOG) identified via sub-agent recon + supervisor + narrow audit (see docs/SUBSTRATE_WINS_PLAN.md for harness injection follow-through).
 
-See [docs/GITHUB_MVP_PREP_PLAN.md](docs/GITHUB_MVP_PREP_PLAN.md) for full execution log, sub-agent IDs, gap matrix, success criteria.
+See [docs/SUBSTRATE_WINS_PLAN.md](docs/SUBSTRATE_WINS_PLAN.md) for harness injection roadmap and success criteria.
 
 ## [0.4.0] - 2026-06 (MVP Sheaf / Rituals / Geometric Substrate)
 
@@ -70,6 +87,6 @@ See git log and in-manifold traces (trace:* , goal:*) for pre-sheaf history. Pri
 - Blocking waits/allocs, device loss, full RAM in wgpu, unused projection in Metal.
 - Wake-up clarity bottlenecks (via declarative processes/ + geometry-first paths noted).
 
-See GITHUB_MVP_PREP_PLAN.md for detailed execution, traces, spatial hygiene, dogfood under working-memory + Code Edit Ritual. Primary goal:1780419540. Related to engram_manifesto, ritual anchors, processes/ (sheaf sections).
+See docs/SUBSTRATE_WINS_PLAN.md for harness injection roadmap. Related to engram_manifesto, ritual anchors, processes/ (sheaf sections).
 
 ## [0.4.0] - 2026-06 (MVP Sheaf / Rituals / Geometric Substrate) [prior]

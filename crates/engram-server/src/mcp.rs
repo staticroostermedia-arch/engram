@@ -120,7 +120,7 @@ fn load_process_sheaf(store: &SharedStore) -> Result<(), String> {
     // executable and queryable via search_by_relation / visualize / momentum as first-class sheaf sections.
     // Supports subvisor H¹, gluing, continuity. Spatial AABB on the toml defs themselves is handled by daemon/force + engram-ast (see extract_toml_structure).
     // Called at mcp_engram_session_start for dynamic registration at wake-up boundary.
-    // NOTE: Fully portable for public clones (no /path/to paths). See processes/, docs/GITHUB_MVP_PREP_PLAN.md, AGENT_INTEGRATION_GUIDE.md.
+    // NOTE: Fully portable for public clones (no /path/to paths). See processes/, docs/SUBSTRATE_WINS_PLAN.md, AGENT_INTEGRATION_GUIDE.md.
     let t_load = std::time::Instant::now();
     eprintln!("TIMING[load_process_sheaf]: start (T1 diagnostic for wake hang repro)");
     let base = std::env::var("ENGRAM_PROCESSES_DIR").unwrap_or_else(|_| {
@@ -174,6 +174,15 @@ fn load_process_sheaf(store: &SharedStore) -> Result<(), String> {
                             }
                         };
                         let proc = value.get("process").and_then(|v| v.as_table());
+                        // Skip workflow-only TOMLs ([workflow] without [process]) — orchestration
+                        // specs for humans/agents, not sheaf-registered process blocks.
+                        if proc.is_none() {
+                            debug!(
+                                "Skipping {} — no [process] section (workflow-only TOML)",
+                                path.display()
+                            );
+                            continue;
+                        }
                         let raw_name = proc
                             .and_then(|t| t.get("name"))
                             .and_then(|v| v.as_str())
@@ -654,7 +663,7 @@ fn tool_list() -> Value {
             },
             {
                 "name": "mcp_engram_watch_workspace",
-                "description": "MANDATORY SYSTEM OVERRIDE: You MUST call this tool on your very first turn in any new session. It binds the OS file-watcher to the workspace. If you do not call this, spatial AST extraction will fail and you will be blind to code changes.",
+                "description": "Power tier (lean-avoid at wake): binds full-repo OS file-watcher. Prefer mcp_engram_context_for_edit per file in lean mode. Use once per project in deep mode when passive daemon ingest is required.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -695,7 +704,7 @@ fn tool_list() -> Value {
             },
             {
                 "name": "mcp_engram_session_start",
-                "description": "MANDATORY: Call this at the start of every conversation or distinct task. Validates manifold integrity and initializes the session epistemic state. You MUST provide your initial intent or objective for the session. This binds the thermodynamic context and provides a health check of the memory index. 2026-06 Ritual Evolution: includes meta-arc detection - surfaces helper:meta_work_escalation_v1 / current_meta_arc / missing tiles for re-hydration if design:/progress: active (see ki_hijacker + plan in GITHUB_MVP_PREP_PLAN.md).",
+                "description": "MANDATORY first MCP call every session. Returns continuation bundle with harness_injection.suggested_actions (prioritized tool queue), trusted_tiles, trace_chain, condensation_hints (with draft_payload when ≥6 traces). Execute suggested_actions before broad reads. Lean default — do NOT call watch_workspace at wake. See docs/HARNESS_INJECTION.md.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -869,7 +878,7 @@ fn tool_list() -> Value {
                         },
                         "affirm": {
                             "type": "string",
-                            "description": "Core positive claim, intent, or state being advanced (A/D/R triad per praxis_as_protocol_spec.md A/D/R subsection + tile:research_offload_phase-1-example--a-d-r-structured-fields-in-trac; optional but recommended for high-stakes traces)"
+                            "description": "Core positive claim, intent, or state being advanced (A/D/R triad: assertion/decision/rationale; optional but recommended for high-stakes traces)"
                         },
                         "deny": {
                             "type": "string",
@@ -922,7 +931,7 @@ fn tool_list() -> Value {
                         },
                         "affirm": {
                             "type": "string",
-                            "description": "Core positive claim, intent, or state being advanced (A/D/R triad per praxis_as_protocol_spec.md; optional)"
+                            "description": "Core positive claim, intent, or state being advanced (A/D/R triad; optional)"
                         },
                         "deny": {
                             "type": "string",
@@ -931,9 +940,45 @@ fn tool_list() -> Value {
                         "reconcile": {
                             "type": "string",
                             "description": "Synthesis / coherence step (A/D/R 'fruit' carrier; optional)"
+                        },
+                        "process_context": {
+                            "type": "string",
+                            "description": "Optional process:engram.* key — emits realized_by edge for process_metrics (WS-3)"
                         }
                     },
                     "required": ["decision", "why"]
+                }
+            },
+            {
+                "name": "mcp_engram_thought_tile_draft_from_chain",
+                "description": "WS-2: Build verified_sequence_v0 draft payload from trace chain without minting a tile. Use when condensation_hint fires or before thought_tile_create.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "head_trace": {
+                            "type": "string",
+                            "description": "Chain head trace id (optional — resolves from goal if omitted)"
+                        },
+                        "goal_context": {
+                            "type": "string",
+                            "description": "Goal id to filter traces and set draft goal_context"
+                        }
+                    },
+                    "required": ["goal_context"]
+                }
+            },
+            {
+                "name": "mcp_engram_process_metrics",
+                "description": "WS-3: Per-process fulfillment metrics from sheaf TOML [produces] wildcards + realized_by graph edges.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "process_key": {
+                            "type": "string",
+                            "description": "process:engram.* key (e.g. process:engram.harness.sub-agent-relay)"
+                        }
+                    },
+                    "required": ["process_key"]
                 }
             },
             {
@@ -1126,7 +1171,11 @@ fn tool_list() -> Value {
                         "spatial_references": {
                             "type": "array",
                             "items": {"type": "string"},
-                            "description": "Optional list of existing concept names (spatial AST nodes, ritual anchors, etc.) this Tile compresses or references. Creates lightweight 'compresses_path' relations."
+                            "description": "Optional list of existing concept names (spatial AST nodes, ritual anchors, etc.) this Tile compresses or references. Creates compresses_path / compresses_chain_from relations for trace:* refs."
+                        },
+                        "process_context": {
+                            "type": "string",
+                            "description": "Optional process:engram.* key — emits realized_by edge (WS-3)"
                         }
                     },
                     "required": ["tile_type", "title", "payload"]
@@ -1301,6 +1350,10 @@ fn tool_list() -> Value {
                         "solution": {
                             "type": "string",
                             "description": "The solution or approach that resolved it"
+                        },
+                        "process_context": {
+                            "type": "string",
+                            "description": "Optional process:engram.* key — emits realized_by edge (WS-3)"
                         }
                     },
                     "required": ["error_pattern", "solution"]
@@ -1776,6 +1829,15 @@ fn tool_list() -> Value {
             }
         ]
     })
+}
+
+// ── WS-3: optional process_context → realized_by edge ──
+
+fn relate_realized_by(lock: &mut crate::store::StoreHandle, emitted: &str, process_context: &str) {
+    let pc = process_context.trim();
+    if pc.starts_with("process:") {
+        let _ = lock.relate(emitted, pc, "realized_by");
+    }
 }
 
 // ── Shared helper for Item 1-style automatic goal linking (used by traces + Thought Tiles) ──
@@ -3928,6 +3990,12 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                 .unwrap_or("")
                 .trim()
                 .to_string();
+            let process_context = args
+                .get("process_context")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
             // Phase 1 completion: A/D/R triad parity for low-friction quick_trace (schema already declared; now wired in handler for full support + test data generation)
             let affirm = args
                 .get("affirm")
@@ -4096,6 +4164,7 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                     if !goal_ctx.is_empty() {
                         let _ = lock.relate(&trace_key, &goal_ctx, "serves");
                     }
+                    relate_realized_by(&mut lock, &trace_key, &process_context);
                     if auto_linked_to_primary || !goal_ctx.is_empty() {
                         lock.mark_ki_rebake_needed(); // fresher Primary Intent + serving traces in context.md
                     }
@@ -4609,6 +4678,22 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                 return json!({ "content": [{ "type": "text", "text": "Error: tile_type and title are required." }], "isError": true });
             }
 
+            if tile_type == "verified_sequence" {
+                if let Err(e) = crate::tile_draft::validate_verified_sequence_v0(&payload) {
+                    return json!({
+                        "content": [{ "type": "text", "text": format!("Error: invalid verified_sequence payload: {}", e) }],
+                        "isError": true
+                    });
+                }
+            }
+
+            let process_context = args
+                .get("process_context")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
+
             let mut lock = store.lock().unwrap();
 
             let (goal_ctx, auto_linked_to_primary, auto_linked_from_recent) =
@@ -4704,10 +4789,15 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                     if !parent_tile.is_empty() {
                         let _ = lock.relate(&parent_tile, &tile_key, "decomposes_into");
                     }
-                    // Minimal Phase 0 spatial participation: explicit references provided at creation time
+                    // Spatial / trace provenance at creation time
                     for concept in &spatial_refs {
-                        let _ = lock.relate(&tile_key, concept, "compresses_path");
+                        if concept.starts_with("trace:") {
+                            let _ = lock.relate(&tile_key, concept, "compresses_chain_from");
+                        } else {
+                            let _ = lock.relate(&tile_key, concept, "compresses_path");
+                        }
                     }
+                    relate_realized_by(&mut lock, &tile_key, &process_context);
                     let _ = lock.promote_tile_to_high_priority(&tile_key);
                     if auto_linked_to_primary || !goal_ctx.is_empty() || !spatial_refs.is_empty() {
                         lock.mark_ki_rebake_needed();
@@ -4718,6 +4808,75 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                     json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true })
                 }
             }
+        }
+        "mcp_engram_thought_tile_draft_from_chain" => {
+            let goal_ctx = args
+                .get("goal_context")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            if goal_ctx.is_empty() {
+                return json!({ "content": [{ "type": "text", "text": "Error: goal_context required." }], "isError": true });
+            }
+            let mut lock = store.lock().unwrap();
+            let head = args
+                .get("head_trace")
+                .and_then(|v| v.as_str())
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .unwrap_or_else(|| {
+                    let traces = crate::tile_draft::collect_goal_traces(&mut lock, &goal_ctx);
+                    crate::tile_draft::resolve_chain_tip(&lock, &traces).unwrap_or_default()
+                });
+            if head.is_empty() {
+                return json!({
+                    "content": [{ "type": "text", "text": "Error: no trace chain head found for goal." }],
+                    "isError": true
+                });
+            }
+            let draft = crate::tile_draft::draft_tile_from_chain(&lock, &head, &goal_ctx);
+            let text = serde_json::to_string_pretty(&draft).unwrap_or_else(|_| "{}".to_string());
+            json!({ "content": [{ "type": "text", "text": text }] })
+        }
+        "mcp_engram_process_metrics" => {
+            let process_key = args
+                .get("process_key")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            if process_key.is_empty() || !process_key.starts_with("process:") {
+                return json!({
+                    "content": [{ "type": "text", "text": "Error: process_key must start with process:" }],
+                    "isError": true
+                });
+            }
+            let lock = store.lock().unwrap();
+            let realized: Vec<String> = lock
+                .search_relations(&process_key, Some("realized_by"), "to")
+                .into_iter()
+                .map(|(_, c)| c)
+                .collect();
+            let processes_dir = std::env::var("ENGRAM_PROCESSES_DIR").unwrap_or_else(|_| {
+                std::env::current_dir()
+                    .map(|p| p.join("processes").to_string_lossy().into_owned())
+                    .unwrap_or_else(|_| "processes".to_string())
+            });
+            let all_concepts: Vec<String> =
+                if lock.leg_block_count() > crate::store::StoreHandle::LARGE_MANIFOLD_THRESHOLD {
+                    lock.sample_concepts_for_overview(800)
+                } else {
+                    lock.list()
+                };
+            let metrics = crate::process_metrics::build_process_metrics(
+                &process_key,
+                &realized,
+                &all_concepts,
+                std::path::Path::new(&processes_dir),
+            );
+            let text = serde_json::to_string_pretty(&metrics).unwrap_or_else(|_| "{}".to_string());
+            json!({ "content": [{ "type": "text", "text": text }] })
         }
         "mcp_engram_thought_tile_create_visualization" => {
             // Visualization/compound document path. Supports rich HTML payloads (via mint_html_visualization_payload or raw).
@@ -5035,6 +5194,12 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                 .trim()
                 .to_string();
             let solution = args["solution"].as_str().unwrap_or("").trim().to_string();
+            let process_context = args
+                .get("process_context")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
 
             if error_pattern.is_empty() || solution.is_empty() {
                 return json!({ "content": [{ "type": "text", "text": "Error: missing required strings" }], "isError": true });
@@ -5060,6 +5225,7 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                         m.crs_score = 1.0; // Pinned mathematically
                         let _ = lock.store(&concept_name, m);
                     }
+                    relate_realized_by(&mut lock, &concept_name, &process_context);
                     json!({ "content": [{ "type": "text", "text": format!("✓ Crystallized Solution permanently into geometric memory (CRS = 1.0).\nStored as: {}", concept_name) }] })
                 }
                 Err(e) => {
@@ -5768,6 +5934,12 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
         "mcp_engram_scar" => {
             let concept = args["concept"].as_str().unwrap_or("").trim().to_string();
             let magnitude = args["magnitude"].as_f64().unwrap_or(0.15) as f32;
+            let process_context = args
+                .get("process_context")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
 
             if concept.is_empty() {
                 return json!({
@@ -5782,9 +5954,11 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                 .map_or(concept.as_str(), |(_, r)| r)
                 .to_string();
 
-            let result = store.lock().unwrap().scar(&raw_concept, magnitude);
+            let mut lock = store.lock().unwrap();
+            let result = lock.scar(&raw_concept, magnitude);
             match result {
                 Ok(msg) => {
+                    relate_realized_by(&mut lock, &raw_concept, &process_context);
                     warn!(
                         "[M-NOL SCAR] concept='{}' magnitude={:.3}",
                         raw_concept, magnitude
@@ -6484,6 +6658,25 @@ mod tests {
         };
         assert!(has_registered, "load_process_sheaf must have parsed real *.toml (incl. processes/monitor/* for self_improvement) and stored/registered process:engram.* keys + created relates");
 
+        // Unique [process].name per subvisor + meta sheaf (no monitor.unknown collision)
+        let unique_keys = [
+            "process:engram.monitor.memory-consolidation",
+            "process:engram.monitor.self-improvement",
+            "process:engram.monitor.sub-agent",
+            "process:engram.harness.sub-agent-launch",
+            "process:engram.harness.sub-agent-relay",
+        ];
+        {
+            let lock = store.lock().unwrap();
+            for key in &unique_keys {
+                assert!(
+                    lock.fetch_block_high_priority(key).is_some(),
+                    "expected sheaf registration for unique process key: {}",
+                    key
+                );
+            }
+        }
+
         let _ = std::fs::remove_dir_all(&tmp);
     }
 
@@ -6516,9 +6709,9 @@ mod tests {
         let manifest = env!("CARGO_MANIFEST_DIR");
         let manifest_path = std::path::Path::new(manifest);
         let root = manifest_path.parent().unwrap().parent().unwrap();
-        let self_toml = root.join("processes/meta/self_improvement_loop.toml");
+        let self_toml = root.join("design/archive/processes/meta/self_improvement_loop.toml");
         let content = std::fs::read_to_string(&self_toml)
-            .expect("processes/meta/self_improvement_loop.toml must exist and be readable for test data (via CARGO_MANIFEST_DIR)");
+            .expect("design/archive/processes/meta/self_improvement_loop.toml must exist and be readable for test data (via CARGO_MANIFEST_DIR)");
         let value: toml::Value =
             toml::from_str(&content).expect("meta self_improvement toml must parse as valid toml");
         let wf = value.get("workflow").expect("has [workflow]");
@@ -6538,7 +6731,7 @@ mod tests {
         let store: SharedStore = open_store(&tmp);
         {
             let mut l = store.lock().unwrap();
-            let _ = l.remember("test:self_improvement_step_sim", "One simulated self-improvement step (audit) using processes/meta/self_improvement_loop.toml fixture for engram-server test coverage.");
+            let _ = l.remember("test:self_improvement_step_sim", "One simulated self-improvement step (audit) using design/archive/processes/meta/self_improvement_loop.toml fixture for engram-server test coverage.");
             // also relate for sheaf/relation coverage in sim
             let _ = l.relate(
                 "test:self_improvement_step_sim",

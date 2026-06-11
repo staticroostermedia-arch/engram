@@ -74,6 +74,6 @@ print("Rehydrated: ready to continue phase without flat context loss.")
 - **Passive spatial**: Edits to the demo itself use context/recall automatically (no manual force/save).
 - **Dogfood**: This doc + scripts were created following the rituals (pre/post traces, tile for the arc, relate to goal:1780419540, update plan).
 
-Run the hello-engram-agent.py first for the loader, then extend with this cycle. See SKILLS.md (root) for index, docs/skills/ for full protocols, processes/monitor/subvisor.toml for the declarative governance, and GITHUB_MVP_PREP_PLAN.md for real usage history of these patterns during prep.
+Run the hello-engram-agent.py first for the loader, then extend with this cycle. See SKILLS.md (root) for index, docs/skills/ for full protocols, processes/monitor/subvisor.toml for the declarative governance, and docs/SUBSTRATE_WINS_PLAN.md for harness injection.
 
 **As an agent**: Load docs/skills/engram-*.md, follow this cycle on your own ambitious tasks. The manifold will make you better over time.

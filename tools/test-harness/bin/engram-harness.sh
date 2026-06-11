@@ -28,7 +28,7 @@
 #   + no aggressive duplicate killing + different binary selection order)
 # - Integration: writes machine-readable JSON results; can record summary to live manifold
 #   via current MCP session (mcp_engram_remember + relate under codeland goal); helper to
-#   emit patch snippet for living config doc (Engram_Build_Launch_Configuration.md)
+#   emit patch snippet for living config doc (tools/test-harness/README.md)
 # - Tested against the working stable reference (this script + client were validated on it).
 #
 # Usage examples:
@@ -75,7 +75,8 @@ DEV_BIN="${DEV_BIN:-target/debug/engram}"                 # prefers local build;
 REPRO_BIN="${REPRO_BIN:-/path/to/your/local/engram}"     # may or may not exist; selection logic below handles
 
 # Common env for launches (matches production stable usage)
-DEFAULT_KI_DIR="/path/to/your/ki/artifacts"   # override for your setup
+DEFAULT_KI_DIR="${ENGRAM_KI_ARTIFACTS_DIR:-$HARNESS_ROOT/.ki-artifacts}"
+mkdir -p "$DEFAULT_KI_DIR" 2>/dev/null || true
 DEFAULT_STORE_BASE="/path/to/your/engram/stalks/"   # used only for reference; harness ALWAYS uses isolated temps
 
 # Colors
@@ -114,9 +115,9 @@ Options:
   --side-by-side        Launch stable + dev in parallel isolated stores, run same suite, diff
   --observe             Live observers: background log tails + ps/lsof monitor (kills on exit)
   --record-results      Emit ready-to-paste mcp_engram_remember + relate commands for manifold tracking
-                        (also prints snippet for Engram_Build_Launch_Configuration.md)
+                        (also prints snippet for tools/test-harness/README.md)
   --pre-swap-validate   Full mandatory pre-binary-swap gate (see "Mandatory Pre-Binary-Swap Validation Protocol"
-                        in Engram_Build_Launch_Configuration.md). Runs a strict side-by-side heavy sequence
+                        in tools/test-harness/README.md). Runs a strict side-by-side heavy sequence
                         (transport-lifetime + full-wakeup + metrics) with high iterations, observe, and
                         --record-results. Fails hard on any red flag. Use this before any cargo install
                         that could affect the daily driver.
@@ -198,7 +199,7 @@ fi
 if $PRE_SWAP_VALIDATE; then
   echo -e "${BOLD}${RED}PRE-SWAP VALIDATION GATE ACTIVATED${RESET}"
   echo "  This mode enforces the Mandatory Pre-Binary-Swap Validation Protocol"
-  echo "  (see Engram_Build_Launch_Configuration.md)."
+  echo "  (see tools/test-harness/README.md)."
   echo "  It will run a strict side-by-side heavy sequence and will hard-fail on any red flag."
   echo ""
 
@@ -420,7 +421,7 @@ mcp_engram_relate from:"harness-run-$RUN_ID" to:"conv:arc_engram_mcp_integration
 # Then force_spatial_ingest the harness dir + the config md.
 EOF
   echo ""
-  echo "Snippet for Engram_Build_Launch_Configuration.md (append under ## Test Harness section):"
+  echo "Snippet for tools/test-harness/README.md (append under ## Test Harness section):"
   cat <<'SNIP'
 ## Automated Test Harness Gate (tools/test-harness)
 
