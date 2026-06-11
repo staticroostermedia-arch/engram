@@ -125,8 +125,15 @@ Low-fidelity handoffs produce thin `suggested_actions` — the substrate feeds b
 
 ---
 
+## Roadmap (next wins)
+
+Implementation plan: **[SUBSTRATE_WINS_PLAN.md](SUBSTRATE_WINS_PLAN.md)** — Cursor auto-wake, auto-tile draft, process metrics, `verified_sequence` schema.
+
+---
+
 ## Related
 
+- [SUBSTRATE_WINS_PLAN.md](SUBSTRATE_WINS_PLAN.md) — phased PR stack
 - [RITUALS.md](RITUALS.md) — thought tiles mandatory for meta
 - [docs/skills/engram-thought-tiles.md](skills/engram-thought-tiles.md)
 - `processes/monitor/subvisor.toml` — doom loop / meta escalation

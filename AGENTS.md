@@ -6,7 +6,7 @@ This file + CLAUDE.md + docs/ + .grok/skills/ + processes/*.toml + GITHUB_MVP_PR
 
 ## Start Here — 8-Tool Agent Memory Contract (Lean Default)
 
-**Read first:** [docs/AGENT_MEMORY_CONTRACT.md](docs/AGENT_MEMORY_CONTRACT.md) · **All 66 tools:** [docs/TOOL_DECISION_MAP.md](docs/TOOL_DECISION_MAP.md) · **Harness injection:** [docs/HARNESS_INJECTION.md](docs/HARNESS_INJECTION.md)
+**Read first:** [docs/AGENT_MEMORY_CONTRACT.md](docs/AGENT_MEMORY_CONTRACT.md) · **All 66 tools:** [docs/TOOL_DECISION_MAP.md](docs/TOOL_DECISION_MAP.md) · **Harness injection:** [docs/HARNESS_INJECTION.md](docs/HARNESS_INJECTION.md) · **Roadmap:** [docs/SUBSTRATE_WINS_PLAN.md](docs/SUBSTRATE_WINS_PLAN.md)
 
 | Phase | Tools |
 |-------|-------|
