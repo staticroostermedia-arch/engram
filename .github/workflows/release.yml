@@ -17,8 +17,8 @@ jobs:
     - uses: actions/checkout@v4
     - name: Install dependencies
       run: sudo apt-get update && sudo apt-get install -y capnproto
-    - name: Build release binary
-      run: cargo build -p engram-server --release
+    - name: Build release binary (headless-safe, no wgpu)
+      run: cargo build -p engram-server --release --no-default-features --features cpu-only
     - name: Agent-memory harness gate
       run: |
         STABLE_BIN=target/release/engram \

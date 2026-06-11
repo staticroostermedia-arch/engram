@@ -12,8 +12,9 @@ name = "engram"
 path = "src/main.rs"
 
 [features]
-default = []
+default = ["engram-gpu/wgpu-backend"]
 async-io = []                          # declared for ki_hijacker prototype / async read demos (silences unexpected_cfgs for the feature-gated fns)
+cpu-only = ["engram-gpu/cpu-only"]     # headless CI / marketplace releases — no wgpu link
 # Legacy override flags — seldom needed since build.rs auto-detects the best backend.
 # Use these only to force a specific backend on a multi-GPU machine:
 cuda  = ["engram-gpu/cuda-kernels", "engram-gpu/device_residency"]   # force CUDA + device_residency (cuFile/GPUDirect NVMe->GPU for hot; Tier 3 for NVMe-GPU design)
@@ -27,7 +28,7 @@ engram-ast  = { path = "../engram-ast" }
 # device_residency (direct NVMe->GPU for high_priority/hot via cuFile stubs + LegView bias today;
 # full GPUDirect when nvidia-fs present) is now default so CUDA setups get the NVMe-GPU path
 # compiled in (tied to the design intent). Safe no-op on non-cuda.
-engram-gpu   = { path = "../engram-gpu", features = ["device_residency"] }
+engram-gpu   = { path = "../engram-gpu", default-features = false, features = ["device_residency"] }
 libc = { workspace = true }
 
 # Async runtime

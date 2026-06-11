@@ -8,13 +8,14 @@ license.workspace = true
 repository.workspace = true
 
 [features]
-default      = []
+default      = ["wgpu-backend"]
 # These legacy flags are still accepted but auto-detection via build.rs is the
 # preferred path — just `cargo install engram-server` and the best backend is chosen.
 cuda-kernels = []   # kept for explicit override: --features cuda-kernels
 rocm-kernels = []   # kept for explicit override: --features rocm-kernels
-wgpu-backend = []   # WGPU fallback
+wgpu-backend = ["dep:wgpu", "dep:pollster"]
 device_residency = []  # Tier 3: future cuFile / GPUDirect Storage / direct GPU memory residency for items in high_priority_cache (CPU removal from hottest paths)
+cpu-only = []  # marker: build engram-server with --no-default-features for headless CI (no wgpu link)
 
 [dependencies]
 engram-core  = { path = "../engram-core", default-features = false }
@@ -24,10 +25,10 @@ tracing      = { workspace = true }
 shellexpand  = { workspace = true }
 libc         = { workspace = true }
 rayon        = { workspace = true }
-# wgpu is always compiled — it's the cross-platform fallback for any GPU without CUDA/ROCm/Metal.
-# On machines with CUDA or ROCm, the GPU kernel path is preferred at runtime.
-wgpu     = "22"
-pollster = "0.3"   # sync executor for wgpu init/readback
+# wgpu is optional — enabled via wgpu-backend feature (default on). Headless CI uses
+# `cargo build -p engram-server --no-default-features` to avoid SIGABRT on runners without GPU.
+wgpu     = { version = "22", optional = true }
+pollster = { version = "0.3", optional = true }   # sync executor for wgpu init/readback
 bytemuck = "1"     # safe &[u32] ↔ &[u8] casts for GPU buffers
 
 [build-dependencies]
