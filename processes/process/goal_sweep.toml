@@ -37,3 +37,15 @@ list = ["dist_to_goal", "sweep_trace", "structural_factors_lowdim"]
 # Later: full impl behind ritual gate; integrate with nrem-consolidation.toml + momentum-query.toml.
 # See: docs/2026-06_GROUP1_MEMORY_MANIFOLD_INTEGRATION_PROPOSALS.md (mFC section + ranked #1), GEOMETRIC_MEMORY.md (relate, p, spatial AABB, NREM).
 # Scope: sketch only. No full NMF, no production sweep, no new heavy modules.
+
+[steps]
+# Wired for invocation via process loader / harness / ritual (lists exact mcp_tools used per phase).
+# The loader (see harness/process code) can execute these steps by name, calling the listed tools and the dist_to_goal logic (demonstrated in the search example).
+1 = { name = "far", uses = ["mcp_engram_search_by_relation"], desc = "broad search for high-dist structural context (mFC invariant factors)" }
+2 = { name = "mid", uses = ["query_with_momentum"], desc = "p-momentum bias to compute/reduce dist_to_goal (flexible goal update)" }
+3 = { name = "near", uses = ["dist_to_goal", "mcp_engram_record_reasoning_trace"], desc = "refine dist, evaluate futures by dist-to-goal, record trace for policy update" }
+
+[execution]
+# To invoke: process loader by "agent:engram.process.goal_sweep" name, or via ritual/harness with the requires (current_context_block, goal_concept).
+# The search.rs example now provides the executable body for dist_to_goal + phased sweep.
+# Future: full NREM integration or MCP tool exposure of the process.
