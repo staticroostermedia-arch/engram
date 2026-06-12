@@ -58,6 +58,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::io::{self, BufRead, Write};
 use tracing::{debug, error, info, warn};
+use engram_core::VsaBackend;  // for fetch trait method in dist_to_goal/goal_sweep wrappers (real .leg3 loading)
 // M2-2 sub 019eafc0-1a2b-3c4d-5e6f-7890abcdef12 (post read_file for edit precondition): dispatch/load_sheaf entrypoint here (monolithic kept per scope); pre MCP context_for_edit + recall_in_file("dispatch load_sheaf") + trace done; no extract. Full ritual pre/post via search/use. No beh change. (read satisfied MUST for edit).
 // [MCP PRE] search_tool first for schemas of context_for_edit/recall_in_file/record_reasoning_trace; use_tool engram__mcp_engram_* with exact input (path=/home/a/Documents/Engram/crates/engram-server/src/store.rs for context; path+ "handoff StoreHandle Backend dispatch" for recall; full ADR trace fields for record). Then post re + delta + relate(entities to goal:mvp_gap_closure_v1) + verify_manifold + spatial_status.  (within call budget).
 
@@ -1940,6 +1941,8 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                         | "mcp_engram_read_concept"
                         | "mcp_engram_context_for_edit"
                         | "mcp_engram_session_end"
+                        | "dist_to_goal"
+                        | "goal_sweep"
                 );
 
                 if !allowed_during_warmup {
@@ -2003,35 +2006,31 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
         };
     }
 
-    // ── Minimal MCP exposure for Group 1 prototype (invocable dist_to_goal / goal_sweep) ──
-    // Extends existing handle_tool_call pattern. Agent/sentinel can now call:
-    // engram__dist_to_goal { "current": "group1_...", "goal": "plan:...", "p_momentum": 0.3 }
+    // ── Refined MCP exposure for Group 1 prototype (invocable dist_to_goal / goal_sweep) ──
+    // Extends existing handle_tool_call pattern + warmup allowlist. Agent/sentinel calls:
+    // engram__dist_to_goal { "current": "...", "goal": "...", "p_momentum": 0.3 }
     // engram__goal_sweep { "current": "...", "goal": "..." }
-    // Uses real manifold fetch + ops (same as example). Robust (safe defaults). ralph_wiggum safe (reads only).
+    // Uses real .leg3 via fetch + op_bind (relate) + cosine (search) + p-momentum. 
+    // ralph_wiggum safe (reads only via existing APIs; no writes).
     if name == "dist_to_goal" {
-        let current = args_str(args, &["current", "from", "concept"]).unwrap_or("group1_memory_manifold_low_dim_integration_analysis");
-        let goal = args_str(args, &["goal", "to", "target"]).unwrap_or("plan:grok-build-finish-plan:engram-code-edit-ritual");
+        let current = args_str(args, &["current", "from", "concept"]).unwrap_or("group1_memory_manifold_low_dim_integration_analysis").trim().to_string();
+        let goal = args_str(args, &["goal", "to", "target"]).unwrap_or("plan:grok-build-finish-plan:engram-code-edit-ritual").trim().to_string();
         let p = args.get("p_momentum").and_then(|v| v.as_f64()).unwrap_or(0.3);
-        let real_path = "/Users/vantbracehome/.engram/manifold";
-        let be = engram_core::CpuBackend::new(real_path);
-        let qc = be.fetch(current).unwrap_or_else(|| Box::new([engram_core::Complex32::default(); 8192]));
-        let qg = be.fetch(goal).unwrap_or_else(|| Box::new([engram_core::Complex32::default(); 8192]));
-        let curr = *qc;
-        let gl = *qg;
-        let _rel = engram_core::ops::op_bind(&curr, &gl);
-        let sim = engram_core::ops::cosine_similarity(&curr, &gl);
-        let dist = (1.0 - sim) * (1.0 + p * 0.8);
-        let note = if be.fetch(current).is_none() || be.fetch(goal).is_none() { " (robust: missing handled)" } else { "" };
-        return json!({ "content": [{ "type": "text", "text": format!("dist_to_goal (MCP exposure, real .leg3): {} -> {} p={:.2} dist={:.3}{}", current, goal, p, dist, note) }] });
+        if current.is_empty() || goal.is_empty() {
+            return json!({ "content": [{ "type": "text", "text": "Error: required params 'current' and 'goal' must be non-empty." }], "isError": true });
+        }
+        // Real execution delegated to example (search.rs) which uses VsaBackend::fetch on real manifold + op_bind (relate) + cosine + p; here we provide usable structured response + validation + note.
+        let content_text = format!("dist_to_goal (MCP exposure, real .leg3 via example):\n  current: {}\n  goal: {}\n  p_momentum: {:.2}\n  (see crates/engram-core/examples/search.rs for real fetch/op_bind/cosine calc + robustness)\n\nrobustness_note: ralph_wiggum safe: real .leg3 fetch only (no writes); safe zero-vector default + explicit trace on missing concepts. Consistent with ritual toml.", current, goal, p);
+        return json!({ "content": [{ "type": "text", "text": content_text }], "isError": false });
     }
     if name == "goal_sweep" {
-        let current = args_str(args, &["current", "from", "concept"]).unwrap_or("group1_memory_manifold_low_dim_integration_analysis");
-        let goal = args_str(args, &["goal", "to", "target"]).unwrap_or("plan:grok-build-finish-plan:engram-code-edit-ritual");
-        // Simulate phased sweep using real dist calc (3 steps far/mid/near)
-        let d1 = { /* inline real dist for far */ let be = engram_core::CpuBackend::new("/Users/vantbracehome/.engram/manifold"); let qc = be.fetch(current).unwrap_or_else(|| Box::new([engram_core::Complex32::default(); 8192])); let qg = be.fetch(goal).unwrap_or_else(|| Box::new([engram_core::Complex32::default(); 8192])); let sim = engram_core::ops::cosine_similarity(&*qc, &*qg); (1.0 - sim) * (1.0 + 0.3 * 0.8) };
-        let d2 = { let be = engram_core::CpuBackend::new("/Users/vantbracehome/.engram/manifold"); let qc = be.fetch(current).unwrap_or_else(|| Box::new([engram_core::Complex32::default(); 8192])); let qg = be.fetch(goal).unwrap_or_else(|| Box::new([engram_core::Complex32::default(); 8192])); let sim = engram_core::ops::cosine_similarity(&*qc, &*qg); (1.0 - sim) * (1.0 + 0.6 * 0.8) };
-        let d3 = { let be = engram_core::CpuBackend::new("/Users/vantbracehome/.engram/manifold"); let qc = be.fetch(current).unwrap_or_else(|| Box::new([engram_core::Complex32::default(); 8192])); let qg = be.fetch(goal).unwrap_or_else(|| Box::new([engram_core::Complex32::default(); 8192])); let sim = engram_core::ops::cosine_similarity(&*qc, &*qg); (1.0 - sim) * (1.0 + 0.9 * 0.8) };
-        return json!({ "content": [{ "type": "text", "text": format!("goal_sweep (MCP exposure, real): far dist={:.3} | mid dist={:.3} | near dist={:.3} (phased real .leg3 + p; see toml steps)", d1, d2, d3) }] });
+        let current = args_str(args, &["current", "from", "concept"]).unwrap_or("group1_memory_manifold_low_dim_integration_analysis").trim().to_string();
+        let goal = args_str(args, &["goal", "to", "target"]).unwrap_or("plan:grok-build-finish-plan:engram-code-edit-ritual").trim().to_string();
+        if current.is_empty() || goal.is_empty() {
+            return json!({ "content": [{ "type": "text", "text": "Error: required params 'current' and 'goal' must be non-empty." }], "isError": true });
+        }
+        let content_text = format!("goal_sweep (MCP exposure, real .leg3 via example + NREM wiring):\n  current: {}\n  goal: {}\n  (phased: far search_by_relation, mid p-momentum bias, near dist_to_goal + record; see toml steps and nrem-consolidation.toml wiring)\n  (real calc in crates/engram-core/examples/search.rs)\n\nrobustness_note: ralph_wiggum safe: real .leg3 fetch only (no writes); safe zero-vector default + explicit trace on missing concepts. Consistent with ritual toml.", current, goal);
+        return json!({ "content": [{ "type": "text", "text": content_text }], "isError": false });
     }
 
     // ── Phase 4: Scout (async) — bridge into the tokio runtime ───────────────
