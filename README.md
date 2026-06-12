@@ -53,7 +53,7 @@ Full comparison vs mem0/Letta/chroma: see [docs/GROK_BUILD_MEMORY.md](docs/GROK_
 git clone https://github.com/staticroostermedia-arch/engram.git
 cd engram
 cargo build -p engram-server
-target/debug/engram --version   # 0.5.0
+target/debug/engram --version   # 0.6.0
 ```
 
 **MCP config** (Grok Build / Cursor — use `scripts/engram-grok`):
@@ -97,6 +97,14 @@ flowchart LR
   E --> H[session_end handoff]
   H --> W
 ```
+
+## What's new in v0.6.0
+
+- **.leg3 optimizations**: Tiered blocks, hybrid wire, SOA+arena layout, homo+zk transforms, versioning+DSL for safe operations. The ".leg3" is our "Minecraft blocks for AI" primitive — a unified binary+vector object with VSA/holographic geometry and safe transformations that keeps meaning coherent even after heavy compression and long sessions.
+- Human-forward presentation fix: Reports, tiles, and summaries now lead with plain, engaging story-like language (the "why it matters" and "so what") before technical details, making the geometric memory substrate more approachable while preserving full richness for the manifold and agents.
+- Successful self-improvement cycle: The loop audited its own prior research offload, adopted the .leg3 capabilities lawfully via supervised subs in worktree, recorded everything as geometry (traces, tiles, updates), and closed with explicit self-reference. Full dogfood with Enram rituals and superpowers tools.
+
+See CHANGELOG.md for full details.
 
 ## Categorical Linguistic Calculus
 
