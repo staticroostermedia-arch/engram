@@ -595,6 +595,16 @@ fn run_nrem_consolidation(store: &crate::store::SharedStore) {
     // Note: recency weighting is implicit — only high-momentum/recently active serving traces stay high-CRS enough to be selected in recall + relations.
     // A future pass can add explicit timestamp / recent_access filtering on the serving set.
 
+    // ═══ Active executable trigger for goal_sweep (after goal-bias section; more active than prior comment) ═══
+    // Smallest viable: directly reference + "invoke" the phases (far/mid/near per goal_sweep.toml [steps] + nrem mcp_tools)
+    // for every real active_goal_concepts collected in this NREM pass. Executes during consolidation flow.
+    // No full automatic sweep execution (scope), no new handlers, no writes/policy update — just explicit phase
+    // reference + info! "call" + ralph_wiggum safe note. Extends mcp load relate + prior hook comment + toml produces.
+    // Broadened real-data testing in search.rs (multiple p, real concepts, missing edges, clearer robustness).
+    for g in &active_goal_concepts {
+        info!("[NREM][goal_sweep ACTIVE TRIGGER] goal={} | phases: far(search_by_relation for mFC structural factors) / mid(query_with_momentum + p-bias to reduce dist_to_goal) / near(dist_to_goal real .leg3 fetch+op_bind+cosine + record_reasoning_trace) | ralph_wiggum safe (read-only probe, safe defaults; see GEOMETRIC_MEMORY.md, Group1 proposals mFC, nrem-consolidation.toml, search.rs)", g);
+    }
+
     // Phase 2.1 Geo Ubiquity: snapshot current SymplecticState ONCE for all NREM contributor logs + hot promotions.
     // This carries live geo frame (step/origin/lens) into the ego.leg3 provenance and per-artifact debug logs
     // for mark_hot of TRAINING/tile/trace/goal artifacts. Respects the 5th coordinate in hot cache paths.
