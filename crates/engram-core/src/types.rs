@@ -530,6 +530,162 @@ pub const ZEDOS_GEOSPHERE: u8 = 0x5D; // 'G' + phase marker
 /// serialization, or 256KB seal (BLOCK_SIZE / stride tests remain passing).
 pub const ZEDOS_OPERATOR: u8 = 0x4F; // 'O' for Operator / VSA calculus instance
 
+// === P2 ADDITIVE .leg3 proposals (per audit tile findings + report tile) ===
+// Additive only: no change to q/p[8192], BLOCK_SIZE=262144 default, p-momentum,
+// CRS gate, unit hypersphere, ZEDOS, allowed_transforms[64] layout (reuse for ver+DSL),
+// footer/Merkle, .leg3 isomorphism. Default paths unchanged. Self-ref: P2 sub in strange loop.
+// 1. Tiered block (enum + default + mint_tiered paths in encode + tier header synergy w/ schema_ver)
+// 2. Versioning + DSL for allowed_transforms (ver in [0], DSL bytes [1..], parser/validator here, mint default, enforce via store)
+// 3. SOA + arena (QSoA/PSoA + BlockArena w/ alloc_batch for batch/GPU; compat views/adapters for Leg3Pointer/Deref/HolographicBlock)
+
+/// Block tier enum (additive, default Std=262144 path unchanged; logical for future/payload use).
+/// Synergy with schema_ver: high byte for tier tag (mint sets (tier<<24 | base_ver)).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum BlockTier {
+    Small = 1,
+    #[default]
+    Std = 2,
+    Large = 3,
+}
+
+impl BlockTier {
+    #[inline]
+    pub fn as_u8(&self) -> u8 {
+        *self as u8
+    }
+    pub fn from_schema_synergy(schema_ver: u32) -> Self {
+        match (schema_ver >> 24) & 0xFF {
+            1 => BlockTier::Small,
+            3 => BlockTier::Large,
+            _ => BlockTier::Std,
+        }
+    }
+}
+
+/// Versioning + DSL for allowed_transforms[64] (layout preserved exactly).
+/// byte[0] = version, [1..] = compact DSL (ascii | -separated or flags).
+pub const ALLOWED_TRANSFORMS_VERSION_V1: u8 = 1;
+pub const DEFAULT_ALLOWED_DSL: &[u8] = b"full|read|bind|update|scar|pin|verify\0";
+
+pub fn default_allowed_transforms_v1() -> [u8; 64] {
+    let mut a = [0u8; 64];
+    a[0] = ALLOWED_TRANSFORMS_VERSION_V1;
+    let n = DEFAULT_ALLOWED_DSL.len().min(63);
+    a[1..1 + n].copy_from_slice(&DEFAULT_ALLOWED_DSL[..n]);
+    a
+}
+
+/// Minimal parser/validator (used by encode mint + store/mcp enforce).
+pub fn parse_allowed_dsl(at: &[u8; 64]) -> (u8, Vec<String>) {
+    let ver = at[0];
+    let dsl_bytes = &at[1..];
+    let s = core::str::from_utf8(dsl_bytes).unwrap_or("").trim_end_matches('\0');
+    let parts: Vec<String> = if s.contains('|') {
+        s.split('|').map(|x| x.trim().to_string()).filter(|x| !x.is_empty()).collect()
+    } else if !s.is_empty() {
+        vec![s.to_string()]
+    } else {
+        vec![]
+    };
+    (ver, parts)
+}
+
+pub fn validate_allowed_transforms(at: &[u8; 64]) -> bool {
+    let (ver, dsl) = parse_allowed_dsl(at);
+    ver <= 1 && !dsl.is_empty()
+}
+
+/// P2 SOA + Arena (additive; enables batch/GPU coalesced without breaking AOS HolographicBlock).
+/// Compat views/adapters for Leg3Pointer (Deref) + HolographicBlock.
+#[derive(Clone, Debug, Default)]
+pub struct QSoA {
+    pub data: Vec<Complex32>,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct PSoA {
+    pub data: Vec<Complex32>,
+}
+
+#[derive(Clone, Default)]
+pub struct BlockArena {
+    pub blocks: Vec<Leg3Pointer>,
+}
+
+impl BlockArena {
+    pub fn new() -> Self {
+        Self { blocks: Vec::new() }
+    }
+    /// Arena alloc (additive path; storage can use for batch instead of per-block).
+    pub fn alloc(&mut self) -> Leg3Pointer {
+        let b = Leg3Pointer::mint();
+        self.blocks.push(b.clone());
+        b
+    }
+    pub fn alloc_batch(&mut self, n: usize) -> Vec<Leg3Pointer> {
+        let mut v = Vec::with_capacity(n);
+        for _ in 0..n {
+            v.push(self.alloc());
+        }
+        v
+    }
+    pub fn len(&self) -> usize {
+        self.blocks.len()
+    }
+}
+
+/// Compat From views (no copy of full block, just tensor view data).
+impl From<&HolographicBlock> for QSoA {
+    fn from(b: &HolographicBlock) -> Self {
+        QSoA { data: b.q.to_vec() }
+    }
+}
+impl From<&HolographicBlock> for PSoA {
+    fn from(b: &HolographicBlock) -> Self {
+        PSoA { data: b.p.to_vec() }
+    }
+}
+
+/// P2 additive adapters on Leg3Pointer (preserves Deref/Mint compat).
+impl Leg3Pointer {
+    pub fn as_q_soa(&self) -> QSoA {
+        QSoA::from(&**self)
+    }
+    pub fn as_p_soa(&self) -> PSoA {
+        PSoA::from(&**self)
+    }
+    /// Example arena-aware mint path (storage/GPU can adopt).
+    pub fn mint_to_arena(arena: &mut BlockArena) -> Self {
+        arena.alloc()
+    }
+}
+
+/// Accessors for tier/versioning (additive, callable on &HolographicBlock via Deref).
+impl HolographicBlock {
+    pub fn tier(&self) -> BlockTier {
+        BlockTier::from_schema_synergy(self.schema_ver)
+    }
+    pub fn version(&self) -> u8 {
+        self.allowed_transforms[0]
+    }
+    pub fn allowed_dsl_bytes(&self) -> &[u8] {
+        &self.allowed_transforms
+    }
+    pub fn is_versioned(&self) -> bool {
+        self.version() != 0
+    }
+    /// Enforce (soft for now, called from encode/store paths).
+    pub fn enforce_allowed(&self, op: &str) -> bool {
+        if self.version() == 0 {
+            return true; // legacy full
+        }
+        let (_, dsl) = parse_allowed_dsl(&self.allowed_transforms);
+        dsl.iter().any(|d| d == "full" || d == op)
+    }
+}
+
+/// === end P2 additive (types) ===
+
 /// SymplecticState — the agent's live 5th coordinate (Geosphere) register.
 ///
 /// Holds `active_location` (current geosphere phase vector) plus optional
