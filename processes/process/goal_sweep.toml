@@ -1,0 +1,39 @@
+# agent:engram.process.goal_sweep (Group 1 #1 initial sketch — mFC mapping)
+# Declarative process definition. Can later be promoted/expanded into ritual/*.toml or used by NREM/spatial.
+
+[process]
+name = "agent:engram.process.goal_sweep"
+zedos_type = "process"
+phase_seed = "0xG1_SWEEP202606..."
+
+[category]
+object = "goal_sweep"
+morphism = "OP_ADD"  # blending current state with goal-dist progress
+sheaf_role = "manifold navigation (structured low-dim factors + flexible dist-to-goal; phased prospective eval)"
+h1_handler = "null"  # placeholder; later OP_GEOMETRIC_PRODUCT or relate-driven
+
+[mcp_tools]
+list = ["mcp_engram_search_by_relation", "mcp_engram_relate", "query_with_momentum", "mcp_engram_record_reasoning_trace"]
+
+[requires]
+list = ["current_context_block", "goal_concept"]
+
+[produces]
+list = ["dist_to_goal", "sweep_trace", "structural_factors_lowdim"]
+
+[notes]
+# From proposals (mFC paper): manifold as "maze" (nodes=.leg3/traces, edges=relate/sheaf/search_by_relation).
+# dist_to_goal: compute (or bias) shortest/weighted dist from current to goal using graph + p-momentum as trajectory.
+# Simple phased sweep (2-3 steps, far->near by dist):
+#   1. far: broad search_by_relation (high-dist candidates, structural context)
+#   2. mid: p-momentum bias / query_with_momentum to reduce dist (flexible goal update)
+#   3. near: refine + prospective "futures" eval (dist as policy signal; record trace)
+# Structural factorization sketch (NMF-like low-dim components for NREM/spatial_ingest):
+#   On "place-direction" population (AABB spatial bounds + p-momentum "direction"/tuning to graph features):
+#   - Extract low-dim invariant factors (decision-points/bottlenecks = high-degree relations, peripheral/high-centrality routes, dead-ends).
+#   - These form efficient "trajectory code" (like mFC NMF for behavioral paths).
+#   - Run during NREM distillation or force_spatial_ingest; pin high-CRS factors as hot components or sheaf invariants.
+#   - Remapping note: verify factors stable across "mazes" (domains/projects) via consistent structural features (not just locations).
+# Later: full impl behind ritual gate; integrate with nrem-consolidation.toml + momentum-query.toml.
+# See: docs/2026-06_GROUP1_MEMORY_MANIFOLD_INTEGRATION_PROPOSALS.md (mFC section + ranked #1), GEOMETRIC_MEMORY.md (relate, p, spatial AABB, NREM).
+# Scope: sketch only. No full NMF, no production sweep, no new heavy modules.
