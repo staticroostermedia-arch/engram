@@ -39,3 +39,6 @@ sem_search.rs
 phase_c_*
 false_empire/
 tools/leg-browser/
+
+# Worktrees for safe isolated execution (per superpowers + Engram ritual)
+.worktrees/
