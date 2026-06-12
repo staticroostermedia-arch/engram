@@ -608,10 +608,10 @@ fn run_nrem_consolidation(store: &crate::store::SharedStore) {
     // Extends prior info! + mcp relate + nrem toml mcp_tools. Testing improved in search.rs (same format).
     let probe_current = "plan:grok-build-finish-plan:engram-code-edit-ritual";  // stable real concept from harness traces (goal-directed from plan to active goal)
     for g in &active_goal_concepts {
-        let _d = dist_to_goal(probe_current, g, 0.5);
+        let _d = dist_to_goal(probe_current, g, 0.5, None);  // None = default sovereign manifold path (configurable, backward compat)
     }
     if let Some(first) = active_goal_concepts.iter().next() {
-        simple_sweep_nrem(probe_current, first);  // optional phased (far/mid/near) demonstration
+        simple_sweep_nrem(probe_current, first, None);  // None = default (configurable)
     }
 
     // Phase 2.1 Geo Ubiquity: snapshot current SymplecticState ONCE for all NREM contributor logs + hot promotions.

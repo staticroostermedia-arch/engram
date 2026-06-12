@@ -17,9 +17,9 @@ fn main() {
     // Uses real concepts from manifold (from harness recall) + real path for fetch.
     // BROADENED for NREM active goal_sweep trigger test (multiple p, real concepts from prior traces, missing edges, clearer [NREM-ROBUSTNESS] output).
     println!("\n=== Group 1 #1: functional dist_to_goal + sweep (mFC mapping, real .leg3) ===");
-    let d1 = dist_to_goal("group1_memory_manifold_low_dim_integration_analysis", "plan:grok-build-finish-plan:engram-code-edit-ritual", 0.3);
+    let d1 = dist_to_goal("group1_memory_manifold_low_dim_integration_analysis", "plan:grok-build-finish-plan:engram-code-edit-ritual", 0.3, None);
     println!("Example dist1: {:.3}", d1);
-    simple_sweep_nrem("group1_memory_manifold_low_dim_integration_analysis", "plan:grok-build-finish-plan:engram-code-edit-ritual");
+    simple_sweep_nrem("group1_memory_manifold_low_dim_integration_analysis", "plan:grok-build-finish-plan:engram-code-edit-ritual", None);
 
     let backend = engram_core::CpuBackend::new("/Users/vantbracehome/.engram/manifold");
     println!("=== SEMANTIC RAY-CASTER ===");
@@ -50,19 +50,19 @@ fn main() {
     ];
     for (curr, gl, p) in broad_cases {
         println!("=== NREM goal_sweep CASE current={} goal={} p_momentum={:.1} ===", curr, gl, p);
-        let _d = dist_to_goal(curr, gl, p);
+        let _d = dist_to_goal(curr, gl, p, None);
         if p >= 0.5 {
             // for mid/high p cases also run phased sweep (far/mid/near) for fuller trace
-            simple_sweep_nrem(curr, gl);
+            simple_sweep_nrem(curr, gl, None);
         }
     }
     println!("=== END BROAD NREM goal_sweep TEST ===\n");
 
     // legacy demo (kept for compat; now uses shared phased helper)
     println!("\n=== Group 1 #1: functional dist_to_goal + sweep (mFC mapping) ===");
-    let d1 = dist_to_goal("current_trace", "mfc_structured_nav_goal", 0.3);
+    let d1 = dist_to_goal("current_trace", "mfc_structured_nav_goal", 0.3, None);
     println!("Example dist1: {:.3}", d1);
-    simple_sweep_nrem("trace_start", "knowledge_goal");
+    simple_sweep_nrem("trace_start", "knowledge_goal", None);
 }
 
 use engram_core::ops::{op_bind, cosine_similarity};

@@ -8,11 +8,16 @@
 //! See GEOMETRIC_MEMORY.md (VSA ops, backend fetch, p-momentum, NREM) and
 //! Group 1 mFC proposals (structured + flexible dist-to-goal + theta sweeps in NREM).
 //!
-//! Behavior is identical to previous local copies. Structured sentinel-friendly traces
-//! and robustness handling preserved. ralph_wiggum safe: read-only real manifold access,
-//! safe zero-vector defaults on missing concepts, no writes.
+//! Behavior is identical to previous local copies when the default manifold path is used.
+//! Structured sentinel-friendly traces and robustness handling preserved.
+//! ralph_wiggum safe: read-only real manifold access, safe zero-vector defaults on missing
+//! concepts, no writes.
 //!
-//! The hard-coded manifold path matches the sovereign local setup.
+//! Manifold path is now configurable via optional `manifold_path: Option<&str>` parameter
+//! (last argument). When None (or omitted by passing None at call sites), defaults to the
+//! sovereign local setup "/Users/vantbracehome/.engram/manifold" for full backward
+//! compatibility with existing call sites in NREM and tests. This allows future flexibility
+//! (e.g. different manifolds) without changing core logic.
 
 use crate::backend::{CpuBackend, VsaBackend};
 use crate::ops::{op_bind, cosine_similarity};
@@ -25,11 +30,16 @@ use crate::Complex32;
 /// In full system this maps to MCP search_by_relation + p-momentum over the relation
 /// sheaf/graph. Computes (1-sim) * (1 + p*0.8) after real fetch + bind on manifold .leg3.
 ///
+/// `manifold_path`: Optional path to the .leg3 manifold directory. Pass None to use the
+/// sensible default (sovereign local "/Users/vantbracehome/.engram/manifold") for
+/// backward compatibility. This makes the primitive configurable without altering core
+/// computation logic.
+///
 /// ralph_wiggum=true (ritual toml [safety]): only read via existing fetch on real manifold;
 /// no writes. Robustness: safe handling for missing concepts (no panic, clear error trace
 /// for sentinel, safe default zero vector).
-pub fn dist_to_goal(current: &str, goal: &str, p_momentum: f32) -> f32 {
-    let real_path = "/Users/vantbracehome/.engram/manifold";
+pub fn dist_to_goal(current: &str, goal: &str, p_momentum: f32, manifold_path: Option<&str>) -> f32 {
+    let real_path = manifold_path.unwrap_or("/Users/vantbracehome/.engram/manifold");
     let be = CpuBackend::new(real_path);
     let (qc, missing_curr) = if let Some(q) = be.fetch(current) {
         (q, false)
@@ -62,11 +72,14 @@ pub fn dist_to_goal(current: &str, goal: &str, p_momentum: f32) -> f32 {
 
 /// Optional phased sweep helper (far/mid/near via repeated dist_to_goal with p bias).
 /// Used to demonstrate full phases in NREM trigger / tests. Same structured output.
-pub fn simple_sweep_nrem(current: &str, goal: &str) {
+///
+/// Accepts the same optional `manifold_path` (passed through to dist_to_goal calls)
+/// for configurability. Pass None for default (backward compatible).
+pub fn simple_sweep_nrem(current: &str, goal: &str, manifold_path: Option<&str>) {
     println!("[NREM-GOAL-SWEEP|phase=far|current={}|goal={}] broad search_by_relation analog for high dist", current, goal);
-    let d_mid = dist_to_goal(current, goal, 0.5);
+    let d_mid = dist_to_goal(current, goal, 0.5, manifold_path);
     println!("[NREM-GOAL-SWEEP|phase=mid|current={}|goal={}|dist_mid={:.3}] query_with_momentum + p-bias", current, goal, d_mid);
     println!("[NREM-GOAL-SWEEP|phase=near|current={}|goal={}] refine + prospective futures eval by dist", current, goal);
-    let d_final = dist_to_goal(current, goal, 0.9);
+    let d_final = dist_to_goal(current, goal, 0.9, manifold_path);
     println!("[NREM-GOAL-SWEEP|phase=result|current={}|goal={}|final_dist={:.3}] (phased sweep probe for NREM active trigger)", current, goal, d_final);
 }
