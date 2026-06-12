@@ -473,20 +473,24 @@ pub(crate) fn p2_enforce_versioning_dsl(block: &mut engram_core::types::Leg3Poin
     let _ = engram_core::types::validate_allowed_transforms(&block.allowed_transforms);
 }
 
+#[allow(dead_code)]
 pub fn to_hybrid_wire_for_store(block: &engram_core::types::HolographicBlock) -> Vec<u8> {
     // wire path for hybrid (mcp can use for non-full transport; full O_DIRECT .leg kept)
     engram_core::encode::to_hybrid_wire(block, false)
 }
 
+#[allow(dead_code)]
 pub fn from_hybrid_wire_for_store(wire: &[u8]) -> Option<engram_core::types::Leg3Pointer> {
     engram_core::encode::from_hybrid_wire(wire)
 }
 
+#[allow(dead_code)]
 pub fn verify_zk_for_store(block: &engram_core::types::HolographicBlock, op: &str, proof: &[u8; 32]) -> bool {
     // mcp/store exposure for homo+zk verify (pure rust impl in encode)
     engram_core::encode::verify_zk_proof(block, op, proof)
 }
 
+#[allow(dead_code)]
 pub fn generate_zk_for_store(block: &engram_core::types::HolographicBlock, op: &str) -> [u8; 32] {
     engram_core::encode::generate_zk_proof(block, op)
 }

@@ -632,6 +632,10 @@ impl BlockArena {
     pub fn len(&self) -> usize {
         self.blocks.len()
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 }
 
 /// Compat From views (no copy of full block, just tensor view data).
@@ -684,7 +688,7 @@ impl HolographicBlock {
     }
 }
 
-/// === end P2 additive (types) ===
+// === end P2 additive (types) ===
 
 /// SymplecticState — the agent's live 5th coordinate (Geosphere) register.
 ///

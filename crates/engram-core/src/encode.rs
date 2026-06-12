@@ -308,7 +308,7 @@ pub fn from_hybrid_wire(wire: &[u8]) -> Option<Leg3Pointer> {
 /// No new deps (pure rust). Core unchanged. Expose in mcp/store for verify_block etc.
 /// Homo: wrap op so only if allowed_transforms permits (enforce soft).
 /// ZK: produce/verify attestation proof (hash of (allowed_dsl + crs + sig0 + op) as "proof" of lawful transform path).
-pub fn apply_homo_op<F>(block: &mut HolographicBlock, op_name: &str, mut op: F)
+pub fn apply_homo_op<F>(block: &mut HolographicBlock, op_name: &str, op: F)
 where
     F: FnOnce(&mut HolographicBlock),
 {
