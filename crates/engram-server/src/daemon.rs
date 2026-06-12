@@ -557,6 +557,9 @@ const NREM_TRAINING_BIAS_FACTOR: f32 = 2.0;
 
 fn run_nrem_consolidation(store: &crate::store::SharedStore) {
     info!("[NREM] Starting dream consolidation pass (CRS threshold = {}) — CodeLand-enhanced (ego-friction + Riemannian + Tier5 ZEDOS + Logenergetics)…", NREM_CRS_THRESHOLD);
+    // Lightweight executable hook for goal_sweep in NREM (smallest viable, Group 1 mFC #1 per proposals + nrem-consolidation.toml): 
+    // [mcp_tools] in ritual/nrem + load_process_sheaf (if nrem relate "triggers_goal_sweep" to process:engram.goal_sweep) makes phased dist_to_goal/goal_sweep (far/mid/near via search_by_relation + query_with_momentum + real fetch/op_bind/p) triggerable/executable in NREM ritual context. 
+    // No auto call here (scope: no new handlers/deep logic); phases available post-promote_hot via agent/harness invoking the declared tools + record_reasoning_trace. ralph_wiggum safe (read-only real .leg3, safe defaults). See mcp.rs:312, search.rs, toml [steps]/[notes].
 
     // Collect all concept names while holding the lock briefly.
     let concepts: Vec<String> = {

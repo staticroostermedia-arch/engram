@@ -309,6 +309,14 @@ fn load_process_sheaf(store: &SharedStore) -> Result<(), String> {
             }
             let _ = lock.relate(&p.key, "ritual:wake_up_anchor", "declared_in");
             let _ = lock.relate(&p.key, "ritual:engram.working-memory", "enforced_by");
+            // Lightweight executable hook for goal_sweep in NREM (smallest viable, Group 1 mFC mapping, per proposals "integrate with nrem-consolidation.toml"):
+            // After NREM registration in this load (the NREM process/handler), trigger the goal_sweep phases for manifold navigation.
+            // The relate creates the executable link in the manifold (triggers the integration in the flow).
+            // Robustness: goal_sweep/dist_to_goal use safe handling (see search.rs).
+            // For test: session_start will run this hook; then call the MCP tools to execute the phases and capture real output/traces from actual .leg3.
+            if p.key.contains("nrem") {
+                let _ = lock.relate(&p.key, "process:engram.goal_sweep", "triggers_goal_sweep");
+            }
         }
     }
     eprintln!("TIMING[load_process_sheaf]: register+relates done (per-proc short locks), registered={}, elapsed_so_far={:.2}s", registered, t_load.elapsed().as_secs_f32());

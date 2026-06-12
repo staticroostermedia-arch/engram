@@ -45,12 +45,13 @@ fn main() {
 
 use engram_core::ops::{op_bind, cosine_similarity};
 use engram_core::Complex32;
+use engram_core::VsaBackend;  // trait for fetch (real .leg3); mirrors mcp.rs exposure for dist/goal_sweep
 
 /// Working dist_to_goal using existing core APIs (op_bind for relation encoding / "relate",
 /// cosine_similarity for search closeness / "search_by_relation" analog, p_momentum as trajectory cost factor).
 /// In full system this maps to MCP search_by_relation + p-momentum over the relation sheaf/graph.
 /// ralph_wiggum=true (ritual toml [safety]): only read via existing fetch on real manifold; no writes.
-fn dist_to_goal(current: &str, goal: &str, p_momentum: f64) -> f64 {
+fn dist_to_goal(current: &str, goal: &str, p_momentum: f32) -> f32 {
     // Real loading from .leg3 state using existing VsaBackend::fetch (removes all demo seeded vectors).
     // Uses real manifold at ~/.engram/manifold (actual .leg3 blocks).
     // ROBUSTNESS: safe handling for missing concepts (no panic, clear error trace for sentinel, safe default).
@@ -75,7 +76,7 @@ fn dist_to_goal(current: &str, goal: &str, p_momentum: f64) -> f64 {
     // Search closeness on real data (cosine foundation for search_by_relation).
     let sim = cosine_similarity(&curr, &gl);
     // p-momentum in meaningful way: scale dist as trajectory cost using real sim + input p (momentum bias).
-    let dist = (1.0 - sim) * (1.0 + p_momentum * 0.8);
+    let dist = (1.0f32 - sim) * (1.0f32 + p_momentum * 0.8f32);
     let note = if missing_curr || missing_goal { " (robust: missing handled with safe default)" } else { "" };
     println!(
         "[dist_to_goal REAL from .leg3] current={} goal={} p_momentum={:.3} sim={:.3} dist={:.3}{} (real fetch q, op_bind relate, cosine search, p factor)",
