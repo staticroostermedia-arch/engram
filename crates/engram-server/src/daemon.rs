@@ -5,7 +5,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tracing::{debug, error, info};
-use engram_core::VsaBackend;  // trait for .fetch (real .leg3) in local dist_to_goal helper for NREM active calls after bias (step 3 ritual)
+use engram_core::VsaBackend;  // trait for .fetch (real .leg3)
+use engram_core::{dist_to_goal, simple_sweep_nrem};  // shared extracted helpers (from engram-core/src/goal.rs) for NREM active calls after bias
 
 // ── Shadow Basis (Phase 1 — 768-dim genesis anchor) ────────────────────────
 //
@@ -557,49 +558,6 @@ const NREM_GOAL_BIASED_MASS_CAP: f32 = 0.40;
 const NREM_TRAINING_BIAS_FACTOR: f32 = 2.0;
 
 /// Local helper (smallest viable for NREM active calls): real dist_to_goal using CpuBackend on manifold.
-/// Body mirrors example/search.rs (proven fetch+op_bind+cosine+p). Returns f32 dist.
-/// Improved for this ritual: structured sentinel-friendly [NREM-GOAL-SWEEP|key=val|...] traces,
-/// clearer robustness with p/context, NREM-specific tags. ralph_wiggum safe (read-only, safe zero).
-fn dist_to_goal(current: &str, goal: &str, p_momentum: f32) -> f32 {
-    let real_path = "/Users/vantbracehome/.engram/manifold";
-    let be = engram_core::CpuBackend::new(real_path);
-    let (qc, missing_curr) = if let Some(q) = be.fetch(current) {
-        (q, false)
-    } else {
-        println!("[NREM-GOAL-SWEEP|robustness=missing|current={}|goal={}|p={:.3}] safe zero vector + sentinel trace (NREM active post-bias)", current, goal, p_momentum);
-        (Box::new([engram_core::Complex32::default(); 8192]), true)
-    };
-    let (qg, missing_goal) = if let Some(q) = be.fetch(goal) {
-        (q, false)
-    } else {
-        println!("[NREM-GOAL-SWEEP|robustness=missing|current={}|goal={}|p={:.3}] safe zero vector + sentinel trace (NREM active post-bias)", current, goal, p_momentum);
-        (Box::new([engram_core::Complex32::default(); 8192]), true)
-    };
-    let curr = *qc;
-    let gl = *qg;
-    let _rel = engram_core::ops::op_bind(&curr, &gl);
-    let sim = engram_core::ops::cosine_similarity(&curr, &gl);
-    let dist = (1.0f32 - sim) * (1.0f32 + p_momentum * 0.8f32);
-    let missing = missing_curr || missing_goal;
-    let note = if missing { " (robust: missing handled with safe default)" } else { "" };
-    println!(
-        "[NREM-GOAL-SWEEP|phase=dist|current={}|goal={}|p={:.3}|sim={:.3}|dist={:.3}|missing={}|note={}](real fetch+op_bind+cosine+p; active NREM after goal-bias; ralph_wiggum safe)",
-        current, goal, p_momentum, sim, dist, if missing { 1 } else { 0 }, note
-    );
-    dist
-}
-
-/// Optional phased sweep helper (far/mid/near via repeated dist_to_goal with p bias).
-/// Used for one demo call to show full phases in NREM trigger. Same structured output.
-fn simple_sweep_nrem(current: &str, goal: &str) {
-    println!("[NREM-GOAL-SWEEP|phase=far|current={}|goal={}] broad search_by_relation analog for high dist", current, goal);
-    let d_mid = dist_to_goal(current, goal, 0.5);
-    println!("[NREM-GOAL-SWEEP|phase=mid|current={}|goal={}|dist_mid={:.3}] query_with_momentum + p-bias", current, goal, d_mid);
-    println!("[NREM-GOAL-SWEEP|phase=near|current={}|goal={}] refine + prospective futures eval by dist", current, goal);
-    let d_final = dist_to_goal(current, goal, 0.9);
-    println!("[NREM-GOAL-SWEEP|phase=result|current={}|goal={}|final_dist={:.3}] (phased sweep probe for NREM active trigger)", current, goal, d_final);
-}
-
 fn run_nrem_consolidation(store: &crate::store::SharedStore) {
     info!("[NREM] Starting dream consolidation pass (CRS threshold = {}) — CodeLand-enhanced (ego-friction + Riemannian + Tier5 ZEDOS + Logenergetics)…", NREM_CRS_THRESHOLD);
     // Lightweight executable hook for goal_sweep in NREM (smallest viable, Group 1 mFC #1 per proposals + nrem-consolidation.toml): 

@@ -34,6 +34,7 @@
 pub mod backend;
 pub mod encode;
 pub mod genesis;
+pub mod goal;  // shared goal-directed navigation (dist_to_goal + simple_sweep_nrem) — extracted to remove dupe from NREM + tests
 pub mod index;
 pub mod mmap;
 pub mod ops;
@@ -46,6 +47,7 @@ pub use genesis::{
     SACRED_ZETA_CRITICAL,
 };
 pub use ops::{apply_frame, cosine_similarity, frame_combine, op_add, op_bind};
+pub use goal::{dist_to_goal, simple_sweep_nrem};  // re-export shared helpers for NREM trigger, MCP, examples, tests (behavior identical)
 pub use types::{
     HolographicBlock,
     Leg3Pointer,
