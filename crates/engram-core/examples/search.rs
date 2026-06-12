@@ -53,10 +53,21 @@ use engram_core::Complex32;
 fn dist_to_goal(current: &str, goal: &str, p_momentum: f64) -> f64 {
     // Real loading from .leg3 state using existing VsaBackend::fetch (removes all demo seeded vectors).
     // Uses real manifold at ~/.engram/manifold (actual .leg3 blocks).
+    // ROBUSTNESS: safe handling for missing concepts (no panic, clear error trace for sentinel, safe default).
     let real_path = "/Users/vantbracehome/.engram/manifold";
     let be = engram_core::CpuBackend::new(real_path);
-    let qc = be.fetch(current).expect("real .leg3 q for current concept via fetch");
-    let qg = be.fetch(goal).expect("real .leg3 q for goal concept via fetch");
+    let (qc, missing_curr) = if let Some(q) = be.fetch(current) {
+        (q, false)
+    } else {
+        println!("[ROBUSTNESS] missing real concept '{}' in manifold - safe zero vector + error trace for sentinel", current);
+        (Box::new([engram_core::Complex32::default(); 8192]), true)
+    };
+    let (qg, missing_goal) = if let Some(q) = be.fetch(goal) {
+        (q, false)
+    } else {
+        println!("[ROBUSTNESS] missing real concept '{}' in manifold - safe zero vector + error trace for sentinel", goal);
+        (Box::new([engram_core::Complex32::default(); 8192]), true)
+    };
     let curr = *qc;
     let gl = *qg;
     // Actual relations: op_bind on real fetched q's (role-filler relate per GEOMETRIC/sheaf).
@@ -65,9 +76,10 @@ fn dist_to_goal(current: &str, goal: &str, p_momentum: f64) -> f64 {
     let sim = cosine_similarity(&curr, &gl);
     // p-momentum in meaningful way: scale dist as trajectory cost using real sim + input p (momentum bias).
     let dist = (1.0 - sim) * (1.0 + p_momentum * 0.8);
+    let note = if missing_curr || missing_goal { " (robust: missing handled with safe default)" } else { "" };
     println!(
-        "[dist_to_goal REAL from .leg3] current={} goal={} p_momentum={:.3} sim={:.3} dist={:.3} (real fetch q, op_bind relate, cosine search, p factor)",
-        current, goal, p_momentum, sim, dist
+        "[dist_to_goal REAL from .leg3] current={} goal={} p_momentum={:.3} sim={:.3} dist={:.3}{} (real fetch q, op_bind relate, cosine search, p factor)",
+        current, goal, p_momentum, sim, dist, note
     );
     dist
 }

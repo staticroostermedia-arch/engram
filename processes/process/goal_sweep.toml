@@ -21,6 +21,12 @@ list = ["current_context_block", "goal_concept"]
 [produces]
 list = ["dist_to_goal", "sweep_trace", "structural_factors_lowdim"]
 
+[invariants]
+list = ["unit_hypersphere_normalization", "crs_weighted", "real_leg3_fetch_safe", "ralph_wiggum"]
+
+[timeout_ms]
+value = 30000
+
 [notes]
 # From proposals (mFC paper): manifold as "maze" (nodes=.leg3/traces, edges=relate/sheaf/search_by_relation).
 # dist_to_goal: compute (or bias) shortest/weighted dist from current to goal using graph + p-momentum as trajectory.
