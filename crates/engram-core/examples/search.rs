@@ -14,12 +14,13 @@ fn main() {
     }
 
     // Group 1 #1 functional prototype demo (real dist/sweep using existing ops) - runs before backend to guarantee output
-    println!("\n=== Group 1 #1: functional dist_to_goal + sweep (mFC mapping, real ops) ===");
-    let d1 = dist_to_goal("current_trace", "mfc_structured_nav_goal", 0.3);
+    // Uses real concepts from manifold (from harness recall) + real path for fetch.
+    println!("\n=== Group 1 #1: functional dist_to_goal + sweep (mFC mapping, real .leg3) ===");
+    let d1 = dist_to_goal("group1_memory_manifold_low_dim_integration_analysis", "plan:grok-build-finish-plan:engram-code-edit-ritual", 0.3);
     println!("Example dist1: {:.3}", d1);
-    simple_sweep("trace_start", "knowledge_goal");
+    simple_sweep("group1_memory_manifold_low_dim_integration_analysis", "plan:grok-build-finish-plan:engram-code-edit-ritual");
 
-    let backend = engram_core::CpuBackend::new("/path/to/.engram/stalks/");
+    let backend = engram_core::CpuBackend::new("/Users/vantbracehome/.engram/manifold");
     println!("=== SEMANTIC RAY-CASTER ===");
     println!("Query: {}", query);
     let res = engram_core::VsaBackend::recall(&backend, &query, 5);
@@ -48,26 +49,24 @@ use engram_core::Complex32;
 /// Working dist_to_goal using existing core APIs (op_bind for relation encoding / "relate",
 /// cosine_similarity for search closeness / "search_by_relation" analog, p_momentum as trajectory cost factor).
 /// In full system this maps to MCP search_by_relation + p-momentum over the relation sheaf/graph.
+/// ralph_wiggum=true (ritual toml [safety]): only read via existing fetch on real manifold; no writes.
 fn dist_to_goal(current: &str, goal: &str, p_momentum: f64) -> f64 {
-    // Seed simple phase vectors from strings (in real: load q tensors from .leg3 blocks for current/goal).
-    let mut curr = [Complex32::default(); 8192];
-    let mut gl = [Complex32::default(); 8192];
-    let c_seed = current.as_bytes().iter().fold(0u32, |a, &b| a.wrapping_add(b as u32)) as f32;
-    let g_seed = goal.as_bytes().iter().fold(0u32, |a, &b| a.wrapping_add(b as u32)) as f32;
-    for i in 0..8192 {
-        let c = ((c_seed + i as f32) * 0.01).sin();
-        curr[i] = Complex32::new(c, (c_seed + i as f32 * 0.003).cos());
-        let g = ((g_seed + i as f32) * 0.01).sin();
-        gl[i] = Complex32::new(g, (g_seed + i as f32 * 0.003).cos());
-    }
-    // "relate" via op_bind (role-filler relation per VSA/sheaf in GEOMETRIC_MEMORY).
+    // Real loading from .leg3 state using existing VsaBackend::fetch (removes all demo seeded vectors).
+    // Uses real manifold at ~/.engram/manifold (actual .leg3 blocks).
+    let real_path = "/Users/vantbracehome/.engram/manifold";
+    let be = engram_core::CpuBackend::new(real_path);
+    let qc = be.fetch(current).expect("real .leg3 q for current concept via fetch");
+    let qg = be.fetch(goal).expect("real .leg3 q for goal concept via fetch");
+    let curr = *qc;
+    let gl = *qg;
+    // Actual relations: op_bind on real fetched q's (role-filler relate per GEOMETRIC/sheaf).
     let _rel = op_bind(&curr, &gl);
-    // "search" closeness via cosine_similarity (foundation for search_by_relation results).
+    // Search closeness on real data (cosine foundation for search_by_relation).
     let sim = cosine_similarity(&curr, &gl);
-    // Meaningful dist: (1 - sim) as base distance, scaled by p_momentum as trajectory cost/progress factor.
+    // p-momentum in meaningful way: scale dist as trajectory cost using real sim + input p (momentum bias).
     let dist = (1.0 - sim) * (1.0 + p_momentum * 0.8);
     println!(
-        "[dist_to_goal REAL] current={} goal={} p_momentum={:.3} sim={:.3} dist={:.3} (used op_bind + cosine_similarity + p factor)",
+        "[dist_to_goal REAL from .leg3] current={} goal={} p_momentum={:.3} sim={:.3} dist={:.3} (real fetch q, op_bind relate, cosine search, p factor)",
         current, goal, p_momentum, sim, dist
     );
     dist

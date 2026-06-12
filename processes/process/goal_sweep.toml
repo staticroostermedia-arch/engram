@@ -37,6 +37,7 @@ list = ["dist_to_goal", "sweep_trace", "structural_factors_lowdim"]
 # Later: full impl behind ritual gate; integrate with nrem-consolidation.toml + momentum-query.toml.
 # See: docs/2026-06_GROUP1_MEMORY_MANIFOLD_INTEGRATION_PROPOSALS.md (mFC section + ranked #1), GEOMETRIC_MEMORY.md (relate, p, spatial AABB, NREM).
 # Scope: sketch only. No full NMF, no production sweep, no new heavy modules.
+# Updated: dist_to_goal now loads real q from .leg3 via existing VsaBackend::fetch on real manifold path; op_bind on real data for relate; p-momentum used for cost. Consistent with mFC real-data goal-directed primitive.
 
 [steps]
 # Wired for invocation via process loader / harness / ritual (lists exact mcp_tools used per phase).
