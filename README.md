@@ -1,1 +1,1 @@
-... Updated: Integrated Doohan mFC planning (factorized reps + theta sweeps) ... Demo ready for Aric.
+Updated: Trilogy lock-in pushed. Agents now implement the full Doohan-Jensen-Mattar planning circuit. Demo: engram-demo --full-planning-trilogy
