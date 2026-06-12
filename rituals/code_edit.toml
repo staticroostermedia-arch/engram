@@ -1,0 +1,15 @@
+# rituals/code_edit.toml
+# engram-code-edit-ritual v0.1 — Sovereign phase-space mutation gate
+name = "code_edit"
+version = "0.1.0"
+description = "Enforces geometric integrity, axiom compliance, pre/post recon, and manifold traceability for code/skill edits."
+
+[flow]
+pre_recon = "spatial + axiom pre-flight + intent block"
+mutation = "minimal diff or new file only; preserve geometry"
+post_recon = "diff compare + outcome trace + seal commit"
+
+[safety]
+ralph_wiggum = true
+rollback = true
+no_heavy = true
