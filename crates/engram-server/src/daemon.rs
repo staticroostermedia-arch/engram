@@ -608,10 +608,20 @@ fn run_nrem_consolidation(store: &crate::store::SharedStore) {
     // Extends prior info! + mcp relate + nrem toml mcp_tools. Testing improved in search.rs (same format).
     let probe_current = "plan:grok-build-finish-plan:engram-code-edit-ritual";  // stable real concept from harness traces (goal-directed from plan to active goal)
     for g in &active_goal_concepts {
-        let _d = dist_to_goal(probe_current, g, 0.5, None);  // None = default sovereign manifold path (configurable, backward compat)
+        // Minimal update for Result: recover with improved error trace (sentinel-friendly, explicit
+        // ConceptNotFound etc. instead of prior silent inside-primitive zero). Keeps NREM bias
+        // contribution safe (0.0) and traces close to previous robustness style.
+        let _d = dist_to_goal(probe_current, g, 0.5, None).unwrap_or_else(|e| {
+            println!("[NREM-GOAL-SWEEP|robustness=error|current={}|goal={}|error={:?}|p=0.5] using safe zero for bias contribution (NREM post-bias active goal; ralph_wiggum safe recovery; explicit error from shared primitive)", probe_current, g, e);
+            0.0
+        });
     }
     if let Some(first) = active_goal_concepts.iter().next() {
-        simple_sweep_nrem(probe_current, first, None);  // None = default (configurable)
+        // Same minimal robust handling for the optional phased sweep demo.
+        let _ = simple_sweep_nrem(probe_current, first, None).unwrap_or_else(|e| {
+            println!("[NREM-GOAL-SWEEP|robustness=error|current={}|goal={}|error={:?}] phased sweep error (NREM post-bias; safe ignore for trigger demo)", probe_current, first, e);
+            0.0
+        });
     }
 
     // Phase 2.1 Geo Ubiquity: snapshot current SymplecticState ONCE for all NREM contributor logs + hot promotions.
