@@ -5,6 +5,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tracing::{debug, error, info};
+use engram_core::VsaBackend;  // trait for .fetch (real .leg3) in local dist_to_goal helper for NREM active calls after bias (step 3 ritual)
 
 // ── Shadow Basis (Phase 1 — 768-dim genesis anchor) ────────────────────────
 //
@@ -555,6 +556,50 @@ const NREM_GOAL_BIASED_MASS_CAP: f32 = 0.40;
 /// Pure additive bias (no new mass cap). Value < goal factor to preserve goal primacy.
 const NREM_TRAINING_BIAS_FACTOR: f32 = 2.0;
 
+/// Local helper (smallest viable for NREM active calls): real dist_to_goal using CpuBackend on manifold.
+/// Body mirrors example/search.rs (proven fetch+op_bind+cosine+p). Returns f32 dist.
+/// Improved for this ritual: structured sentinel-friendly [NREM-GOAL-SWEEP|key=val|...] traces,
+/// clearer robustness with p/context, NREM-specific tags. ralph_wiggum safe (read-only, safe zero).
+fn dist_to_goal(current: &str, goal: &str, p_momentum: f32) -> f32 {
+    let real_path = "/Users/vantbracehome/.engram/manifold";
+    let be = engram_core::CpuBackend::new(real_path);
+    let (qc, missing_curr) = if let Some(q) = be.fetch(current) {
+        (q, false)
+    } else {
+        println!("[NREM-GOAL-SWEEP|robustness=missing|current={}|goal={}|p={:.3}] safe zero vector + sentinel trace (NREM active post-bias)", current, goal, p_momentum);
+        (Box::new([engram_core::Complex32::default(); 8192]), true)
+    };
+    let (qg, missing_goal) = if let Some(q) = be.fetch(goal) {
+        (q, false)
+    } else {
+        println!("[NREM-GOAL-SWEEP|robustness=missing|current={}|goal={}|p={:.3}] safe zero vector + sentinel trace (NREM active post-bias)", current, goal, p_momentum);
+        (Box::new([engram_core::Complex32::default(); 8192]), true)
+    };
+    let curr = *qc;
+    let gl = *qg;
+    let _rel = engram_core::ops::op_bind(&curr, &gl);
+    let sim = engram_core::ops::cosine_similarity(&curr, &gl);
+    let dist = (1.0f32 - sim) * (1.0f32 + p_momentum * 0.8f32);
+    let missing = missing_curr || missing_goal;
+    let note = if missing { " (robust: missing handled with safe default)" } else { "" };
+    println!(
+        "[NREM-GOAL-SWEEP|phase=dist|current={}|goal={}|p={:.3}|sim={:.3}|dist={:.3}|missing={}|note={}](real fetch+op_bind+cosine+p; active NREM after goal-bias; ralph_wiggum safe)",
+        current, goal, p_momentum, sim, dist, if missing { 1 } else { 0 }, note
+    );
+    dist
+}
+
+/// Optional phased sweep helper (far/mid/near via repeated dist_to_goal with p bias).
+/// Used for one demo call to show full phases in NREM trigger. Same structured output.
+fn simple_sweep_nrem(current: &str, goal: &str) {
+    println!("[NREM-GOAL-SWEEP|phase=far|current={}|goal={}] broad search_by_relation analog for high dist", current, goal);
+    let d_mid = dist_to_goal(current, goal, 0.5);
+    println!("[NREM-GOAL-SWEEP|phase=mid|current={}|goal={}|dist_mid={:.3}] query_with_momentum + p-bias", current, goal, d_mid);
+    println!("[NREM-GOAL-SWEEP|phase=near|current={}|goal={}] refine + prospective futures eval by dist", current, goal);
+    let d_final = dist_to_goal(current, goal, 0.9);
+    println!("[NREM-GOAL-SWEEP|phase=result|current={}|goal={}|final_dist={:.3}] (phased sweep probe for NREM active trigger)", current, goal, d_final);
+}
+
 fn run_nrem_consolidation(store: &crate::store::SharedStore) {
     info!("[NREM] Starting dream consolidation pass (CRS threshold = {}) — CodeLand-enhanced (ego-friction + Riemannian + Tier5 ZEDOS + Logenergetics)…", NREM_CRS_THRESHOLD);
     // Lightweight executable hook for goal_sweep in NREM (smallest viable, Group 1 mFC #1 per proposals + nrem-consolidation.toml): 
@@ -595,14 +640,20 @@ fn run_nrem_consolidation(store: &crate::store::SharedStore) {
     // Note: recency weighting is implicit — only high-momentum/recently active serving traces stay high-CRS enough to be selected in recall + relations.
     // A future pass can add explicit timestamp / recent_access filtering on the serving set.
 
-    // ═══ Active executable trigger for goal_sweep (after goal-bias section; more active than prior comment) ═══
-    // Smallest viable: directly reference + "invoke" the phases (far/mid/near per goal_sweep.toml [steps] + nrem mcp_tools)
-    // for every real active_goal_concepts collected in this NREM pass. Executes during consolidation flow.
-    // No full automatic sweep execution (scope), no new handlers, no writes/policy update — just explicit phase
-    // reference + info! "call" + ralph_wiggum safe note. Extends mcp load relate + prior hook comment + toml produces.
-    // Broadened real-data testing in search.rs (multiple p, real concepts, missing edges, clearer robustness).
+    // ═══ Active calls to dist_to_goal (after goal-bias section; ritual step 3) ═══
+    // Smallest viable actual calls using the *real* active_goal_concepts collected in this NREM pass.
+    // Uses local helper (body from proven example) for fetch+op_bind+cosine+p on ~/.engram/manifold.
+    // Calls dist_to_goal for each (g as goal, stable probe_current as context); + one optional phased sweep.
+    // No full automatic execution / policy updates / writes (per scope); just compute + structured logs for sentinel.
+    // Output improved: [NREM-GOAL-SWEEP|phase=...|current=...|goal=...|p=...|sim=...|dist=...|missing=...] (sentinel-friendly, parseable).
+    // Enhanced robustness: explicit p in missing logs, NREM tag, full context. ralph_wiggum safe (read-only .leg3, safe zero).
+    // Extends prior info! + mcp relate + nrem toml mcp_tools. Testing improved in search.rs (same format).
+    let probe_current = "plan:grok-build-finish-plan:engram-code-edit-ritual";  // stable real concept from harness traces (goal-directed from plan to active goal)
     for g in &active_goal_concepts {
-        info!("[NREM][goal_sweep ACTIVE TRIGGER] goal={} | phases: far(search_by_relation for mFC structural factors) / mid(query_with_momentum + p-bias to reduce dist_to_goal) / near(dist_to_goal real .leg3 fetch+op_bind+cosine + record_reasoning_trace) | ralph_wiggum safe (read-only probe, safe defaults; see GEOMETRIC_MEMORY.md, Group1 proposals mFC, nrem-consolidation.toml, search.rs)", g);
+        let _d = dist_to_goal(probe_current, g, 0.5);
+    }
+    if let Some(first) = active_goal_concepts.iter().next() {
+        simple_sweep_nrem(probe_current, first);  // optional phased (far/mid/near) demonstration
     }
 
     // Phase 2.1 Geo Ubiquity: snapshot current SymplecticState ONCE for all NREM contributor logs + hot promotions.

@@ -77,19 +77,20 @@ use engram_core::VsaBackend;  // trait for fetch (real .leg3); mirrors mcp.rs ex
 fn dist_to_goal(current: &str, goal: &str, p_momentum: f32) -> f32 {
     // Real loading from .leg3 state using existing VsaBackend::fetch (removes all demo seeded vectors).
     // Uses real manifold at ~/.engram/manifold (actual .leg3 blocks).
-    // ROBUSTNESS: safe handling for missing concepts (no panic, clear error trace for sentinel, safe default).
+    // ROBUSTNESS (improved for ritual): sentinel-friendly [NREM-GOAL-SWEEP|key=val|] structured traces,
+    // p/context in missing logs, explicit missing flag, NREM tag for active trigger correlation.
     let real_path = "/Users/vantbracehome/.engram/manifold";
     let be = engram_core::CpuBackend::new(real_path);
     let (qc, missing_curr) = if let Some(q) = be.fetch(current) {
         (q, false)
     } else {
-        println!("[NREM-ROBUSTNESS] missing real concept '{}' in manifold - safe zero vector + error trace for sentinel (NREM active goal_sweep probe)", current);
+        println!("[NREM-GOAL-SWEEP|robustness=missing|current={}|goal={}|p={:.3}] safe zero vector + sentinel trace (standalone test; matches NREM active calls)", current, goal, p_momentum);
         (Box::new([engram_core::Complex32::default(); 8192]), true)
     };
     let (qg, missing_goal) = if let Some(q) = be.fetch(goal) {
         (q, false)
     } else {
-        println!("[NREM-ROBUSTNESS] missing real concept '{}' in manifold - safe zero vector + error trace for sentinel (NREM active goal_sweep probe)", goal);
+        println!("[NREM-GOAL-SWEEP|robustness=missing|current={}|goal={}|p={:.3}] safe zero vector + sentinel trace (standalone test; matches NREM active calls)", current, goal, p_momentum);
         (Box::new([engram_core::Complex32::default(); 8192]), true)
     };
     let curr = *qc;
@@ -100,33 +101,34 @@ fn dist_to_goal(current: &str, goal: &str, p_momentum: f32) -> f32 {
     let sim = cosine_similarity(&curr, &gl);
     // p-momentum in meaningful way: scale dist as trajectory cost using real sim + input p (momentum bias).
     let dist = (1.0f32 - sim) * (1.0f32 + p_momentum * 0.8f32);
-    let note = if missing_curr || missing_goal { " (robust: missing handled with safe default)" } else { "" };
+    let missing = missing_curr || missing_goal;
+    let note = if missing { " (robust: missing handled with safe default)" } else { "" };
     println!(
-        "[NREM goal_sweep dist_to_goal REAL from .leg3] current={} goal={} p_momentum={:.3} sim={:.3} dist={:.3}{} (real fetch q, op_bind relate, cosine search, p factor; active in run_nrem_consolidation)",
-        current, goal, p_momentum, sim, dist, note
+        "[NREM-GOAL-SWEEP|phase=dist|current={}|goal={}|p={:.3}|sim={:.3}|dist={:.3}|missing={}|note={}](real fetch q, op_bind relate, cosine search, p factor; test for NREM active calls in run_nrem_consolidation)",
+        current, goal, p_momentum, sim, dist, if missing { 1 } else { 0 }, note
     );
     dist
 }
 
 /// Updated sweep: calls real dist_to_goal, produces usable phased output + traces.
-/// NREM-BROAD-TEST variant for multiple scenarios + clearer phase/robustness output.
+/// NREM-BROAD-TEST variant for multiple scenarios + clearer phase/robustness output (structured sentinel format).
 fn simple_sweep(current: &str, goal: &str) {
-    println!("[sweep REAL step1 far] broad search_by_relation analog for high dist from {}", current);
+    println!("[NREM-GOAL-SWEEP|phase=far|current={}|goal={}] broad search_by_relation analog for high dist", current, goal);
     let d_mid = dist_to_goal(current, goal, 0.5);
-    println!("[sweep REAL step2 mid] p-momentum bias (dist now {:.3})", d_mid);
-    println!("[sweep REAL step3 near] refine + prospective futures eval by dist to {}", goal);
+    println!("[NREM-GOAL-SWEEP|phase=mid|current={}|goal={}|dist_mid={:.3}] p-momentum bias", current, goal, d_mid);
+    println!("[NREM-GOAL-SWEEP|phase=near|current={}|goal={}] refine + prospective futures eval by dist", current, goal);
     let d_final = dist_to_goal(current, goal, 0.9);
-    println!("[sweep RESULT] final_dist={:.3} (usable output for policy/trace)", d_final);
+    println!("[NREM-GOAL-SWEEP|phase=result|current={}|goal={}|final_dist={:.3}] (usable output for policy/trace; test for NREM)", current, goal, d_final);
 }
 
-/// NREM broad test variant of sweep (used in multiple p/edge case loop) with explicit phase tags.
+/// NREM broad test variant of sweep (used in multiple p/edge case loop) with explicit phase tags (sentinel format).
 fn simple_sweep_nrem_broad(current: &str, goal: &str) {
-    println!("[NREM-BROAD-TEST sweep REAL step1 far] search_by_relation structural from {}", current);
+    println!("[NREM-GOAL-SWEEP|phase=far|current={}|goal={}] search_by_relation structural from {}", current, goal, current);
     let d_mid = dist_to_goal(current, goal, 0.5);
-    println!("[NREM-BROAD-TEST sweep REAL step2 mid] query_with_momentum p-bias (dist now {:.3})", d_mid);
-    println!("[NREM-BROAD-TEST sweep REAL step3 near] dist_to_goal + record (futures by dist to {})", goal);
+    println!("[NREM-GOAL-SWEEP|phase=mid|current={}|goal={}|dist_mid={:.3}] query_with_momentum p-bias", current, goal, d_mid);
+    println!("[NREM-GOAL-SWEEP|phase=near|current={}|goal={}] dist_to_goal + record (futures by dist to {})", current, goal, goal);
     let d_final = dist_to_goal(current, goal, 0.9);
-    println!("[NREM-BROAD-TEST sweep RESULT] final_dist={:.3} (NREM active trigger probe output)", d_final);
+    println!("[NREM-GOAL-SWEEP|phase=result|current={}|goal={}|final_dist={:.3}] (NREM active trigger probe output)", current, goal, d_final);
 }
 
 // Demo (now produces real varying numbers from ops; broadened for NREM ritual)
