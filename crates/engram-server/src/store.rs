@@ -485,7 +485,11 @@ pub fn from_hybrid_wire_for_store(wire: &[u8]) -> Option<engram_core::types::Leg
 }
 
 #[allow(dead_code)]
-pub fn verify_zk_for_store(block: &engram_core::types::HolographicBlock, op: &str, proof: &[u8; 32]) -> bool {
+pub fn verify_zk_for_store(
+    block: &engram_core::types::HolographicBlock,
+    op: &str,
+    proof: &[u8; 32],
+) -> bool {
     // mcp/store exposure for homo+zk verify (pure rust impl in encode)
     engram_core::encode::verify_zk_proof(block, op, proof)
 }

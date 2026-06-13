@@ -13,7 +13,10 @@
 
 use crate::ops::normalize;
 use crate::storage::write_provlog;
-use crate::types::{BlockArena, BlockTier, HolographicBlock, Leg3Pointer, DIMENSION, ZEDOS_DECLARATIVE, ZEDOS_POINTER, parse_allowed_dsl, validate_allowed_transforms};
+use crate::types::{
+    parse_allowed_dsl, validate_allowed_transforms, BlockArena, BlockTier, HolographicBlock,
+    Leg3Pointer, DIMENSION, ZEDOS_DECLARATIVE, ZEDOS_POINTER,
+};
 use num_complex::Complex32;
 
 /// Encode free-form text into a `HolographicBlock` using Pure Logophysical Phase Accumulation.
@@ -276,10 +279,18 @@ pub fn to_hybrid_wire(block: &HolographicBlock, use_delta: bool) -> Vec<u8> {
     wire.extend_from_slice(&block.crs_score.to_le_bytes());
     // simple full for now (additive; future delta on p or external); always include q/p for fidelity
     // (store can choose O_DIRECT full vs this wire for net)
-    let q_bytes: Vec<u8> = block.q.iter().flat_map(|c| c.re.to_le_bytes().into_iter().chain(c.im.to_le_bytes())).collect();
+    let q_bytes: Vec<u8> = block
+        .q
+        .iter()
+        .flat_map(|c| c.re.to_le_bytes().into_iter().chain(c.im.to_le_bytes()))
+        .collect();
     wire.extend_from_slice(&(q_bytes.len() as u32).to_le_bytes());
     wire.extend_from_slice(&q_bytes);
-    let p_bytes: Vec<u8> = block.p.iter().flat_map(|c| c.re.to_le_bytes().into_iter().chain(c.im.to_le_bytes())).collect();
+    let p_bytes: Vec<u8> = block
+        .p
+        .iter()
+        .flat_map(|c| c.re.to_le_bytes().into_iter().chain(c.im.to_le_bytes()))
+        .collect();
     wire.extend_from_slice(&(p_bytes.len() as u32).to_le_bytes());
     wire.extend_from_slice(&p_bytes);
     // payload stub + footer sig for merkle tie
@@ -291,7 +302,9 @@ pub fn to_hybrid_wire(block: &HolographicBlock, use_delta: bool) -> Vec<u8> {
 }
 
 pub fn from_hybrid_wire(wire: &[u8]) -> Option<Leg3Pointer> {
-    if wire.len() < 4 || &wire[0..4] != b"HBRD" { return None; }
+    if wire.len() < 4 || &wire[0..4] != b"HBRD" {
+        return None;
+    }
     let mut lp = Leg3Pointer::mint();
     // simplistic parse (demo; full impl would validate lens)
     if wire.len() > 20 {
@@ -341,11 +354,14 @@ pub fn verify_zk_proof(block: &HolographicBlock, op: &str, proof: &[u8; 32]) -> 
 
 /// Arena batch encode helper (SOA synergy for GPU).
 pub fn encode_batch_to_arena(texts: &[&str], arena: &mut BlockArena) -> Vec<Leg3Pointer> {
-    texts.iter().map(|t| {
-        let b = from_text(t);
-        arena.blocks.push(b.clone());
-        b
-    }).collect()
+    texts
+        .iter()
+        .map(|t| {
+            let b = from_text(t);
+            arena.blocks.push(b.clone());
+            b
+        })
+        .collect()
 }
 
 /// === end P2 encode add (tiered/hybrid/homo+zk/soa) ===
@@ -397,7 +413,9 @@ mod tests {
         let (ver, dsl) = crate::types::parse_allowed_dsl(&b.allowed_transforms);
         assert_eq!(ver, 1);
         assert!(dsl.iter().any(|d| d == "full" || d == "read"));
-        assert!(crate::types::validate_allowed_transforms(&b.allowed_transforms));
+        assert!(crate::types::validate_allowed_transforms(
+            &b.allowed_transforms
+        ));
     }
 
     #[test]

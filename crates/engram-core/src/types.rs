@@ -579,9 +579,14 @@ pub fn default_allowed_transforms_v1() -> [u8; 64] {
 pub fn parse_allowed_dsl(at: &[u8; 64]) -> (u8, Vec<String>) {
     let ver = at[0];
     let dsl_bytes = &at[1..];
-    let s = core::str::from_utf8(dsl_bytes).unwrap_or("").trim_end_matches('\0');
+    let s = core::str::from_utf8(dsl_bytes)
+        .unwrap_or("")
+        .trim_end_matches('\0');
     let parts: Vec<String> = if s.contains('|') {
-        s.split('|').map(|x| x.trim().to_string()).filter(|x| !x.is_empty()).collect()
+        s.split('|')
+            .map(|x| x.trim().to_string())
+            .filter(|x| !x.is_empty())
+            .collect()
     } else if !s.is_empty() {
         vec![s.to_string()]
     } else {
