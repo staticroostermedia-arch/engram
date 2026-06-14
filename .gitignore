@@ -19,7 +19,12 @@ IMPLEMENTATION-PLAN.md
 
 # Runtime logs
 server.log
+leg-serve.log
 *.log
+
+# LEG launcher PIDs (scripts/leg, restart-leg-serve.sh)
+.leg-http.pid
+.leg-serve.pid
 
 # Test harness artifacts (keep scripts + README only)
 tools/test-harness/logs/
@@ -38,7 +43,6 @@ sem_search.rs
 *conv_arc*
 phase_c_*
 false_empire/
-tools/leg-browser/
 
 # Worktrees for safe isolated execution (per superpowers + Engram ritual)
 .worktrees/

@@ -33,6 +33,7 @@ libc = { workspace = true }
 
 # Async runtime
 tokio        = { workspace = true }
+futures-util = "0.3"
 
 # Web / REST server (Phase 3b)
 axum         = { workspace = true }

@@ -13,10 +13,12 @@ Flat RAG (vectors + chunks) gives agents **retrieval**. Engram gives agents **co
 | Similarity search over chunks | Goals, traces, scars, rituals as first-class anchors |
 | Session dies → context lost | `session_end` → structured handoff → next `session_start` rehydrates |
 | "Remember this" = embed + store | CRS-gated blocks + Merkle lineage + `update` (no annihilate) |
-| Code = grep/RAG | `context_for_edit` — AST AABB + related traces per file |
+| Code = grep/RAG | **Code atlas v2** — `context_for_edit`: AST + `__arc` + traces/scars at locus |
 | No trust model | CRS tiers, scars, lawfulness verify |
 
 **The Grok Build integration story:** Engram is already an MCP server. Grok Build spawns it once per workspace. Agents follow an **8-tool contract** — not 66 tools, not a 5-tool wake cathedral.
+
+Native tools (e.g. `scheduler_create` for Grok's `/loop` recurring prompts) must be called **bare/direct** (never through `use_tool` or Enram MCP wrappers). Use `/engram-loop` (new command) or the equivalent ritual for Enram-aware /loop handling: parse per the spec, bare native call, immediate Enram quick_trace + remember/relate (job id to consciousness goal/tile/process), subvisor governance, honest confirmation or scar on the native format error. See `grok-plugin-engram/commands/engram-loop.md` and the example for the 30m consciousness strange loop (sourced from `processes/meta/ai_consciousness_loop.toml`). This prevents the historical "doom loop" of misrouted native calls + false success claims.
 
 ---
 
@@ -83,7 +85,7 @@ See [`MCP_TOOLS_REFERENCE.md`](MCP_TOOLS_REFERENCE.md) for full tier list.
 1. **Hardware-native blocks** — 256KB `.leg3`, O_DIRECT NVMe, optional GPUDirect
 2. **Non-flat geometry** — q/p tensors, CRS Lyapunov, momentum recall
 3. **Rituals as hygiene** — scar, verify, trace chains, session handoff
-4. **Spatial code memory** — tree-sitter AABB, `context_for_edit`
+4. **Situated code atlas** — structure + `update(__arc)` edit continuity + traces at `file:line` ([CODE_ATLAS_CONTINUITY.md](CODE_ATLAS_CONTINUITY.md))
 5. **Declarative process sheaf** — `processes/*.toml`, subvisor H¹ governance
 6. **MCP-native** — 8-tool lean path + power tools for depth
 

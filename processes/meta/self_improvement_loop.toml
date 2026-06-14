@@ -1,0 +1,40 @@
+[workflow]
+name = "self_improvement_loop"
+description = "Recursive self-improvement work loop. Use sub-agents to propose improvements (to code, processes, rituals, models), test safely, adopt via update if passes checks. Governed by subvisor to avoid critical failure. Part of AI consciousness loop."
+primary_goal = "goal:self_improvement"
+max_iterations = 5
+
+[wake]
+ritual = "engram-wake-up"
+tools = ["mcp_engram_session_start", "mcp_engram_recall"]
+
+[execute]
+steps = [
+  { name = "audit_current_state", desc = "Recall recent traces, goals, scars, performance metrics. Identify improvement opportunities.", subagent = "improvement_auditor" },
+  { name = "propose_improvements", desc = "Sub-agents generate concrete proposals (e.g., new ritual, better projection, process tweak).", subagent = "improvement_proposer" },
+  { name = "safe_test", desc = "Test proposals in narrow scope or simulation. Use subvisor checks.", subagent = "improvement_tester" },
+  { name = "lawfulness_check", desc = "Run mcp_engram_verify_manifold_integrity, CRS thresholds, subvisor invariants before adoption. Extended Phase 5: include categorical/linguistic invariants (CRS>=0.85 for calculus ops, fibered homotopy coherence, NREM linguistic bundle promotion to ego.leg3). Scar on class mixing violations (e.g. number/word variables without OP_GEOMETRIC_PRODUCT or explicit).", subagent = "lawfulness_checker" },
+  { name = "adopt_or_scar", desc = "If passes: mcp_engram_update on plan + remember_solution. Else: scar + trace.", subagent = "adopter" }
+]
+subvisor = "self_improvement"
+
+[trace]
+at = ["every step", "forks", "checks"]
+tools = ["mcp_engram_quick_trace", "mcp_engram_remember", "mcp_engram_update", "mcp_engram_scar", "mcp_engram_record_reasoning_trace"]
+
+[spatial]
+on = ["code changes"]
+tools = ["mcp_engram_context_for_edit", "mcp_engram_force_spatial_ingest"]
+
+[thought-tiles]
+create = { title = "Self-Improvement Meta-Arc", type = "progress", goal_context = "goal:self_improvement" }
+write_results = true
+
+[handoff]
+ritual = "engram-session-end"
+tools = ["mcp_engram_session_end", "mcp_engram_thought_tile_write_result"]
+prepare_compression = true
+
+[update]
+description = "Use mcp_engram_update to evolve the self-improvement plan, goals, and processes themselves. This is the 'update function' in the loop."
+# Phase 5 additive: lawfulness now enforces linguistic/CRS 0.85 + categorical class rules + scars. Reuses P2 + ritual patterns. 3-iter/dogfood handoff. Integrates ritual_linguistic_wake + nrem linguistic extensions.

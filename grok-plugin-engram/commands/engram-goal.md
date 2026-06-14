@@ -12,4 +12,8 @@ description: Goal stack — set primary, list status, orient intentional self-mo
 
 For decomposing work → `mcp_engram_goal_decompose`. For search → `mcp_engram_goal_search`.
 
-All traces and tiles should reference active primary goal when known.
+When a goal is **completed** or **demoted**:
+1. `mcp_engram_goal_update_status` (auto-removes `primary_goal --serves-->` edge)
+2. `mcp_engram_demote_from_context` for full archival trace + cascade condensation cleanup
+
+All traces and tiles should reference active primary goal when known. Keep serving stack ≤6 — demote stale goals via LEG hygiene or MCP.

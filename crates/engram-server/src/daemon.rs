@@ -362,20 +362,11 @@ pub fn spawn(store: SharedStore) -> Arc<DaemonControl> {
                                         // workspace go into a dedicated '<workspace_name>_ast' stalk.
                                         // This keeps auto-ingested code blocks separate from agent
                                         // episodic memories in the default stalk.
-                                        let linked_ws = std::env::var("ENGRAM_LINKED_WORKSPACE").ok();
-                                        let (is_linked, ast_stalk) = match &linked_ws {
-                                            Some(ws) if path_str.contains(ws.as_str()) => {
-                                                let name = std::path::Path::new(ws)
-                                                    .file_name()
-                                                    .and_then(|n| n.to_str())
-                                                    .unwrap_or("linked")
-                                                    .to_lowercase();
-                                                (true, format!("{}_ast", name))
-                                            }
-                                            _ => (false, String::new()),
-                                        };
-                                        if is_linked {
-                                            lock.set_active_stalk(&ast_stalk);
+                                        let prior_stalk = lock.active_stalk_name();
+                                        if let Some(ast_stalk) =
+                                            crate::store::StoreHandle::ast_stalk_for_file(&path_str)
+                                        {
+                                            let _ = lock.set_active_stalk(&ast_stalk);
                                         }
 
                                         let items = engram_ast::extract_ast_items(path.to_str().unwrap_or(""), &content);
@@ -384,84 +375,49 @@ pub fn spawn(store: SharedStore) -> Arc<DaemonControl> {
 
                                         if !items.is_empty() {
                                             for item in items {
+                                                // Shadow anchor on fresh encode path (daemon-only enrichment)
+                                                let existing = lock.fetch_block(&item.concept);
                                                 let mut block = lock.encode(&item.embed_label());
-
-                                                // Map 2D file coordinates into the 3D logophysical bounding box
-                                                block.aabb_min = [item.start_pos.0 as f32, item.start_pos.1 as f32, 0.0];
-                                                block.aabb_max = [item.end_pos.0 as f32,   item.end_pos.1 as f32,   0.0];
-
-                                                // Store full unbroken source in ProvLog
-                                                engram_core::storage::write_provlog(&mut block, &item.full_source);
-
-                                                // ── Genesis Shadow Anchor ──────────────────────
-                                                // OP_ADD(block.q, v_cybernetics_768) → L2 normalize
-                                                // Biases the AST block toward the genesis coordinate
-                                                // system within the 768-dim shadow manifold.
-                                                // Both vectors are 768-dim so dimensions match.
+                                                if let Some(ref old) = existing {
+                                                    block.p = old.p;
+                                                    block.superposition_count = old.superposition_count;
+                                                    block.energetics = old.energetics;
+                                                }
+                                                block.aabb_min =
+                                                    [item.start_pos.0 as f32, item.start_pos.1 as f32, 0.0];
+                                                block.aabb_max =
+                                                    [item.end_pos.0 as f32, item.end_pos.1 as f32, 0.0];
+                                                engram_core::storage::write_provlog(
+                                                    &mut block,
+                                                    &item.full_source,
+                                                );
                                                 if let Some(ref shadow) = shadow_cybernetics {
                                                     apply_shadow_anchor(&mut block, shadow);
                                                 }
-
                                                 if let Err(e) = lock.store(&item.concept, block) {
-                                                    error!("Daemon failed to auto-sync AST {}: {}", item.concept, e);
+                                                    error!(
+                                                        "Daemon failed to auto-sync AST {}: {}",
+                                                        item.concept, e
+                                                    );
                                                 } else {
-                                                    debug!("Daemon: Auto-synced AST {} (shadow_anchor={})",
-                                                        item.concept, shadow_cybernetics.is_some());
+                                                    let _ = lock.ensure_edit_arc(&item.concept);
+                                                    debug!(
+                                                        "Daemon: Auto-synced AST {} (shadow_anchor={})",
+                                                        item.concept,
+                                                        shadow_cybernetics.is_some()
+                                                    );
                                                     ast_concepts.push(item.concept.clone());
                                                 }
                                             }
 
-                                            // ── Automatic relational gluing for spatial sheaf (Gap 1 resolution) ──
-                                            // Creates "defined_in_file" and "next_sibling_in_file" relations so
-                                            // AABB AST blocks participate in the knowledge graph used by
-                                            // search_by_relation / visualize / impact analysis.
-                                            // This makes Pre-Edit/Post-Delta in the spatial ritual fantastically effective.
                                             if !ast_concepts.is_empty() {
-                                                let file_stem = ast_concepts[0]
-                                                    .split("__")
-                                                    .next()
-                                                    .unwrap_or("unknown")
-                                                    .to_string();
-                                                let file_container = format!("{}_file", file_stem);
-
-                                                // Ensure a lightweight file container exists
-                                                if lock.fetch_block(&file_container).is_none() {
-                                                    let container_text = format!(
-                                                        "AST container for file stem '{}'. All top-level items (fn/struct/impl/etc.) extracted from this file via Tree-Sitter are related here.",
-                                                        file_stem
-                                                    );
-                                                    let _ = lock.remember(&file_container, &container_text);
-                                                }
-
-                                                // Relate every AST item to the file container
-                                                for c in &ast_concepts {
-                                                    let _ = lock.relate(&file_container, c, "defines");
-                                                }
-
-                                                // Sibling chaining in source order (fantastic for impact: "what else is in this file?")
-                                                for i in 1..ast_concepts.len() {
-                                                    let _ = lock.relate(&ast_concepts[i-1], &ast_concepts[i], "next_sibling_in_file");
-                                                    let _ = lock.relate(&ast_concepts[i], &ast_concepts[i-1], "prev_sibling_in_file");
-                                                }
-
-                                                debug!("Daemon: Created spatial relations for {} AST items in '{}'", ast_concepts.len(), file_stem);
-
-                                                // ── Ritual-aware auto-bridging (next layer for Gap 4) ──
-                                                // When we are ingesting spatial code that is core to the impact ritual itself,
-                                                // automatically relate the file container to the living praxis anchor.
-                                                // This creates real, automatic gluing between the AST world and the ritual/praxis world.
-                                                let ritual_relevant_stems = [
-                                                    "daemon", "mcp", "store", "engram_ast", "working_memory",
-                                                    "context_for_file", "recall_in_file"
-                                                ];
-                                                if ritual_relevant_stems.iter().any(|s| file_stem.contains(s)) {
-                                                    let praxis_anchor = "praxis:spatial_manifold_impact_analysis";
-                                                    if lock.fetch_block(praxis_anchor).is_some() {
-                                                        let _ = lock.relate(&file_container, praxis_anchor, "exercises_spatial_ritual");
-                                                        debug!("Daemon: Auto-bridged '{}' to spatial praxis anchor", file_stem);
-                                                    }
-                                                }
+                                                lock.glue_ast_file_relations(&ast_concepts);
+                                                debug!(
+                                                    "Daemon: Glued spatial relations for {} AST items",
+                                                    ast_concepts.len()
+                                                );
                                             }
+                                            let _ = lock.set_active_stalk(&prior_stalk);
                                         } else {
                                             // Fallback chunking
                                             let file_name = path
@@ -492,10 +448,7 @@ pub fn spawn(store: SharedStore) -> Arc<DaemonControl> {
                                                 );
                                             }
 
-                                        // Restore default namespace after linked-workspace block
-                                        if is_linked {
-                                            lock.set_active_stalk("default");
-                                        }
+                                        let _ = lock.set_active_stalk(&prior_stalk);
                                         }
                                     }
                                 }

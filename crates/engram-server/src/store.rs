@@ -144,6 +144,33 @@ pub struct StalkEntry {
     pub path: String,
 }
 
+// ── ActivityRing — near-real-time LEG Browser agent process mirror ─────────────
+
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct ActivityEvent {
+    pub ts: u64,
+    pub concept: String,
+    pub action: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+}
+
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct ArchiveFromContextResult {
+    pub trace_key: String,
+    pub removed_serves: bool,
+    pub cascaded_demotions: Vec<String>,
+}
+
+const ACTIVITY_RING_CAP: usize = 400;
+
+fn activity_now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+}
+
 // ── AccessIndex — hot temporal metadata ──────────────────────────────────────
 
 pub struct AccessIndex {
@@ -190,6 +217,19 @@ impl AccessIndex {
             self.map.iter().map(|(k, v)| (k.clone(), *v)).collect();
         entries.sort_by_key(|b| std::cmp::Reverse(b.1));
         entries.truncate(n);
+        entries
+    }
+
+    /// Concepts touched after `since` (unix secs), newest first.
+    pub fn since(&self, since: u64, limit: usize) -> Vec<(String, u64)> {
+        let mut entries: Vec<(String, u64)> = self
+            .map
+            .iter()
+            .filter(|(_, ts)| **ts > since)
+            .map(|(k, v)| (k.clone(), *v))
+            .collect();
+        entries.sort_by_key(|b| std::cmp::Reverse(b.1));
+        entries.truncate(limit);
         entries
     }
 
@@ -242,6 +282,21 @@ impl RelationIndex {
             path
         );
         Self { entries, path }
+    }
+
+    /// Remove a directed edge if present (e.g. primary_goal --serves--> demoted artifact).
+    pub fn remove(&mut self, from: &str, label: &str, to: &str) -> bool {
+        if let Some(pos) = self
+            .entries
+            .iter()
+            .position(|e| e.from == from && e.label == label && e.to == to)
+        {
+            self.entries.remove(pos);
+            self.flush();
+            true
+        } else {
+            false
+        }
     }
 
     /// Add a directed edge, deduplicating and flushing immediately.
@@ -352,8 +407,26 @@ impl RelationIndex {
 // Request body: `{ "query": "<text>", "k": 3 }`
 // Response: JSON with a top-level `assembled_prose` field.
 //
+/// Run blocking I/O safely whether called from MCP sync context or axum async handlers.
+/// reqwest::blocking inside a tokio worker without this panics the runtime
+/// ("Cannot drop a runtime in a context where blocking is not allowed").
+fn run_blocking_safe<F, R>(f: F) -> R
+where
+    F: FnOnce() -> R,
+{
+    if tokio::runtime::Handle::try_current().is_ok() {
+        tokio::task::block_in_place(f)
+    } else {
+        f()
+    }
+}
+
 // If the env var is not set, or the oracle is unreachable, returns None (silent fallback).
 fn oracle_fallthrough(query: &str) -> Option<Memory> {
+    run_blocking_safe(|| oracle_fallthrough_inner(query))
+}
+
+fn oracle_fallthrough_inner(query: &str) -> Option<Memory> {
     let oracle_url = match std::env::var("ENGRAM_ORACLE_URL") {
         Ok(url) => url,
         Err(_) => return None, // oracle disabled (env var not set)
@@ -912,6 +985,9 @@ pub struct StoreHandle {
     // Respected in contributor logging; queryable for geo-aware hot embodiment (WS2+).
     hot_geo_context: std::sync::RwLock<std::collections::HashMap<String, (u64, String)>>,
 
+    /// In-memory write log for LEG Browser live-watch (remember/relate/archive).
+    activity_ring: std::collections::VecDeque<ActivityEvent>,
+
     /// TTL cache for `build_continuation_bundle` (large-stalk wake-up latency).
     continuation_bundle_cached_at: u64,
     continuation_bundle_cache: Option<serde_json::Value>,
@@ -1146,10 +1222,62 @@ impl StoreHandle {
             hot_set: std::sync::RwLock::new(std::collections::HashSet::new()),
             geosphere: std::sync::RwLock::new(SymplecticState::new()),
             hot_geo_context: std::sync::RwLock::new(std::collections::HashMap::new()),
+            activity_ring: std::collections::VecDeque::new(),
             continuation_bundle_cached_at: 0,
             continuation_bundle_cache: None,
             deep_bvh_spawn_attempted: std::sync::atomic::AtomicBool::new(false),
         }
+    }
+
+    pub fn log_activity(&mut self, concept: &str, action: &str, detail: Option<&str>) {
+        let event = ActivityEvent {
+            ts: activity_now(),
+            concept: concept.to_string(),
+            action: action.to_string(),
+            detail: detail.map(str::to_string),
+        };
+        self.activity_ring.push_front(event.clone());
+        while self.activity_ring.len() > ACTIVITY_RING_CAP {
+            self.activity_ring.pop_back();
+        }
+        // Cross-process feed (MCP stdio + engram serve share ~/.engram/activity_feed.jsonl).
+        let feed =
+            PathBuf::from(shellexpand::tilde("~/.engram").into_owned()).join("activity_feed.jsonl");
+        if let Ok(line) = serde_json::to_string(&event) {
+            use std::io::Write;
+            if let Ok(mut f) = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&feed)
+            {
+                let _ = writeln!(f, "{}", line);
+            }
+        }
+    }
+
+    pub fn read_shared_activity_since(since: u64, limit: usize) -> Vec<ActivityEvent> {
+        let feed =
+            PathBuf::from(shellexpand::tilde("~/.engram").into_owned()).join("activity_feed.jsonl");
+        let Ok(data) = std::fs::read_to_string(&feed) else {
+            return Vec::new();
+        };
+        let mut out: Vec<ActivityEvent> = data
+            .lines()
+            .filter_map(|l| serde_json::from_str::<ActivityEvent>(l).ok())
+            .filter(|e| e.ts > since)
+            .collect();
+        out.sort_by_key(|b| std::cmp::Reverse(b.ts));
+        out.truncate(limit);
+        out
+    }
+
+    pub fn activity_since(&self, since: u64, limit: usize) -> Vec<ActivityEvent> {
+        self.activity_ring
+            .iter()
+            .filter(|e| e.ts > since)
+            .take(limit)
+            .cloned()
+            .collect()
     }
 
     /// Extremely cheap placeholder used exclusively for fast MCP stdio startup.
@@ -1179,6 +1307,7 @@ impl StoreHandle {
             hot_set: std::sync::RwLock::new(std::collections::HashSet::new()),
             geosphere: std::sync::RwLock::new(SymplecticState::new()),
             hot_geo_context: std::sync::RwLock::new(std::collections::HashMap::new()),
+            activity_ring: std::collections::VecDeque::new(),
             continuation_bundle_cached_at: 0,
             continuation_bundle_cache: None,
             deep_bvh_spawn_attempted: std::sync::atomic::AtomicBool::new(false),
@@ -1324,6 +1453,10 @@ impl StoreHandle {
     /// When Some is returned, the q-vector is geometrically commensurate with
     /// oracle blocks in the Monad manifold (Phase 111 encoding unification).
     fn try_project_text(&self, text: &str) -> Option<[engram_core::Complex32; 8192]> {
+        run_blocking_safe(|| self.try_project_text_inner(text))
+    }
+
+    fn try_project_text_inner(&self, text: &str) -> Option<[engram_core::Complex32; 8192]> {
         let w = self.embed_w.as_ref()?;
         let src_dim = self.embed_src_dim;
         const DST_DIM: usize = 8192;
@@ -1552,6 +1685,16 @@ impl StoreHandle {
         let r = self.backend.store(concept, block);
         if r.is_ok() {
             self.access_index.touch(concept);
+            let action = if concept.starts_with("trace:") {
+                "trace"
+            } else if concept.starts_with("tile:") {
+                "tile"
+            } else if concept.starts_with("goal:") {
+                "goal"
+            } else {
+                "write"
+            };
+            self.log_activity(concept, action, None);
         }
         r
     }
@@ -2196,7 +2339,7 @@ impl StoreHandle {
 
     /// Active continuity artifacts for agent wake-up: primary goal, last session_end,
     /// hydration cache flag, and ranked tile/helper/ritual/metric concepts.
-    pub fn build_continuation_bundle(&mut self) -> serde_json::Value {
+    pub fn build_continuation_bundle(&mut self, session_intent: Option<&str>) -> serde_json::Value {
         use std::collections::HashSet;
 
         const TTL_SECS: u64 = 120;
@@ -2458,15 +2601,40 @@ impl StoreHandle {
             })
         };
 
-        let harness = crate::harness_injection::build_harness_bundle(self);
+        let harness = crate::harness_injection::build_harness_bundle(self, session_intent);
+
+        let presentation_stratum = harness
+            .get("presentation_stratum")
+            .cloned()
+            .unwrap_or(serde_json::json!({}));
+        let stratum_artifacts: Vec<serde_json::Value> = presentation_stratum
+            .get("nodes")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .map(|n| {
+                        serde_json::json!({
+                            "concept": n.get("concept"),
+                            "crs": n.get("crs"),
+                            "hot": n.get("hot"),
+                            "source": n.get("source"),
+                            "preview": n.get("preview"),
+                            "lineage": n.get("lineage"),
+                            "orbit": n.get("orbit"),
+                        })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
 
         let bundle = serde_json::json!({
             "primary_goal": primary_goal_name,
             "last_session_end": last_session_end,
             "hydration_cache_present": hydration_cache_present,
             "structured_handoff": structured_handoff,
-            "active_artifacts": active_tiles,
-            "recall_hint": "Execute suggested_actions in order, then read structured_handoff.",
+            "active_artifacts": if stratum_artifacts.is_empty() { active_tiles } else { stratum_artifacts },
+            "presentation_stratum": presentation_stratum,
+            "recall_hint": "Execute suggested_actions in order, then read structured_handoff. presentation_stratum = distilled process/ritual continuation.",
             "harness_injection": harness,
             "cached_at": now,
         });
@@ -2486,7 +2654,7 @@ impl StoreHandle {
         const HANDOFF_ANCHOR: &str = "handoff:codeland_integration_2026_plan";
 
         self.invalidate_continuation_bundle_cache();
-        let bundle = self.build_continuation_bundle();
+        let bundle = self.build_continuation_bundle(None);
         let mut promote_list: Vec<String> = Vec::new();
 
         if let Some(arts) = bundle.get("active_artifacts").and_then(|v| v.as_array()) {
@@ -2564,7 +2732,7 @@ impl StoreHandle {
         }
 
         let handoff_key = format!("compression_handoff_{}", ts);
-        let manifest = serde_json::json!({
+        let mut manifest = serde_json::json!({
             "handoff_key": handoff_key,
             "timestamp": ts,
             "session_end": session_end_key,
@@ -2599,8 +2767,172 @@ impl StoreHandle {
             }
         }
 
+        let chain_tiles = self.mint_chain_summaries_for_session(session_end_key);
+        if !chain_tiles.is_empty() {
+            if let Some(promoted) = manifest.get_mut("promoted").and_then(|v| v.as_array_mut()) {
+                for t in &chain_tiles {
+                    if !promoted.iter().any(|v| v.as_str() == Some(t.as_str())) {
+                        promoted.push(serde_json::json!(t));
+                    }
+                }
+            }
+            manifest["chain_summaries"] = serde_json::json!(chain_tiles);
+        }
+
         self.mark_ki_rebake_needed();
         manifest
+    }
+
+    /// Mint `tile:chain_summary_*` blocks folding serialized trace/session chains at session_end / NREM.
+    pub fn mint_chain_summaries_for_session(&mut self, session_end_key: &str) -> Vec<String> {
+        use std::collections::{HashMap, HashSet, VecDeque};
+
+        fn is_chain_member(c: &str) -> bool {
+            c.starts_with("trace:")
+                || c.starts_with("session_end_")
+                || c.starts_with("compression_intent_")
+        }
+
+        const CHAIN_LABELS: &[&str] = &["prev_in_trace", "next_in_trace", "compresses_path"];
+
+        let mut candidates = HashSet::new();
+        for (c, _) in self.access_index.recent(120) {
+            if is_chain_member(&c) {
+                candidates.insert(c);
+            }
+        }
+        candidates.insert(session_end_key.to_string());
+
+        let seed: Vec<String> = candidates.iter().cloned().collect();
+        for c in &seed {
+            for label in CHAIN_LABELS {
+                for (_, other) in self.search_relations(c, Some(label), "both") {
+                    if is_chain_member(&other) {
+                        candidates.insert(other);
+                    }
+                }
+            }
+        }
+
+        if candidates.len() < 2 {
+            return Vec::new();
+        }
+
+        let mut adj: HashMap<String, HashSet<String>> = HashMap::new();
+        let add_edge = |adj: &mut HashMap<String, HashSet<String>>, a: &str, b: &str| {
+            adj.entry(a.to_string()).or_default().insert(b.to_string());
+            adj.entry(b.to_string()).or_default().insert(a.to_string());
+        };
+        for c in &candidates {
+            for label in CHAIN_LABELS {
+                for (_, other) in self.search_relations(c, Some(label), "both") {
+                    if candidates.contains(&other) {
+                        add_edge(&mut adj, c, &other);
+                    }
+                }
+            }
+        }
+
+        let mut visited = HashSet::new();
+        let mut components: Vec<Vec<String>> = Vec::new();
+        for start in &candidates {
+            if visited.contains(start) {
+                continue;
+            }
+            let mut comp = Vec::new();
+            let mut q = VecDeque::new();
+            q.push_back(start.clone());
+            visited.insert(start.clone());
+            while let Some(cur) = q.pop_front() {
+                comp.push(cur.clone());
+                if let Some(nbs) = adj.get(&cur) {
+                    for nb in nbs {
+                        if !visited.contains(nb) && candidates.contains(nb) {
+                            visited.insert(nb.clone());
+                            q.push_back(nb.clone());
+                        }
+                    }
+                }
+            }
+            if comp.len() >= 2 {
+                comp.sort();
+                components.push(comp);
+            }
+        }
+
+        let mut minted = Vec::new();
+        let ts = session_end_key.strip_prefix("session_end_").unwrap_or("0");
+
+        for (idx, group) in components.into_iter().enumerate() {
+            let chain_kind = if group.iter().any(|c| c.starts_with("session_end_")) {
+                "session"
+            } else {
+                "trace"
+            };
+            let head = group.first().cloned().unwrap_or_default();
+            let tail = group.last().cloned().unwrap_or_default();
+            let short = format!("{}-{}-{}", chain_kind, ts, idx);
+            let tile_key = format!("tile:chain_summary_{}", short);
+
+            if self.fetch_block(&tile_key).is_some() {
+                minted.push(tile_key);
+                continue;
+            }
+
+            let human_forward = format!(
+                "Compressed {} chain ({} blocks): {} → {}. Minted at session_end for LEG galaxy + agent continuity.",
+                chain_kind,
+                group.len(),
+                head,
+                tail
+            );
+
+            let payload = serde_json::json!({
+                "human_forward": human_forward,
+                "chain_kind": chain_kind,
+                "member_count": group.len(),
+                "members": group,
+                "head": head,
+                "tail": tail,
+                "session_end": session_end_key,
+                "leg_display": {
+                    "role": "chain",
+                    "shape": "stack",
+                    "color": "slate",
+                    "orbit": "outer",
+                    "compressible": false
+                }
+            });
+
+            let tile_payload = format!(
+                "THOUGHT TILE\n\n**tile_type:** chain_summary\n**title:** {} chain ({} members)\n\n**payload:** {}\n",
+                chain_kind,
+                group.len(),
+                serde_json::to_string_pretty(&payload).unwrap_or_default()
+            );
+
+            let mut tile_block = self.encode(&tile_payload);
+            tile_block.zedos_tag = engram_core::types::ZEDOS_OPERATIONAL;
+            tile_block.crs_score = 0.90;
+
+            if self.store(&tile_key, tile_block).is_err() {
+                continue;
+            }
+
+            let _ = self.relate(&tile_key, session_end_key, "compresses_path");
+            // Condensation tiles live in handoff manifest + summarize_chain — not primary serving stack.
+            for m in &group {
+                let _ = self.relate(&tile_key, m, "summarizes_chain");
+            }
+            let _ = self.promote_tile_to_high_priority(&tile_key);
+            minted.push(tile_key);
+        }
+
+        if !minted.is_empty() {
+            self.demote_condensation_from_serving_stack();
+            self.mark_ki_rebake_needed();
+        }
+        minted
     }
 
     pub fn fetch(&self, concept: &str) -> Option<Box<[engram_core::Complex32; 8192]>> {
@@ -3191,10 +3523,116 @@ impl StoreHandle {
         self.store(&rel_key, rel_block)?;
         // Update the knowledge-graph sidecar
         self.relation_index.add(concept_a, label, concept_b);
+        self.log_activity(
+            concept_b,
+            "relate",
+            Some(&format!("{} --[{}]--> {}", concept_a, label, concept_b)),
+        );
         Ok(format!(
             "✓ Relation stored: {} →[{}]→ {} as '{}'",
             concept_a, label, concept_b, rel_key
         ))
+    }
+
+    /// Drop a relation edge from the knowledge-graph sidecar only (block remains in manifold).
+    pub fn unrelate(&mut self, concept_a: &str, label: &str, concept_b: &str) -> bool {
+        let ok = self.relation_index.remove(concept_a, label, concept_b);
+        if ok {
+            self.log_activity(
+                concept_b,
+                "unrelate",
+                Some(&format!("{} -[{}]->", concept_a, label)),
+            );
+        }
+        ok
+    }
+
+    /// Chain-summary / verified-sequence tiles are compressed memory — not active serving context.
+    pub fn is_condensation_tile(c: &str) -> bool {
+        c.starts_with("tile:chain_summary_")
+            || c.contains("chain-summary")
+            || c.starts_with("tile:verified_sequence_")
+    }
+
+    /// Remove condensation tiles from `primary_goal --serves-->` (geometry + summarize_chain edges stay).
+    pub fn demote_condensation_from_serving_stack(&mut self) -> Vec<String> {
+        let serving = self.search_relations("primary_goal", Some("serves"), "from");
+        let mut demoted = Vec::new();
+        for (_label, c) in serving {
+            if Self::is_condensation_tile(&c) && self.unrelate("primary_goal", "serves", &c) {
+                demoted.push(c);
+            }
+        }
+        demoted
+    }
+
+    /// Demote a concept from active agent context: mint archival trace, wire lifecycle edges, remove `primary_goal --serves-->`.
+    /// Geometry and all other relations remain in the manifold (LEG Mark complete / hygiene demotion).
+    pub fn archive_from_context(
+        &mut self,
+        concept: &str,
+        note: &str,
+        reviewer: &str,
+    ) -> Result<ArchiveFromContextResult> {
+        let concept = concept.trim();
+        let reviewer = if reviewer.trim().is_empty() {
+            "agent"
+        } else {
+            reviewer.trim()
+        };
+        if concept.is_empty() || concept == "primary_goal" {
+            anyhow::bail!("concept required and cannot be primary_goal");
+        }
+        if self.fetch_block_high_priority(concept).is_none() {
+            anyhow::bail!("concept not found: {}", concept);
+        }
+
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        let trace_key = format!("trace:human_complete_{}_{}", reviewer, ts);
+        let note_text = if note.trim().is_empty() {
+            "Archived from active agent context — geometry preserved.".to_string()
+        } else {
+            note.trim().to_string()
+        };
+        let slug: String = concept
+            .split(':')
+            .nth(1)
+            .unwrap_or(concept)
+            .chars()
+            .take(32)
+            .collect();
+        let payload_json = serde_json::json!({
+            "human_forward": format!("Archival: {} — demoted from serving stack, geometry preserved.", concept),
+            "archived_concept": concept,
+            "reviewer": reviewer,
+            "leg_display": {
+                "label": format!("Complete · {}", slug),
+                "role": "anchor",
+                "orbit": "archive"
+            }
+        });
+        let trace_body = format!(
+            "REASONING TRACE (context archival)\n\n\
+**decision_point:** Archive {} from active serving stack\n\n\
+**justification:** {}\n\n\
+**payload:** {}\n",
+            concept, note_text, payload_json
+        );
+
+        self.remember(&trace_key, &trace_body)?;
+        let _ = self.relate(&trace_key, concept, "completes_goal");
+        let _ = self.relate(&trace_key, concept, "demotes_goal");
+        let _ = self.relate(&trace_key, concept, "archived_from_context");
+        let removed_serves = self.unrelate("primary_goal", "serves", concept);
+        let cascaded_demotions = self.demote_condensation_from_serving_stack();
+        Ok(ArchiveFromContextResult {
+            trace_key,
+            removed_serves,
+            cascaded_demotions,
+        })
     }
 
     /// Store a crystallized error→solution pair as a ZEDOS_PRAXIS block.
@@ -3253,6 +3691,167 @@ impl StoreHandle {
         ))
     }
 
+    /// Cold-atlas stalk for AST blocks when `ENGRAM_ATLAS_STALK_SPLIT=1` (agent profile default).
+    pub fn ast_stalk_for_file(file_path: &str) -> Option<String> {
+        if std::env::var("ENGRAM_ATLAS_STALK_SPLIT").as_deref() != Ok("1") {
+            if let Ok(ws) = std::env::var("ENGRAM_LINKED_WORKSPACE") {
+                if file_path.contains(ws.as_str()) {
+                    let name = std::path::Path::new(&ws)
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or("linked")
+                        .to_lowercase();
+                    return Some(format!("{name}_ast"));
+                }
+            }
+            return None;
+        }
+        if let Ok(explicit) = std::env::var("ENGRAM_AST_STALK") {
+            if !explicit.trim().is_empty() {
+                return Some(explicit);
+            }
+        }
+        for key in ["ENGRAM_LINKED_WORKSPACE", "ENGRAM_WORKSPACE"] {
+            if let Ok(ws) = std::env::var(key) {
+                if file_path.contains(ws.as_str()) {
+                    let name = std::path::Path::new(&ws)
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or("workspace")
+                        .to_lowercase();
+                    return Some(format!("{name}_ast"));
+                }
+            }
+        }
+        if let Ok(cwd) = std::env::current_dir() {
+            if let Some(cwd_str) = cwd.to_str() {
+                if file_path.starts_with(cwd_str) {
+                    let name = cwd
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or("workspace")
+                        .to_lowercase();
+                    return Some(format!("{name}_ast"));
+                }
+            }
+        }
+        Some("cold_atlas".to_string())
+    }
+
+    /// Store or refresh one AST structure block; mint `__arc` companion.
+    pub fn ingest_ast_item(&mut self, item: &engram_ast::AstItem) -> Result<()> {
+        let existing = self.fetch_block(&item.concept);
+        let mut block = self.encode(&item.embed_label());
+
+        if let Some(ref old) = existing {
+            block.p = old.p;
+            block.superposition_count = old.superposition_count;
+            block.energetics = old.energetics;
+        }
+
+        block.aabb_min = [item.start_pos.0 as f32, item.start_pos.1 as f32, 0.0];
+        block.aabb_max = [item.end_pos.0 as f32, item.end_pos.1 as f32, 0.0];
+        engram_core::storage::write_provlog(&mut block, &item.full_source);
+
+        self.store(&item.concept, block)?;
+        let _ = self.ensure_edit_arc(&item.concept);
+        Ok(())
+    }
+
+    /// Daemon parity: file container, defines, sibling chain, optional praxis bridge.
+    pub fn glue_ast_file_relations(&mut self, ast_concepts: &[String]) {
+        if ast_concepts.is_empty() {
+            return;
+        }
+        let file_stem = ast_concepts[0]
+            .split("__")
+            .next()
+            .unwrap_or("unknown")
+            .to_string();
+        let file_container = format!("{file_stem}_file");
+
+        if self.fetch_block(&file_container).is_none() {
+            let container_text = format!(
+                "AST container for file stem '{file_stem}'. Tree-sitter items (fn/struct/impl/etc.) relate here."
+            );
+            let _ = self.remember(&file_container, &container_text);
+        }
+
+        for c in ast_concepts {
+            let _ = self.relate(&file_container, c, "defines");
+        }
+        for i in 1..ast_concepts.len() {
+            let _ = self.relate(
+                &ast_concepts[i - 1],
+                &ast_concepts[i],
+                "next_sibling_in_file",
+            );
+            let _ = self.relate(
+                &ast_concepts[i],
+                &ast_concepts[i - 1],
+                "prev_sibling_in_file",
+            );
+        }
+
+        let ritual_relevant_stems = [
+            "daemon",
+            "mcp",
+            "store",
+            "engram_ast",
+            "working_memory",
+            "context_for_file",
+            "recall_in_file",
+            "serve",
+        ];
+        if ritual_relevant_stems.iter().any(|s| file_stem.contains(s)) {
+            let praxis_anchor = "praxis:spatial_manifold_impact_analysis";
+            if self.fetch_block(praxis_anchor).is_some() {
+                let _ = self.relate(&file_container, praxis_anchor, "exercises_spatial_ritual");
+            }
+        }
+    }
+
+    /// Resolve AST concepts whose AABB contains `spatial_context` line (e.g. `store.rs:4023`).
+    pub fn ast_loci_at_spatial_context(&self, spatial_ctx: &str) -> Vec<String> {
+        let Some((file_ref, line)) = Self::parse_spatial_line_ref(spatial_ctx) else {
+            return Vec::new();
+        };
+        let stem = std::path::Path::new(&file_ref)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or(file_ref.as_str())
+            .to_lowercase();
+        let line_f = line as f32;
+        let candidates = self.spatial_stem_candidates(&stem);
+        self.collect_spatial_items(&candidates, line_f, line_f, 8)
+            .iter()
+            .filter_map(|v| {
+                v.get("concept")
+                    .and_then(|c| c.as_str())
+                    .map(str::to_string)
+            })
+            .collect()
+    }
+
+    /// Phase 2: bind trace to spatial_context string + AST loci (`edited_at`).
+    pub fn wire_trace_to_spatial_locus(
+        &mut self,
+        trace_key: &str,
+        spatial_ctx: &str,
+    ) -> Vec<String> {
+        let spatial_ctx = spatial_ctx.trim();
+        if spatial_ctx.is_empty() {
+            return Vec::new();
+        }
+        let _ = self.relate(trace_key, spatial_ctx, "spatial_context_for");
+        let loci = self.ast_loci_at_spatial_context(spatial_ctx);
+        for ast in &loci {
+            let _ = self.relate(trace_key, ast, "edited_at");
+            let _ = self.relate(ast, trace_key, "decision_at_locus");
+        }
+        loci
+    }
+
     /// Force AST ingestion for a specific file.
     /// Used by mcp_engram_force_spatial_ingest for clean bootstrap of historical source.
     /// Reuses the same engram_ast extraction + block creation path as the file watcher.
@@ -3265,27 +3864,29 @@ impl StoreHandle {
         let content = std::fs::read_to_string(path)?;
         let items = engram_ast::extract_ast_items(file_path, &content);
 
+        let prior_stalk = self.active_stalk_name();
+        if let Some(stalk) = Self::ast_stalk_for_file(file_path) {
+            let _ = self.set_active_stalk(&stalk);
+        }
+
         let mut ingested: Vec<String> = Vec::new();
+        let mut ast_concepts: Vec<String> = Vec::new();
 
-        // Note: This is a first-pass functional version.
-        // Full fidelity version should also replicate namespace handling,
-        // file container creation, sibling relations, and shadow anchoring
-        // from the daemon event handler.
         for item in items {
-            let mut block = self.encode(&item.embed_label());
-
-            block.aabb_min = [item.start_pos.0 as f32, item.start_pos.1 as f32, 0.0];
-            block.aabb_max = [item.end_pos.0 as f32, item.end_pos.1 as f32, 0.0];
-
-            engram_core::storage::write_provlog(&mut block, &item.full_source);
-
-            if let Err(e) = self.store(&item.concept, block) {
-                tracing::error!("force_ingest failed for {}: {}", item.concept, e);
-            } else {
-                ingested.push(item.concept.clone());
+            match self.ingest_ast_item(&item) {
+                Ok(()) => {
+                    ingested.push(item.concept.clone());
+                    ast_concepts.push(item.concept.clone());
+                }
+                Err(e) => tracing::error!("force_ingest failed for {}: {}", item.concept, e),
             }
         }
 
+        if !ast_concepts.is_empty() {
+            self.glue_ast_file_relations(&ast_concepts);
+        }
+
+        let _ = self.set_active_stalk(&prior_stalk);
         Ok(ingested)
     }
 
@@ -3537,6 +4138,238 @@ impl StoreHandle {
         })
     }
 
+    /// Edit-arc concept paired with an AST structure block (`{concept}__arc`).
+    /// Holds accumulated edit narrative — append via [`Self::update`], never comment archaeology in source.
+    pub fn arc_concept_name(ast_concept: &str) -> String {
+        if ast_concept.ends_with("__arc") {
+            ast_concept.to_string()
+        } else {
+            format!("{ast_concept}__arc")
+        }
+    }
+
+    fn file_ref_matches_stem(file_ref: &str, stem: &str, file_path: &str) -> bool {
+        let ref_lower = file_ref.trim().to_lowercase();
+        let stem_lower = stem.to_lowercase();
+        ref_lower == stem_lower
+            || ref_lower.ends_with(&format!(".{stem_lower}"))
+            || ref_lower.contains(&stem_lower)
+            || file_path.to_lowercase().contains(&ref_lower)
+    }
+
+    fn parse_spatial_line_ref(raw: &str) -> Option<(String, i32)> {
+        let raw = raw.trim();
+        if let Some((file, line_str)) = raw.rsplit_once(':') {
+            if !line_str.is_empty() && line_str.chars().all(|c| c.is_ascii_digit()) {
+                if let Ok(line) = line_str.parse::<i32>() {
+                    return Some((file.trim().to_string(), line));
+                }
+            }
+        }
+        None
+    }
+
+    fn trace_field_from_text(text: &str, key: &str) -> Option<String> {
+        let needle = format!("**{key}:**");
+        text.lines()
+            .find(|l| l.contains(&needle))
+            .and_then(|l| l.split(&needle).nth(1))
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+    }
+
+    /// Ensure an edit-arc block exists for an AST locus; relate arc ↔ structure.
+    pub fn ensure_edit_arc(&mut self, ast_concept: &str) -> Result<String> {
+        let arc = Self::arc_concept_name(ast_concept);
+        if self.fetch_block(&arc).is_some() {
+            return Ok(arc);
+        }
+        let seed = format!(
+            "EDIT ARC — situated memory for `{ast_concept}`\n\n\
+             This block accumulates edit narrative, rejected approaches, and design evolution \
+             at this code locus. Append via mcp_engram_update (preserves p-momentum). \
+             Do not bury history in source comments — scar dead ends, update this arc.\n"
+        );
+        let mut block = self.encode(&seed);
+        block.crs_score = 0.82;
+        crate::store::assign_reflexive_contract(&mut block);
+        self.store(&arc, block)?;
+        let _ = self.relate(&arc, ast_concept, "narrates");
+        let _ = self.relate(ast_concept, &arc, "has_edit_arc");
+        Ok(arc)
+    }
+
+    fn arc_summary_for(&self, ast_concept: &str) -> serde_json::Value {
+        let arc_name = Self::arc_concept_name(ast_concept);
+        let Some(block) = self
+            .fetch_block_high_priority(&arc_name)
+            .or_else(|| self.fetch_block(&arc_name))
+        else {
+            return serde_json::json!({
+                "concept": arc_name,
+                "present": false,
+                "hint": "Post-edit: mcp_engram_update on __arc with delta narrative"
+            });
+        };
+        let text = engram_core::storage::read_provlog(&block);
+        let stability = if block.energetics.h_in < -0.01 {
+            "converging"
+        } else if block.energetics.dv > 0.35 {
+            "in_flux"
+        } else {
+            "stable"
+        };
+        serde_json::json!({
+            "concept": arc_name,
+            "present": true,
+            "superpositions": block.superposition_count,
+            "drift_velocity": block.energetics.dv,
+            "stability": stability,
+            "snippet": text.chars().take(220).collect::<String>(),
+        })
+    }
+
+    /// Traces whose spatial_context points into this file + line window.
+    fn collect_traces_at_locus(
+        &self,
+        stem: &str,
+        file_path: &str,
+        start_line: f32,
+        end_line: f32,
+        limit: usize,
+    ) -> Vec<serde_json::Value> {
+        let mut out = Vec::new();
+        for (concept, _ts) in self.access_index.recent(160) {
+            if !concept.starts_with("trace:") {
+                continue;
+            }
+            let Some(block) = self
+                .fetch_block_high_priority(&concept)
+                .or_else(|| self.fetch_block(&concept))
+            else {
+                continue;
+            };
+            let text = engram_core::storage::read_provlog(&block);
+            let spatial_raw = Self::trace_field_from_text(&text, "spatial_context");
+            let decision = Self::trace_field_from_text(&text, "decision_point");
+            let justification = Self::trace_field_from_text(&text, "justification");
+            let matches = if let Some(raw) = spatial_raw.as_deref() {
+                if let Some((file_ref, line)) = Self::parse_spatial_line_ref(raw) {
+                    Self::file_ref_matches_stem(&file_ref, stem, file_path)
+                        && (line as f32) >= start_line
+                        && (line as f32) <= end_line
+                } else {
+                    Self::file_ref_matches_stem(raw, stem, file_path)
+                }
+            } else {
+                false
+            };
+            if !matches {
+                continue;
+            }
+            out.push(serde_json::json!({
+                "concept": concept,
+                "crs": block.crs_score,
+                "spatial_context": spatial_raw,
+                "decision_point": decision,
+                "justification": justification.map(|j| if j.len() > 200 { format!("{}…", &j[..197]) } else { j }),
+            }));
+            if out.len() >= limit {
+                break;
+            }
+        }
+        out
+    }
+
+    /// Scars mentioning this module or related to spatial concepts in the locus window.
+    fn collect_scars_at_locus(
+        &mut self,
+        stem: &str,
+        spatial_concepts: &[String],
+        limit: usize,
+    ) -> Vec<serde_json::Value> {
+        use std::collections::HashSet;
+        let mut candidates: Vec<String> = Vec::new();
+
+        for c in spatial_concepts {
+            for (_label, other) in self.search_relations(c, Some("ruled_out"), "both") {
+                if other.starts_with("scar:") {
+                    candidates.push(other);
+                }
+            }
+            for (_label, other) in self.search_relations(c, None, "both") {
+                if other.starts_with("scar:") {
+                    candidates.push(other);
+                }
+            }
+        }
+
+        let scar_hits = self
+            .recall_scoped(&format!("scar {stem}"), 10, Some("anchors"))
+            .0;
+        for m in scar_hits {
+            if m.concept.starts_with("scar:") {
+                candidates.push(m.concept);
+            }
+        }
+
+        let mut seen = HashSet::new();
+        let mut out = Vec::new();
+        for concept in candidates {
+            if !seen.insert(concept.clone()) {
+                continue;
+            }
+            let Some(block) = self
+                .fetch_block_high_priority(&concept)
+                .or_else(|| self.fetch_block(&concept))
+            else {
+                continue;
+            };
+            let text = engram_core::storage::read_provlog(&block);
+            out.push(serde_json::json!({
+                "concept": concept,
+                "crs": block.crs_score,
+                "preview": text.chars().take(160).collect::<String>(),
+            }));
+            if out.len() >= limit {
+                break;
+            }
+        }
+        out
+    }
+
+    fn collect_spatial_siblings(
+        &self,
+        spatial_concepts: &[String],
+        stem: &str,
+        limit: usize,
+    ) -> Vec<serde_json::Value> {
+        use std::collections::HashSet;
+        let mut seen: HashSet<String> = spatial_concepts.iter().cloned().collect();
+        let mut out = Vec::new();
+        let stem_prefix = format!("{stem}__");
+
+        for concept in spatial_concepts {
+            for (label, other) in self.search_relations(concept, None, "both") {
+                if !seen.insert(other.clone()) {
+                    continue;
+                }
+                if !other.to_lowercase().starts_with(&stem_prefix) {
+                    continue;
+                }
+                out.push(serde_json::json!({
+                    "concept": other,
+                    "via": label,
+                    "from": concept,
+                }));
+                if out.len() >= limit {
+                    return out;
+                }
+            }
+        }
+        out
+    }
+
     /// Bounded stem-prefixed spatial candidates — hot + sample (+ prefix filter on small stores).
     /// Never calls `list()` on manifolds above [`LARGE_MANIFOLD_THRESHOLD`].
     fn spatial_stem_candidates(&self, stem: &str) -> Vec<String> {
@@ -3614,7 +4447,8 @@ impl StoreHandle {
             .collect()
     }
 
-    /// Unified pre-edit context: spatial AST items + anchor traces, bounded on large stores.
+    /// Unified pre-edit context: code atlas v2 — structure + edit arcs + locus decisions.
+    /// Bounded on large stores; never full `list()` scan.
     pub fn context_for_edit(
         &mut self,
         file_path: &str,
@@ -3708,17 +4542,52 @@ impl StoreHandle {
             .cloned()
             .collect();
 
+        let mut spatial_items_enriched: Vec<serde_json::Value> = spatial_items
+            .iter()
+            .map(|item| {
+                let mut v = item.clone();
+                if let Some(concept) = item.get("concept").and_then(|c| c.as_str()) {
+                    v["edit_arc"] = self.arc_summary_for(concept);
+                }
+                v
+            })
+            .collect();
+
+        let spatial_concept_ids: Vec<String> = spatial_items_enriched
+            .iter()
+            .filter_map(|v| {
+                v.get("concept")
+                    .and_then(|c| c.as_str())
+                    .map(str::to_string)
+            })
+            .collect();
+
+        let traces_at_locus =
+            self.collect_traces_at_locus(&stem, file_path, start_line, end_line, 12);
+        let scars_at_locus = self.collect_scars_at_locus(&stem, &spatial_concept_ids, 8);
+        let spatial_siblings = self.collect_spatial_siblings(&spatial_concept_ids, &stem, 16);
+
         let mut result = serde_json::json!({
+            "atlas_version": "v2",
             "file_path": file_path,
             "stem": stem,
             "recall_query": recall_query,
-            "spatial_items": spatial_items,
+            "spatial_items": spatial_items_enriched,
+            "traces_at_locus": traces_at_locus,
+            "scars_at_locus": scars_at_locus,
+            "spatial_siblings": spatial_siblings,
             "related_goals": related_goals,
             "related_traces": related_traces,
             "related_anchors": anchor_hits,
             "ingest_performed": ingest_performed,
             "profile": Self::current_profile_name(),
             "memory_mode": Self::memory_mode(),
+            "continuity_ritual": {
+                "pre": "context_for_edit(path, line_start, line_end) — read traces_at_locus + edit_arc",
+                "fork": "quick_trace(decision, why, spatial_context=file:line)",
+                "post": "update({stem}__fn__{name}__arc, delta narrative) + relate(trace, ast_concept, edited_at)",
+                "anti_pattern": "commented-out code and // OLD: blocks in source — use scar + update(arc) instead"
+            },
         });
 
         if line_start.is_some() || line_end.is_some() {
@@ -4011,7 +4880,8 @@ impl StoreHandle {
             "nvsa_vs_antigravity_memory_gap",
         ];
 
-        let total_memories = self.list().len();
+        // O(1) dir count — never list().len() here (187k+ stores blocked the REST mutex for seconds).
+        let total_memories = self.leg_block_count();
         let namespace = self.active_stalk_name();
 
         // ── Genesis blocks — O(1) direct fetch, NO recall() ──────────────────
@@ -4070,7 +4940,7 @@ impl StoreHandle {
         let genesis_loaded = genesis_entries.len();
         let session_count = session_entries.len();
 
-        let continuation_bundle = self.build_continuation_bundle();
+        let continuation_bundle = self.build_continuation_bundle(None);
 
         serde_json::json!({
             "total_memories":  total_memories,

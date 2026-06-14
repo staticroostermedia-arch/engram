@@ -29,7 +29,7 @@ EngramGrok is particularly well-suited for:
 | **Deep operators** | [HOW_WE_ACTUALLY_USE_THIS_IN_2026.md](HOW_WE_ACTUALLY_USE_THIS_IN_2026.md) |
 | **Substrate builders (BYOP)** | [AGENT_INTEGRATION_GUIDE.md](AGENT_INTEGRATION_GUIDE.md) |
 
-**Human review:** `./scripts/leg` (static) or `./scripts/leg --live` — traces, goals, momentum, Thought Tiles.
+**Human review (LEG Browser beta):** `./scripts/leg` (static) or `./scripts/leg --live` — see [docs/LEG_BROWSER.md](docs/LEG_BROWSER.md).
 
 ---
 
@@ -42,6 +42,7 @@ EngramGrok is particularly well-suited for:
 | Integrity | none | `verify_*`, scars, CRS ≥ 0.74 |
 | Code context | RAG chunks | `context_for_edit` + spatial AABB |
 | Agent discipline | hope | rituals + subvisor H¹ + process sheaf |
+| Human mirror | none | LEG Browser beta — live traces, goals, tiles |
 
 Full comparison vs mem0/Letta/chroma: see [docs/GROK_BUILD_MEMORY.md](docs/GROK_BUILD_MEMORY.md).
 
@@ -53,7 +54,7 @@ Full comparison vs mem0/Letta/chroma: see [docs/GROK_BUILD_MEMORY.md](docs/GROK_
 git clone https://github.com/staticroostermedia-arch/engram.git
 cd engram
 cargo build -p engram-server
-target/debug/engram --version   # 0.6.0
+target/debug/engram --version   # 0.7.0-beta.1
 ```
 
 **MCP config** (Grok Build / Cursor — use `scripts/engram-grok`):
@@ -85,6 +86,30 @@ All ecosystems: [integrations/README.md](integrations/README.md). Cursor ambient
 
 ---
 
+## LEG Browser (beta)
+
+Local, read-only mirror of agent memory — no cloud, no npm, no account. Your manifold stays in `~/.engram/`; the repo ships tools and the viewer.
+
+```bash
+./scripts/leg              # static — instant curated demo, no backend
+./scripts/leg --live       # live — engram serve :3456 + viewer :8765
+```
+
+**What you get (beta):**
+
+- Wake queue + continuity playbook (same harness agents see at `session_start`)
+- Presentation stratum (~40–64 distilled nodes, not the full cold manifold)
+- Activity feed, traces, goals, thought tiles, relations, geosphere view
+- Hygiene controls (demote sprawl, condensation hints)
+
+**Beta caveats:** single-file SPA; large stores may be slow on some panels; hard-refresh after updates. Static mode is a demo snapshot — `--live` shows real MCP work.
+
+Full guide: [docs/LEG_BROWSER.md](docs/LEG_BROWSER.md). Safe serve restart (does not kill MCP): `./scripts/restart-leg-serve.sh`.
+
+![LEG Browser beta — live manifold mirror](./docs/images/leg-browser-beta-live.png)
+
+---
+
 ## Memory model (one paragraph)
 
 Fixed **256KB HolographicBlocks** (.leg3): 8192D phase (q), momentum (p), CRS lawfulness, BLAKE3 Merkle, spatial AABB. **VSA calculus** + **sheaf gluing** via `processes/*.toml` (rituals, harness, monitor). **NREM / ego.leg3** for long-horizon continuity. Details: [docs/GEOMETRIC_MEMORY.md](docs/GEOMETRIC_MEMORY.md), [docs/RITUALS.md](docs/RITUALS.md), [docs/HARNESS_INJECTION.md](docs/HARNESS_INJECTION.md).
@@ -98,13 +123,14 @@ flowchart LR
   H --> W
 ```
 
-## What's new in v0.6.0
+## What's new in v0.7.0-beta.1
 
-- **.leg3 optimizations**: Tiered blocks, hybrid wire, SOA+arena layout, homo+zk transforms, versioning+DSL for safe operations. The ".leg3" is our "Minecraft blocks for AI" primitive — a unified binary+vector object with VSA/holographic geometry and safe transformations that keeps meaning coherent even after heavy compression and long sessions.
-- Human-forward presentation fix: Reports, tiles, and summaries now lead with plain, engaging story-like language (the "why it matters" and "so what") before technical details, making the geometric memory substrate more approachable while preserving full richness for the manifold and agents.
-- Successful self-improvement cycle: The loop audited its own prior research offload, adopted the .leg3 capabilities lawfully via supervised subs in worktree, recorded everything as geometry (traces, tiles, updates), and closed with explicit self-reference. Full dogfood with Enram rituals and superpowers tools.
+- **LEG Browser beta:** consciousness mirror UI — wake queue, ego evolution strip, continuity playbook, presentation stratum galaxy, live activity SSE. One command: `./scripts/leg --live`.
+- **Presentation stratum:** agents wake into ~40–64 CRS-ranked nodes (goals/traces/tiles/process), not the full cold manifold.
+- **Harness continuity:** `ego_snapshot`, `continuity_playbook`, wake queue gate (`soft`/`hard`/`off`) + `mcp_engram_ack_wake_queue`.
+- **REST:** `/api/consciousness-surface`, enhanced `/api/context-window` for the viewer.
 
-See CHANGELOG.md for full details.
+See [CHANGELOG.md](CHANGELOG.md). v0.6.0 brought .leg3 optimizations (tiered blocks, hybrid wire, SOA+arena, homo+zk transforms).
 
 ## Categorical Linguistic Calculus
 
@@ -159,6 +185,7 @@ Grok plugin slash commands: [grok-plugin-engram/commands/](grok-plugin-engram/co
 
 | Topic | Doc |
 |-------|-----|
+| LEG Browser (beta) | [docs/LEG_BROWSER.md](docs/LEG_BROWSER.md) |
 | 256KB / NVMe / GPU backends | [docs/architecture.md](docs/architecture.md) |
 | CRS / scars / lawfulness | [docs/GEOMETRIC_MEMORY.md](docs/GEOMETRIC_MEMORY.md) |
 | Process sheaf + sub-agent governance | [processes/README.md](processes/README.md) |

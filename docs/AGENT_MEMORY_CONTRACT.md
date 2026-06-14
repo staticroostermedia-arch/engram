@@ -30,7 +30,7 @@
 - `backend_readiness` (bvh_ready, recall_mode, leg_block_count)
 - Optional `spatial_delta` when `include_spatial=true` (incremental ingest summary, not full force)
 
-**`context_for_edit(path)`** — Unified pre-edit recon. Returns memories whose AABB intersects the file, relevant praxis/traces, and line-range hints for `recall_in_file`-equivalent regions — **without** calling `watch_workspace` or scanning the whole store.
+**`context_for_edit(path, line_start?, line_end?)`** — **Code atlas v2** pre-edit recon. Returns `spatial_items` (AST + `edit_arc` per locus), `traces_at_locus`, `scars_at_locus`, `spatial_siblings`, and anchor goals/traces — **without** `watch_workspace` or full-store scan. Post-edit: `update({concept}__arc)` with delta narrative; never bury history in source comments. See [CODE_ATLAS_CONTINUITY.md](CODE_ATLAS_CONTINUITY.md).
 
 **`recall(query, k?, scope?)`** — Lexical similarity search. `scope` tiers results:
 - `anchors` (default in lean) — `goal:`, `trace:`, `ritual:`, `helper:`, `praxis:` before episodic noise

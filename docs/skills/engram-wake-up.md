@@ -28,9 +28,11 @@ mcp_engram_session_start(
 - `backend_readiness` — bvh_ready, recall_mode, leg_block_count
 - `session_key` — bind `agent_instance_continuation` if you write a relation (deep mode)
 
-**Execute `harness_injection`** (in `continuation` bundle):
+**Execute `harness_injection`** (in `continuation` bundle) **before any edit or broad read**:
 - Run `suggested_actions` in priority order (handoff → goal → trusted tiles → condensation drafts).
+- Read `ego_snapshot` (NREM drift + goal-serving stack) and `continuity_playbook` (12 steps).
 - Cursor: read `.cursor/engram-wake.md` first if present (`./scripts/cursor-engram-preflight.sh` regenerates it).
+- LEG Browser: left rail shows the same queue + ego evolution (`./scripts/leg --live`).
 
 **You do NOT need** (lean mode):
 - `get_continuation_bundle` (redundant — inline now)

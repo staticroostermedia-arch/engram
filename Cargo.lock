@@ -630,7 +630,7 @@ checksum = "edd0f118536f44f5ccd48bcb8b111bdc3de888b58c74639dfb034a357d0f206d"
 
 [[package]]
 name = "engram-ast"
-version = "0.5.0"
+version = "0.7.0-beta.1"
 dependencies = [
  "streaming-iterator",
  "tree-sitter",
@@ -646,7 +646,7 @@ dependencies = [
 
 [[package]]
 name = "engram-cli"
-version = "0.5.0"
+version = "0.7.0-beta.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -661,7 +661,7 @@ dependencies = [
 
 [[package]]
 name = "engram-core"
-version = "0.5.0"
+version = "0.7.0-beta.1"
 dependencies = [
  "anyhow",
  "blake3",
@@ -685,7 +685,7 @@ dependencies = [
 
 [[package]]
 name = "engram-gpu"
-version = "0.5.0"
+version = "0.7.0-beta.1"
 dependencies = [
  "anyhow",
  "bytemuck",
@@ -704,7 +704,7 @@ dependencies = [
 
 [[package]]
 name = "engram-server"
-version = "0.5.0"
+version = "0.7.0-beta.1"
 dependencies = [
  "anyhow",
  "axum",
@@ -717,6 +717,7 @@ dependencies = [
  "engram-core",
  "engram-gpu",
  "flume",
+ "futures-util",
  "libc",
  "notify",
  "notify-debouncer-full",
@@ -860,6 +861,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cecba35d7ad927e23624b22ad55235f2239cfa44fd10428eecbeba6d6a717718"
 
 [[package]]
+name = "futures-macro"
+version = "0.3.32"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e835b70203e41293343137df5c0664546da5745f82ec9b84d40be8336958447b"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
+]
+
+[[package]]
 name = "futures-sink"
 version = "0.3.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -879,6 +891,7 @@ checksum = "389ca41296e6190b48053de0321d02a77f32f8a5d2461dd38762c0593805c6d6"
 dependencies = [
  "futures-core",
  "futures-io",
+ "futures-macro",
  "futures-sink",
  "futures-task",
  "memchr",

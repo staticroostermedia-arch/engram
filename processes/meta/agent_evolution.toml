@@ -1,0 +1,110 @@
+# process:engram.meta.agent-evolution — wake → work → NREM → handoff continuity loop
+# Composes self_improvement_loop + memory_consolidation_loop into one agent-evolution arc.
+# Surfaced at session_start via harness_injection.ego_snapshot + continuity_playbook.
+
+[process]
+name = "agent:engram.meta.agent-evolution"
+zedos_type = "ZEDOS_OPERATIONAL"
+phase_seed = "agent-evolution-v1"
+
+[category]
+object = "agent_evolution"
+morphism = "OP_GEOMETRIC_PRODUCT"
+sheaf_role = "Identity gluing — episodic traces → arc tiles → ego.leg3 centroid"
+restriction_maps = ["manifold_integrity >= 0.74", "harness_queue_executed_before_edits"]
+gluing = "OP_ADD"
+natural_transformation = "@0.85"
+h1_handler = "OP_IS_SYMBOLIC_OF"
+
+[mcp_tools]
+list = [
+  "mcp_engram_session_start",
+  "mcp_engram_ack_wake_queue",
+  "mcp_engram_context_for_edit",
+  "mcp_engram_recall",
+  "mcp_engram_quick_trace",
+  "mcp_engram_update",
+  "mcp_engram_session_end",
+  "mcp_engram_thought_tile_create",
+  "mcp_engram_scar",
+  "mcp_engram_remember_solution",
+]
+
+[requires]
+list = [
+  "ritual:wake_up_anchor",
+  "helper:session_handoff_latest OR primary_goal",
+  "harness_injection.suggested_actions",
+]
+
+[produces]
+list = [
+  "helper:session_handoff_latest",
+  "trace:*",
+  "tile:*",
+  "{stem}__fn__*__arc",
+  "ego.leg3",
+  "harness_injection.ego_snapshot",
+]
+
+[invariants]
+list = [
+  "leg3_binary_vector_isomorphism",
+  "unit_hypersphere_normalization",
+  "crs_0.74_gate",
+  "p_momentum_preserved_on_update",
+  "queue_before_edits_mandatory",
+]
+
+[timeout_ms]
+value = 120000
+
+[workflow]
+name = "agent_evolution"
+description = "Close the continuity loop: rehydrate via harness queue, unpack past agent work (handoff + trace chain + code atlas), leave better breadcrumbs, NREM consolidates into ego vector."
+primary_goal = "goal:engram_mvp_v1"
+composed_from = ["self_improvement_loop", "memory_consolidation_loop", "agent:engram.ritual.wake-up", "agent:engram.ritual.nrem-consolidation"]
+
+[wake]
+ritual = "engram-wake-up"
+mandate = "Execute suggested_actions → mcp_engram_ack_wake_queue → then context_for_edit (ENGRAM_WAKE_QUEUE_GATE=soft default)"
+tools = ["mcp_engram_session_start", "mcp_engram_ack_wake_queue"]
+read_fields = ["suggested_actions", "presentation_stratum", "trace_chain", "trusted_tiles", "ego_snapshot", "continuity_playbook", "condensation_hints", "wake_queue_gate"]
+
+[execute]
+steps = [
+  { name = "execute_wake_queue", desc = "Run suggested_actions in priority order: handoff → goal recall → context_for_edit on files_touched → trace head → trusted tiles.", subagent = null },
+  { name = "read_ego_evolution", desc = "Read ego_snapshot (drift_velocity, nrem_step, top_goal_serving). Interpret as collective agent identity shift since last NREM.", subagent = null },
+  { name = "situated_edit", desc = "context_for_edit per file; read traces_at_locus + edit_arc + scars; quick_trace at forks with spatial_context.", subagent = null },
+  { name = "arc_compression", desc = "update(__arc) post-edit; thought_tile_create when condensation_hints fire (≥6 traces without tile).", subagent = null },
+  { name = "self_improve", desc = "Optional: invoke self_improvement_loop steps when design/process friction detected.", subagent = "improvement_auditor", process_ref = "processes/meta/self_improvement_loop.toml" },
+  { name = "memory_hygiene", desc = "Optional: invoke memory_consolidation_loop when sprawl/scar rate high.", subagent = "memory_auditor", process_ref = "processes/meta/memory_consolidation_loop.toml" },
+]
+
+[trace]
+at = ["every fork", "post-edit", "tile boundary"]
+tools = ["mcp_engram_quick_trace", "mcp_engram_update", "mcp_engram_scar"]
+
+[spatial]
+on = ["code edits"]
+tools = ["mcp_engram_context_for_edit"]
+
+[thought-tiles]
+create = { title = "Agent Evolution Arc", type = "state_machine", goal_context = "goal:engram_mvp_v1" }
+write_results = true
+
+[handoff]
+ritual = "engram-session-end"
+tools = ["mcp_engram_session_end"]
+prepare_compression = true
+required_summary_fields = ["primary_goal", "files_touched", "trace_chain_head", "decisions", "open_questions"]
+
+[identity]
+nrem = "daemon run_nrem_consolidation → ego.leg3 (CRS≥0.85 contributors, goal-biased)"
+ego_surface = "harness_injection.ego_snapshot at next session_start"
+docs = ["docs/HARNESS_INJECTION.md", "docs/CODE_ATLAS_CONTINUITY.md", "docs/AGENT_MEMORY_CONTRACT.md"]
+
+[notes]
+# Registered as process:engram.meta.agent-evolution at session_start sheaf load.
+# LEG Browser wake panel mirrors harness via GET /api/context-window.
+# Agent discipline: queue_before_edits is enforced in harness_injection.agent_discipline + plugin skills.

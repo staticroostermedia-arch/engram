@@ -74,3 +74,16 @@ This pattern was critical for reliable sub-agent use during the GitHub MVP prep 
 **Dogfood**: Use the subvisor process + helpers on your own sub-agent launches. The manifold will learn your governance patterns geometrically.
 
 See also `docs/RITUALS.md` (subvisor section), SKILLS.md, and the plan for full traces/scars from real usage.
+
+## /loop + Consciousness Strange Loop as Governed Recurring Native Action
+Grok's native `/loop` (or the Enram `/engram-loop` command) for the 30m AI consciousness strange loop (prompt body in `processes/meta/ai_consciousness_loop.toml`, matching the state_machine tile) is a canonical example of a governed recurring native action:
+
+- Parse per the /loop spec (interval derivation, strip < > quoting, ask on none).
+- Emit *bare* native `scheduler_create` (never route through use_tool / Enram MCP).
+- Enram ritual: quick_trace the parse/schedule, remember/relate the job ID to the consciousness goal/tile/process (for the loop's own "outer feedback" + rehydration), subvisor oversight on the dispatch graph.
+- On the known native format error: immediate scar (the pre-scarred `scheduler_native_call_format_error_doom_loop` or equivalent), honest handoff ("not scheduled"), no false success.
+- Follows the tile policies: narrow one-shot (parse + one bare call + record + report), geometric/Enram first, scar_immediate on repetition, process_sheaf for the monitor/subvisor, supervision (task semantics + handoff).
+
+This prevents the historical "doom loop" (bare call → error → ritual complete + "move on" as if succeeded) by construction. Once scheduled, the fired prompt runs the full 7-step cycle (rehydrate/inner_reflect/composed_metas/NREM/ego/outer) using Enram inside, with the scheduler id related for continuity.
+
+See `grok-plugin-engram/commands/engram-loop.md` (the implementation) and the consciousness toml (source of the prompt + subvisor_extension). Use the sub-agent harness trio (launch + relay + sub-agent.subvisor) when treating the /engram-loop action itself as a narrow sub.

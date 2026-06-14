@@ -39,7 +39,7 @@ Template with placeholder: [`mcp.engram.template.json`](mcp.engram.template.json
 | **Cursor** | `.cursor/mcp.json` or project copy | [cursor/mcp.json](cursor/mcp.json) — `${workspaceFolder}` when Engram is the workspace |
 | **Claude Desktop** | `claude_desktop_config.json` | [claude-desktop/](claude-desktop/) |
 | **Antigravity** | `mcp_config.json` | [antigravity/mcp_config.json](antigravity/mcp_config.json) — engram block unified; other servers optional |
-| **OpenAI Codex / CLI agents** | Project instructions | [codex/README.md](codex/README.md) |
+| **OpenAI Codex / CLI agents** *(advanced)* | Project instructions | [codex/README.md](codex/README.md) |
 | **Local / custom** | Any MCP client | `cargo install --path crates/engram-server` + `engram-grok` on PATH |
 
 After any config change: **restart the IDE or TUI** so MCP respawns.

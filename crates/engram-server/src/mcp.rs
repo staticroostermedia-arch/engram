@@ -703,8 +703,29 @@ fn tool_list() -> Value {
                 }
             },
             {
+                "name": "mcp_engram_ack_wake_queue",
+                "description": "Acknowledge wake queue execution — unblocks context_for_edit when ENGRAM_WAKE_QUEUE_GATE=hard; clears soft warnings. Call once after running harness_injection.suggested_actions (or honestly note skip). Empty queue auto-acks at session_start.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "executed": {
+                            "type": "boolean",
+                            "description": "True if you ran the suggested_actions queue (default true)"
+                        },
+                        "steps_completed": {
+                            "type": "integer",
+                            "description": "How many queue steps you executed (optional)"
+                        },
+                        "note": {
+                            "type": "string",
+                            "description": "Optional note (e.g. thin handoff, fresh store)"
+                        }
+                    }
+                }
+            },
+            {
                 "name": "mcp_engram_session_start",
-                "description": "MANDATORY first MCP call every session. Returns continuation bundle with harness_injection.suggested_actions (prioritized tool queue), trusted_tiles, trace_chain, condensation_hints (with draft_payload when ≥6 traces). Execute suggested_actions before broad reads. Lean default — do NOT call watch_workspace at wake. See docs/HARNESS_INJECTION.md.",
+                "description": "MANDATORY first MCP call every session. Returns continuation bundle with harness_injection: suggested_actions (prioritized tool queue — execute BEFORE edits/broad reads), trusted_tiles, trace_chain, ego_snapshot (NREM drift + goal-serving stack), continuity_playbook (12-step narrative), condensation_hints, wake_queue_gate status. Then call mcp_engram_ack_wake_queue before context_for_edit if gate=hard. Lean default — do NOT call watch_workspace at wake. See docs/HARNESS_INJECTION.md + processes/meta/agent_evolution.toml.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -944,6 +965,10 @@ fn tool_list() -> Value {
                         "process_context": {
                             "type": "string",
                             "description": "Optional process:engram.* key — emits realized_by edge for process_metrics (WS-3)"
+                        },
+                        "spatial_context": {
+                            "type": "string",
+                            "description": "Code locus file:line (e.g. store.rs:4023) — auto-wires edited_at to matching AST blocks"
                         }
                     },
                     "required": ["decision", "why"]
@@ -1039,6 +1064,28 @@ fn tool_list() -> Value {
                         }
                     },
                     "required": ["goal", "status"]
+                }
+            },
+            {
+                "name": "mcp_engram_demote_from_context",
+                "description": "Demote a concept from the active serving stack without deleting geometry. Mints an archival trace, wires completes_goal/demotes_goal, and removes primary_goal --serves--> edge. Use for hygiene demotion, LEG Mark complete, or when goal_update_status alone is insufficient. Geometry and recall remain intact.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "concept": {
+                            "type": "string",
+                            "description": "Concept to demote (goal:, trace:, tile:, etc.) — cannot be primary_goal"
+                        },
+                        "note": {
+                            "type": "string",
+                            "description": "Optional justification for archival trace"
+                        },
+                        "reviewer": {
+                            "type": "string",
+                            "description": "Who initiated demotion (default: agent)"
+                        }
+                    },
+                    "required": ["concept"]
                 }
             },
             {
@@ -1312,7 +1359,7 @@ fn tool_list() -> Value {
             },
             {
                 "name": "mcp_engram_context_for_edit",
-                "description": "Unified pre-edit context (Agent Memory MVP A4). Returns structured JSON with spatial AST items for the target file (bounded on large stores — no full list scan), related anchor traces (goals/traces/rituals), and whether a single-file ingest was performed. Prefer this over separate context_for_file + recall_in_file calls.",
+                "description": "Code atlas v2 — pre-edit situated memory. Returns JSON: spatial_items (tree-sitter AABB + edit_arc per locus), traces_at_locus (decisions at file:line), scars_at_locus, spatial_siblings, anchor goals/traces. Requires wake queue ack when ENGRAM_WAKE_QUEUE_GATE=hard (call mcp_engram_ack_wake_queue after session_start queue). Soft mode embeds wake_queue_gate warning if not acked. Auto-ingests single file when empty.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -2738,7 +2785,7 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
         }
 
         "mcp_engram_get_continuation_bundle" => {
-            let bundle = store.lock().unwrap().build_continuation_bundle();
+            let bundle = store.lock().unwrap().build_continuation_bundle(None);
             let text = serde_json::to_string_pretty(&bundle).unwrap_or_else(|_| "{}".to_string());
             json!({
                 "content": [{
@@ -3125,6 +3172,31 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
             }
         }
 
+        "mcp_engram_ack_wake_queue" => {
+            let executed = args
+                .get("executed")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(true);
+            let note = args.get("note").and_then(|v| v.as_str());
+            let steps = args
+                .get("steps_completed")
+                .and_then(|v| v.as_u64())
+                .map(|v| v as u32);
+            let payload = crate::wake_queue_gate::ack_wake_queue(executed, note, steps);
+            if let Ok(mut lock) = store.lock() {
+                lock.log_activity(
+                    "ritual:wake_queue_gate",
+                    "ack",
+                    Some(note.unwrap_or("queue acked")),
+                );
+            }
+            json!({
+                "content": [{
+                    "type": "text",
+                    "text": payload.to_string()
+                }]
+            })
+        }
         "mcp_engram_session_start" => {
             let intent = args["intent"].as_str().unwrap_or("").trim().to_string();
             if intent.is_empty() {
@@ -3180,7 +3252,7 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                     }
                 };
                 lock.warm_wake_anchors();
-                let continuation = lock.build_continuation_bundle();
+                let continuation = lock.build_continuation_bundle(Some(&intent));
                 let readiness = lock.backend_readiness();
                 (continuation, readiness)
             };
@@ -3211,6 +3283,14 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                 let _ = hlock.promote_tile_to_high_priority("process:engram.ritual.wake-up");
             });
 
+            let queue_len = continuation
+                .get("harness_injection")
+                .and_then(|h| h.get("suggested_actions"))
+                .and_then(|v| v.as_array())
+                .map(|a| a.len())
+                .unwrap_or(0);
+            let wake_gate = crate::wake_queue_gate::on_session_start(&session_key, queue_len);
+
             let elapsed = t_start.elapsed().as_secs_f32();
             let mut wake_packet = serde_json::json!({
                 "status": "started",
@@ -3218,6 +3298,7 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                 "session_key": session_key,
                 "readiness": readiness,
                 "continuation": continuation,
+                "wake_queue_gate": wake_gate,
             });
             if let Some(spatial_val) = spatial {
                 wake_packet["spatial"] = spatial_val;
@@ -3236,7 +3317,13 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                 return json!({ "content": [{ "type": "text", "text": "Error: summary required." }], "isError": true });
             }
 
+            let wake_debt = crate::wake_queue_gate::handoff_debt_note();
+            crate::wake_queue_gate::on_session_end();
+
             let mut lock = store.lock().unwrap();
+            if let Some(ref debt) = wake_debt {
+                lock.log_activity("ritual:wake_queue_gate", "session_end_debt", Some(debt));
+            }
 
             // Calculate average CRS of concepts touched this session
             let recent_accesses = lock.access_index.recent(50);
@@ -3934,9 +4021,11 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                     if !ritual_ctx.is_empty() {
                         let _ = lock.relate(&trace_key, &ritual_ctx, "supports_ritual");
                     }
-                    if !spatial_ctx.is_empty() {
-                        let _ = lock.relate(&trace_key, &spatial_ctx, "spatial_context_for");
-                    }
+                    let wired_loci = if !spatial_ctx.is_empty() {
+                        lock.wire_trace_to_spatial_locus(&trace_key, &spatial_ctx)
+                    } else {
+                        Vec::new()
+                    };
                     if !goal_ctx.is_empty() {
                         let _ = lock.relate(&trace_key, &goal_ctx, "serves");
                     }
@@ -3944,7 +4033,12 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                         lock.mark_ki_rebake_needed(); // fresher Primary Intent + serving traces in context.md
                     }
 
-                    json!({ "content": [{ "type": "text", "text": format!("✓ Reasoning trace recorded: {} (ZEDOS_TRAINING 8-prop)", trace_key) }] })
+                    let loci_note = if wired_loci.is_empty() {
+                        String::new()
+                    } else {
+                        format!(" | edited_at→{}", wired_loci.join(","))
+                    };
+                    json!({ "content": [{ "type": "text", "text": format!("✓ Reasoning trace recorded: {} (ZEDOS_TRAINING 8-prop){}", trace_key, loci_note) }] })
                 }
                 Err(e) => {
                     json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true })
@@ -3992,6 +4086,12 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                 .to_string();
             let process_context = args
                 .get("process_context")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            let spatial_ctx = args
+                .get("spatial_context")
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
                 .trim()
@@ -4075,6 +4175,9 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
             }
             if !context.is_empty() {
                 payload.push_str(&format!("\n**context:** {}\n", context));
+            }
+            if !spatial_ctx.is_empty() {
+                payload.push_str(&format!("\n**spatial_context:** {}\n", spatial_ctx));
             }
             if !goal_ctx.is_empty() {
                 payload.push_str(&format!("\n**goal_context:** {}\n", goal_ctx));
@@ -4161,6 +4264,11 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                         // best effort
                         let _ = lock.relate(&trace_key, &context, "supports_ritual");
                     }
+                    let wired_loci = if !spatial_ctx.is_empty() {
+                        lock.wire_trace_to_spatial_locus(&trace_key, &spatial_ctx)
+                    } else {
+                        Vec::new()
+                    };
                     if !goal_ctx.is_empty() {
                         let _ = lock.relate(&trace_key, &goal_ctx, "serves");
                     }
@@ -4169,7 +4277,12 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                         lock.mark_ki_rebake_needed(); // fresher Primary Intent + serving traces in context.md
                     }
 
-                    json!({ "content": [{ "type": "text", "text": format!("✓ Quick trace recorded: {} (ZEDOS_TRAINING 8-prop)", trace_key) }] })
+                    let loci_note = if wired_loci.is_empty() {
+                        String::new()
+                    } else {
+                        format!(" | edited_at→{}", wired_loci.join(","))
+                    };
+                    json!({ "content": [{ "type": "text", "text": format!("✓ Quick trace recorded: {} (ZEDOS_TRAINING 8-prop){}", trace_key, loci_note) }] })
                 }
                 Err(e) => {
                     json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true })
@@ -4329,7 +4442,17 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
 
                 match lock.store(&goal, block) {
                     Ok(_) => {
-                        json!({ "content": [{ "type": "text", "text": format!("✓ Goal {} status updated to {}", goal, status) }] })
+                        let mut msg = format!("✓ Goal {} status updated to {}", goal, status);
+                        if status == "completed" || status == "demoted" {
+                            let removed = lock.unrelate("primary_goal", "serves", &goal);
+                            if removed {
+                                msg.push_str(&format!(
+                                    "\n✓ Removed primary_goal --serves--> {} (use mcp_engram_demote_from_context for full archival trace)",
+                                    goal
+                                ));
+                            }
+                        }
+                        json!({ "content": [{ "type": "text", "text": msg }] })
                     }
                     Err(e) => {
                         json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true })
@@ -4337,6 +4460,52 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                 }
             } else {
                 json!({ "content": [{ "type": "text", "text": format!("Goal not found: {}", goal) }], "isError": true })
+            }
+        }
+        "mcp_engram_demote_from_context" => {
+            let concept = args["concept"].as_str().unwrap_or("").trim().to_string();
+            let note = args
+                .get("note")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            let reviewer = args
+                .get("reviewer")
+                .and_then(|v| v.as_str())
+                .unwrap_or("agent")
+                .trim()
+                .to_string();
+
+            if concept.is_empty() {
+                return json!({
+                    "content": [{ "type": "text", "text": "Error: concept is required." }],
+                    "isError": true
+                });
+            }
+
+            let mut lock = store.lock().unwrap();
+            match lock.archive_from_context(&concept, &note, &reviewer) {
+                Ok(result) => {
+                    let text = serde_json::json!({
+                        "status": "success",
+                        "concept": concept,
+                        "trace": result.trace_key,
+                        "removed_serves": result.removed_serves,
+                        "cascaded_demotions": result.cascaded_demotions,
+                        "message": "Demoted from active context — block and relations preserved."
+                    });
+                    json!({
+                        "content": [{
+                            "type": "text",
+                            "text": serde_json::to_string_pretty(&text).unwrap_or_else(|_| text.to_string())
+                        }]
+                    })
+                }
+                Err(e) => json!({
+                    "content": [{ "type": "text", "text": format!("Error: {}", e) }],
+                    "isError": true
+                }),
             }
         }
         "mcp_engram_goal_status" => {
@@ -4777,6 +4946,7 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
             tile_block.zedos_tag = match tile_type.as_str() {
                 "html_visualization" => engram_core::types::ZEDOS_DECLARATIVE,
                 "verified_sequence" => engram_core::types::ZEDOS_PRAXIS,
+                "chain_summary" => engram_core::types::ZEDOS_OPERATIONAL,
                 _ => engram_core::types::ZEDOS_OPERATIONAL, // research, state_machine, tabular, etc.
             };
             tile_block.crs_score = 0.88;
@@ -5115,6 +5285,43 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                     "isError": true
                 });
             }
+            let gate = crate::wake_queue_gate::check_context_for_edit(path);
+
+            if !gate.allow {
+                if gate.log_activity {
+                    if let Ok(mut lock) = store.lock() {
+                        lock.log_activity("ritual:wake_queue_gate", "blocked_edit", Some(path));
+                    }
+                }
+                if gate.scar_eligible {
+                    if let Ok(mut lock) = store.lock() {
+                        let ts = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_secs();
+                        let scar_key = format!("scar:wake_queue_gate_{ts}");
+                        let text = format!(
+                            "SCAR: repeated context_for_edit without wake queue ack (hard gate). path={path}. Remediation: session_start → execute suggested_actions → mcp_engram_ack_wake_queue."
+                        );
+                        let mut block = lock.encode(&text);
+                        block.zedos_tag = engram_core::types::ZEDOS_PRAXIS;
+                        block.crs_score = 0.92;
+                        let _ = lock.store(&scar_key, block);
+                        lock.log_activity("ritual:wake_queue_gate", "scar_minted", Some(&scar_key));
+                    }
+                }
+                let block_json = gate
+                    .block_payload
+                    .unwrap_or_else(|| json!({"error": "wake_queue_not_acked", "path": path}));
+                return json!({
+                    "content": [{
+                        "type": "text",
+                        "text": block_json.to_string()
+                    }],
+                    "isError": true
+                });
+            }
+
             let line_start = args["line_start"].as_u64().map(|v| v as u32);
             let line_end = args["line_end"].as_u64().map(|v| v as u32);
             let auto_ingest = args
@@ -5122,8 +5329,13 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                 .and_then(|v| v.as_bool())
                 .unwrap_or(true);
 
-            let payload = match store.lock() {
-                Ok(mut l) => l.context_for_edit(path, line_start, line_end, auto_ingest),
+            let mut payload = match store.lock() {
+                Ok(mut l) => {
+                    if gate.log_activity {
+                        l.log_activity("ritual:wake_queue_gate", "unacked_edit", Some(path));
+                    }
+                    l.context_for_edit(path, line_start, line_end, auto_ingest)
+                }
                 Err(p) => {
                     return json!({
                         "content": [{ "type": "text", "text": format!("Error: store mutex poisoned: {}", p) }],
@@ -5131,6 +5343,7 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                     })
                 }
             };
+            payload = crate::wake_queue_gate::inject_gate_warning(payload, &gate);
             json!({
                 "content": [{
                     "type": "text",

@@ -44,14 +44,20 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENG_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$ENG_ROOT"
 
+# Same store as MCP (scripts/engram-grok) so live viewer sees agent-written tiles
+STORE="${ENGRAM_STORE:-$HOME/.engram/stalks/}"
+export ENGRAM_STORE="$STORE"
+
 # --- Defaults ---
 HTTP_PORT=8765
 LIVE_MODE=false
+DEMO_EMITTER=false
 OPEN_BROWSER=true
 VERBOSE=false
 SERVE_PORT=3456
 HTTP_PID=""
 SERVE_PID=""
+STARTED_SERVE=false
 EMITTER_PID=""
 HTTP_LOG="leg-http.log"
 SERVE_LOG="leg-serve.log"
@@ -82,6 +88,7 @@ Usage:
 
 Options:
   --live, -l          Start engram serve (background) for full LIVE dynamic mode
+  --demo-emitter      Also run bg demo tile emitter (presenter mode only; pollutes /api/recent)
   --port N            HTTP port for the viewer (default: 8765)
   --no-open           Do not auto-open browser
   --verbose, -v       Show raw server logs in foreground (advanced)
@@ -113,6 +120,7 @@ EOF
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --live|-l) LIVE_MODE=true; shift ;;
+    --demo-emitter) DEMO_EMITTER=true; shift ;;
     --port) HTTP_PORT="$2"; shift 2 ;;
     --no-open) OPEN_BROWSER=false; shift ;;
     --verbose|-v) VERBOSE=true; shift ;;
@@ -139,14 +147,86 @@ PY
 
 find_free_port() {
   local p=$1
-  for i in {0..9}; do
-    if port_free $p; then
-      echo $p
+  local i
+  for i in $(seq 0 49); do
+    if port_free "$p"; then
+      echo "$p"
       return 0
     fi
     p=$((p + 1))
   done
-  echo $1  # give up, let it fail with clear error
+  # OS-assigned ephemeral port as last resort
+  python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()'
+}
+
+serve_healthy() {
+  curl -sf --max-time 2 "http://127.0.0.1:${SERVE_PORT}/health" >/dev/null 2>&1
+}
+
+serve_has_leg_apis() {
+  curl -sf --max-time 2 "http://127.0.0.1:${SERVE_PORT}/api/anchors" >/dev/null 2>&1
+}
+
+stop_port_listener() {
+  local port=$1
+  if command -v fuser >/dev/null 2>&1; then
+    fuser -k "${port}/tcp" >/dev/null 2>&1 || true
+    sleep 0.8
+  fi
+}
+
+# Prior crashed runs leave orphan http.server processes on 8765+; exhaust find_free_port.
+cleanup_stale_viewers() {
+  local pids n=0
+  pids=$(pgrep -f 'http.server.*--directory /tmp/leg-viewer-' 2>/dev/null || true)
+  [[ -z "$pids" ]] && return 0
+  n=$(printf '%s\n' "$pids" | wc -l | tr -d '[:space:]')
+  [[ "$n" -eq 0 ]] && return 0
+  echo -e "${YELLOW}Cleaning $n stale LEG viewer process(es) from prior runs...${RESET}"
+  printf '%s\n' "$pids" | xargs -r kill 2>/dev/null || true
+  sleep 0.5
+}
+
+http_listener_pid() {
+  local port=$1
+  ss -tlnp 2>/dev/null | awk -v port=":${port}" '
+    $4 ~ port {
+      gsub(/.*pid=/, "", $6)
+      gsub(/,.*/, "", $6)
+      print $6
+      exit
+    }'
+}
+
+launch_viewer_http() {
+  local port=$1
+  local dir=$2
+  # Never pipe through grep in background: $! would be grep, wait returns early, EXIT trap kills viewer.
+  if $VERBOSE; then
+    python3 -m http.server "$port" --directory "$dir" --bind 127.0.0.1 &
+  else
+    python3 -m http.server "$port" --directory "$dir" --bind 127.0.0.1 >>"$HTTP_LOG" 2>&1 &
+  fi
+  HTTP_PID=$!
+}
+
+reuse_serve_pid() {
+  if [[ -f "$PID_FILE_SERVE" ]]; then
+    local old
+    old=$(cat "$PID_FILE_SERVE" 2>/dev/null || true)
+    if [[ -n "$old" ]] && kill -0 "$old" 2>/dev/null && serve_healthy; then
+      SERVE_PID="$old"
+      return 0
+    fi
+  fi
+  local pid
+  pid=$(ss -tlnp 2>/dev/null | awk -v port=":${SERVE_PORT}" '$4 ~ port { gsub(/.*pid=/, "", $6); gsub(/,.*/, "", $6); print $6; exit }')
+  if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+    SERVE_PID="$pid"
+    echo "$SERVE_PID" > "$PID_FILE_SERVE"
+    return 0
+  fi
+  return 1
 }
 
 # --- Cleanup trap (critical for robustness) ---
@@ -154,8 +234,15 @@ cleanup() {
   echo -e "\n${YELLOW}Shutting down LEG Browser launcher...${RESET}"
   if [[ -n "${HTTP_PID:-}" ]] && kill -0 "$HTTP_PID" 2>/dev/null; then
     kill "$HTTP_PID" 2>/dev/null || true
+  elif [[ -n "${HTTP_PORT:-}" ]]; then
+    local lp
+    lp=$(http_listener_pid "$HTTP_PORT" || true)
+    [[ -n "$lp" ]] && kill "$lp" 2>/dev/null || true
   fi
-  if [[ -n "${SERVE_PID:-}" ]] && kill -0 "$SERVE_PID" 2>/dev/null; then
+  if [[ -n "${HTTP_PORT:-}" ]]; then
+    stop_port_listener "$HTTP_PORT"
+  fi
+  if $STARTED_SERVE && [[ -n "${SERVE_PID:-}" ]] && kill -0 "$SERVE_PID" 2>/dev/null; then
     echo "  Stopping engram serve (PID $SERVE_PID)..."
     kill "$SERVE_PID" 2>/dev/null || true
     sleep 0.5
@@ -178,12 +265,16 @@ trap cleanup INT TERM EXIT
 
 # --- Resolve engram binary (for --live) ---
 resolve_engram() {
-  if command -v engram >/dev/null 2>&1; then
-    echo "engram"
+  if [[ -n "${ENGRAM_BINARY:-}" ]] && [[ -x "${ENGRAM_BINARY}" ]]; then
+    echo "${ENGRAM_BINARY}"
     return 0
   fi
   if [[ -x "./target/debug/engram" ]]; then
     echo "./target/debug/engram"
+    return 0
+  fi
+  if command -v engram >/dev/null 2>&1; then
+    echo "engram"
     return 0
   fi
   if [[ -x "./target/release/engram" ]]; then
@@ -195,6 +286,22 @@ resolve_engram() {
 
 # --- Start engram serve in background (LIVE mode) ---
 start_engram_serve() {
+  if serve_healthy; then
+    if ! serve_has_leg_apis; then
+      echo -e "${YELLOW}→ Stale engram serve on :$SERVE_PORT (missing /api/anchors) — restarting with current binary${RESET}"
+      stop_port_listener "$SERVE_PORT"
+      SERVE_PID=""
+      STARTED_SERVE=false
+    elif reuse_serve_pid; then
+      echo -e "${GREEN}→ Reusing healthy engram serve on :$SERVE_PORT (PID $SERVE_PID)${RESET}"
+      echo "   (Another serve was already bound — not starting a duplicate)"
+      return 0
+    else
+      echo -e "${GREEN}→ engram serve already healthy on :$SERVE_PORT${RESET}"
+      return 0
+    fi
+  fi
+
   local bin
   if ! bin=$(resolve_engram); then
     echo -e "${YELLOW}WARNING: 'engram' binary not found in PATH or ./target/{debug,release}.${RESET}"
@@ -217,8 +324,9 @@ start_engram_serve() {
   fi
 
   # Launch with --light --no-scout for fast impressive leg-browser consciousness demo (CPU only, no heavy GPU/BVH/scout init; designed for /api live + leg-browser)
-  nohup "$bin" serve --light --no-scout --port "$SERVE_PORT" > "$SERVE_LOG" 2>&1 &
+  nohup env ENGRAM_STORE="$STORE" "$bin" --store "$STORE" serve --light --no-scout --port "$SERVE_PORT" > "$SERVE_LOG" 2>&1 &
   SERVE_PID=$!
+  STARTED_SERVE=true
   echo "$SERVE_PID" > "$PID_FILE_SERVE"
 
   # Give the heavy initialization (GPU/BVH/manifold) a moment
@@ -227,11 +335,28 @@ start_engram_serve() {
     sleep 0.6
     echo -n "."
     if ! kill -0 "$SERVE_PID" 2>/dev/null; then
+      if serve_healthy; then
+        echo -e "\n   ${GREEN}Port was busy but existing serve is healthy — reusing.${RESET}"
+        STARTED_SERVE=false
+        reuse_serve_pid || true
+        return 0
+      fi
       echo -e "\n   ${YELLOW}engram serve exited early — check $SERVE_LOG${RESET}"
+      echo -e "   ${YELLOW}Tip: fuser -k ${SERVE_PORT}/tcp  OR  kill stale engram serve, then retry.${RESET}"
       return 1
     fi
   done
   echo " (PID $SERVE_PID)"
+
+  if ! serve_healthy; then
+    sleep 1
+    if serve_healthy; then
+      echo -e "   ${GREEN}engram serve is up (health OK).${RESET}"
+      return 0
+    fi
+    echo -e "   ${YELLOW}Serve process running but /health not ready — check $SERVE_LOG${RESET}"
+    return 1
+  fi
 
   echo -e "   ${GREEN}engram serve is up. Viewer will auto-detect LIVE mode within ~7s.${RESET}"
   return 0
@@ -291,7 +416,7 @@ start_http_server() {
 
   echo -e "${BLUE}→ Starting LEG viewer http.server on http://localhost:$HTTP_PORT${RESET}"
   echo "   Directory: tools/leg-browser"
-  echo "   Log      : $HTTP_LOG (request noise filtered for clean UX)"
+  echo "   Log      : $HTTP_LOG"
 
   # Remove stale pid
   if [[ -f "$PID_FILE_HTTP" ]]; then
@@ -313,21 +438,23 @@ start_http_server() {
 
   echo "   Serving fresh copy from: $TEMP_VIEWER_DIR"
 
-  # Launch with minimal but useful logging
-  if $VERBOSE; then
-    python3 -m http.server "$HTTP_PORT" --directory "$TEMP_VIEWER_DIR" --bind 127.0.0.1 &
-  else
-    python3 -m http.server "$HTTP_PORT" --directory "$TEMP_VIEWER_DIR" --bind 127.0.0.1 \
-      2>&1 | grep -v -E '(favicon|GET / |HEAD / )' >> "$HTTP_LOG" &
-  fi
-  HTTP_PID=$!
+  launch_viewer_http "$HTTP_PORT" "$TEMP_VIEWER_DIR"
   echo "$HTTP_PID" > "$PID_FILE_HTTP"
 
   # Wait for it to actually listen
   sleep 1.2
   if ! kill -0 "$HTTP_PID" 2>/dev/null; then
-    echo -e "${YELLOW}http.server failed to start — see $HTTP_LOG${RESET}"
-    return 1
+    echo -e "${YELLOW}http.server failed on port $HTTP_PORT — retrying with another port...${RESET}"
+    chosen_port=$(find_free_port $((HTTP_PORT + 1)))
+    HTTP_PORT="$chosen_port"
+    launch_viewer_http "$HTTP_PORT" "$TEMP_VIEWER_DIR"
+    echo "$HTTP_PID" > "$PID_FILE_HTTP"
+    sleep 1.2
+    if ! kill -0 "$HTTP_PID" 2>/dev/null; then
+      echo -e "${YELLOW}http.server failed to start — see $HTTP_LOG${RESET}"
+      echo -e "${YELLOW}Many stale leg viewers may be running. Try: pkill -f 'http.server.*leg-viewer'${RESET}"
+      return 1
+    fi
   fi
 
   echo -e "   ${GREEN}Viewer serving at http://localhost:$HTTP_PORT${RESET}"
@@ -370,19 +497,19 @@ echo -e "Repo root: ${MAGENTA}$ENG_ROOT${RESET}"
 echo ""
 
 if $LIVE_MODE; then
-  echo -e "${BOLD}${GREEN}LIVE MODE ENABLED — CONSCIOUSNESS + WORLD STATE DEMO${RESET}"
-  echo "  • engram serve --light --no-scout started in bg (fast /api for leg-browser)"
-  echo "  • Bg emitter auto-launches: emits fresh tile:consciousness:live-demo:* + world_state:* tiles every 7s (real /api/remember writes)"
-  echo "  • Viewer auto-probes :$SERVE_PORT → pill emerald; live sidebar/canvas + consciousness dashboard pull dynamic tiles (not old embedded)"
-  echo "  • Click 'Load Consciousness Dashboard' or auto on connect: shows live loop state + recent consciousness tiles from manifold"
-  echo "  • Interject in dash: writes REAL tile (loop would consume on rehydrate). Static curated as fallback."
+  echo -e "${BOLD}${GREEN}LIVE MODE — tile-native LEG Browser${RESET}"
+  echo "  • engram serve --light --no-scout on :$SERVE_PORT (same ENGRAM_STORE as MCP)"
+  echo "  • Viewer auto-connects; each .leg block JIT-renders from its own payload"
+  echo "  • Demo emitter OFF (add --demo-emitter only for presenter sim)"
   echo ""
   if ! start_engram_serve; then
     LIVE_MODE=false
     echo -e "${YELLOW}Continuing in STATIC mode.${RESET}"
   else
-    # Launch emitter so live demo has dynamic new consciousness/world_state tiles (real /api writes)
-    start_consciousness_emitter || true
+    # Optional presenter-only emitter (pollutes /api/recent — off by default since 2026-06-13)
+    if $DEMO_EMITTER; then
+      start_consciousness_emitter || true
+    fi
   fi
 else
   echo -e "${BOLD}${BLUE}STATIC MODE (default — recommended for instant review)${RESET}"
@@ -398,6 +525,8 @@ fi
 
 echo ""
 
+cleanup_stale_viewers
+
 if ! start_http_server; then
   echo -e "${YELLOW}Failed to start viewer. Aborting.${RESET}"
   exit 1
@@ -407,7 +536,7 @@ echo ""
 echo -e "${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
 if $LIVE_MODE; then
   echo -e "  ${GREEN}LIVE CONSCIOUSNESS DEMO${RESET}  —  http://localhost:$HTTP_PORT"
-  echo -e "        Pill emerald; consciousness dashboard + sidebar show fresh emitted tiles (tile:consciousness:live-demo:*, world_state:*) from bg loop sim"
+  echo -e "        Pill emerald; sidebar + hero pull real manifold (/api/hydrate, handoff, active-context)"
 else
   echo -e "  ${BLUE}STATIC${RESET} —  http://localhost:$HTTP_PORT"
   echo -e "        Hero + 'Review Current Mind State' button are live immediately"
@@ -418,11 +547,9 @@ else
 fi
 echo -e "${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
 echo ""
-echo -e "Key things to click first (for consciousness live demo):"
-echo -e "  • ${BOLD}Load Consciousness Dashboard${RESET} (or it auto-opens on live connect) — now pulls /api live tiles + shows pulsing LIVE badge + dynamic loop state"
-echo -e "  • ${BOLD}Review Current Mind State (Activity Canvas)${RESET}  (big prominent button)"
-echo -e "  • Connection status pill (or 'Try live') — turns emerald; live recent includes the emitter consciousness/world tiles"
-echo -e "  • Hero + sidebar for other tiles; interject in dash to emit real tile:consciousness:interject:* "
+echo -e "Use the sidebar: click any block cube to open it (tiles, traces, goals, handoffs)."
+echo -e "  • Green = tile  • Blue = trace  • Gold = goal  • Purple = handoff/helper"
+echo -e "  • Relations at bottom of each block are clickable backlinks"
 echo ""
 echo -e "PIDs (for manual inspection):  http=$HTTP_PID  serve=${SERVE_PID:-none}  emitter=${EMITTER_PID:-none}"
 echo -e "Logs: $HTTP_LOG  /  $SERVE_LOG  /  leg-consciousness-emitter.log"
@@ -437,5 +564,11 @@ echo -e "${GREEN}Ready. Your geometric mind state is now visible.${RESET}"
 echo ""
 
 # Keep the launcher alive so the trap fires on Ctrl-C and we can show nice shutdown.
-# The http.server child keeps the port alive; we just wait on it.
-wait $HTTP_PID 2>/dev/null || true
+# Wait on the real python http.server PID (not a pipeline tail).
+set +e
+wait "$HTTP_PID"
+wait_status=$?
+set -e
+if [[ "$wait_status" -ne 0 ]]; then
+  echo -e "${YELLOW}Viewer http.server exited (status $wait_status) — see $HTTP_LOG${RESET}"
+fi
