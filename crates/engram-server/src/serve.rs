@@ -846,41 +846,45 @@ async fn get_graph(
     )
 }
 
+struct AgentAnchorInput<'a> {
+    concept: &'a str,
+    slot: &'a str,
+    source: &'a str,
+    preview: Option<String>,
+    extra: serde_json::Value,
+}
+
 fn push_agent_anchor(
     lock: &crate::store::StoreHandle,
     anchors: &mut Vec<serde_json::Value>,
     seen: &mut std::collections::HashSet<String>,
-    concept: &str,
-    slot: &str,
-    source: &str,
-    preview: Option<String>,
-    extra: serde_json::Value,
+    input: AgentAnchorInput<'_>,
 ) {
-    if concept.is_empty() || !seen.insert(concept.to_string()) {
+    if input.concept.is_empty() || !seen.insert(input.concept.to_string()) {
         return;
     }
     let mut entry = serde_json::json!({
-        "concept": concept,
-        "slot": slot,
-        "source": source,
-        "preview": preview.unwrap_or_default(),
+        "concept": input.concept,
+        "slot": input.slot,
+        "source": input.source,
+        "preview": input.preview.unwrap_or_default(),
         "crs": 0.0,
         "kind": "memory",
         "role": "anchor"
     });
-    if let Some(b) = lock.fetch_block_high_priority(concept) {
+    if let Some(b) = lock.fetch_block_high_priority(input.concept) {
         let text = engram_core::storage::read_provlog(&b);
         let galaxy = galaxy_meta_from_text(&text);
         entry["crs"] = serde_json::json!(b.crs_score);
-        entry["kind"] = serde_json::json!(if concept.starts_with("tile:") {
+        entry["kind"] = serde_json::json!(if input.concept.starts_with("tile:") {
             "tile"
-        } else if concept.starts_with("goal:") || concept == "primary_goal" {
+        } else if input.concept.starts_with("goal:") || input.concept == "primary_goal" {
             "goal"
-        } else if concept.starts_with("trace:") {
+        } else if input.concept.starts_with("trace:") {
             "trace"
-        } else if concept.starts_with("helper:")
-            || concept.starts_with("handoff:")
-            || concept.starts_with("session_end")
+        } else if input.concept.starts_with("helper:")
+            || input.concept.starts_with("handoff:")
+            || input.concept.starts_with("session_end")
         {
             "handoff"
         } else {
@@ -906,7 +910,7 @@ fn push_agent_anchor(
             .cloned()
             .unwrap_or(serde_json::Value::Null);
     }
-    if let Some(obj) = extra.as_object() {
+    if let Some(obj) = input.extra.as_object() {
         for (k, v) in obj {
             entry[k] = v.clone();
         }
@@ -933,11 +937,13 @@ async fn get_anchors(State(store): State<SharedStore>) -> impl IntoResponse {
                     &lock,
                     &mut anchors,
                     &mut seen,
-                    &c,
-                    "declared",
-                    "leg_display.top_anchor",
-                    None,
-                    serde_json::json!({}),
+                    AgentAnchorInput {
+                        concept: &c,
+                        slot: "declared",
+                        source: "leg_display.top_anchor",
+                        preview: None,
+                        extra: serde_json::json!({}),
+                    },
                 );
             }
         }
@@ -955,13 +961,15 @@ async fn get_anchors(State(store): State<SharedStore>) -> impl IntoResponse {
                 &lock,
                 &mut anchors,
                 &mut seen,
-                "primary_goal",
-                "intent",
-                "primary_goal",
-                goal_line.or_else(|| {
-                    Some("Active primary intent — what this project is building toward.".into())
-                }),
-                serde_json::json!({ "role": "anchor" }),
+                AgentAnchorInput {
+                    concept: "primary_goal",
+                    slot: "intent",
+                    source: "primary_goal",
+                    preview: goal_line.or_else(|| {
+                        Some("Active primary intent — what this project is building toward.".into())
+                    }),
+                    extra: serde_json::json!({ "role": "anchor" }),
+                },
             );
         }
     }
@@ -970,11 +978,13 @@ async fn get_anchors(State(store): State<SharedStore>) -> impl IntoResponse {
             &lock,
             &mut anchors,
             &mut seen,
-            "helper:session_handoff_latest",
-            "handoff",
-            "session_continuation",
-            Some("Last session decisions, files touched, open questions.".into()),
-            serde_json::json!({ "role": "anchor" }),
+            AgentAnchorInput {
+                concept: "helper:session_handoff_latest",
+                slot: "handoff",
+                source: "session_continuation",
+                preview: Some("Last session decisions, files touched, open questions.".into()),
+                extra: serde_json::json!({ "role": "anchor" }),
+            },
         );
     }
     if anchors.len() < 5 {
@@ -987,11 +997,13 @@ async fn get_anchors(State(store): State<SharedStore>) -> impl IntoResponse {
                 &lock,
                 &mut anchors,
                 &mut seen,
-                &goal,
-                "goal",
-                "primary_serves",
-                Some("Active structured goal linked to primary intent.".into()),
-                serde_json::json!({ "role": "task" }),
+                AgentAnchorInput {
+                    concept: &goal,
+                    slot: "goal",
+                    source: "primary_serves",
+                    preview: Some("Active structured goal linked to primary intent.".into()),
+                    extra: serde_json::json!({ "role": "task" }),
+                },
             );
         }
     }
@@ -1002,11 +1014,13 @@ async fn get_anchors(State(store): State<SharedStore>) -> impl IntoResponse {
                     &lock,
                     &mut anchors,
                     &mut seen,
-                    &c,
-                    "session",
-                    "last_session_end",
-                    Some("Terminal state of the previous agent session.".into()),
-                    serde_json::json!({ "role": "reference" }),
+                    AgentAnchorInput {
+                        concept: &c,
+                        slot: "session",
+                        source: "last_session_end",
+                        preview: Some("Terminal state of the previous agent session.".into()),
+                        extra: serde_json::json!({ "role": "reference" }),
+                    },
                 );
                 break;
             }
@@ -1019,14 +1033,16 @@ async fn get_anchors(State(store): State<SharedStore>) -> impl IntoResponse {
                 &lock,
                 &mut anchors,
                 &mut seen,
-                SPATIAL,
-                "geosphere",
-                "spatial_praxis",
-                Some(
-                    "Spatial manifold / geosphere impact — where work lives in the substrate."
-                        .into(),
-                ),
-                serde_json::json!({ "role": "reference" }),
+                AgentAnchorInput {
+                    concept: SPATIAL,
+                    slot: "geosphere",
+                    source: "spatial_praxis",
+                    preview: Some(
+                        "Spatial manifold / geosphere impact — where work lives in the substrate."
+                            .into(),
+                    ),
+                    extra: serde_json::json!({ "role": "reference" }),
+                },
             );
         } else if let Some(geo) = lock.current_geosphere_state() {
             let preview = format!(
@@ -1037,15 +1053,17 @@ async fn get_anchors(State(store): State<SharedStore>) -> impl IntoResponse {
                 &lock,
                 &mut anchors,
                 &mut seen,
-                "anchor:geosphere_frame",
-                "geosphere",
-                "live_geosphere",
-                Some(preview),
-                serde_json::json!({
-                    "role": "reference",
-                    "frame_step": geo.frame_step,
-                    "frame_origin": geo.frame_origin
-                }),
+                AgentAnchorInput {
+                    concept: "anchor:geosphere_frame",
+                    slot: "geosphere",
+                    source: "live_geosphere",
+                    preview: Some(preview),
+                    extra: serde_json::json!({
+                        "role": "reference",
+                        "frame_step": geo.frame_step,
+                        "frame_origin": geo.frame_origin
+                    }),
+                },
             );
         }
     }
@@ -1056,11 +1074,13 @@ async fn get_anchors(State(store): State<SharedStore>) -> impl IntoResponse {
                     &lock,
                     &mut anchors,
                     &mut seen,
-                    &c,
-                    "chain",
-                    "chain_summary",
-                    None,
-                    serde_json::json!({ "role": "chain" }),
+                    AgentAnchorInput {
+                        concept: &c,
+                        slot: "chain",
+                        source: "chain_summary",
+                        preview: None,
+                        extra: serde_json::json!({ "role": "chain" }),
+                    },
                 );
                 if anchors.len() >= 5 {
                     break;
@@ -1077,11 +1097,13 @@ async fn get_anchors(State(store): State<SharedStore>) -> impl IntoResponse {
                 &lock,
                 &mut anchors,
                 &mut seen,
-                &p,
-                "pinned",
-                "leg_browser_pins",
-                None,
-                serde_json::json!({}),
+                AgentAnchorInput {
+                    concept: &p,
+                    slot: "pinned",
+                    source: "leg_browser_pins",
+                    preview: None,
+                    extra: serde_json::json!({}),
+                },
             );
         }
     }

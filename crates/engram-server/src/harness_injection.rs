@@ -634,7 +634,7 @@ pub fn format_suggested_actions_markdown(
     store: &mut StoreHandle,
     primary_goal: Option<&str>,
 ) -> String {
-    let actions = build_suggested_actions(store, primary_goal.as_deref());
+    let actions = build_suggested_actions(store, primary_goal);
     let trusted = build_trusted_tiles(store, primary_goal);
     let hints = build_condensation_hints(store, primary_goal);
 

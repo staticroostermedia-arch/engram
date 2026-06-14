@@ -37,7 +37,7 @@ impl WakeQueueGateMode {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 struct WakeQueueSession {
     active: bool,
     session_key: Option<String>,
@@ -45,19 +45,6 @@ struct WakeQueueSession {
     queue_len: usize,
     unacked_attempts: u32,
     last_blocked_path: Option<String>,
-}
-
-impl Default for WakeQueueSession {
-    fn default() -> Self {
-        Self {
-            active: false,
-            session_key: None,
-            acked: false,
-            queue_len: 0,
-            unacked_attempts: 0,
-            last_blocked_path: None,
-        }
-    }
 }
 
 static SESSION: std::sync::LazyLock<Mutex<WakeQueueSession>> =
