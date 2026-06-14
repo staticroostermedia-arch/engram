@@ -15,6 +15,7 @@ STORE="${ENGRAM_STORE:-$HOME/.engram/stalks/}"
 
 export ENGRAM_PROFILE="${ENGRAM_PROFILE:-agent}"
 export ENGRAM_STORE="$STORE"
+export ENGRAM_WORKSPACE="${ENGRAM_WORKSPACE:-$REPO_ROOT}"
 
 # CUDA paths (optional — ignored if CUDA not installed)
 export LD_LIBRARY_PATH="/usr/local/cuda/lib64:/usr/local/cuda-13.1/lib64:/usr/lib/x86_64-linux-gnu:${LD_LIBRARY_PATH:-}"

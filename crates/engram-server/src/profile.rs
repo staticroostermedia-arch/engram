@@ -75,11 +75,14 @@ impl EngramProfile {
         Self::set_default("ENGRAM_OPTIX_LEAN", "0");
         Self::set_default("ENGRAM_DEFER_BVH", "1");
         Self::set_default("ENGRAM_DEFER_WATCH_INGEST", "1");
+        Self::set_default("ENGRAM_ATLAS_STALK_SPLIT", "1");
         Self::set_default("ENGRAM_KI_LEAN", "1");
         Self::set_default("ENGRAM_NREM_DISABLE", "1");
         Self::set_default("ENGRAM_KI_TICK_SECS", "300");
         Self::set_default("ENGRAM_LEAN_RECALL_POOL", "4000");
         Self::set_default("ENGRAM_LEAN_ANCHOR_POOL", "800");
+        // soft = warn on context_for_edit until ack; hard = 403 block; off = disabled
+        Self::set_default("ENGRAM_WAKE_QUEUE_GATE", "soft");
 
         let sheaf_path = shellexpand::tilde("~/.engram/sheaf.toml").into_owned();
         if std::path::Path::new(&sheaf_path).exists() {

@@ -64,10 +64,27 @@ flowchart LR
 | `suggested_actions` | Ordered MCP queue: read handoff → recall goal → `context_for_edit` on files touched → chain `quick_trace` from trace head → read trusted tiles |
 | `trusted_tiles` | CRS ≥0.85 tiles (`verified_sequence`, `state_machine`, `formal_spec`, `research_offload`) linked to goal or handoff |
 | `trace_chain` | Head + backward walk via `prev_in_trace` relations (up to 8) |
+| `ego_snapshot` | Readable agent evolution: NREM step, `drift_velocity`, stability, last pass age, top 3 goal-serving concepts |
+| `continuity_playbook` | 12-step ordered narrative (wake → edit → fork → handoff → identity/NREM) with doc refs |
+| `presentation_stratum` | Distilled K-node process/ritual continuation (CRS-ranked, lineage-attached); cold 187k excluded |
 | `condensation_hints` | When ≥6 traces without goal-linked tile → suggest `thought_tile_create` |
-| `agent_discipline` | Fork → trace; meta boundary → tile; persist → update/remember; pipeline summary |
+| `agent_discipline` | Fork → trace; meta boundary → tile; persist → update/remember; **`queue_before_edits` mandatory** |
 
 **Harness rule:** Execute `suggested_actions` before broad `Read`/`Grep` on Engram work.
+
+### Wake queue gate (low-friction enforcement)
+
+| `ENGRAM_WAKE_QUEUE_GATE` | Behavior |
+|--------------------------|----------|
+| `soft` (agent profile default) | `context_for_edit` succeeds with `wake_queue_gate.warning` until ack |
+| `hard` | `context_for_edit` returns 403 until `mcp_engram_ack_wake_queue` |
+| `off` | Disabled (CI / dev) |
+
+**Flow:** `session_start` → execute `suggested_actions` → `mcp_engram_ack_wake_queue(executed=true)` → `context_for_edit`.
+
+Empty queue **auto-acks** at `session_start` (zero friction on fresh stores).
+
+Violations log to `activity_feed.jsonl` → LEG hygiene `wake_queue_debt`. Optional scars: `ENGRAM_WAKE_QUEUE_SCAR=5` in hard mode only.
 
 ---
 

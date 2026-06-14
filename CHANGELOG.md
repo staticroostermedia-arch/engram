@@ -5,6 +5,30 @@ All notable changes to Engram (geometric non-flat memory substrate).
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0-beta.1] - 2026-06-13
+
+### Added
+
+- **LEG Browser (beta):** single-file consciousness mirror at `tools/leg-browser/index.html` — wake queue, ego evolution strip, continuity playbook, presentation stratum geosphere, activity SSE, hygiene controls. Launcher: `./scripts/leg` / `./scripts/leg --live`. Docs: [docs/LEG_BROWSER.md](docs/LEG_BROWSER.md).
+- **Presentation stratum:** `presentation_stratum.rs` — CRS-ranked distilled wake surface (~40 lean / ~64 deep; `ENGRAM_PRESENTATION_K` override). Cold manifold + bulk AST excluded from presentation; dig via `recall(scope=all)` or `context_for_edit`.
+- **Harness continuity loop:** `ego_snapshot`, `continuity_playbook` (12 steps), intent-threaded `suggested_actions`, lineage edges on stratum nodes.
+- **Wake queue gate:** `wake_queue_gate.rs` — `ENGRAM_WAKE_QUEUE_GATE=soft|hard|off`, `mcp_engram_ack_wake_queue`, optional `wake_queue_debt` hygiene from activity feed.
+- **REST APIs:** `GET /api/consciousness-surface`, enhanced `GET /api/context-window` (harness + presentation stratum for LEG).
+- **Process:** `processes/meta/agent_evolution.toml` registered at wake.
+- **Scripts:** `scripts/restart-leg-serve.sh` (restart serve without killing MCP).
+- **Plugin commands:** `engram-ack-wake`, `engram-leg`, `engram-loop` (advanced).
+
+### Changed
+
+- `session_start` inline bundle now includes `presentation_stratum` + expanded `harness_injection`.
+- `tools/leg-browser/index.html` — major v2 consciousness mirror refresh (live + static modes).
+- Public docs: README LEG beta section, `docs/HARNESS_INJECTION.md`, `docs/CODE_ATLAS_CONTINUITY.md`, harness/wake skills.
+
+### Beta notes
+
+- Large stores (100k+ blocks): some REST panels may take 10–15s. Static LEG mode works offline; live mode needs `engram serve` on `:3456`.
+- Not Obsidian parity yet — read-only review surface, contributors welcome.
+
 ## [0.6.0] - 2026-06-12
 
 ### Added

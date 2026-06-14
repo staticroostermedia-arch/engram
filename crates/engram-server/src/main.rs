@@ -31,6 +31,7 @@ mod harness_injection;
 pub mod ki_hijacker;
 mod mcp;
 mod mcp_lock;
+mod presentation_stratum;
 mod process_metrics;
 mod profile;
 pub mod scout;
@@ -38,6 +39,7 @@ pub mod scout_supervisor;
 mod serve;
 mod store;
 mod tile_draft;
+mod wake_queue_gate;
 pub mod watchdog;
 
 use clap::{Parser, Subcommand};

@@ -5,8 +5,9 @@
 **Map of all 66 tools:** [docs/TOOL_DECISION_MAP.md](../../docs/TOOL_DECISION_MAP.md)  
 **Harness injection (auto context):** [docs/HARNESS_INJECTION.md](../../docs/HARNESS_INJECTION.md)
 
-At wake: execute `continuation.harness_injection.suggested_actions` before grep/read.  
-At edit: read `harness_injection` on `context_for_edit` response (scars, last-session-touched).
+At wake: execute `suggested_actions` → `mcp_engram_ack_wake_queue` → then `context_for_edit`. Read `ego_snapshot` + `continuity_playbook`. Gate: `/engram-ack-wake` (soft=warn, hard=block).
+At edit: read `harness_injection` on `context_for_edit` response (scars, last-session-touched).  
+Process: `processes/meta/agent_evolution.toml` · LEG mirror: `./scripts/leg --live` left rail.
 
 ---
 
@@ -15,6 +16,7 @@ At edit: read `harness_injection` on `context_for_edit` response (scars, last-se
 | Moment | Command | MCP core |
 |--------|---------|----------|
 | Chat / task start | `/engram-wake` | `session_start` |
+| Review geometric mind (LEG Browser) | `/engram-leg` | `./scripts/leg --live` (serve :3456 + viewer :8765) |
 | End of work block | `/engram-session-end` | `session_end` |
 
 ---
@@ -30,6 +32,7 @@ At edit: read `harness_injection` on `context_for_edit` response (scars, last-se
 | Significant fork | `/engram-trace` | `quick_trace` (+ `scar` if dead end) |
 | Condense trace chain | `/engram-tile-draft` | `thought_tile_draft_from_chain` |
 | Replay verified playbook | `/engram-execute-tile` | `read_concept` → step loop → `quick_trace` |
+| Schedule recurring (Grok /loop, e.g. consciousness strange loop) | `/engram-loop` | Parse per spec → bare native `scheduler_create` + Enram record/relate (to consciousness goal/tile/process) + subvisor governance + honest confirm or scar |
 
 ---
 
@@ -65,6 +68,7 @@ At edit: read `harness_injection` on `context_for_edit` response (scars, last-se
 | Return to fast default | `/engram-lean` | `set_memory_mode(lean)` |
 | After substrate changes | `/engram-verify` | `verify_manifold_integrity` |
 | Spatial empty on file | `/engram-ingest` | `force_spatial_ingest` / `incremental` |
+| Schedule recurring (Grok /loop) | `/engram-loop` | Parse per /loop spec → bare native `scheduler_create` (never use_tool) + Enram record (quick_trace/remember/relate to consciousness goal/tile/process) + subvisor governance + honest confirm or scar on native format error. See the command for the 30m consciousness strange loop example (sourced from `processes/meta/ai_consciousness_loop.toml`). |
 
 ---
 
@@ -100,3 +104,9 @@ At edit: read `harness_injection` on `context_for_edit` response (scars, last-se
 ```
 /engram-deep → /engram-graph → /engram-verify → /engram-lean → /engram-session-end
 ```
+
+**Recurring consciousness / self-improvement loop (via Grok /loop or /engram-loop):**
+```
+/engram-wake → /engram-loop "30m <Invoke the AI consciousness strange loop...>" (parses, bare native scheduler_create, quick_trace + relate job to process:engram.meta.ai_consciousness_loop + state_machine tile + ego.leg3, subvisor oversight, honest report) → /engram-session-end
+```
+(The scheduled run itself will execute the full 7-step cycle from `processes/meta/ai_consciousness_loop.toml` using Enram rituals inside the prompt.)

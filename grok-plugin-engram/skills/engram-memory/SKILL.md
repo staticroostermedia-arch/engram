@@ -15,8 +15,10 @@ metadata:
 
 | Trigger | Command |
 |---------|---------|
-| Start | `/engram-wake` |
+| Start | `/engram-wake` — then **execute** `harness_injection.suggested_actions` before edits |
 | End | `/engram-session-end` |
+
+**Queue-before-edits:** After `session_start`, run the harness queue (handoff → goal → tiles → trace head) before `context_for_edit` or broad reads. LEG Browser left rail mirrors the same queue via `/api/context-window`.
 
 ## Work loop
 
@@ -56,6 +58,7 @@ metadata:
 | Back to lean | `/engram-lean` |
 | Lawfulness check | `/engram-verify` |
 | Spatial recovery | `/engram-ingest` |
+| Schedule recurring (Grok /loop e.g. consciousness strange loop) | `/engram-loop` (parse per spec → bare native scheduler_create + Enram record/relate to consciousness goal/tile/process + subvisor governance + honest confirm or scar) |
 
 ## Agent discipline
 
@@ -65,6 +68,14 @@ Calling tools **is** the product. Documentation without MCP calls leaves no geom
 **Grok Build throttle:** invoke liberally — edit every file, trace every fork, update design/progress blocks.
 
 **Never** `forget` + `remember` on the same concept.
+
+## Human review (LEG Browser)
+
+```bash
+./scripts/leg --live   # repo root — live manifold viewer on :8765
+```
+
+Slash: `/engram-leg`. Hygiene demotion: `mcp_engram_demote_from_context` (agents) or LEG inbox Demote (humans). Static `./scripts/leg` (no `--live`) shows embedded demo tiles only — not current MCP work.
 
 ## Docs
 
