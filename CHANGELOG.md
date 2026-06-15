@@ -29,6 +29,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Large stores (100k+ blocks): some REST panels may take 10–15s. Static LEG mode works offline; live mode needs `engram serve` on `:3456`.
 - Not Obsidian parity yet — read-only review surface, contributors welcome.
 
+### Added (RSI velocity — post-beta.1)
+
+- **`ENGRAM_WAKE_BUNDLE=slim` (default):** `session_start` returns slim continuation (top 5 actions, trace head, slim ego, stratum previews). Full bundle via `mcp_engram_get_continuation_bundle`.
+- **`session_end(minimal=true)`:** thin closure without compression ritual; auto thin handoff on MCP stdio disconnect if `session_end` skipped.
+
 ## [0.6.0] - 2026-06-12
 
 ### Added

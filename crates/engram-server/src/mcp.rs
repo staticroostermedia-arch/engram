@@ -725,7 +725,7 @@ fn tool_list() -> Value {
             },
             {
                 "name": "mcp_engram_session_start",
-                "description": "MANDATORY first MCP call every session. Returns continuation bundle with harness_injection: suggested_actions (prioritized tool queue — execute BEFORE edits/broad reads), trusted_tiles, trace_chain, ego_snapshot (NREM drift + goal-serving stack), continuity_playbook (12-step narrative), condensation_hints, wake_queue_gate status. Then call mcp_engram_ack_wake_queue before context_for_edit if gate=hard. Lean default — do NOT call watch_workspace at wake. See docs/HARNESS_INJECTION.md + processes/meta/agent_evolution.toml.",
+                "description": "MANDATORY first MCP call every session. Default ENGRAM_WAKE_BUNDLE=slim: primary_goal, top 5 suggested_actions, trace_chain head, slim ego_snapshot, presentation_stratum previews. Full harness via mcp_engram_get_continuation_bundle. Execute suggested_actions BEFORE edits; ack with mcp_engram_ack_wake_queue. Lean default — do NOT call watch_workspace at wake. See docs/HARNESS_INJECTION.md + docs/AGENT_MEMORY_CONTRACT.md.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -755,9 +755,13 @@ fn tool_list() -> Value {
                     "type": "object",
                     "properties": {
                         "summary": { "type": "string", "description": "Agent's summary of the session" },
+                        "minimal": {
+                            "type": "boolean",
+                            "description": "If true, thin closure: 1-line summary + auto boundary trace + handoff only (no compression ritual). Preferred for fast fix loops."
+                        },
                         "prepare_compression": {
                             "type": "boolean",
-                            "description": "If true (default), run full compression handoff: hydration cache + hot promote + compression_handoff_* manifest. Set false only for trivial sessions."
+                            "description": "If true (default when minimal=false), run full compression handoff: hydration cache + hot promote + compression_handoff_* manifest. Ignored when minimal=true."
                         }
                     },
                     "required": ["summary"]
@@ -2787,12 +2791,13 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
         "mcp_engram_get_continuation_bundle" => {
             let bundle = store.lock().unwrap().build_continuation_bundle(None);
             let text = serde_json::to_string_pretty(&bundle).unwrap_or_else(|_| "{}".to_string());
+            let tier = crate::wake_bundle::WakeBundleTier::from_env().as_str();
             json!({
                 "content": [{
                     "type": "text",
                     "text": format!(
-                        "CONTINUATION BUNDLE (live)\n\n{}\n\nNext: recall each `concept` in active_artifacts before broad momentum. (Lean wake-up primary path: hot/legominism + last terminal for fast post-compression rehydrate.)",
-                        text
+                        "CONTINUATION BUNDLE (full/live) — session_start uses ENGRAM_WAKE_BUNDLE={} by default.\n\n{}\n\nNext: recall each `concept` in active_artifacts before broad momentum.",
+                        tier, text
                     )
                 }]
             })
@@ -3290,14 +3295,24 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                 .map(|a| a.len())
                 .unwrap_or(0);
             let wake_gate = crate::wake_queue_gate::on_session_start(&session_key, queue_len);
+            crate::session_lifecycle::on_mcp_session_start(&session_key, &intent);
+
+            let bundle_tier = crate::wake_bundle::WakeBundleTier::from_env();
+            let continuation_out = match bundle_tier {
+                crate::wake_bundle::WakeBundleTier::Slim => {
+                    crate::wake_bundle::slim_continuation_bundle(&continuation)
+                }
+                crate::wake_bundle::WakeBundleTier::Full => continuation,
+            };
 
             let elapsed = t_start.elapsed().as_secs_f32();
             let mut wake_packet = serde_json::json!({
                 "status": "started",
                 "elapsed_s": elapsed,
                 "session_key": session_key,
+                "bundle_tier": bundle_tier.as_str(),
                 "readiness": readiness,
-                "continuation": continuation,
+                "continuation": continuation_out,
                 "wake_queue_gate": wake_gate,
             });
             if let Some(spatial_val) = spatial {
@@ -3315,6 +3330,38 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
             let summary = args["summary"].as_str().unwrap_or("").trim().to_string();
             if summary.is_empty() {
                 return json!({ "content": [{ "type": "text", "text": "Error: summary required." }], "isError": true });
+            }
+
+            let minimal = args
+                .get("minimal")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+
+            if minimal {
+                crate::wake_queue_gate::on_session_end();
+                let mut lock = match store.lock() {
+                    Ok(l) => l,
+                    Err(p) => {
+                        return json!({
+                            "content": [{ "type": "text", "text": format!("Error: store mutex poisoned: {}", p) }],
+                            "isError": true
+                        });
+                    }
+                };
+                match crate::session_lifecycle::commit_minimal_session_end(&mut lock, &summary) {
+                    Ok(payload) => {
+                        crate::session_lifecycle::on_mcp_session_end_committed();
+                        let text = serde_json::to_string_pretty(&payload)
+                            .unwrap_or_else(|_| "{}".to_string());
+                        return json!({ "content": [{ "type": "text", "text": text }] });
+                    }
+                    Err(e) => {
+                        return json!({
+                            "content": [{ "type": "text", "text": format!("Error: {}", e) }],
+                            "isError": true
+                        });
+                    }
+                }
             }
 
             let wake_debt = crate::wake_queue_gate::handoff_debt_note();
@@ -3780,6 +3827,7 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                     });
                     let response_text =
                         serde_json::to_string_pretty(&response_json).unwrap_or(response);
+                    crate::session_lifecycle::on_mcp_session_end_committed();
                     json!({ "content": [{ "type": "text", "text": response_text }] })
                 }
                 Err(e) => {
@@ -6788,6 +6836,7 @@ pub fn run(store: SharedStore) -> anyhow::Result<()> {
         }
     }
 
+    crate::session_lifecycle::try_auto_handoff_on_shutdown(&store);
     info!("Engram MCP server shutdown");
     Ok(())
 }
@@ -7118,4 +7167,5 @@ mod tests {
         }
         let _ = std::fs::remove_dir_all(&tmp);
     }
+
 }

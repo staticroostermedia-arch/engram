@@ -26,7 +26,8 @@
 ### Tool summaries
 
 **`session_start(intent, include_spatial?)`** — Mandatory first call. Mints `session_start_*` episodic block, loads process sheaf, and returns:
-- `continuation_bundle` (primary goal, last session_end preview, active artifacts, hydration cache flag)
+- **`continuation` (slim by default, `ENGRAM_WAKE_BUNDLE=slim`)** — `primary_goal`, top 5 `suggested_actions`, `trace_chain_head`, slim `ego_snapshot`, `presentation_stratum` node_count + 5 previews
+- **Full bundle on demand:** `mcp_engram_get_continuation_bundle` (set `ENGRAM_WAKE_BUNDLE=full` to restore legacy inline payload)
 - `backend_readiness` (bvh_ready, recall_mode, leg_block_count)
 - Optional `spatial_delta` when `include_spatial=true` (incremental ingest summary, not full force)
 
@@ -41,7 +42,7 @@
 
 **`remember(concept, text)`** — New concept only. Always `recall` first; if score > 0.85 on an existing concept, use `update` instead (Layer 1 — see [write path](TOOL_DECISION_MAP.md#write-path-non-negotiable)).
 
-**`session_end(summary, prepare_compression?)`** — Mandatory last call. Commits episodic terminal state and returns a **structured handoff packet** (JSON) for machine-readable continuation.
+**`session_end(summary, minimal?, prepare_compression?)`** — End-of-block handoff. Use **`minimal=true`** for fast fix loops (thin block + boundary trace + `helper:session_handoff_latest`, no compression ritual). Full path (default) runs compression handoff + rich boundary trace. MCP disconnect without `session_end` auto-emits a thin handoff.
 
 **`get_backend_readiness()`** — Read-only status. Use after wake or when recall quality seems sampled/bounded.
 

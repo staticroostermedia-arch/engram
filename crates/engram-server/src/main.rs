@@ -37,8 +37,10 @@ mod profile;
 pub mod scout;
 pub mod scout_supervisor;
 mod serve;
+mod session_lifecycle;
 mod store;
 mod tile_draft;
+mod wake_bundle;
 mod wake_queue_gate;
 pub mod watchdog;
 
