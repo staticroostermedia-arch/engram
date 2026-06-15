@@ -5,7 +5,7 @@ description: Offload a meta arc to a thought tile — plans, specs, multi-phase 
 
 **Trigger:** Multi-phase meta work, design doc arc, policy/roadmap spanning sessions, bundle too large for one trace.
 
-1. Recall `helper:meta_work_escalation_v1` and `helper:current_meta_arc` via `/engram-recall`.
+1. Call `mcp_engram_recall(query="design progress meta arc", scope="anchors")` for related goals and prior tiles.
 2. Call `mcp_engram_thought_tile_create` with:
    - `tile_type` — `research_offload` | `formal_spec` | `state_machine` | `tabular` | …
    - `title` — short human title

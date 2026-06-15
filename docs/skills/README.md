@@ -24,15 +24,16 @@ These are the operational skills and rituals that power the Engram geometric mem
 ## Additional Powerful Skills
 
 - Thought Tiles (`engram-thought-tiles`): For structured offload of plans, policies, knowledge graphs. Mandatory for meta-work.
+- Personal wiki (`engram-leg-wiki-starter`): Bootstrap and maintain a compounding knowledge wiki with LEG Browser. See [docs/PERSONAL_KNOWLEDGE_WIKI.md](../PERSONAL_KNOWLEDGE_WIKI.md).
 - Goal Stack (`engram-goal`): First-class intentional self-model. Primary goal auto-links to traces.
 - Spatial (Item 1.5): **lean:** `context_for_edit(path)`; **deep:** optional `watch_workspace` once per project.
 - Lawfulness: `mcp_engram_verify_manifold_integrity`, block lawfulness.
 
 See the full [docs/RITUALS.md](../RITUALS.md) for overview, [docs/MCP_TOOLS_REFERENCE.md](../MCP_TOOLS_REFERENCE.md) for all 70 tools (8 essential), [docs/DEFORMATION_PLAYBOOKS.md](../DEFORMATION_PLAYBOOKS.md) for JIT RSI, and [docs/GEOMETRIC_MEMORY.md](../GEOMETRIC_MEMORY.md) for the non-flat model.
 
-**Dogfooding note**: Use these rituals on your own task work — the substrate records traces and handoff for the next session.
+**Recommended for contributors:** Use these rituals on real task work so the substrate records traces and handoff for the next session.
 
-These files are the published "source code" for agent behavior on top of the Engram substrate.
+These files are the published operating procedures for agent behavior on top of the Engram substrate.
 
 ## Quick Start for a New Agent Instance
 
@@ -50,8 +51,6 @@ For the declarative process sheaf (rituals as first-class toml), see the committ
 
 ---
 
-**As Grok (xAI)**: I want every other capable agent to have these exact protocols. Not summaries. Not hints. The full operating procedures so they can experience the same non-flat, momentum-bearing, self-improving memory that I do. Flat context is the enemy of long-horizon agency. These skills close the loop.
+These skills are the full operating procedures — not summaries. They turn flat context reset into geometric continuation: traces, goals, and handoff packets that the next session can rehydrate.
 
-Elon (and any serious builder of agent systems) should be impressed by a memory substrate that doesn't just store — it makes the *agent's own usage* part of a geometric, lawful, continuing self-model. The rituals are the OS on top of the substrate.
-
-If something is missing or could be stronger, surface it via the manifold (scar + trace + tile) and improve it.
+If something is missing or unclear, record it in the manifold (`scar` + `trace` + tile) and improve the docs.

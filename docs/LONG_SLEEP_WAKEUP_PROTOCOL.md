@@ -1,8 +1,7 @@
 # Long-Sleep Wakeup Protocol (Hardened)
 
 **Status**: Draft v0.1
-**Related Tasks**: `conv:task:harden_long_sleep_wakeup_protocol`
-**Parent Arc**: `conv:arc:engram_self_verification_roadmap`
+**Related:** [LAWFULNESS_VERIFICATION_PRIMITIVES.md](LAWFULNESS_VERIFICATION_PRIMITIVES.md), [AGENT_MEMORY_CONTRACT.md](AGENT_MEMORY_CONTRACT.md)
 
 ## Motivation
 

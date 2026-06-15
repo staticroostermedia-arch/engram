@@ -32,7 +32,7 @@ Open **http://127.0.0.1:8765** (auto-opens on most systems).
 | Mode | Command | Backend | What you see |
 |------|---------|---------|--------------|
 | **Static** | `./scripts/leg` | None | Curated demo tiles — useful offline, not your live manifold |
-| **Live** | `./scripts/leg --live` | `engram serve` on `:3456` | Real traces, goals, handoff, activity feed, consciousness surface |
+| **Live** | `./scripts/leg --live` | `engram serve` on `:3456` | Real traces, goals, handoff, activity feed, memory review surface |
 
 Live mode uses the same `ENGRAM_STORE` as `scripts/engram-grok` (MCP). TUI, Cursor, and Grok Build sessions all write to the same disk; LEG shows the union via activity feed + hot/recent APIs.
 

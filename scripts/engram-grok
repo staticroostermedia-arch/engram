@@ -50,7 +50,7 @@ fi
 if [[ " $* " == *" mcp "* ]]; then
     # TUI-specific mode: block until ready, with generous timeout for large
     # manifolds or first cold boot with OptiX/BVH.
-    echo "[engram-grok] Waiting for Enram geometric readiness before MCP handshake (TUI seamless path)..." >&2
+    echo "[engram-grok] Waiting for Engram geometric readiness before MCP handshake (TUI seamless path)..." >&2
     "$REAL_ENGRAM" --store "$STORE" wait-ready --timeout 180 || {
         echo "[engram-grok] wait-ready timed out or failed; proceeding with mcp anyway (may still hit early-ready guard)." >&2
     }

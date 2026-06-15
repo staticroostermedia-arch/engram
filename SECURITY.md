@@ -19,4 +19,4 @@ See [docs/GEOMETRIC_MEMORY.md](docs/GEOMETRIC_MEMORY.md), [docs/RITUALS.md](docs
 
 Vulns affecting invariants (.leg3, CRS gates, allowed transforms, unit hypersphere) or ritual anchors are high priority. Report with reproduction using current build (`target/debug/engram`).
 
-Current build hygiene + engram records (traces/relates to goal:1780419540...) used throughout prep.
+Use `target/debug/engram` (or `cargo build` output) for reproduction; record traces and relates to your active project goal during security reviews.

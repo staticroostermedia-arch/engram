@@ -19,7 +19,7 @@ This:
 - Auto-probes live mode; hero pulls `helper:session_handoff_latest` + `/api/hydrate` + `/api/active-context`
 - Demo consciousness emitter is **off** by default (it used to flood the UI with fake tiles). Presenter sim only: `./scripts/leg --live --demo-emitter`
 
-## What the user should see (v2 consciousness mirror)
+## What the user should see (v2 memory review UI)
 
 - Sidebar: Minecraft-style block cubes (green=tile, blue=trace, gold=goal, purple=handoff)
 - **Every click works**: fetches `/api/block/:concept` and JIT-renders from the block's own payload

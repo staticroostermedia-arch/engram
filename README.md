@@ -25,11 +25,14 @@ Engram is particularly well-suited for:
 
 | Start here | Doc |
 |------------|-----|
+| **New users & agents** | [FIRST_RUN.md](FIRST_RUN.md) |
+| **Lean contract (8 tools)** | [docs/AGENT_MEMORY_CONTRACT.md](docs/AGENT_MEMORY_CONTRACT.md) |
 | **Grok Build / xAI reviewers** | [docs/GROK_BUILD_MEMORY.md](docs/GROK_BUILD_MEMORY.md) |
-| **Any agent (lean contract)** | [docs/AGENT_MEMORY_CONTRACT.md](docs/AGENT_MEMORY_CONTRACT.md) + [FIRST_RUN.md](FIRST_RUN.md) |
-| **JIT deformation / RSI** | [docs/DEFORMATION_PLAYBOOKS.md](docs/DEFORMATION_PLAYBOOKS.md) |
-| **Ritual skills** | [SKILLS.md](SKILLS.md) → `docs/skills/` |
-| **Deep operators** | [HOW_WE_ACTUALLY_USE_THIS_IN_2026.md](HOW_WE_ACTUALLY_USE_THIS_IN_2026.md) |
+| **MCP setup (all ecosystems)** | [integrations/README.md](integrations/README.md) |
+| **Human review (LEG Browser)** | [docs/LEG_BROWSER.md](docs/LEG_BROWSER.md) |
+| **Personal knowledge wiki** | [docs/PERSONAL_KNOWLEDGE_WIKI.md](docs/PERSONAL_KNOWLEDGE_WIKI.md) |
+| **Power users (70 tools)** | [docs/TOOL_DECISION_MAP.md](docs/TOOL_DECISION_MAP.md) |
+| **Ritual skills** | [SKILLS.md](SKILLS.md) → [docs/skills/](docs/skills/) |
 | **Substrate builders (BYOP)** | [AGENT_INTEGRATION_GUIDE.md](AGENT_INTEGRATION_GUIDE.md) |
 
 **Human review (LEG Browser beta):** `./scripts/leg` (static) or `./scripts/leg --live` — see [docs/LEG_BROWSER.md](docs/LEG_BROWSER.md).
@@ -188,18 +191,41 @@ Grok plugin slash commands: [grok-plugin-engram/commands/](grok-plugin-engram/co
 
 ## Deep dive (linked, not repeated here)
 
+### Users
+
 | Topic | Doc |
 |-------|-----|
 | LEG Browser (beta) | [docs/LEG_BROWSER.md](docs/LEG_BROWSER.md) |
-| 256KB / NVMe / GPU backends | [docs/architecture.md](docs/architecture.md) |
-| CRS / scars / lawfulness | [docs/GEOMETRIC_MEMORY.md](docs/GEOMETRIC_MEMORY.md) |
-| Process sheaf + sub-agent governance | [processes/README.md](processes/README.md) |
-| Substrate wins roadmap | [docs/SUBSTRATE_WINS_PLAN.md](docs/SUBSTRATE_WINS_PLAN.md) |
+| Personal knowledge wiki | [docs/PERSONAL_KNOWLEDGE_WIKI.md](docs/PERSONAL_KNOWLEDGE_WIKI.md) |
+| Deployment & hardware backends | [docs/DEPLOYMENT_MODES.md](docs/DEPLOYMENT_MODES.md) · [docs/architecture.md](docs/architecture.md) |
 | Marketplace submission | [docs/MARKETPLACE_SUBMISSION.md](docs/MARKETPLACE_SUBMISSION.md) |
-| Philosophy | [MANIFESTO.md](MANIFESTO.md) · [PHILOSOPHY.md](PHILOSOPHY.md) |
-| Contributor / operator depth | [docs/SUBSTRATE_WINS_PLAN.md](docs/SUBSTRATE_WINS_PLAN.md) · [docs/LONG_SLEEP_WAKEUP_PROTOCOL.md](docs/LONG_SLEEP_WAKEUP_PROTOCOL.md) |
 
-**Hardware:** CPU (default), CUDA, ROCm, Metal, WebGPU — see [docs/DEPLOYMENT_MODES.md](docs/DEPLOYMENT_MODES.md).
+### Agents
+
+| Topic | Doc |
+|-------|-----|
+| JIT deformation / RSI | [docs/DEFORMATION_PLAYBOOKS.md](docs/DEFORMATION_PLAYBOOKS.md) |
+| Harness injection at wake | [docs/HARNESS_INJECTION.md](docs/HARNESS_INJECTION.md) |
+| Ritual overview | [docs/RITUALS.md](docs/RITUALS.md) |
+| MCP tools reference (70) | [docs/MCP_TOOLS_REFERENCE.md](docs/MCP_TOOLS_REFERENCE.md) |
+| Long-sleep return | [docs/LONG_SLEEP_WAKEUP_PROTOCOL.md](docs/LONG_SLEEP_WAKEUP_PROTOCOL.md) |
+
+### Contributors
+
+| Topic | Doc |
+|-------|-----|
+| Maintainer workflow | [docs/internal/MAINTAINER_WORKFLOW.md](docs/internal/MAINTAINER_WORKFLOW.md) |
+| Harness program (shipped) | [docs/SUBSTRATE_WINS_PLAN.md](docs/SUBSTRATE_WINS_PLAN.md) · [docs/HARNESS_INJECTION.md](docs/HARNESS_INJECTION.md) |
+| Process sheaf + sub-agent governance | [processes/README.md](processes/README.md) |
+| Contributing | [CONTRIBUTING.md](CONTRIBUTING.md) · [AGENTS.md](AGENTS.md) |
+
+### Theory
+
+| Topic | Doc |
+|-------|-----|
+| CRS / scars / lawfulness | [docs/GEOMETRIC_MEMORY.md](docs/GEOMETRIC_MEMORY.md) |
+| Categorical linguistic calculus | [docs/CATEGORICAL_LINGUISTIC_CALCULUS.md](docs/CATEGORICAL_LINGUISTIC_CALCULUS.md) |
+| Philosophy | [MANIFESTO.md](MANIFESTO.md) · [PHILOSOPHY.md](PHILOSOPHY.md) |
 
 **CLI:** `engram remember|recall|forget|list|ingest|trace|distill|build-index`
 

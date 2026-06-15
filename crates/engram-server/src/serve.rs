@@ -1376,7 +1376,7 @@ async fn hydrate(State(store): State<SharedStore>) -> impl IntoResponse {
     (StatusCode::OK, Json(payload))
 }
 
-/// GET /api/context-window — harness-isomorphic agent context for LEG Browser consciousness mirror.
+/// GET /api/context-window — harness-isomorphic agent context for LEG Browser memory review UI.
 async fn get_context_window(State(store): State<SharedStore>) -> impl IntoResponse {
     let mut lock = lock_store(&store);
     let harness = crate::harness_injection::build_harness_bundle(&mut lock, None);
@@ -1460,7 +1460,7 @@ async fn get_context_window(State(store): State<SharedStore>) -> impl IntoRespon
             "wake_queue_gate": crate::wake_queue_gate::public_config(),
             "files_from_handoff": files_from_handoff,
             "file_tile_bridge": file_tile_bridge,
-            "note": "Harness-isomorphic context window — mirrors session_start injection for the consciousness mirror UI."
+            "note": "Harness-isomorphic context window — mirrors session_start injection for the memory review UI UI."
         })),
     )
 }
@@ -1523,7 +1523,7 @@ async fn get_activity(
             "agent_path": chain,
             "since": since,
             "server_ts": std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs(),
-            "note": "Poll every 1-2s for near-real-time consciousness mirror. Writes from MCP and REST append to activity_feed.jsonl. Prefer GET /api/activity/stream for SSE push."
+            "note": "Poll every 1-2s for near-real-time memory review UI. Writes from MCP and REST append to activity_feed.jsonl. Prefer GET /api/activity/stream for SSE push."
         })),
     )
 }
@@ -1579,7 +1579,7 @@ fn spawn_activity_broadcaster(tx: tokio::sync::broadcast::Sender<String>) {
     });
 }
 
-/// GET /api/activity/stream — SSE push for near-instant consciousness mirror updates.
+/// GET /api/activity/stream — SSE push for near-instant memory review UI updates.
 async fn get_activity_stream(
     Extension(tx): Extension<tokio::sync::broadcast::Sender<String>>,
 ) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
@@ -1802,7 +1802,7 @@ async fn get_spatial_live(State(store): State<SharedStore>) -> impl IntoResponse
             "hotspots": hotspots,
             "active": active,
             "file_contexts": file_contexts,
-            "note": "Spatial consciousness mirror — trace spatial_context + AST AABB from recent access."
+            "note": "Spatial memory review UI — trace spatial_context + AST AABB from recent access."
         })),
     )
 }
@@ -2141,7 +2141,7 @@ async fn get_relational_digest(
             "file_tile_bridge": file_bridge,
             "hygiene_concept_count": hygiene_concepts.len(),
             "focus": focus_panel,
-            "note": "Relational digest for LEG Browser consciousness mirror right rail — serving stack + file bridge + optional focus concept meta."
+            "note": "Relational digest for LEG Browser memory review UI right rail — serving stack + file bridge + optional focus concept meta."
         })),
     )
 }
@@ -2739,7 +2739,7 @@ async fn get_hygiene(State(store): State<SharedStore>) -> impl IntoResponse {
             "condensation_recent": condensation_recent,
             "serving_count": serving.len(),
             "active_goal_count": active_goals.len(),
-            "note": "Hygiene debt for agent discipline — LEG Browser consciousness mirror surfaces these for human debug."
+            "note": "Hygiene debt for agent discipline — LEG Browser memory review UI surfaces these for human debug."
         })),
     )
 }

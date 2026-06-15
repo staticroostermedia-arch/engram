@@ -8,7 +8,7 @@ Thought Tiles are structured, compressible, high-value artifacts (textual functo
 
 **When to mint**:
 - High-stakes decision, repetition pattern, major scar, significant process insight.
-- **Mandatory triggers for meta-work**: roadmap/multi-phase plan (e.g. GH prep, substrate gaps), formal policy, gap matrix/success criteria, arc with 3+ traces + design: block.
+- **Mandatory triggers for meta-work**: roadmap/multi-phase plan (e.g. release prep, substrate gaps), formal policy, gap matrix/success criteria, arc with 3+ traces + design: block.
 
 **Types**:
 - knowledge_graph: overall arc

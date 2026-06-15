@@ -158,7 +158,7 @@ flowchart LR
 | `mcp_engram_remember` | No strong match — genuinely new concept |
 | `mcp_engram_remember_solution` | Fix verified in code/tests — crystallize to praxis |
 | `mcp_engram_scar` | Dead end, doom loop, ruled-out approach — geometric repulsion |
-| `/engram-loop` (new) or bare native `scheduler_create` | Grok /loop recurring (e.g. consciousness strange loop): parse per spec (handle < > quoting, ask on no interval), bare native call (never use_tool), Enram record (quick_trace/relate job to consciousness goal/tile/process + subvisor), honest confirm or scar on native format error. See `grok-plugin-engram/commands/engram-loop.md` + `processes/meta/ai_consciousness_loop.toml`. |
+| `/engram-loop` (new) or bare native `scheduler_create` | Grok /loop recurring (e.g. consciousness strange loop): parse per spec (handle < > quoting, ask on no interval), bare native call (never use_tool), Engram record (quick_trace/relate job to consciousness goal/tile/process + subvisor), honest confirm or scar on native format error. See `grok-plugin-engram/commands/engram-loop.md` + `processes/meta/ai_consciousness_loop.toml`. |
 | `mcp_engram_relate` / `relate_batch` | Link trace/goal/file/process after write |
 | `mcp_engram_quick_trace` | Daily forks (lean) |
 | `mcp_engram_record_reasoning_trace` | High-stakes A/D/R with full fields (deep) |

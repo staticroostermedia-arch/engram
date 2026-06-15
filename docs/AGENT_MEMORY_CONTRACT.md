@@ -1,6 +1,6 @@
 # Agent Memory Contract — 8 Essential Tools
 
-**Status:** Phase A target (Agent Memory MVP, 2026-06-06)  
+**Status:** Stable (shipped 2026-06)  
 **Audience:** Any AI agent using the Engram MCP server  
 **Principle:** Lean by default, deep on demand. Eight tools cover wake → work → handoff on large stores (181k+ blocks) without ritual tax or RAM death.
 
@@ -81,7 +81,7 @@ Reset to lean before ending long meta sessions to protect the next agent's wake 
 
 ```json
 {
-  "intent": "Continue Agent Memory MVP — document 8-tool contract (A6)",
+  "intent": "Implement feature X in my project — lean wake",
   "include_spatial": false
 }
 ```

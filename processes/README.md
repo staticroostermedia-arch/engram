@@ -34,7 +34,7 @@ These files document **how to run** a multi-step arc (wake → execute → trace
 | **Relay steps** (sub-agent playbook) | `workflow/sub_agent_relay_v1.toml` | workflow-only |
 | **Monitor** (H¹ while running) | `monitor/sub-agent.subvisor.toml` | `process:engram.monitor.sub-agent` |
 
-See [docs/examples/sub_agent_governance.md](../docs/examples/sub_agent_governance.md) and [docs/SUBSTRATE_WINS_PLAN.md](../docs/SUBSTRATE_WINS_PLAN.md) WS-5.
+See [docs/examples/sub_agent_governance.md](../docs/examples/sub_agent_governance.md), [docs/HARNESS_INJECTION.md](../docs/HARNESS_INJECTION.md), and [docs/SUBSTRATE_WINS_PLAN.md](../docs/SUBSTRATE_WINS_PLAN.md) WS-5 (historical).
 
 ## Meta workflows (not sheaf-loaded)
 

@@ -4,6 +4,20 @@
 **Goal:** `goal:mvp_gap_closure_v1`  
 **Depends on:** [HARNESS_INJECTION.md](HARNESS_INJECTION.md) (shipped `1c80f77e`), [TOOL_DECISION_MAP.md](TOOL_DECISION_MAP.md)
 
+## Completion — current ops
+
+All workstreams in this plan (WS-1 through WS-5) shipped. **Do not treat this file as an active implementation checklist.**
+
+| Need | Read instead |
+|------|----------------|
+| Wake injection, `suggested_actions`, trace chains, trusted tiles | [HARNESS_INJECTION.md](HARNESS_INJECTION.md) |
+| JIT deformation, verified-sequence replay, RSI playbooks | [DEFORMATION_PLAYBOOKS.md](DEFORMATION_PLAYBOOKS.md) |
+| Tool selection across 70 MCP tools | [TOOL_DECISION_MAP.md](TOOL_DECISION_MAP.md) |
+
+The sections below are **historical design record** (dependency DAG, phase breakdown, verification gates). Use them for archaeology and onboarding context, not for day-to-day agent operations.
+
+---
+
 Close the gap between **trace accumulation** and **JIT trusted playbooks** — with Cursor/Grok harnesses injecting context before turn 1.
 
 ---
@@ -434,7 +448,9 @@ cargo test -p engram-server test_load_process_sheaf_registers_from_processes_dir
 
 ---
 
-## PR stack (suggested)
+## PR stack (historical — all merged)
+
+> **Note:** Suggested PR sequence from the planning phase. All items landed; see [HARNESS_INJECTION.md](HARNESS_INJECTION.md) and [DEFORMATION_PLAYBOOKS.md](DEFORMATION_PLAYBOOKS.md) for ongoing ops.
 
 | PR | Branch suffix | Workstream | Est. |
 |----|---------------|------------|------|
@@ -479,7 +495,8 @@ cargo test -p engram-server test_load_process_sheaf_registers_from_processes_dir
 
 ## Related
 
-- [HARNESS_INJECTION.md](HARNESS_INJECTION.md) — shipped injection
+- [HARNESS_INJECTION.md](HARNESS_INJECTION.md) — **current** wake injection + learning pipeline
+- [DEFORMATION_PLAYBOOKS.md](DEFORMATION_PLAYBOOKS.md) — **current** JIT deformation + verified tile replay
 - [TOOL_DECISION_MAP.md](TOOL_DECISION_MAP.md) — tool + slash map
 - [processes/README.md](../processes/README.md) — sheaf vs workflow
 - [integrations/cursor/mcp.json](../integrations/cursor/mcp.json) — Cursor MCP template

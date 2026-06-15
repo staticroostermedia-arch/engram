@@ -162,6 +162,6 @@ This produces a structured handoff packet. Your **next** `session_start` will su
 1. Load [SKILLS.md](SKILLS.md) + `docs/skills/engram-wake-up.md` into your agent instructions.
 2. Read [docs/GROK_BUILD_MEMORY.md](docs/GROK_BUILD_MEMORY.md) for Grok Build integration.
 3. Run `examples/hello-engram-agent.py` to see the lean loop.
-4. For deep rituals: [docs/RITUALS.md](docs/RITUALS.md) + [HOW_WE_ACTUALLY_USE_THIS_IN_2026.md](HOW_WE_ACTUALLY_USE_THIS_IN_2026.md).
+4. For deep rituals: [docs/RITUALS.md](docs/RITUALS.md) + [docs/skills/](docs/skills/). Contributors: [docs/internal/MAINTAINER_WORKFLOW.md](docs/internal/MAINTAINER_WORKFLOW.md).
 
 *First-run complete. Your manifold is ready.*
