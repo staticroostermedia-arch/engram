@@ -17,6 +17,16 @@ Unlike vector databases or simple logs, Engram uses fixed-size holographic block
 
 It is designed as a drop-in backend for any LLM (Grok, Claude, Llama, etc.) via the Model Context Protocol (MCP) and is fully open for anyone to build on.
 
+### New here?
+
+| You are… | Do this |
+|----------|---------|
+| **A human** (“should my AI use this?”) | Skim [Quick start](#quick-start) below. If it looks right, tell your agent: *“Clone this repo, follow [FIRST_RUN.md](FIRST_RUN.md) steps 1–4, add the MCP config from FIRST_RUN §2, then use the [8-tool contract](docs/AGENT_MEMORY_CONTRACT.md).”* Optional: `./scripts/leg --live` to review what the agent remembers. |
+| **An AI agent** (you were pointed here) | Human must finish [FIRST_RUN.md](FIRST_RUN.md) §1–2 (build + MCP) so you have `mcp_engram_*` tools. Then read [docs/AGENT_MEMORY_CONTRACT.md](docs/AGENT_MEMORY_CONTRACT.md) and run the copy-paste loop at the bottom. **First call every session:** `mcp_engram_session_start(intent="…")`. |
+| **Curious about the theory** | [docs/GEOMETRIC_MEMORY.md](docs/GEOMETRIC_MEMORY.md) · [MANIFESTO.md](MANIFESTO.md) — after you have a working install. |
+
+**Rituals** = documented MCP habits (wake → trace decisions → handoff) so memory compounds across sessions — not mysticism, just the discipline that beats flat RAG.
+
 Engram is particularly well-suited for:
 - Long-running agentic systems
 - Games with persistent LLM characters
@@ -43,12 +53,12 @@ Engram is particularly well-suited for:
 
 | | Flat vector / markdown | Engram |
 |--|------------------------|--------|
-| Storage | append-log / chunks | 256KB geometric blocks (q/p/CRS/Merkle) |
-| Wake | cold start | `session_start` + JIT harness + verified tile playbooks |
-| Integrity | none | `verify_*`, scars, CRS ≥ 0.74 |
-| Code context | RAG chunks | `context_for_edit` + spatial AABB |
-| Agent discipline | hope | rituals + subvisor H¹ + process sheaf |
-| Human mirror | none | LEG Browser beta — live traces, goals, tiles |
+| Storage | append-log / chunks | Structured blocks with integrity checks (details: [GEOMETRIC_MEMORY](docs/GEOMETRIC_MEMORY.md)) |
+| Wake | cold start every time | `session_start` restores goals, last session, suggested next steps |
+| Integrity | none | `verify_*`, scars, lawfulness gates (CRS ≥ 0.74) |
+| Code context | RAG chunks | `context_for_edit` — file-scoped memory before you edit |
+| Agent discipline | hope the model remembers | Documented rituals + optional governance processes |
+| Human mirror | none | LEG Browser beta — see traces, goals, tiles locally |
 
 Full comparison vs mem0/Letta/chroma: see [docs/GROK_BUILD_MEMORY.md](docs/GROK_BUILD_MEMORY.md).
 

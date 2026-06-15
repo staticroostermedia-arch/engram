@@ -1,9 +1,25 @@
 # Engram — First Run Guide
 
-> **For new users and AI agents.** Run through this guide once when you first install Engram.
-> After completing it, MCP is verified, your store is seeded, and you know the **8-tool lean contract**.
+> **For new users and AI agents.** Run through this once on a fresh install.
+> After it, MCP works, your store is seeded, and the **8-tool lean contract** is proven.
 
 **Canonical reference:** [docs/AGENT_MEMORY_CONTRACT.md](docs/AGENT_MEMORY_CONTRACT.md)
+
+### Who does what?
+
+| Role | Steps |
+|------|-------|
+| **Human** | §1 Build · §2 MCP config in IDE · restart IDE · optional §6 embeddings · optional `./scripts/leg --live` to review memory |
+| **AI agent** | After human completes §2: §3 `session_start` · §4 first `remember`/`recall` · §5 `context_for_edit` when editing code · §7 `session_end` every session · follow [AGENT_MEMORY_CONTRACT](docs/AGENT_MEMORY_CONTRACT.md) thereafter |
+
+**Paste to your agent (after §2):**
+
+```
+Engram MCP is configured. Read docs/AGENT_MEMORY_CONTRACT.md.
+Run mcp_engram_session_start(intent="First session on Engram").
+Follow the 8-tool loop; do not call watch_workspace at wake.
+End with mcp_engram_session_end(summary=...).
+```
 
 ---
 

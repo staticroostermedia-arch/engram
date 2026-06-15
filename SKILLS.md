@@ -2,7 +2,7 @@
 
 **For AI agents (Grok, Claude, custom, etc.) using the Engram MCP server:**
 
-This is the canonical entry point for the published ritual protocols.
+You were probably sent here after [FIRST_RUN.md](FIRST_RUN.md) and [docs/AGENT_MEMORY_CONTRACT.md](docs/AGENT_MEMORY_CONTRACT.md). This index links the step-by-step ritual protocols (wake, working memory, session end, tiles, personal wiki).
 
 ## Start Here — 8-Tool Agent Memory Contract
 
