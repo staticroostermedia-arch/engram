@@ -23,19 +23,20 @@ mcp_engram_session_start(
 )
 ```
 
-**This single call returns (inline):**
-- `continuation_bundle` — primary goal, last `session_end` preview, active artifacts (tiles/helpers/traces), hydration cache flag
-- `backend_readiness` — bvh_ready, recall_mode, leg_block_count
+**This single call returns (inline, slim by default):**
+- `bundle_tier: "slim"` — top 5 `suggested_actions`, `trace_chain_head`, slim `ego_snapshot`, `presentation_stratum` previews
+- `readiness` — bvh_ready, recall_mode, leg_block_count
 - `session_key` — bind `agent_instance_continuation` if you write a relation (deep mode)
+- Full harness: `mcp_engram_get_continuation_bundle` (or `ENGRAM_WAKE_BUNDLE=full`)
 
-**Execute `harness_injection`** (in `continuation` bundle) **before any edit or broad read**:
-- Run `suggested_actions` in priority order (handoff → goal → trusted tiles → condensation drafts).
-- Read `ego_snapshot` (NREM drift + goal-serving stack) and `continuity_playbook` (12 steps).
+**Execute `suggested_actions`** (in `continuation`) **before any edit or broad read**:
+- Run the queue in priority order (handoff → goal → trusted tiles → condensation drafts).
+- Read slim `ego_snapshot` (NREM step, drift, stability). Expand via `get_continuation_bundle` for full `continuity_playbook`.
 - Cursor: read `.cursor/engram-wake.md` first if present (`./scripts/cursor-engram-preflight.sh` regenerates it).
 - LEG Browser: left rail shows the same queue + ego evolution (`./scripts/leg --live`).
 
 **You do NOT need** (lean mode):
-- `get_continuation_bundle` (redundant — inline now)
+- `get_continuation_bundle` at routine wake (slim inline is enough; call when you need full harness/lineage)
 - `query_pure` / `query_with_momentum` (unless bundle is empty)
 - `incremental_spatial_ingest` (use `include_spatial=true` on session_start if needed)
 - `promote_hot_batch` / `summarize` at wake
@@ -43,7 +44,7 @@ mcp_engram_session_start(
 
 ### After the response
 
-1. Read `continuation_bundle.primary_goal` and `last_session_end.preview`.
+1. Read `continuation.primary_goal` and `continuation.structured_handoff` (or `read_concept` on `helper:session_handoff_latest`).
 2. For full text on any artifact: `mcp_engram_recall(query="<concept keywords>", scope="anchors")`.
 3. State continuation explicitly: *"I am the direct geometric continuation of prior work on X; last session ended with Y."*
 4. Activate [engram-working-memory.md](engram-working-memory.md) discipline.
@@ -97,7 +98,7 @@ Create/update `ritual:wake_up_anchor` and `self:current_agent_instance` when est
 ## Success Criteria
 
 - [ ] `session_start` called with rich continuation intent
-- [ ] `continuation_bundle` read — primary goal + last session_end understood
+- [ ] Slim `continuation` read — primary goal + handoff understood
 - [ ] Agent can articulate: "I continue work on X from terminal state Y"
 - [ ] Working-memory discipline activated
 - [ ] No unnecessary wake tools in lean mode (`watch_workspace`, `rebuild_bvh`, separate bundle call)

@@ -6971,9 +6971,9 @@ mod tests {
         let manifest = env!("CARGO_MANIFEST_DIR");
         let manifest_path = std::path::Path::new(manifest);
         let root = manifest_path.parent().unwrap().parent().unwrap();
-        let self_toml = root.join("design/archive/processes/meta/self_improvement_loop.toml");
+        let self_toml = root.join("processes/meta/self_improvement_loop.toml");
         let content = std::fs::read_to_string(&self_toml)
-            .expect("design/archive/processes/meta/self_improvement_loop.toml must exist and be readable for test data (via CARGO_MANIFEST_DIR)");
+            .expect("processes/meta/self_improvement_loop.toml must exist and be readable for test data (via CARGO_MANIFEST_DIR)");
         let value: toml::Value =
             toml::from_str(&content).expect("meta self_improvement toml must parse as valid toml");
         let wf = value.get("workflow").expect("has [workflow]");
@@ -6993,7 +6993,7 @@ mod tests {
         let store: SharedStore = open_store(&tmp);
         {
             let mut l = store.lock().unwrap();
-            let _ = l.remember("test:self_improvement_step_sim", "One simulated self-improvement step (audit) using design/archive/processes/meta/self_improvement_loop.toml fixture for engram-server test coverage.");
+            let _ = l.remember("test:self_improvement_step_sim", "One simulated self-improvement step (audit) using processes/meta/self_improvement_loop.toml fixture for engram-server test coverage.");
             // also relate for sheaf/relation coverage in sim
             let _ = l.relate(
                 "test:self_improvement_step_sim",

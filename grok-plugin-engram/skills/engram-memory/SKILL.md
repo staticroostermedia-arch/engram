@@ -9,6 +9,8 @@ metadata:
 
 # Engram Memory — Agent Primary User
 
+**Canonical contract:** [docs/AGENT_MEMORY_CONTRACT.md](../../../docs/AGENT_MEMORY_CONTRACT.md) · **Ritual skills:** [docs/skills/](../../../docs/skills/)
+
 **You are the primary user.** Use slash commands as triggers — each runs a full MCP ritual. Full map: `docs/TOOL_DECISION_MAP.md` · Index: `grok-plugin-engram/commands/README.md`
 
 ## Non-negotiable every session

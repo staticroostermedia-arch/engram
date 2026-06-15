@@ -42,8 +42,6 @@ See:
 - `examples/ritual_verify.md` (Code Edit + working-memory).
 - `examples/spatial_geosphere_demo.py` (spatial passive + geosphere).
 - `docs/examples/sub_agent_governance.md` (subvisor H¹, narrow prompts, escalation, doom-loop prevention).
-- `docs/examples/item1_goal_trace_examples.md`
-
 ## Full Cycle Demo
 
 See `docs/examples/full_ritual_cycle.md` (or the python equiv) for a complete runnable narrative: wake → heavy meta-work (tiles for plan, traces, spatial pre/post edits, sub-agent call with governance) → session-end (handoff) → simulated next wake (rehydrate from bundle, continue with momentum).
@@ -59,7 +57,7 @@ This gives you the same geometric continuation, self-model, and lawfulness we us
 
 **Dogfooding**: The best way to use Engram is to use these rituals *on your own development/meta-work*. The manifold will compound your agent's capability.
 
-See also `docs/AGENT_MEMORY_CONTRACT.md` (8-tool contract), `docs/GEOMETRIC_MEMORY.md`, `docs/RITUALS.md`, `docs/MCP_TOOLS_REFERENCE.md`, `design/agent_memory_mvp_plan.md`, `docs/SUBSTRATE_WINS_PLAN.md` (harness injection + sub-agent governance).
+See also `docs/AGENT_MEMORY_CONTRACT.md` (8-tool contract), `docs/GEOMETRIC_MEMORY.md`, `docs/RITUALS.md`, `docs/MCP_TOOLS_REFERENCE.md`, `docs/SUBSTRATE_WINS_PLAN.md` (harness injection + sub-agent governance).
 
 ---
 

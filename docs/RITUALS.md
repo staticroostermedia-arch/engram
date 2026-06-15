@@ -49,7 +49,7 @@ Narrow one-shot only (single action, mcp geometric first, Primary Objective + ne
 
 verify_manifold_integrity, verify_block_lawfulness, genesis, spatial_status, ki freshness. metric:wake_up_verification_<iso> + trend. overall_lawful + score.
 
-See docs/skills/, docs/SUBSTRATE_WINS_PLAN.md, 2026-06_Substrate_CS_Gap_Closure_Roadmap.md.
+See [docs/skills/](skills/), [SUBSTRATE_WINS_PLAN.md](SUBSTRATE_WINS_PLAN.md), [HARNESS_INJECTION.md](HARNESS_INJECTION.md).
 
 For external agents: follow rituals for lawful use of the substrate.
 

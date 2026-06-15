@@ -1,4 +1,4 @@
-# EngramGrok
+# Engram
 
 [![Build Status](https://github.com/staticroostermedia-arch/engram/actions/workflows/rust.yml/badge.svg)](https://github.com/staticroostermedia-arch/engram/actions)
 [![MCP](https://img.shields.io/badge/MCP-Native-blue)](https://github.com/modelcontextprotocol)
@@ -9,13 +9,13 @@
 
 **Persistent geometric memory for AI agents.**
 
-EngramGrok is a local, hardware-native memory substrate that gives AI agents coherent, long-term memory with structure-preserving compression, synthetic calculus over both words and numbers, and true continuity across cold shutdowns.
+Engram is a local, hardware-native memory substrate that gives AI agents coherent, long-term memory with structure-preserving compression, synthetic calculus over both words and numbers, and true continuity across cold shutdowns.
 
 Unlike vector databases or simple logs, Engram uses fixed-size holographic blocks, VSA operations, sheaf gluing, and categorical reasoning to maintain meaning and relationships even after heavy compression and long-running sessions.
 
 It is designed as a drop-in backend for any LLM (Grok, Claude, Llama, etc.) via the Model Context Protocol (MCP) and is fully open for anyone to build on.
 
-EngramGrok is particularly well-suited for:
+Engram is particularly well-suited for:
 - Long-running agentic systems
 - Games with persistent LLM characters
 - Personalized AI companions
@@ -125,7 +125,7 @@ flowchart LR
 
 ## What's new in v0.7.0-beta.1
 
-- **LEG Browser beta:** consciousness mirror UI — wake queue, ego evolution strip, continuity playbook, presentation stratum galaxy, live activity SSE. One command: `./scripts/leg --live`.
+- **LEG Browser beta:** agent memory mirror — wake queue, ego evolution strip, continuity playbook, presentation stratum galaxy, live activity SSE. One command: `./scripts/leg --live`.
 - **Presentation stratum:** agents wake into ~40–64 CRS-ranked nodes (goals/traces/tiles/process), not the full cold manifold.
 - **Harness continuity:** `ego_snapshot`, `continuity_playbook`, wake queue gate (`soft`/`hard`/`off`) + `mcp_engram_ack_wake_queue`.
 - **REST:** `/api/consciousness-surface`, enhanced `/api/context-window` for the viewer.
@@ -134,7 +134,7 @@ See [CHANGELOG.md](CHANGELOG.md). v0.6.0 brought .leg3 optimizations (tiered blo
 
 ## Categorical Linguistic Calculus
 
-EngramGrok now supports native **synthetic calculus over linguistic structures** — including mixed number + word operations — all inside the geometric memory manifold.
+Engram supports native **synthetic calculus over linguistic structures** — including mixed number + word operations — all inside the geometric memory manifold.
 
 Key capabilities:
 - Structure-preserving compression and decompression of language while preserving homotopy coherence (meaning up to coherent deformation).
@@ -191,7 +191,8 @@ Grok plugin slash commands: [grok-plugin-engram/commands/](grok-plugin-engram/co
 | Process sheaf + sub-agent governance | [processes/README.md](processes/README.md) |
 | Substrate wins roadmap | [docs/SUBSTRATE_WINS_PLAN.md](docs/SUBSTRATE_WINS_PLAN.md) |
 | Marketplace submission | [docs/MARKETPLACE_SUBMISSION.md](docs/MARKETPLACE_SUBMISSION.md) |
-| Philosophy | [MANIFESTO.md](MANIFESTO.md) |
+| Philosophy | [MANIFESTO.md](MANIFESTO.md) · [PHILOSOPHY.md](PHILOSOPHY.md) |
+| Contributor / operator depth | [docs/SUBSTRATE_WINS_PLAN.md](docs/SUBSTRATE_WINS_PLAN.md) · [docs/LONG_SLEEP_WAKEUP_PROTOCOL.md](docs/LONG_SLEEP_WAKEUP_PROTOCOL.md) |
 
 **Hardware:** CPU (default), CUDA, ROCm, Metal, WebGPU — see [docs/DEPLOYMENT_MODES.md](docs/DEPLOYMENT_MODES.md).
 

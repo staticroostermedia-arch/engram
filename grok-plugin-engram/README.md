@@ -1,5 +1,7 @@
 # Engram Geometric Memory — Grok Build Plugin
 
+**Ritual skills:** canonical source is `docs/skills/` in the repo root. Plugin copies under `grok-plugin-engram/skills/` should stay in sync at release time.
+
 **Not another vector database.** Local geometric memory with structured session handoff, CRS-gated blocks, and edit-scoped code context.
 
 **Primary user: the AI agent.** Slash commands map decision moments → MCP rituals. See [commands/README.md](commands/README.md).
@@ -30,7 +32,7 @@ Or use the installer script from repo root:
 ### Session boundary
 | Command | When |
 |---------|------|
-| `/engram-wake` | Start — continuation bundle |
+| `/engram-wake` | Start — slim continuation bundle (`session_start`) |
 | `/engram-session-end` | End — structured handoff |
 
 ### Work loop

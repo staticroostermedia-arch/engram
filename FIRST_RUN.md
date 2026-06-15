@@ -12,10 +12,10 @@
 ```bash
 git clone https://github.com/staticroostermedia-arch/engram.git
 cd engram
-cargo install --path crates/engram-server
+cargo build -p engram-server
 
-engram --version
-# engram-server 0.5.0
+target/debug/engram --version
+# engram 0.7.0-beta.1
 ```
 
 ---
@@ -55,7 +55,7 @@ In your AI agent, run:
 mcp_engram_session_start(intent="First run — verifying Engram MCP connection")
 ```
 
-Expected: inline JSON with `continuation_bundle`, `backend_readiness`, and `session_key`. Wake should complete in <2s even on large stores.
+Expected: JSON with `bundle_tier: "slim"`, `continuation` (primary goal + top 5 `suggested_actions`), `readiness`, and `session_key`. Wake should complete in under ~5s on large stores. Use `mcp_engram_get_continuation_bundle` when you need the full harness inline.
 
 If this fails, check `engram --version` and that the MCP server appears in your IDE's tool list.
 
