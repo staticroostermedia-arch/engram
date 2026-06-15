@@ -148,8 +148,25 @@ Implementation plan: **[SUBSTRATE_WINS_PLAN.md](SUBSTRATE_WINS_PLAN.md)** — Cu
 
 ---
 
+## JIT deformation (agents construct tool calls as context requires)
+
+Wake injection is **not** a fixed script. See **[DEFORMATION_PLAYBOOKS.md](DEFORMATION_PLAYBOOKS.md)** for the full spec.
+
+| Field | Purpose |
+|-------|---------|
+| `task_type` | `code_edit` \| `meta_evolution` \| `research` \| `recovery` \| `wake_only` |
+| `jit_deformation_framework` | Phase palettes — mandatory vs JIT tools; homotopy invariants |
+| `verified_processes` | Trusted tiles fronted at wake (`verified_sequence` step previews + `tool_hints`) |
+| `open_scars_wake` | Repulsion hints — read before repeating dead paths |
+| `jit` on `suggested_actions` | `construct_args_from_context: true` — adapt args, do not blind-replay |
+
+**RSI:** scar → repulsion; `remember_solution` + successful tile replay → crystallize; condensation → tile → next wake `verified_processes`; NREM → `ego.leg3`.
+
+---
+
 ## Related
 
+- [DEFORMATION_PLAYBOOKS.md](DEFORMATION_PLAYBOOKS.md) — JIT homotopy + verified tiles + RSI
 - [SUBSTRATE_WINS_PLAN.md](SUBSTRATE_WINS_PLAN.md) — phased PR stack
 - [RITUALS.md](RITUALS.md) — thought tiles mandatory for meta
 - [docs/skills/engram-thought-tiles.md](skills/engram-thought-tiles.md)

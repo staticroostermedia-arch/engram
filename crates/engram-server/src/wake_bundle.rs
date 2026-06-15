@@ -89,9 +89,27 @@ pub fn slim_continuation_bundle(full: &Value) -> Value {
 
     let structured_handoff = full.get("structured_handoff").cloned();
 
+    let task_type = harness
+        .get("task_type")
+        .cloned()
+        .unwrap_or(json!("wake_only"));
+    let jit_mandate = harness
+        .get("jit_deformation_framework")
+        .and_then(|j| j.get("mandate"))
+        .cloned()
+        .unwrap_or(Value::Null);
+    let verified_count = harness
+        .get("verified_processes")
+        .and_then(|v| v.as_array())
+        .map(|a| a.len())
+        .unwrap_or(0);
+
     json!({
         "bundle_tier": "slim",
         "primary_goal": full.get("primary_goal"),
+        "task_type": task_type,
+        "jit_mandate": jit_mandate,
+        "verified_process_count": verified_count,
         "suggested_actions": suggested,
         "trace_chain_head": trace_chain_head,
         "ego_snapshot": ego_slim,
@@ -100,7 +118,7 @@ pub fn slim_continuation_bundle(full: &Value) -> Value {
             "previews": previews,
         },
         "structured_handoff": structured_handoff,
-        "recall_hint": "Slim wake — call mcp_engram_get_continuation_bundle for full harness, lineage, and artifacts.",
+        "recall_hint": "Slim wake — call mcp_engram_get_continuation_bundle for full JIT framework, verified_processes, and scars.",
         "full_bundle_tool": "mcp_engram_get_continuation_bundle",
         "wake_queue_gate": harness.get("wake_queue_gate"),
     })

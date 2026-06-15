@@ -33,6 +33,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **`ENGRAM_WAKE_BUNDLE=slim` (default):** `session_start` returns slim continuation (top 5 actions, trace head, slim ego, stratum previews). Full bundle via `mcp_engram_get_continuation_bundle`.
 - **`session_end(minimal=true)`:** thin closure without compression ritual; auto thin handoff on MCP stdio disconnect if `session_end` skipped.
+- **JIT deformation framework:** `harness_injection.jit_deformation_framework`, `task_type`, `verified_processes`, `open_scars_wake` — agents construct MCP calls as context requires; docs: [docs/DEFORMATION_PLAYBOOKS.md](docs/DEFORMATION_PLAYBOOKS.md), process: `processes/harness/jit-deformation.toml`.
+- **Verified sequence tool hints:** `draft_tile_from_chain` infers `tool_hints` + `args_hints` from trace `spatial_context` and decision text for JIT tile replay at wake.
+- **MCP tool matrix harness:** `tools/test-harness/python/mcp_tool_matrix.py` — 70/70 tools smoke-tested (67 pass, 2 env-limited, 1 external dep).
+- **Social share asset:** `docs/images/engram-share-x.png` (1280×720) for X/GitHub social preview; README landing updates.
+
+### Fixed (post-beta.1)
+
+- **`force_ingest_path` single-file:** item1.5 spatial state block now mints on single-file ingest (was directory-only).
 
 ## [0.6.0] - 2026-06-12
 
@@ -79,7 +87,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **Public agent path:** README, AGENTS.md, FIRST_RUN.md, SKILLS.md, wake-up skill, `integrations/workflows/wake_up.md`, MCP configs — all lead with 8-tool lean contract (not mandatory `watch_workspace` at wake).
-- `docs/MCP_TOOLS_REFERENCE.md` — Essential / Power / Lean-avoid tiers (66 tools retained, not deleted).
+- `docs/MCP_TOOLS_REFERENCE.md` — Essential / Power / Lean-avoid tiers (70 tools retained, not deleted).
 - Public surface now explicitly represents current MVP uniques (geometric sheaf + rituals + subvisor + spatial + continuation + lawfulness + process sheaf) vs flat vector/RAG clones.
 - CI triggers expanded; build hygiene enforced (target/debug/engram preferred).
 

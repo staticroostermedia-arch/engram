@@ -4,9 +4,9 @@
 **Audience:** Any AI agent using the Engram MCP server  
 **Principle:** Lean by default, deep on demand. Eight tools cover wake → work → handoff on large stores (181k+ blocks) without ritual tax or RAM death.
 
-> **58 more tools exist** (66 total). Power tools (`update`, `query_with_momentum`, `search_by_relation`, `remember_solution`, `scar`, `thought_tile_create`, …) remain available. This contract is the **Layer 0 highway** — not the full map.
+> **62 more tools exist** (70 total). Power tools (`update`, `query_with_momentum`, `search_by_relation`, `remember_solution`, `scar`, `thought_tile_create`, …) remain available. This contract is the **Layer 0 highway** — not the full map.
 
-**Full decision map:** [TOOL_DECISION_MAP.md](TOOL_DECISION_MAP.md) — mermaid flows for all 66 tools, write path (`update` vs `remember`), read escalation, and Grok Build vs Cursor throttle.
+**Full decision map:** [TOOL_DECISION_MAP.md](TOOL_DECISION_MAP.md) — mermaid flows for all 70 tools, write path (`update` vs `remember`), read escalation, and Grok Build vs Cursor throttle. **JIT RSI:** [DEFORMATION_PLAYBOOKS.md](DEFORMATION_PLAYBOOKS.md).
 
 ---
 
@@ -300,7 +300,7 @@ mcp_engram_session_end(summary="<decisions, files, next steps>")
 - [docs/skills/engram-wake-up.md](skills/engram-wake-up.md) — 1-call wake protocol
 - [docs/skills/engram-working-memory.md](skills/engram-working-memory.md) — edit loop with `context_for_edit`
 - [docs/skills/engram-session-end.md](skills/engram-session-end.md) — handoff packet protocol
-- [docs/MCP_TOOLS_REFERENCE.md](MCP_TOOLS_REFERENCE.md) — all 66 tools (8 essential)
+- [docs/MCP_TOOLS_REFERENCE.md](MCP_TOOLS_REFERENCE.md) — all 70 tools (8 essential)
 - [docs/HARNESS_INJECTION.md](HARNESS_INJECTION.md) — wake queue, ego snapshot, continuity playbook
 
 ---

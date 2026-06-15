@@ -11,6 +11,8 @@
 
 Engram is a local, hardware-native memory substrate that gives AI agents coherent, long-term memory with structure-preserving compression, synthetic calculus over both words and numbers, and true continuity across cold shutdowns.
 
+> **Share on X:** attach [docs/images/engram-share-x.png](docs/images/engram-share-x.png) (1280×720) — use the LEG Browser shot below for in-repo demo depth.
+
 Unlike vector databases or simple logs, Engram uses fixed-size holographic blocks, VSA operations, sheaf gluing, and categorical reasoning to maintain meaning and relationships even after heavy compression and long-running sessions.
 
 It is designed as a drop-in backend for any LLM (Grok, Claude, Llama, etc.) via the Model Context Protocol (MCP) and is fully open for anyone to build on.
@@ -25,6 +27,7 @@ Engram is particularly well-suited for:
 |------------|-----|
 | **Grok Build / xAI reviewers** | [docs/GROK_BUILD_MEMORY.md](docs/GROK_BUILD_MEMORY.md) |
 | **Any agent (lean contract)** | [docs/AGENT_MEMORY_CONTRACT.md](docs/AGENT_MEMORY_CONTRACT.md) + [FIRST_RUN.md](FIRST_RUN.md) |
+| **JIT deformation / RSI** | [docs/DEFORMATION_PLAYBOOKS.md](docs/DEFORMATION_PLAYBOOKS.md) |
 | **Ritual skills** | [SKILLS.md](SKILLS.md) → `docs/skills/` |
 | **Deep operators** | [HOW_WE_ACTUALLY_USE_THIS_IN_2026.md](HOW_WE_ACTUALLY_USE_THIS_IN_2026.md) |
 | **Substrate builders (BYOP)** | [AGENT_INTEGRATION_GUIDE.md](AGENT_INTEGRATION_GUIDE.md) |
@@ -38,7 +41,7 @@ Engram is particularly well-suited for:
 | | Flat vector / markdown | Engram |
 |--|------------------------|--------|
 | Storage | append-log / chunks | 256KB geometric blocks (q/p/CRS/Merkle) |
-| Wake | cold start | `session_start` + harness injection + handoff |
+| Wake | cold start | `session_start` + JIT harness + verified tile playbooks |
 | Integrity | none | `verify_*`, scars, CRS ≥ 0.74 |
 | Code context | RAG chunks | `context_for_edit` + spatial AABB |
 | Agent discipline | hope | rituals + subvisor H¹ + process sheaf |
@@ -126,8 +129,10 @@ flowchart LR
 ## What's new in v0.7.0-beta.1
 
 - **LEG Browser beta:** agent memory mirror — wake queue, ego evolution strip, continuity playbook, presentation stratum galaxy, live activity SSE. One command: `./scripts/leg --live`.
+- **JIT deformation:** task-type playbooks + `verified_processes` at wake — agents construct tool calls as context requires; scars repulse, tiles condense arcs ([DEFORMATION_PLAYBOOKS.md](docs/DEFORMATION_PLAYBOOKS.md)).
 - **Presentation stratum:** agents wake into ~40–64 CRS-ranked nodes (goals/traces/tiles/process), not the full cold manifold.
 - **Harness continuity:** `ego_snapshot`, `continuity_playbook`, wake queue gate (`soft`/`hard`/`off`) + `mcp_engram_ack_wake_queue`.
+- **70 MCP tools** smoke-tested (67 pass in isolated harness); lean default remains **8 essential**.
 - **REST:** `/api/consciousness-surface`, enhanced `/api/context-window` for the viewer.
 
 See [CHANGELOG.md](CHANGELOG.md). v0.6.0 brought .leg3 optimizations (tiered blocks, hybrid wire, SOA+arena, homo+zk transforms).
@@ -175,7 +180,7 @@ Build against `target/debug/engram` during development.
 
 ## MCP tools
 
-**8 essential** for daily work — full map: [docs/TOOL_DECISION_MAP.md](docs/TOOL_DECISION_MAP.md). Categorized reference: [docs/MCP_TOOLS_REFERENCE.md](docs/MCP_TOOLS_REFERENCE.md).
+**8 essential** for daily work — **70 registered** (66 `mcp_engram_*` + 4 linguistic); full map: [docs/TOOL_DECISION_MAP.md](docs/TOOL_DECISION_MAP.md). Categorized reference: [docs/MCP_TOOLS_REFERENCE.md](docs/MCP_TOOLS_REFERENCE.md). Harness matrix: `tools/test-harness/python/mcp_tool_matrix.py`.
 
 Grok plugin slash commands: [grok-plugin-engram/commands/](grok-plugin-engram/commands/).
 

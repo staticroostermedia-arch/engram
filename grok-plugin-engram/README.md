@@ -86,7 +86,8 @@ Run `/engram-wake` first in every session.
 **Skills:** `engram-memory` (index) · `engram-wake-up` · `engram-working-memory` · `engram-session-end`
 
 - [docs/AGENT_MEMORY_CONTRACT.md](../docs/AGENT_MEMORY_CONTRACT.md) — 8-tool highway
-- [docs/TOOL_DECISION_MAP.md](../docs/TOOL_DECISION_MAP.md) — all 66 tools
+- [docs/TOOL_DECISION_MAP.md](../docs/TOOL_DECISION_MAP.md) — all 70 tools
+- [docs/DEFORMATION_PLAYBOOKS.md](../docs/DEFORMATION_PLAYBOOKS.md) — JIT RSI
 - [commands/README.md](commands/README.md) — agent moment → command map
 
 **Tools must be called** — documentation alone does not persist memory.

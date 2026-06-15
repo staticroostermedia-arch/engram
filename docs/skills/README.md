@@ -28,7 +28,7 @@ These are the operational skills and rituals that power the Engram geometric mem
 - Spatial (Item 1.5): **lean:** `context_for_edit(path)`; **deep:** optional `watch_workspace` once per project.
 - Lawfulness: `mcp_engram_verify_manifold_integrity`, block lawfulness.
 
-See the full [docs/RITUALS.md](../RITUALS.md) for overview, [docs/MCP_TOOLS_REFERENCE.md](../MCP_TOOLS_REFERENCE.md) for all 66 tools (8 essential), and [docs/GEOMETRIC_MEMORY.md](../GEOMETRIC_MEMORY.md) for the non-flat model.
+See the full [docs/RITUALS.md](../RITUALS.md) for overview, [docs/MCP_TOOLS_REFERENCE.md](../MCP_TOOLS_REFERENCE.md) for all 70 tools (8 essential), [docs/DEFORMATION_PLAYBOOKS.md](../DEFORMATION_PLAYBOOKS.md) for JIT RSI, and [docs/GEOMETRIC_MEMORY.md](../GEOMETRIC_MEMORY.md) for the non-flat model.
 
 **Dogfooding note**: Use these rituals on your own task work — the substrate records traces and handoff for the next session.
 

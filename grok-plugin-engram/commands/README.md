@@ -2,7 +2,7 @@
 
 **You (the AI) are the primary user.** Each command maps to one **decision moment** — not one MCP tool. Run the full ritual inside each command file.
 
-**Map of all 66 tools:** [docs/TOOL_DECISION_MAP.md](../../docs/TOOL_DECISION_MAP.md)  
+**Map of all 70 tools:** [docs/TOOL_DECISION_MAP.md](../../docs/TOOL_DECISION_MAP.md)  
 **Harness injection (auto context):** [docs/HARNESS_INJECTION.md](../../docs/HARNESS_INJECTION.md)
 
 At wake: execute `suggested_actions` → `mcp_engram_ack_wake_queue` → then `context_for_edit`. Read `ego_snapshot` + `continuity_playbook`. Gate: `/engram-ack-wake` (soft=warn, hard=block).

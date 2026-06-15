@@ -59,12 +59,283 @@ pub fn walk_trace_chain(store: &StoreHandle, head: &str, max_depth: usize) -> Ve
 }
 
 fn push_action(actions: &mut Vec<Value>, tool: &str, args: Value, reason: &str, priority: u64) {
-    actions.push(json!({
+    push_jit_action(actions, tool, args, reason, priority, false, None);
+}
+
+fn push_jit_action(
+    actions: &mut Vec<Value>,
+    tool: &str,
+    args: Value,
+    reason: &str,
+    priority: u64,
+    jit_construct: bool,
+    when: Option<&str>,
+) {
+    let mut entry = json!({
         "tool": tool,
         "args": args,
         "reason": reason,
         "priority": priority,
-    }));
+        "jit": jit_construct,
+    });
+    if jit_construct {
+        entry["construct_args_from_context"] = json!(true);
+    }
+    if let Some(w) = when {
+        entry["when"] = json!(w);
+    }
+    actions.push(entry);
+}
+
+/// Infer agent task type from handoff + intent (drives JIT deformation playbook).
+pub fn infer_task_type(
+    handoff: Option<&Value>,
+    session_intent: Option<&str>,
+    has_condensation: bool,
+    open_scar_count: usize,
+) -> &'static str {
+    if open_scar_count > 0 {
+        return "recovery";
+    }
+    if has_condensation {
+        return "meta_evolution";
+    }
+    if let Some(intent) = session_intent {
+        let low = intent.to_ascii_lowercase();
+        if low.contains("meta")
+            || low.contains("evolution")
+            || low.contains("substrate")
+            || low.contains("design:")
+        {
+            return "meta_evolution";
+        }
+        if low.contains("research") || low.contains("scout") || low.contains("investigate") {
+            return "research";
+        }
+    }
+    if let Some(packet) = handoff {
+        if packet
+            .get("files_touched")
+            .and_then(|v| v.as_array())
+            .is_some_and(|a| !a.is_empty())
+        {
+            return "code_edit";
+        }
+    }
+    "wake_only"
+}
+
+/// Recent scar concepts for wake-time repulsion hints.
+pub fn collect_open_scars(store: &mut StoreHandle, limit: usize) -> Vec<Value> {
+    store
+        .recall_scoped("scar dead-end ruled-out", limit.max(4), Some("anchors"))
+        .0
+        .into_iter()
+        .filter(|m| m.concept.starts_with("scar:"))
+        .map(|m| {
+            json!({
+                "concept": m.concept,
+                "crs": m.crs,
+                "preview": m.provlog.chars().take(140).collect::<String>(),
+            })
+        })
+        .collect()
+}
+
+/// Parse verified_sequence_v0 JSON from tile ProvLog body.
+pub fn parse_verified_sequence_payload(body: &str) -> Option<Value> {
+    let start = body.find('{')?;
+    let end = body.rfind('}')?;
+    let v: Value = serde_json::from_str(&body[start..=end]).ok()?;
+    if v.get("version").and_then(|x| x.as_str()) == Some("verified_sequence_v0") {
+        Some(v)
+    } else {
+        None
+    }
+}
+
+/// Front verified processes from trusted tiles — JIT replay hints, not rigid scripts.
+pub fn build_verified_processes(store: &mut StoreHandle, primary_goal: Option<&str>) -> Vec<Value> {
+    let mut out = Vec::new();
+    for tile in build_trusted_tiles(store, primary_goal) {
+        let concept = tile.get("concept").and_then(|v| v.as_str()).unwrap_or("");
+        let tile_type = tile.get("tile_type").and_then(|v| v.as_str()).unwrap_or("");
+        if concept.is_empty() {
+            continue;
+        }
+        let body = store
+            .fetch_block_high_priority(concept)
+            .map(|b| storage::read_provlog(&b))
+            .unwrap_or_default();
+
+        if tile_type == "verified_sequence" {
+            if let Some(payload) = parse_verified_sequence_payload(&body) {
+                let steps: Vec<Value> = payload
+                    .get("steps")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .take(8)
+                            .map(|s| {
+                                json!({
+                                    "order": s.get("order"),
+                                    "decision": s.get("decision"),
+                                    "why": s.get("why"),
+                                    "tool_hints": s.get("tool_hints"),
+                                    "args_hints": s.get("args_hints"),
+                                    "spatial_context": s.get("spatial_context"),
+                                    "goal_context": s.get("goal_context"),
+                                    "trace_id": s.get("trace_id"),
+                                })
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                out.push(json!({
+                    "tile": concept,
+                    "tile_type": "verified_sequence",
+                    "crs": tile.get("crs"),
+                    "source": tile.get("source"),
+                    "steps_preview": steps,
+                    "jit_replay": "Read tile payload; for each step use tool_hints as suggestions — construct MCP args from current file/goal/context; quick_trace outcomes with prev chain",
+                    "on_full_success": "mcp_engram_remember_solution",
+                    "on_repeat_failure": "mcp_engram_scar",
+                    "on_arc_complete": "mcp_engram_thought_tile_write_result",
+                    "process_ref": "process:engram.harness.jit-deformation",
+                }));
+            }
+        } else if matches!(
+            tile_type,
+            "state_machine" | "formal_spec" | "research_offload"
+        ) {
+            out.push(json!({
+                "tile": concept,
+                "tile_type": tile_type,
+                "crs": tile.get("crs"),
+                "source": tile.get("source"),
+                "jit_replay": "read_concept(tile) → follow payload branches; adapt to current context; trace forks",
+                "on_repeat_failure": "mcp_engram_scar",
+                "process_ref": "process:engram.harness.jit-deformation",
+            }));
+        }
+    }
+    out.truncate(4);
+    out
+}
+
+/// Task-type deformation playbooks — phases + JIT tool palette (agent constructs calls).
+pub fn build_jit_deformation_framework(task_type: &str, primary_goal: Option<&str>) -> Value {
+    let goal = primary_goal.unwrap_or("goal:*");
+    let phases = match task_type {
+        "code_edit" => json!([
+            {
+                "phase": "situated_recon",
+                "when": "before first edit on a file",
+                "mandatory": ["mcp_engram_context_for_edit"],
+                "jit_palette": ["mcp_engram_recall_in_file", "mcp_engram_read_concept"],
+                "construct": "path=absolute file; read traces_at_locus + open_scars + edit_arc from atlas"
+            },
+            {
+                "phase": "fork",
+                "when": "every design choice",
+                "mandatory": ["mcp_engram_quick_trace"],
+                "jit_palette": ["mcp_engram_record_reasoning_trace"],
+                "construct": format!("prev=trace_chain.head; spatial_context=file:line; goal_context={goal}")
+            },
+            {
+                "phase": "deform",
+                "when": "after substantive change",
+                "mandatory": ["mcp_engram_update"],
+                "jit_palette": ["mcp_engram_verify_block_lawfulness"],
+                "construct": "update {stem}__fn__*__arc with delta narrative — homotopy drift, not forget+remember"
+            }
+        ]),
+        "meta_evolution" => json!([
+            {
+                "phase": "rehydrate_arc",
+                "when": "wake on meta/design work",
+                "mandatory": ["mcp_engram_read_concept"],
+                "jit_palette": ["mcp_engram_query_with_momentum", "mcp_engram_search_by_relation"],
+                "construct": "recall anchors for design:/progress: arcs; read trusted verified_sequence tiles"
+            },
+            {
+                "phase": "condense",
+                "when": "condensation_hints non-empty OR ≥6 traces without tile",
+                "mandatory": ["mcp_engram_thought_tile_draft_from_chain"],
+                "jit_palette": ["mcp_engram_thought_tile_create"],
+                "construct": "verified_sequence_v0 from trace chain; link spatial_references"
+            },
+            {
+                "phase": "evolve",
+                "when": "friction or repetition detected",
+                "mandatory": [],
+                "jit_palette": ["mcp_engram_scar", "mcp_engram_process_metrics", "mcp_engram_remember_solution"],
+                "construct": "scar dead-ends; crystallize verified fixes; metrics on process:engram.meta.agent-evolution"
+            }
+        ]),
+        "research" => json!([
+            {
+                "phase": "ground",
+                "when": "hypothesis needs external evidence",
+                "mandatory": [],
+                "jit_palette": ["mcp_engram_scout", "mcp_engram_recall", "mcp_engram_remember"],
+                "construct": "scout when daemon up; else recall + remember findings; relate to goal"
+            },
+            {
+                "phase": "condense",
+                "when": "research arc closes",
+                "mandatory": [],
+                "jit_palette": ["mcp_engram_thought_tile_create"],
+                "construct": "research_offload tile with spatial_references"
+            }
+        ]),
+        "recovery" => json!([
+            {
+                "phase": "repulsion",
+                "when": "open_scars present",
+                "mandatory": ["mcp_engram_read_concept"],
+                "jit_palette": ["mcp_engram_visualize"],
+                "construct": "read scar:* before repeating approach; visualize relation neighborhood"
+            },
+            {
+                "phase": "verify",
+                "when": "attempting previously failed path",
+                "mandatory": ["mcp_engram_quick_trace"],
+                "jit_palette": ["mcp_engram_verify_behavior", "mcp_engram_scar"],
+                "construct": "trace falsifiability; scar immediately on second failure"
+            }
+        ]),
+        _ => json!([
+            {
+                "phase": "wake",
+                "when": "session_start",
+                "mandatory": ["mcp_engram_read_concept"],
+                "jit_palette": ["mcp_engram_recall", "mcp_engram_get_backend_readiness"],
+                "construct": "handoff → goal recall → trace head; construct remaining calls as context unfolds"
+            }
+        ]),
+    };
+
+    json!({
+        "jit_mode": true,
+        "mandate": "suggested_actions and verified_processes are hints — construct MCP tool calls JIT as context requires; do not blind-replay args from prior sessions",
+        "task_type": task_type,
+        "primary_goal": goal,
+        "phases": phases,
+        "rsi_evolution": {
+            "scar_on": ["repeated dead-end", "doom loop", "skipped session_end", "forget+remember instead of update"],
+            "crystallize_on": ["verified fix", "successful verified_sequence replay"],
+            "condense_on": [">=6 goal traces without linked tile"],
+            "identity_surface": "ego_snapshot + NREM → ego.leg3",
+            "process_ref": "process:engram.meta.agent-evolution"
+        },
+        "homotopy_invariants": [
+            "update preferred over forget+remember",
+            "CRS>=0.74 for grounded work",
+            "p-momentum preserved on update",
+            "chain quick_trace via prev"
+        ]
+    })
 }
 
 /// Trusted tiles suitable as JIT playbooks (high CRS, linked to goal or handoff).
@@ -208,6 +479,22 @@ pub fn build_suggested_actions(
 ) -> Vec<Value> {
     let mut actions = Vec::new();
     let mut primary_goal: Option<String> = None;
+    let mut handoff_packet: Option<Value> = None;
+
+    for scar in collect_open_scars(store, 3) {
+        if let Some(concept) = scar.get("concept").and_then(|v| v.as_str()) {
+            push_jit_action(
+                &mut actions,
+                "mcp_engram_read_concept",
+                json!({ "concept": concept }),
+                "open scar — repulsion before repeating dead approach (RSI)",
+                0,
+                false,
+                Some("open_scars non-empty"),
+            );
+            break;
+        }
+    }
 
     if store
         .fetch_block_high_priority(SESSION_HANDOFF_LATEST)
@@ -225,6 +512,7 @@ pub fn build_suggested_actions(
     if let Some(block) = store.fetch_block_high_priority(SESSION_HANDOFF_LATEST) {
         let text = storage::read_provlog(&block);
         if let Some(packet) = parse_handoff_packet_json(&text) {
+            handoff_packet = Some(packet.clone());
             if let Some(goal) = packet.get("primary_goal").and_then(|v| v.as_str()) {
                 primary_goal = Some(goal.to_string());
                 push_action(
@@ -256,7 +544,7 @@ pub fn build_suggested_actions(
                     "continue reasoning trace chain",
                     4,
                 );
-                push_action(
+                push_jit_action(
                     &mut actions,
                     "mcp_engram_quick_trace",
                     json!({
@@ -265,8 +553,10 @@ pub fn build_suggested_actions(
                         "prev": head,
                         "goal_context": primary_goal,
                     }),
-                    "chain quick_trace from last session head",
+                    "chain quick_trace from last session head — construct decision/why JIT",
                     5,
+                    true,
+                    Some("continuing trace chain"),
                 );
             }
         }
@@ -326,25 +616,28 @@ pub fn build_suggested_actions(
         }
     }
 
-    for tile in build_trusted_tiles(store, primary_goal.as_deref()) {
-        if let Some(concept) = tile.get("concept").and_then(|v| v.as_str()) {
-            let tile_type = tile.get("tile_type").and_then(|v| v.as_str()).unwrap_or("");
-            push_action(
+    for proc in build_verified_processes(store, primary_goal.as_deref()) {
+        if let Some(concept) = proc.get("tile").and_then(|v| v.as_str()) {
+            let tile_type = proc.get("tile_type").and_then(|v| v.as_str()).unwrap_or("");
+            push_jit_action(
                 &mut actions,
                 "mcp_engram_read_concept",
                 json!({ "concept": concept }),
-                tile.get("reason")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("trusted tile"),
-                20,
+                "trusted JIT playbook — read payload then construct tool calls per step",
+                18,
+                true,
+                Some("verified_process fronted at wake"),
             );
             if tile_type == "verified_sequence" {
                 actions.push(json!({
-                    "tool": "mcp_engram_read_concept",
-                    "args": { "concept": concept },
-                    "reason": "execute verified_sequence playbook — run steps mechanically",
-                    "priority": 19,
-                    "execute_verified_sequence": true,
+                    "tool": "(jit_replay)",
+                    "args": { "tile": concept, "steps_preview": proc.get("steps_preview") },
+                    "reason": proc.get("jit_replay").and_then(|v| v.as_str()).unwrap_or("JIT verified_sequence replay"),
+                    "priority": 17,
+                    "jit": true,
+                    "verified_sequence": true,
+                    "on_success": proc.get("on_full_success"),
+                    "on_failure": proc.get("on_repeat_failure"),
                 }));
             }
         }
@@ -354,8 +647,28 @@ pub fn build_suggested_actions(
         actions.push(hint);
     }
 
+    let has_condensation = !build_condensation_hints(store, primary_goal.as_deref()).is_empty();
+    let scar_n = collect_open_scars(store, 1).len();
+    let task_type = infer_task_type(
+        handoff_packet.as_ref(),
+        session_intent,
+        has_condensation,
+        scar_n,
+    );
+    if task_type == "meta_evolution" {
+        push_jit_action(
+            &mut actions,
+            "mcp_engram_thought_tile_draft_from_chain",
+            json!({ "goal_context": primary_goal.clone().unwrap_or_default() }),
+            "meta arc — draft verified_sequence from trace chain before minting tile",
+            6,
+            true,
+            Some("meta_evolution task_type"),
+        );
+    }
+
     actions.sort_by_key(|a| a.get("priority").and_then(|p| p.as_u64()).unwrap_or(99));
-    actions.truncate(14);
+    actions.truncate(16);
     actions
 }
 
@@ -536,15 +849,33 @@ pub fn build_harness_bundle(store: &mut StoreHandle, session_intent: Option<&str
         session_intent,
     );
 
+    let condensation_hints = build_condensation_hints(store, primary_goal.as_deref());
+    let open_scars_wake = collect_open_scars(store, 5);
+    let handoff_for_task = store
+        .fetch_block_high_priority(SESSION_HANDOFF_LATEST)
+        .and_then(|b| parse_handoff_packet_json(&storage::read_provlog(&b)));
+    let task_type = infer_task_type(
+        handoff_for_task.as_ref(),
+        session_intent,
+        !condensation_hints.is_empty(),
+        open_scars_wake.len(),
+    );
+    let jit_framework = build_jit_deformation_framework(task_type, primary_goal.as_deref());
+    let verified_processes = build_verified_processes(store, primary_goal.as_deref());
+
     json!({
         "suggested_actions": build_suggested_actions(store, session_intent),
         "trusted_tiles": build_trusted_tiles(store, primary_goal.as_deref()),
+        "verified_processes": verified_processes,
+        "jit_deformation_framework": jit_framework,
+        "task_type": task_type,
+        "open_scars_wake": open_scars_wake,
         "trace_chain": {
             "head": trace_chain_head,
             "chain": chain,
             "hint": "Chain quick_trace via prev field; condense long chains to thought_tile",
         },
-        "condensation_hints": build_condensation_hints(store, primary_goal.as_deref()),
+        "condensation_hints": condensation_hints,
         "ego_snapshot": ego_snapshot,
         "continuity_playbook": continuity_playbook,
         "presentation_stratum": presentation_stratum,
@@ -554,7 +885,8 @@ pub fn build_harness_bundle(store: &mut StoreHandle, session_intent: Option<&str
             "at_persist": "recall → update (>0.85) or remember (new)",
             "at_dead_end": "mcp_engram_scar",
             "at_verified_fix": "mcp_engram_remember_solution",
-            "pipeline": "traces accumulate → condensation_hint → tile (JIT playbook) → suggested_actions at wake",
+            "jit_construct": "suggested_actions + verified_processes are hints — adapt args to current file/goal/context",
+            "pipeline": "traces → scar/repulse → condensation → verified_sequence tile → JIT wake front → ego.leg3",
             "queue_before_edits": "MANDATORY — execute suggested_actions before context_for_edit or broad reads",
         },
     })
@@ -624,8 +956,10 @@ pub fn build_file_injection(store: &mut StoreHandle, file_path: &str, stem: &str
         "files_from_handoff": files_from_handoff,
         "open_scars": open_scars,
         "suggested_actions": file_actions,
+        "jit_construct": "Per-file actions are hints — construct quick_trace/update args from atlas traces_at_locus and current edit",
         "at_edit_mandatory": "quick_trace(spatial_context=file:line) then update(__arc) after substantive change",
         "code_atlas": "structure block = current AST; __arc block = evolving edit narrative (p-momentum)",
+        "on_repeat_failure": "mcp_engram_scar immediately — RSI repulsion",
     })
 }
 
@@ -777,5 +1111,45 @@ mod tests {
         assert_eq!(ego_stability_label(0.02), "converging");
         assert_eq!(ego_stability_label(0.10), "drifting");
         assert_eq!(ego_stability_label(0.20), "volatile");
+    }
+
+    #[test]
+    fn test_infer_task_type_code_edit() {
+        let handoff = json!({ "files_touched": ["/tmp/a.rs"] });
+        assert_eq!(infer_task_type(Some(&handoff), None, false, 0), "code_edit");
+    }
+
+    #[test]
+    fn test_infer_task_type_recovery_scars() {
+        assert_eq!(infer_task_type(None, None, false, 2), "recovery");
+    }
+
+    #[test]
+    fn test_infer_task_type_meta_from_intent() {
+        assert_eq!(
+            infer_task_type(None, Some("substrate meta evolution"), false, 0),
+            "meta_evolution"
+        );
+    }
+
+    #[test]
+    fn test_jit_framework_has_phases() {
+        let fw = build_jit_deformation_framework("code_edit", Some("goal:test"));
+        assert_eq!(fw.get("jit_mode").and_then(|v| v.as_bool()), Some(true));
+        assert!(fw
+            .get("phases")
+            .and_then(|v| v.as_array())
+            .is_some_and(|a| !a.is_empty()));
+    }
+
+    #[test]
+    fn test_parse_verified_sequence_payload() {
+        let body = r#"Thought Tile
+**tile_type:** verified_sequence
+
+{"version":"verified_sequence_v0","steps":[{"order":1,"decision":"d","why":"w"}]}
+"#;
+        let p = parse_verified_sequence_payload(body).expect("parse");
+        assert_eq!(p["version"], "verified_sequence_v0");
     }
 }

@@ -24,7 +24,18 @@
           "why": { "type": "string", "minLength": 1 },
           "tool_hints": {
             "type": "array",
-            "items": { "type": "string" }
+            "items": { "type": "string" },
+            "description": "JIT MCP tool suggestions inferred from trace spatial_context + decision semantics"
+          },
+          "spatial_context": {
+            "type": "string",
+            "description": "Copied from source trace (e.g. store.rs:706) — agent resolves absolute path at replay"
+          },
+          "goal_context": { "type": "string" },
+          "args_hints": {
+            "type": "object",
+            "description": "Per-tool arg templates keyed by MCP tool name (construct absolute paths at replay)",
+            "additionalProperties": { "type": "object" }
           },
           "alternatives": { "type": "string" },
           "falsifiability": { "type": "string" },
