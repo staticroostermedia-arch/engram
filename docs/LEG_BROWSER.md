@@ -17,7 +17,7 @@ From the Engram repo root:
 
 Open **http://127.0.0.1:8765** (auto-opens on most systems).
 
-![LEG Browser beta — live mode](../images/leg-browser-beta-live.png)
+![LEG Browser beta — live mode](images/leg-browser-beta-live.png)
 
 **Safe serve restart** (does not kill your IDE/TUI MCP process):
 

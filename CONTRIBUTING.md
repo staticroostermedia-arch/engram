@@ -98,4 +98,19 @@ Contributions to the daemon must not block any of these loops. Use `tokio::spawn
 
 ---
 
+## Contributor / operator docs (not in README hero)
+
+These are for substrate builders and long-running operator setups:
+
+| Doc | Purpose |
+|-----|---------|
+| [docs/SUBSTRATE_WINS_PLAN.md](docs/SUBSTRATE_WINS_PLAN.md) | Harness injection + learning loop roadmap |
+| [docs/LONG_SLEEP_WAKEUP_PROTOCOL.md](docs/LONG_SLEEP_WAKEUP_PROTOCOL.md) | Cold-boot / long-sleep wake |
+| [docs/AGENTIC_FIRST_LONG_SLEEP_SUBSTRATE.md](docs/AGENTIC_FIRST_LONG_SLEEP_SUBSTRATE.md) | Agentic-first substrate notes |
+| [docs/long_sleep_verification_suite_design.md](docs/long_sleep_verification_suite_design.md) | Verification suite design |
+| [docs/real_usage_testing_guide.md](docs/real_usage_testing_guide.md) | Real-usage testing |
+| [processes/meta/](processes/meta/) | Advanced `/loop` workflow playbooks (not sheaf-loaded) |
+
+---
+
 *Engram is developed by Aric Goodman and Static Rooster Media. Patent Pending US19/372,256. Licensed under AGPL-3.0-only.*

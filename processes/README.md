@@ -36,9 +36,11 @@ These files document **how to run** a multi-step arc (wake → execute → trace
 
 See [docs/examples/sub_agent_governance.md](../docs/examples/sub_agent_governance.md) and [docs/SUBSTRATE_WINS_PLAN.md](../docs/SUBSTRATE_WINS_PLAN.md) WS-5.
 
-## Archived (not loaded)
+## Meta workflows (not sheaf-loaded)
 
-Speculative meta loops and one-off integrations live in [`design/archive/`](../design/archive/) — not scanned at `session_start`.
+| Location | Purpose |
+|----------|---------|
+| `meta/` | Advanced operator playbooks for `/loop` scheduling (consciousness loop, self-improvement, NREM consolidation). **Not** scanned by `load_process_sheaf` — human/agent orchestration specs with `[workflow]` sections. See `grok-plugin-engram/commands/engram-loop.md`. |
 
 ## Subvisor TOMLs
 

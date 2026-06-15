@@ -2,8 +2,7 @@
 
 **Plugin id:** `engram` (or `engram-geometric` for disambiguation)  
 **Repo subdirectory:** `grok-plugin-engram/` (self-contained plugin bundle with .mcp.json + plugin.json)  
-**Current status:** v0.5.0 tag on polished state; remote registration via xai-org/plugin-marketplace (Option A).  
-**Plan:** [design/GROK_MARKETPLACE_EXCELLENCE_PLAN.md](../design/GROK_MARKETPLACE_EXCELLENCE_PLAN.md)
+**Current status:** `v0.7.0-beta.1` — LEG Browser beta, slim wake bundle, harness continuity. Remote registration via xai-org/plugin-marketplace (Option A).
 
 ---
 
@@ -12,8 +11,8 @@
 - [ ] `grok plugin validate grok-plugin-engram/` passes
 - [ ] `./scripts/engram-mcp-health.sh` → OK
 - [ ] `agent-memory` harness green locally and in CI
-- [ ] Git tag pushed (e.g. `v0.5.1-plugin`)
-- [ ] Release asset uploaded (`engram-v0.5.1-plugin-linux-x86_64.tar.gz`)
+- [ ] Git tag pushed (e.g. `v0.7.0-beta.1`)
+- [ ] Release asset uploaded (`engram-v0.7.0-beta.1-linux-x86_64.tar.gz`)
 - [ ] Demo doc tested: [examples/marketplace_demo.md](examples/marketplace_demo.md)
 
 ---
@@ -25,26 +24,24 @@ Fork https://github.com/xai-org/plugin-marketplace and add to `.grok-plugin/mark
 ```json
 {
   "name": "engram",
-  "description": "Persistent geometric memory substrate with categorical linguistic calculus and mixed number/word reasoning for AI agents. Local, one-call wake (session_start + harness injection), spatial code context (context_for_edit), structured session handoff. 8-tool lean contract. Not a vector DB or flat RAG.",
+  "description": "Persistent geometric memory substrate for AI agents. Local, one-call slim wake (session_start + harness injection), spatial code context (context_for_edit), structured session handoff. 8-tool lean contract. LEG Browser beta for human review. Not a vector DB or flat RAG.",
   "category": "development",
   "source": {
     "source": "url",
     "url": "https://github.com/staticroostermedia-arch/engram",
-    "sha": "eb1732fa05d9efefb26f6aeb3c842e26c866cacf"
+    "sha": "<pin-commit-on-release-tag>"
   },
   "homepage": "https://github.com/staticroostermedia-arch/engram",
-  "keywords": ["memory", "mcp", "agent", "geometric", "calculus", "geometric-memory", "session-handoff"],
-  "version": "0.5.0",
+  "keywords": ["memory", "mcp", "agent", "geometric", "geometric-memory", "session-handoff", "leg-browser"],
+  "version": "0.7.0-beta.1",
   "author": "staticroostermedia-arch"
 }
 ```
 
-(Note: matches the real .grok-plugin/marketplace.json format and the v0.5.0 tag target commit. Use this exact sha for the initial remote registration.)
-
 Pin SHA:
 
 ```bash
-git ls-remote https://github.com/staticroostermedia-arch/engram.git HEAD
+git ls-remote https://github.com/staticroostermedia-arch/engram.git refs/tags/v0.7.0-beta.1
 # Use the commit on your release tag, not floating HEAD
 ```
 
@@ -59,8 +56,8 @@ python3 scripts/validate-catalog.py
 
 ## PR steps
 
-1. Merge Engram marketplace work to `master` on your repo
-2. Tag: `git tag v0.5.1-plugin && git push origin v0.5.1-plugin`
+1. Merge Engram marketplace work to `main` on your repo
+2. Tag: `git tag v0.7.0-beta.1 && git push origin v0.7.0-beta.1`
 3. Wait for Release workflow + harness green
 4. Fork `xai-org/plugin-marketplace`
 5. Add catalog entry with **pinned SHA** from the tag
@@ -76,11 +73,11 @@ python3 scripts/validate-catalog.py
 
 | Step | Who | Action |
 |------|-----|--------|
-| Push branch + merge PR | **You** | GitHub merge to `master` (branch protection may require PR) |
-| Create release tag | **You** | `git tag v0.5.1-plugin && git push origin v0.5.1-plugin` |
+| Push branch + merge PR | **You** | GitHub merge to `main` (branch protection may require PR) |
+| Create release tag | **You** | `git tag v0.7.0-beta.1 && git push origin v0.7.0-beta.1` |
 | Fork marketplace repo | **You** | GitHub fork `xai-org/plugin-marketplace` |
 | Open marketplace PR | **You** | Submit catalog entry; xAI reviews |
-| Trust plugin locally | **You** | Already done: `grok plugin install ... --trust` |
+| Trust plugin locally | **You** | `grok plugin install ... --trust` |
 
 No xAI API key required for local plugin. Marketplace listing is a GitHub PR to their catalog repo.
 

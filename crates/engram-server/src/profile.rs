@@ -83,6 +83,8 @@ impl EngramProfile {
         Self::set_default("ENGRAM_LEAN_ANCHOR_POOL", "800");
         // soft = warn on context_for_edit until ack; hard = 403 block; off = disabled
         Self::set_default("ENGRAM_WAKE_QUEUE_GATE", "soft");
+        // slim = lean session_start payload; full = inline continuation bundle (legacy)
+        Self::set_default("ENGRAM_WAKE_BUNDLE", "slim");
 
         let sheaf_path = shellexpand::tilde("~/.engram/sheaf.toml").into_owned();
         if std::path::Path::new(&sheaf_path).exists() {

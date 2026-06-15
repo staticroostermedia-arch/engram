@@ -1709,7 +1709,7 @@ mod tests {
         // NREM/ritual_linguistic_wake + ego.leg3 promotion via P5 tomls (records or load_process_sheaf simulation)
         let _wake_toml = "processes/ritual/ritual_linguistic_wake.toml"; // NREM/ego.leg3 promotion
         let _nrem_toml = "processes/ritual/nrem-consolidation.toml";
-        let _self_toml = "design/archive/processes/meta/self_improvement_loop.toml"; // class-mixing scars/lawfulness
+        let _self_toml = "processes/meta/self_improvement_loop.toml"; // class-mixing scars/lawfulness
         let _ego = crate::types::Leg3Pointer::mint_linguistic(&i_b, true); // ego.leg3 promotion sim (reuse mint)
         let _rec = crate::types::Leg3Pointer::mint_linguistic(&o_cross, false);
 

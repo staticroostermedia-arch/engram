@@ -3890,6 +3890,36 @@ impl StoreHandle {
         Ok(ingested)
     }
 
+    /// Mint or update the living Item 1.5 spatial ingestion state block.
+    /// Called after any force_ingest_path pass (single file or directory walk).
+    pub fn touch_item15_spatial_state(&mut self, total_ingested: usize) {
+        let state_concept = "item1.5_spatial_ingestion_state_engram";
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let state_text = format!(
+            "SPATIAL INGESTION STATE — Engram Project (auto-updated on passive ingest)\n\
+            watcher_bound: true\n\
+            last_bootstrap_attempt: passive-{} (daemon watch bind + force_ingest_path)\n\
+            status: ingested\n\
+            total_items_last_pass: {}\n\
+            note: Updated automatically by daemon/store on set_watch_workspace or force. \
+            No manual editor open+save required for full AABB bootstrap. \
+            See engram-ast for md heading support (passive sections as items).",
+            now, total_ingested
+        );
+        if self.fetch_block(state_concept).is_some() {
+            let _ = self.update(state_concept, &state_text);
+        } else {
+            let _ = self.remember(state_concept, &state_text);
+        }
+        if let Some(mut b) = self.fetch_block(state_concept) {
+            engram_core::storage::write_provlog(&mut b, &state_text);
+            let _ = self.store(state_concept, b);
+        }
+    }
+
     /// Force ingest a path (file or directory).
     /// When given a directory and recursive=true, walks it and ingests all eligible files.
     /// Respects the same .engramignore rules and basic ignores as the file watcher.
@@ -3925,6 +3955,7 @@ impl StoreHandle {
                     details.push(format!("{} → ERROR: {}", path_str, e));
                 }
             }
+            self.touch_item15_spatial_state(total_ingested);
             return Ok((total_ingested, details));
         }
 
@@ -3976,41 +4007,7 @@ impl StoreHandle {
             }
         }
 
-        // Auto-update the living item1.5 bootstrap tracking state.
-        // This eliminates the need for separate "user open+save" or extra force calls
-        // just to advance the state block. Passive watch bind now fully bootstraps
-        // both AST AABB blocks *and* the ingestion state metadata.
-        // Future: make this richer (list files, gaps, timestamp) and use update for drift.
-        let state_concept = "item1.5_spatial_ingestion_state_engram";
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-        let state_text = format!(
-            "SPATIAL INGESTION STATE — Engram Project (auto-updated on passive ingest)\n\
-            watcher_bound: true\n\
-            last_bootstrap_attempt: passive-{} (daemon watch bind + force_ingest_path)\n\
-            status: ingested\n\
-            total_items_last_pass: {}\n\
-            note: Updated automatically by daemon/store on set_watch_workspace or force. \
-            No manual editor open+save required for full AABB bootstrap. \
-            See engram-ast for md heading support (passive sections as items).",
-            now, total_ingested
-        );
-        if self.fetch_block(state_concept).is_some() {
-            let _ = self.update(state_concept, &state_text);
-        } else {
-            let _ = self.remember(state_concept, &state_text);
-        }
-
-        // Ensure provlog also carries the descriptive text (spatial_status reads provlog for the item1.5 block).
-        // This makes the "passive ingest" description live in the status output, killing the stale
-        // "bootstrap_in_progress + user open+save" nonsense once and for all.
-        if let Some(mut b) = self.fetch_block(state_concept) {
-            engram_core::storage::write_provlog(&mut b, &state_text);
-            let _ = self.store(state_concept, b);
-        }
-
+        self.touch_item15_spatial_state(total_ingested);
         Ok((total_ingested, details))
     }
 

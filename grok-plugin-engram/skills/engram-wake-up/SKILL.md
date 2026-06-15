@@ -1,13 +1,15 @@
 ---
 name: engram-wake-up
 description: >
-  First call every Grok session. One-call geometric wake via session_start;
-  execute harness queue before any edit or broad read.
+  First call every Grok session. One-call geometric wake via session_start (slim
+  bundle by default); execute suggested_actions before any edit or broad read.
 metadata:
   short-description: "Wake — session_start + mandatory queue"
 ---
 
 # Engram Wake-Up
+
+**Canonical source:** [docs/skills/engram-wake-up.md](../../../docs/skills/engram-wake-up.md) — keep plugin copy aligned when editing.
 
 **Trigger:** Start of every session, chat restart, or new task arc.
 
@@ -21,23 +23,24 @@ Or: `/engram-wake`
 
 ## Execute queue BEFORE edits (non-negotiable)
 
-Run `continuation.harness_injection.suggested_actions` in **priority order** before:
+Run `continuation.suggested_actions` (slim wake) in **priority order** before:
 - `context_for_edit`
 - broad `Read` / `Grep` / codebase search
 - any file edit in `crates/`, `processes/`, `docs/`, `grok-plugin-engram/`
+
+For full harness (playbook, trusted tiles, lineage): `mcp_engram_get_continuation_bundle`.
 
 Skipping the queue thins the next wake — the substrate feeds back poor injection when agents skip `session_end`.
 
 ## Read the response
 
-1. `continuation.primary_goal` — inherit and name it in your reply.
-2. `harness_injection.suggested_actions` — **execute mechanically**.
-3. `harness_injection.ego_snapshot` — collective evolution (NREM drift, goal-serving stack).
-4. `harness_injection.continuity_playbook.steps` — 12-step breadcrumb path if queue is empty.
-5. `harness_injection.trace_chain.head` — chain next `quick_trace` with `prev`.
-6. `harness_injection.trusted_tiles` — JIT playbooks to read if relevant.
-7. `harness_injection.condensation_hints` — offer `/engram-tile` if present.
-8. `readiness.fully_initialized` — must be `true` before heavy recall.
+1. `bundle_tier` — expect `"slim"` by default.
+2. `continuation.primary_goal` — inherit and name it in your reply.
+3. `continuation.suggested_actions` — **execute mechanically** (top 5 in slim mode).
+4. `continuation.ego_snapshot` — NREM step, drift, stability.
+5. `continuation.trace_chain_head` — chain next `quick_trace` with `prev`.
+6. `continuation.presentation_stratum.previews` — distilled nodes; expand via `get_continuation_bundle` if needed.
+7. `readiness.fully_initialized` — must be `true` before heavy recall.
 
 ## Then
 

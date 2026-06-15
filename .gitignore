@@ -46,3 +46,6 @@ false_empire/
 
 # Worktrees for safe isolated execution (per superpowers + Engram ritual)
 .worktrees/
+
+# Unfinished / local-only VS Code extension (not part of public surface)
+extensions/vscode/

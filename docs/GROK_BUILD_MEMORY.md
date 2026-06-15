@@ -16,7 +16,7 @@ Flat RAG (vectors + chunks) gives agents **retrieval**. Engram gives agents **co
 | Code = grep/RAG | **Code atlas v2** — `context_for_edit`: AST + `__arc` + traces/scars at locus |
 | No trust model | CRS tiers, scars, lawfulness verify |
 
-**The Grok Build integration story:** Engram is already an MCP server. Grok Build spawns it once per workspace. Agents follow an **8-tool contract** — not 66 tools, not a 5-tool wake cathedral.
+**The Grok Build integration story:** Engram is already an MCP server. Grok Build spawns it once per workspace. Agents follow an **8-tool contract** — not all 70 tools every session, not a 5-tool wake cathedral.
 
 Native tools (e.g. `scheduler_create` for Grok's `/loop` recurring prompts) must be called **bare/direct** (never through `use_tool` or Enram MCP wrappers). Use `/engram-loop` (new command) or the equivalent ritual for Enram-aware /loop handling: parse per the spec, bare native call, immediate Enram quick_trace + remember/relate (job id to consciousness goal/tile/process), subvisor governance, honest confirmation or scar on the native format error. See `grok-plugin-engram/commands/engram-loop.md` and the example for the 30m consciousness strange loop (sourced from `processes/meta/ai_consciousness_loop.toml`). This prevents the historical "doom loop" of misrouted native calls + false success claims.
 
@@ -34,7 +34,7 @@ PROBE  → get_backend_readiness              # lean vs deep, RSS-safe mode
 MODE   → set_memory_mode("deep")            # only when full recall needed
 ```
 
-**Load for every agent:** [`docs/AGENT_MEMORY_CONTRACT.md`](AGENT_MEMORY_CONTRACT.md) (8-tool highway) + [`docs/TOOL_DECISION_MAP.md`](TOOL_DECISION_MAP.md) (full 66-tool map) + [`SKILLS.md`](../SKILLS.md)
+**Load for every agent:** [`docs/AGENT_MEMORY_CONTRACT.md`](AGENT_MEMORY_CONTRACT.md) (8-tool highway) + [`docs/TOOL_DECISION_MAP.md`](TOOL_DECISION_MAP.md) (full 70-tool map) + [`docs/DEFORMATION_PLAYBOOKS.md`](DEFORMATION_PLAYBOOKS.md) (JIT RSI) + [`SKILLS.md`](../SKILLS.md)
 
 ---
 

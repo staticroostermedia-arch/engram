@@ -4,9 +4,9 @@
 **Audience:** Any AI agent using the Engram MCP server  
 **Principle:** Lean by default, deep on demand. Eight tools cover wake → work → handoff on large stores (181k+ blocks) without ritual tax or RAM death.
 
-> **58 more tools exist** (66 total). Power tools (`update`, `query_with_momentum`, `search_by_relation`, `remember_solution`, `scar`, `thought_tile_create`, …) remain available. This contract is the **Layer 0 highway** — not the full map.
+> **62 more tools exist** (70 total). Power tools (`update`, `query_with_momentum`, `search_by_relation`, `remember_solution`, `scar`, `thought_tile_create`, …) remain available. This contract is the **Layer 0 highway** — not the full map.
 
-**Full decision map:** [TOOL_DECISION_MAP.md](TOOL_DECISION_MAP.md) — mermaid flows for all 66 tools, write path (`update` vs `remember`), read escalation, and Grok Build vs Cursor throttle.
+**Full decision map:** [TOOL_DECISION_MAP.md](TOOL_DECISION_MAP.md) — mermaid flows for all 70 tools, write path (`update` vs `remember`), read escalation, and Grok Build vs Cursor throttle. **JIT RSI:** [DEFORMATION_PLAYBOOKS.md](DEFORMATION_PLAYBOOKS.md).
 
 ---
 
@@ -26,7 +26,8 @@
 ### Tool summaries
 
 **`session_start(intent, include_spatial?)`** — Mandatory first call. Mints `session_start_*` episodic block, loads process sheaf, and returns:
-- `continuation_bundle` (primary goal, last session_end preview, active artifacts, hydration cache flag)
+- **`continuation` (slim by default, `ENGRAM_WAKE_BUNDLE=slim`)** — `primary_goal`, top 5 `suggested_actions`, `trace_chain_head`, slim `ego_snapshot`, `presentation_stratum` node_count + 5 previews
+- **Full bundle on demand:** `mcp_engram_get_continuation_bundle` (set `ENGRAM_WAKE_BUNDLE=full` to restore legacy inline payload)
 - `backend_readiness` (bvh_ready, recall_mode, leg_block_count)
 - Optional `spatial_delta` when `include_spatial=true` (incremental ingest summary, not full force)
 
@@ -41,7 +42,7 @@
 
 **`remember(concept, text)`** — New concept only. Always `recall` first; if score > 0.85 on an existing concept, use `update` instead (Layer 1 — see [write path](TOOL_DECISION_MAP.md#write-path-non-negotiable)).
 
-**`session_end(summary, prepare_compression?)`** — Mandatory last call. Commits episodic terminal state and returns a **structured handoff packet** (JSON) for machine-readable continuation.
+**`session_end(summary, minimal?, prepare_compression?)`** — End-of-block handoff. Use **`minimal=true`** for fast fix loops (thin block + boundary trace + `helper:session_handoff_latest`, no compression ritual). Full path (default) runs compression handoff + rich boundary trace. MCP disconnect without `session_end` auto-emits a thin handoff.
 
 **`get_backend_readiness()`** — Read-only status. Use after wake or when recall quality seems sampled/bounded.
 
@@ -299,8 +300,8 @@ mcp_engram_session_end(summary="<decisions, files, next steps>")
 - [docs/skills/engram-wake-up.md](skills/engram-wake-up.md) — 1-call wake protocol
 - [docs/skills/engram-working-memory.md](skills/engram-working-memory.md) — edit loop with `context_for_edit`
 - [docs/skills/engram-session-end.md](skills/engram-session-end.md) — handoff packet protocol
-- [design/agent_memory_mvp_plan.md](../design/agent_memory_mvp_plan.md) — implementation phases A1–A6
-- [docs/MCP_TOOLS_REFERENCE.md](MCP_TOOLS_REFERENCE.md) — all 66 tools (8 essential)
+- [docs/MCP_TOOLS_REFERENCE.md](MCP_TOOLS_REFERENCE.md) — all 70 tools (8 essential)
+- [docs/HARNESS_INJECTION.md](HARNESS_INJECTION.md) — wake queue, ego snapshot, continuity playbook
 
 ---
 

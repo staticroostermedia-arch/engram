@@ -1,0 +1,74 @@
+# process:engram.harness.jit-deformation — JIT homotopy playbooks for agent deformation of .leg3
+# Fronted via harness_injection.jit_deformation_framework + verified_processes at session_start.
+
+[process]
+name = "agent:engram.harness.jit-deformation"
+zedos_type = "harness"
+phase_seed = "jit-deformation-v1"
+
+[category]
+object = "jit_deformation"
+morphism = "OP_ADD"
+sheaf_role = "Restriction on lawful transforms — update/scar/tile condense with CRS+p preserved"
+h1_handler = "OP_IS_SYMBOLIC_OF"
+
+[mcp_tools]
+list = [
+  "mcp_engram_session_start",
+  "mcp_engram_get_continuation_bundle",
+  "mcp_engram_read_concept",
+  "mcp_engram_context_for_edit",
+  "mcp_engram_quick_trace",
+  "mcp_engram_update",
+  "mcp_engram_scar",
+  "mcp_engram_remember_solution",
+  "mcp_engram_thought_tile_create",
+  "mcp_engram_thought_tile_draft_from_chain",
+  "mcp_engram_thought_tile_write_result",
+]
+
+[requires]
+list = [
+  "harness_injection.jit_deformation_framework",
+  "helper:session_handoff_latest OR primary_goal",
+]
+
+[produces]
+list = [
+  "trace:*",
+  "tile:verified_sequence_*",
+  "praxis:*",
+  "scar:*",
+  "{stem}__fn__*__arc",
+]
+
+[invariants]
+list = [
+  "update_preferred_over_forget_remember",
+  "crs_0.74_gate",
+  "p_momentum_preserved_on_update",
+  "jit_construct_not_blind_replay",
+]
+
+[workflow]
+description = "Agents construct MCP calls JIT from suggested_actions + verified_processes; tiles front verified homotopy playbooks."
+
+[jit]
+mandate = "suggested_actions and verified_processes are hints — adapt tool args to current file, goal, atlas, trace head"
+task_types = ["wake_only", "code_edit", "meta_evolution", "research", "recovery"]
+
+[verified_sequence]
+schema = "docs/schemas/verified_sequence_v0.json"
+front_at_wake = true
+on_success = "mcp_engram_remember_solution"
+on_repeat_failure = "mcp_engram_scar"
+replay = "read_concept(tile) → per-step tool_hints as suggestions → quick_trace chain"
+
+[rsi]
+composed_with = "process:engram.meta.agent-evolution"
+scar_on = ["repeated dead-end", "doom loop", "skipped session_end"]
+condense_on = [">=6 goal traces without linked tile"]
+identity = "ego.leg3 via NREM"
+
+[notes]
+# See docs/DEFORMATION_PLAYBOOKS.md for full agent-facing spec.

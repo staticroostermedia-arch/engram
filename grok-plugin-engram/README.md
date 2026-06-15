@@ -1,5 +1,7 @@
 # Engram Geometric Memory — Grok Build Plugin
 
+**Ritual skills:** canonical source is `docs/skills/` in the repo root. Plugin copies under `grok-plugin-engram/skills/` should stay in sync at release time.
+
 **Not another vector database.** Local geometric memory with structured session handoff, CRS-gated blocks, and edit-scoped code context.
 
 **Primary user: the AI agent.** Slash commands map decision moments → MCP rituals. See [commands/README.md](commands/README.md).
@@ -30,7 +32,7 @@ Or use the installer script from repo root:
 ### Session boundary
 | Command | When |
 |---------|------|
-| `/engram-wake` | Start — continuation bundle |
+| `/engram-wake` | Start — slim continuation bundle (`session_start`) |
 | `/engram-session-end` | End — structured handoff |
 
 ### Work loop
@@ -84,7 +86,8 @@ Run `/engram-wake` first in every session.
 **Skills:** `engram-memory` (index) · `engram-wake-up` · `engram-working-memory` · `engram-session-end`
 
 - [docs/AGENT_MEMORY_CONTRACT.md](../docs/AGENT_MEMORY_CONTRACT.md) — 8-tool highway
-- [docs/TOOL_DECISION_MAP.md](../docs/TOOL_DECISION_MAP.md) — all 66 tools
+- [docs/TOOL_DECISION_MAP.md](../docs/TOOL_DECISION_MAP.md) — all 70 tools
+- [docs/DEFORMATION_PLAYBOOKS.md](../docs/DEFORMATION_PLAYBOOKS.md) — JIT RSI
 - [commands/README.md](commands/README.md) — agent moment → command map
 
 **Tools must be called** — documentation alone does not persist memory.

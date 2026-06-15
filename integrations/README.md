@@ -62,7 +62,7 @@ Load into system prompt / project rules / `AGENTS.md`:
 session_start(intent) → context_for_edit(path) → recall(scope=anchors) → quick_trace / remember → session_end(summary)
 ```
 
-**Do not** at wake: `watch_workspace`, `summarize`, `rebuild_bvh`, `get_continuation_bundle`.
+**Do not** at wake: `watch_workspace`, `summarize`, `rebuild_bvh`. Slim `session_start` is the default wake payload; call `get_continuation_bundle` only when you need the full harness inline.
 
 ---
 
