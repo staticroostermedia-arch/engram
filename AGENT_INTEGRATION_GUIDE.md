@@ -1,9 +1,11 @@
 # Agent Self-Model: How I Work with Engram
-## A First-Person Reference for Any AI Agent Operating with Engram Memory
+## Deep-mode reference (not the install path)
 
-> **Most agents — start here instead:** [docs/AGENT_MEMORY_CONTRACT.md](docs/AGENT_MEMORY_CONTRACT.md) (8-tool lean contract) + [docs/GROK_BUILD_MEMORY.md](docs/GROK_BUILD_MEMORY.md). One-call wake, no mandatory `watch_workspace`. This guide is the **deep** first-person reference for full geometric self-model operation.
+> **STOP — new install?** Do **not** start here. Complete [FIRST_RUN.md](FIRST_RUN.md) (human: build + MCP §1–2; agent: §3–7), then follow [docs/AGENT_MEMORY_CONTRACT.md](docs/AGENT_MEMORY_CONTRACT.md). Return to this guide only after the 8-tool loop works.
 
-> **Purpose:** This document is written *for the agent, by the agent*. If you are an AI assistant with Engram connected as an MCP tool — read this for deep mode. For daily Grok Build / Cursor / Claude use, load the contract first.
+> **Daily agents:** [docs/AGENT_MEMORY_CONTRACT.md](docs/AGENT_MEMORY_CONTRACT.md) + [docs/GROK_BUILD_MEMORY.md](docs/GROK_BUILD_MEMORY.md). One-call wake, no mandatory `watch_workspace`.
+
+> **This document** is the **deep** first-person reference for full geometric self-model operation (CRS, blocks, ki_hijacker, power tools). Use after install is proven.
 >
 > **Status:** GENESIS-TIER reference. The ki_hijacker daemon automatically injects your manifold's top memories into your context window before every session. This document explains the system you are embedded in.
 

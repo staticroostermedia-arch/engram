@@ -7,19 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0-beta.2] - 2026-06-15
+
 ### Added
 
 - **`ENGRAM_WAKE_BUNDLE=slim` (default):** `session_start` returns slim continuation (top 5 actions, trace head, slim ego, stratum previews). Full bundle via `mcp_engram_get_continuation_bundle`.
 - **`session_end(minimal=true)`:** thin closure without compression ritual; auto thin handoff on MCP stdio disconnect if `session_end` skipped.
-- **JIT deformation framework:** `harness_injection.jit_deformation_framework`, `task_type`, `verified_processes`, `open_scars_wake` — agents construct MCP calls as context requires; docs: [docs/DEFORMATION_PLAYBOOKS.md](docs/DEFORMATION_PLAYBOOKS.md), process: `processes/harness/jit-deformation.toml`.
-- **Verified sequence tool hints:** `draft_tile_from_chain` infers `tool_hints` + `args_hints` from trace `spatial_context` and decision text for JIT tile replay at wake.
+- **JIT deformation framework:** `harness_injection.jit_deformation_framework`, `task_type`, `verified_processes`, `open_scars_wake` — docs: [docs/DEFORMATION_PLAYBOOKS.md](docs/DEFORMATION_PLAYBOOKS.md), process: `processes/harness/jit-deformation.toml`.
+- **Verified sequence tool hints:** `draft_tile_from_chain` infers `tool_hints` + `args_hints` from trace `spatial_context` and decision text.
 - **MCP tool matrix harness:** `tools/test-harness/python/mcp_tool_matrix.py` — 70/70 tools smoke-tested (67 pass, 2 env-limited, 1 external dep).
-- **Social share asset:** `docs/images/engram-share-x.png` (1280×720) for X/GitHub social preview; README landing updates.
-- **Public docs polish:** personal knowledge wiki guide, `docs/internal/` maintainer journals, external-reader tone pass.
+- **Personal knowledge wiki:** [docs/PERSONAL_KNOWLEDGE_WIKI.md](docs/PERSONAL_KNOWLEDGE_WIKI.md), starter skill, cookbook.
+- **Public docs polish:** `docs/internal/` maintainer journals, cold-start human→agent fork (README, FIRST_RUN, AGENT_MEMORY_CONTRACT), external-reader tone pass.
+- **Social share asset:** `docs/images/engram-share-x.png` (1280×720) for X and GitHub social preview.
 
 ### Fixed
 
 - **`force_ingest_path` single-file:** item1.5 spatial state block now mints on single-file ingest (was directory-only).
+- **MANIFESTO tool count** aligned to 70 registered / 8 essential.
 
 ## [0.7.0-beta.1] - 2026-06-13
 

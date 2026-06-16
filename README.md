@@ -11,7 +11,7 @@
 
 Engram is a local, hardware-native memory substrate that gives AI agents coherent, long-term memory with structure-preserving compression, synthetic calculus over both words and numbers, and true continuity across cold shutdowns.
 
-> **Share on X:** attach [docs/images/engram-share-x.png](docs/images/engram-share-x.png) (1280×720) — use the LEG Browser shot below for in-repo demo depth.
+> **Share on X / GitHub:** [docs/images/engram-share-x.png](docs/images/engram-share-x.png) (1280×720). For the repo social preview card: GitHub → **Settings → General → Social preview** → upload that image.
 
 Unlike vector databases or simple logs, Engram uses fixed-size holographic blocks, VSA operations, sheaf gluing, and categorical reasoning to maintain meaning and relationships even after heavy compression and long-running sessions.
 
@@ -43,7 +43,7 @@ Engram is particularly well-suited for:
 | **Personal knowledge wiki** | [docs/PERSONAL_KNOWLEDGE_WIKI.md](docs/PERSONAL_KNOWLEDGE_WIKI.md) |
 | **Power users (70 tools)** | [docs/TOOL_DECISION_MAP.md](docs/TOOL_DECISION_MAP.md) |
 | **Ritual skills** | [SKILLS.md](SKILLS.md) → [docs/skills/](docs/skills/) |
-| **Substrate builders (BYOP)** | [AGENT_INTEGRATION_GUIDE.md](AGENT_INTEGRATION_GUIDE.md) |
+| **Deep mode (after install)** | [AGENT_INTEGRATION_GUIDE.md](AGENT_INTEGRATION_GUIDE.md) |
 
 **Human review (LEG Browser beta):** `./scripts/leg` (static) or `./scripts/leg --live` — see [docs/LEG_BROWSER.md](docs/LEG_BROWSER.md).
 
@@ -70,7 +70,7 @@ Full comparison vs mem0/Letta/chroma: see [docs/GROK_BUILD_MEMORY.md](docs/GROK_
 git clone https://github.com/staticroostermedia-arch/engram.git
 cd engram
 cargo build -p engram-server
-target/debug/engram --version   # 0.7.0-beta.1
+target/debug/engram --version   # 0.7.0-beta.2
 ```
 
 **MCP config** (Grok Build / Cursor — use `scripts/engram-grok`):
@@ -139,16 +139,15 @@ flowchart LR
   H --> W
 ```
 
-## What's new in v0.7.0-beta.1
+## What's new in v0.7.0-beta.2
 
-- **LEG Browser beta:** agent memory mirror — wake queue, ego evolution strip, continuity playbook, presentation stratum galaxy, live activity SSE. One command: `./scripts/leg --live`.
-- **JIT deformation:** task-type playbooks + `verified_processes` at wake — agents construct tool calls as context requires; scars repulse, tiles condense arcs ([DEFORMATION_PLAYBOOKS.md](docs/DEFORMATION_PLAYBOOKS.md)).
-- **Presentation stratum:** agents wake into ~40–64 CRS-ranked nodes (goals/traces/tiles/process), not the full cold manifold.
-- **Harness continuity:** `ego_snapshot`, `continuity_playbook`, wake queue gate (`soft`/`hard`/`off`) + `mcp_engram_ack_wake_queue`.
-- **70 MCP tools** smoke-tested (67 pass in isolated harness); lean default remains **8 essential**.
-- **REST:** `/api/consciousness-surface`, enhanced `/api/context-window` for the viewer.
+- **Cold-start onboarding:** README human→agent fork, FIRST_RUN role split, contract bootstrap checklist — install path works without insider context.
+- **Public docs polish:** personal knowledge wiki, `docs/internal/` maintainer journals, external-reader tone pass.
+- **JIT deformation:** task-type playbooks + `verified_processes` at wake ([DEFORMATION_PLAYBOOKS.md](docs/DEFORMATION_PLAYBOOKS.md)).
+- **70 MCP tools** smoke-tested (67 pass in harness); lean default remains **8 essential**.
+- **LEG Browser beta** (from beta.1): `./scripts/leg --live` — memory review UI, wake queue, presentation stratum.
 
-See [CHANGELOG.md](CHANGELOG.md). v0.6.0 brought .leg3 optimizations (tiered blocks, hybrid wire, SOA+arena, homo+zk transforms).
+Full history: [CHANGELOG.md](CHANGELOG.md).
 
 ## Categorical Linguistic Calculus
 

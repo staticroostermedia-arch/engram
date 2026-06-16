@@ -2,7 +2,8 @@
 
 **Plugin id:** `engram` (or `engram-geometric` for disambiguation)  
 **Repo subdirectory:** `grok-plugin-engram/` (self-contained plugin bundle with .mcp.json + plugin.json)  
-**Current status:** `v0.7.0-beta.1` — LEG Browser beta, slim wake bundle, harness continuity. Remote registration via xai-org/plugin-marketplace (Option A).
+**Current release:** `v0.7.0-beta.2` — public docs polish, JIT deformation, tool matrix, personal wiki guide, cold-start onboarding.  
+**Remote registration:** xai-org/plugin-marketplace (Option A).
 
 ---
 
@@ -11,9 +12,10 @@
 - [ ] `grok plugin validate grok-plugin-engram/` passes
 - [ ] `./scripts/engram-mcp-health.sh` → OK
 - [ ] `agent-memory` harness green locally and in CI
-- [ ] Git tag pushed (e.g. `v0.7.0-beta.1`)
-- [ ] Release asset uploaded (`engram-v0.7.0-beta.1-linux-x86_64.tar.gz`)
+- [ ] Git tag pushed: `v0.7.0-beta.2`
+- [ ] Release asset uploaded (`engram-v0.7.0-beta.2-linux-x86_64.tar.gz`) — if using Release workflow
 - [ ] Demo doc tested: [examples/marketplace_demo.md](examples/marketplace_demo.md)
+- [ ] GitHub social preview: upload [docs/images/engram-share-x.png](images/engram-share-x.png) (Settings → General → Social preview)
 
 ---
 
@@ -29,20 +31,21 @@ Fork https://github.com/xai-org/plugin-marketplace and add to `.grok-plugin/mark
   "source": {
     "source": "url",
     "url": "https://github.com/staticroostermedia-arch/engram",
-    "sha": "<pin-commit-on-release-tag>"
+    "sha": "PIN_TAG_COMMIT_SHA_HERE"
   },
   "homepage": "https://github.com/staticroostermedia-arch/engram",
   "keywords": ["memory", "mcp", "agent", "geometric", "geometric-memory", "session-handoff", "leg-browser"],
-  "version": "0.7.0-beta.1",
+  "version": "0.7.0-beta.2",
   "author": "staticroostermedia-arch"
 }
 ```
 
-Pin SHA:
+**Pin SHA (after tag push):**
 
 ```bash
-git ls-remote https://github.com/staticroostermedia-arch/engram.git refs/tags/v0.7.0-beta.1
-# Use the commit on your release tag, not floating HEAD
+git fetch --tags origin
+git rev-parse v0.7.0-beta.2^{commit}
+# Paste that 40-char SHA into catalog "sha" — never use floating HEAD
 ```
 
 Regenerate index (upstream maintainer or PR author):
@@ -56,15 +59,16 @@ python3 scripts/validate-catalog.py
 
 ## PR steps
 
-1. Merge Engram marketplace work to `main` on your repo
-2. Tag: `git tag v0.7.0-beta.1 && git push origin v0.7.0-beta.1`
-3. Wait for Release workflow + harness green
+1. Merge doc + release work to `master` on your repo
+2. Tag: `git tag v0.7.0-beta.2 && git push origin v0.7.0-beta.2`
+3. Wait for Release workflow + harness green (if enabled)
 4. Fork `xai-org/plugin-marketplace`
-5. Add catalog entry with **pinned SHA** from the tag
+5. Add catalog entry with **pinned SHA** from `git rev-parse v0.7.0-beta.2^{commit}`
 6. Run validators; open PR
 7. In PR description, link:
    - [GROK_BUILD_MEMORY.md](GROK_BUILD_MEMORY.md)
    - [marketplace_demo.md](examples/marketplace_demo.md)
+   - [FIRST_RUN.md](../FIRST_RUN.md) + [AGENT_MEMORY_CONTRACT.md](AGENT_MEMORY_CONTRACT.md)
    - Harness CI badge / job link
 
 ---
@@ -73,18 +77,20 @@ python3 scripts/validate-catalog.py
 
 | Step | Who | Action |
 |------|-----|--------|
-| Push branch + merge PR | **You** | GitHub merge to `main` (branch protection may require PR) |
-| Create release tag | **You** | `git tag v0.7.0-beta.1 && git push origin v0.7.0-beta.1` |
+| Push branch + merge PR | **You** | GitHub merge to `master` |
+| Create release tag | **You** | `git tag v0.7.0-beta.2 && git push origin v0.7.0-beta.2` |
+| GitHub social preview | **You** | Upload `docs/images/engram-share-x.png` in repo Settings |
 | Fork marketplace repo | **You** | GitHub fork `xai-org/plugin-marketplace` |
-| Open marketplace PR | **You** | Submit catalog entry; xAI reviews |
+| Open marketplace PR | **You** | Submit catalog entry with pinned SHA; xAI reviews |
 | Trust plugin locally | **You** | `grok plugin install ... --trust` |
-
-No xAI API key required for local plugin. Marketplace listing is a GitHub PR to their catalog repo.
 
 ---
 
-## Post-listing
+## Version history (marketplace pins)
 
-- Monitor install issues (binary path, CUDA optional)
-- Respond to reviews on pinned SHA updates
-- Bump `sha` in catalog when shipping plugin fixes
+| Tag | Notes |
+|-----|-------|
+| `v0.7.0-beta.1` | LEG Browser beta, presentation stratum, harness continuity |
+| `v0.7.0-beta.2` | Public face polish, JIT deformation, tool matrix, wiki docs, cold-start fork |
+
+Always pin marketplace `sha` to the **tag commit**, not `main` HEAD.
