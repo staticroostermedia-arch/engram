@@ -31,7 +31,7 @@ Fork https://github.com/xai-org/plugin-marketplace and add to `.grok-plugin/mark
   "source": {
     "source": "url",
     "url": "https://github.com/staticroostermedia-arch/engram",
-    "sha": "PIN_TAG_COMMIT_SHA_HERE"
+    "sha": "ac176fa7d5aa25c1fe0c992a7903fd84f8fa5688"
   },
   "homepage": "https://github.com/staticroostermedia-arch/engram",
   "keywords": ["memory", "mcp", "agent", "geometric", "geometric-memory", "session-handoff", "leg-browser"],
@@ -45,7 +45,7 @@ Fork https://github.com/xai-org/plugin-marketplace and add to `.grok-plugin/mark
 ```bash
 git fetch --tags origin
 git rev-parse v0.7.0-beta.2^{commit}
-# Paste that 40-char SHA into catalog "sha" — never use floating HEAD
+# v0.7.0-beta.2 tag → ac176fa7d5aa25c1fe0c992a7903fd84f8fa5688 (merge PR #35)
 ```
 
 Regenerate index (upstream maintainer or PR author):
