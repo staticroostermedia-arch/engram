@@ -31,7 +31,7 @@ Every work block becomes an evolution of your self-model.
 
 **Recognition (Update vs New)**: Evolutionary refinement of design:/progress:/helper:/ritual: → update + trace. New fork → quick_trace. Multi-phase/meta → escalate to thought tiles (deep mode).
 
-**Automatic Escalation**: At complex/meta start, recall `helper:meta_work_escalation_v1` and `helper:current_meta_arc`. Escalate to tiles if no recent tile on design:/progress:.
+**Meta-work escalation (optional advanced):** For multi-phase design or policy work, recall anchors on `design:` / `progress:` first. If the arc spans several sessions with no recent thought tile, escalate to thought tiles (see below). Projects may store helper concepts (e.g. `helper:meta_work_escalation_v1`) in the manifold — recall them only if your workspace defines them.
 
 ---
 

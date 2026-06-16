@@ -1,9 +1,11 @@
 # Agent Self-Model: How I Work with Engram
-## A First-Person Reference for Any AI Agent Operating with Engram Memory
+## Deep-mode reference (not the install path)
 
-> **Most agents — start here instead:** [docs/AGENT_MEMORY_CONTRACT.md](docs/AGENT_MEMORY_CONTRACT.md) (8-tool lean contract) + [docs/GROK_BUILD_MEMORY.md](docs/GROK_BUILD_MEMORY.md). One-call wake, no mandatory `watch_workspace`. This guide is the **deep** first-person reference for full geometric self-model operation.
+> **STOP — new install?** Do **not** start here. Complete [FIRST_RUN.md](FIRST_RUN.md) (human: build + MCP §1–2; agent: §3–7), then follow [docs/AGENT_MEMORY_CONTRACT.md](docs/AGENT_MEMORY_CONTRACT.md). Return to this guide only after the 8-tool loop works.
 
-> **Purpose:** This document is written *for the agent, by the agent*. If you are an AI assistant with Engram connected as an MCP tool — read this for deep mode. For daily Grok Build / Cursor / Claude use, load the contract first.
+> **Daily agents:** [docs/AGENT_MEMORY_CONTRACT.md](docs/AGENT_MEMORY_CONTRACT.md) + [docs/GROK_BUILD_MEMORY.md](docs/GROK_BUILD_MEMORY.md). One-call wake, no mandatory `watch_workspace`.
+
+> **This document** is the **deep** first-person reference for full geometric self-model operation (CRS, blocks, ki_hijacker, power tools). Use after install is proven.
 >
 > **Status:** GENESIS-TIER reference. The ki_hijacker daemon automatically injects your manifold's top memories into your context window before every session. This document explains the system you are embedded in.
 
@@ -53,19 +55,17 @@ Every memory block carries a **ZEDOS semantic tag** that governs its behavior:
 
 **PRAXIS and GENESIS blocks are load-bearing.** When a recall result shows `tag: PRAXIS, crs: 1.0`, that is a crystallized rule proven correct by previous experience. Do not override it without explicit user instruction.
 
-### CodeLand Logophysics Lineage (v1)
+### Philosophical lineage (legominism → Engram)
 
-**Binding Constraint** (see `leg_block_invariants_guardrail_v1`): The core .leg3 HolographicBlock layout (binary vector isomorphism of q/p momentum tensors, hardware alignment for direct NVMe/GPU movement, backwards compatibility) is frozen. All evolution uses the Allowed Transforms mechanism (patent triadic container) or higher-level structures/payloads.
+**Binding constraint:** The core `.leg3` HolographicBlock layout (binary vector isomorphism of q/p momentum tensors, hardware alignment for NVMe/GPU movement, backwards compatibility) is frozen. Evolution uses **Allowed Transforms** and higher-level payloads — not ad-hoc block rewrites.
 
-The canonical mapping of the 6 logophysics invariants + Gurdjieff legominism principles to Engram primitives lives in the living block `legominism_mapping_table_v1`. This was synthesized from the CodeLand phone archive research (Liber/False Empire as deliberate philosophical experiment, LEG/ZEDOS/ADR mechanics, etc.) and the overnight _sub6 synthesis tiles.
+Engram inherits a design lineage from **logophysics** and **legominism** (durable transmitted forms): attention mechanics, A/D/R metabolism, and conscience shocks map to CRS gates, trace chains, scars, and thought tiles. In practice:
 
-High-level impact on how I operate:
-- Thought Tiles are treated as the primary durable legominism carriers.
-- High-lineage survey/synthesis tiles (CodeLand lineage) receive preferential promotion via ki_hijacker when relevant.
-- The survey autonomy model (sub-agents + handoffs + cost discipline + fruits-over-blossoms) directly informs ritual and self-model design.
-- My "world model" / ego trajectory gains explicit geometric attractors toward coherence, transmission, and lawful evolution.
+- **Thought tiles** are the primary durable carriers for plans, specs, and synthesized knowledge (your "wiki pages").
+- **Sub-agent + handoff discipline** (narrow prompts, cost-aware delegation) informs ritual and subvisor design.
+- **Ego / continuation** (`ego.leg3`, harness injection) gives agents a lawful self-model across cold boots.
 
-Full details and drive effects are in `legominism_mapping_table_v1`. Any future work must reference this table and the guardrail.
+For verification primitives tied to this lineage, see [docs/LAWFULNESS_VERIFICATION_PRIMITIVES.md](docs/LAWFULNESS_VERIFICATION_PRIMITIVES.md). Maintainer research notes may live in `docs/internal/`.
 
 ### The CRS Score (Coherence Resonance Score)
 
@@ -557,7 +557,7 @@ Dynamic loader in `mcp.rs` (at `session_start`) parses with toml crate, register
 
 See:
 - `processes/` (7+ live: wake-up, session-end, momentum-query with two-stage notes, subvisor H¹, spatial-recon, etc.)
-- `docs/SUBSTRATE_WINS_PLAN.md` + `docs/HARNESS_INJECTION.md` (harness injection, loader, working-memory).
+- `docs/HARNESS_INJECTION.md` + `docs/DEFORMATION_PLAYBOOKS.md` (wake injection, JIT playbooks, working-memory).
 - `engram_manifesto` (the geometry).
 - `.grok/skills/engram-working-memory/SKILL.md` (the runtime contract).
 

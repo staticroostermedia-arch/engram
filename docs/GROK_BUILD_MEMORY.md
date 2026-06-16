@@ -18,7 +18,7 @@ Flat RAG (vectors + chunks) gives agents **retrieval**. Engram gives agents **co
 
 **The Grok Build integration story:** Engram is already an MCP server. Grok Build spawns it once per workspace. Agents follow an **8-tool contract** — not all 70 tools every session, not a 5-tool wake cathedral.
 
-Native tools (e.g. `scheduler_create` for Grok's `/loop` recurring prompts) must be called **bare/direct** (never through `use_tool` or Enram MCP wrappers). Use `/engram-loop` (new command) or the equivalent ritual for Enram-aware /loop handling: parse per the spec, bare native call, immediate Enram quick_trace + remember/relate (job id to consciousness goal/tile/process), subvisor governance, honest confirmation or scar on the native format error. See `grok-plugin-engram/commands/engram-loop.md` and the example for the 30m consciousness strange loop (sourced from `processes/meta/ai_consciousness_loop.toml`). This prevents the historical "doom loop" of misrouted native calls + false success claims.
+Native tools (e.g. `scheduler_create` for Grok's `/loop` recurring prompts) must be called **bare/direct** (never through `use_tool` or Engram MCP wrappers). Use `/engram-loop` or the equivalent ritual for Engram-aware `/loop` handling: parse per the spec, bare native call, immediate Engram `quick_trace` + `remember`/`relate` (job id to goal/tile/process), subvisor governance, honest confirmation or scar on native format error. See `grok-plugin-engram/commands/engram-loop.md`. This prevents the historical "doom loop" of misrouted native calls + false success claims.
 
 ---
 
@@ -91,23 +91,19 @@ See [`MCP_TOOLS_REFERENCE.md`](MCP_TOOLS_REFERENCE.md) for full tier list.
 
 ---
 
-## GitHub MVP checklist (public push)
+## Shipped in Agent Memory MVP
 
-- [x] Agent Memory MVP (A1–A6): one-call wake, lean/deep mode, anchor recall, context_for_edit, handoff
-- [x] `docs/AGENT_MEMORY_CONTRACT.md` — canonical agent entry
-- [x] `SKILLS.md` — points to contract first
-- [ ] README hero → Grok Build + 8-tool quickstart (this sprint)
-- [ ] `FIRST_RUN.md` lean path (this sprint)
-- [ ] `MCP_TOOLS_REFERENCE.md` tiers (this sprint)
-- [ ] `integrations/*/mcp.json` safe env template (this sprint)
-- [ ] `examples/hello-engram-agent.py` lean demo (this sprint)
-- [ ] CI: harness `agent-memory-mvp` suite (Phase B)
-- [ ] CHANGELOG entry for Agent Memory MVP
-- [ ] PR template: "followed 8-tool contract?"
+- **Core loop (A1–A6):** one-call wake, lean/deep mode, anchor recall, `context_for_edit`, structured handoff
+- **`docs/AGENT_MEMORY_CONTRACT.md`** — canonical 8-tool agent entry
+- **`SKILLS.md`** — points to contract first
+- **Grok Build plugin** — 20+ `/engram-*` slash commands + MCP spawn per workspace
+- **`docs/TOOL_DECISION_MAP.md`** — full 70-tool decision map
+- **`docs/DEFORMATION_PLAYBOOKS.md`** — JIT RSI playbooks
+- **`integrations/`** — MCP config templates for Cursor, Claude, Codex, Antigravity
 
 ---
 
-## Phase B (post-MVP, not blocking push)
+## Roadmap (post-MVP)
 
 - Async `load_process_sheaf` (faster session_start)
 - `note()` write primitive (remember/update unified)

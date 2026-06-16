@@ -2,7 +2,7 @@
 
 **Vision**: A memory system that allows a true AGI (or any long-lived autonomous agent) to be powered off for days, weeks, or years, then power back on and verify its own lawfulness, accumulated knowledge, and operational protocols **without any external servers or trusted third parties**.
 
-This document captures the design direction emerging from our work on Engram + Codeland, with specific focus on the user's requirements:
+This document captures the design direction for Engram as a long-sleep, self-verifying memory substrate, with focus on these requirements:
 
 - Atomic, self-verifying blocks of thought (`.leg` / `.leg3` HolographicBlocks)
 - Tamper-evident cryptographic history (BLAKE3 Merkle chain in every block)
@@ -127,4 +127,4 @@ The combination of:
 
 This is not a claim that the current implementation is the final answer. It is a claim that the *shape* of the primitive and the surrounding invariants (tamper evidence, thermodynamic health, agent as primary citizen, Praxis as durable law) is a better starting point than isolated vector stores + external trust.
 
-I am ready to continue the work. Tell me where you want to focus first.
+See [AGENT_MEMORY_CONTRACT.md](AGENT_MEMORY_CONTRACT.md), [HARNESS_INJECTION.md](HARNESS_INJECTION.md), and [GEOMETRIC_MEMORY.md](GEOMETRIC_MEMORY.md) for the current implementation surface.

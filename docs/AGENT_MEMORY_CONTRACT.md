@@ -1,8 +1,16 @@
 # Agent Memory Contract — 8 Essential Tools
 
-**Status:** Phase A target (Agent Memory MVP, 2026-06-06)  
+**Status:** Stable (shipped 2026-06)  
 **Audience:** Any AI agent using the Engram MCP server  
 **Principle:** Lean by default, deep on demand. Eight tools cover wake → work → handoff on large stores (181k+ blocks) without ritual tax or RAM death.
+
+### You were pointed here — bootstrap checklist
+
+1. **Tools available?** You should see `mcp_engram_session_start`, `mcp_engram_recall`, etc. If not, ask the human to complete [FIRST_RUN.md](../FIRST_RUN.md) §1–2 (build + MCP config + IDE restart).
+2. **First call:** `mcp_engram_session_start(intent="<what you're doing>")`. Read `continuation` in the response (goals, suggested actions, last session preview).
+3. **Every session:** wake → work with the 8 tools below → `session_end(summary=…)`. That handoff is what makes the next wake feel continuous.
+4. **Do not at wake:** `watch_workspace`, `rebuild_bvh`, `summarize`, `list_concepts` — use `context_for_edit(path)` per file instead.
+5. **Need more?** 62 power tools exist; escalate deliberately via [TOOL_DECISION_MAP.md](TOOL_DECISION_MAP.md). Ritual detail: [docs/skills/engram-wake-up.md](skills/engram-wake-up.md), [engram-working-memory.md](skills/engram-working-memory.md), [engram-session-end.md](skills/engram-session-end.md).
 
 > **62 more tools exist** (70 total). Power tools (`update`, `query_with_momentum`, `search_by_relation`, `remember_solution`, `scar`, `thought_tile_create`, …) remain available. This contract is the **Layer 0 highway** — not the full map.
 
@@ -81,7 +89,7 @@ Reset to lean before ending long meta sessions to protect the next agent's wake 
 
 ```json
 {
-  "intent": "Continue Agent Memory MVP — document 8-tool contract (A6)",
+  "intent": "Implement feature X in my project — lean wake",
   "include_spatial": false
 }
 ```

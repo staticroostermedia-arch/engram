@@ -6,7 +6,7 @@ This demonstrates the power of the published skills: an agent instance performs 
 
 ## Scenario
 
-Agent is doing GitHub MVP prep / skills exposure work (meta-work on the system itself).
+Agent is doing a multi-session meta-work arc (e.g. documentation, ritual design, or substrate planning).
 
 Steps (follow exactly the protocols in docs/skills/):
 
@@ -18,7 +18,7 @@ Steps (follow exactly the protocols in docs/skills/):
    - Activate working-memory.
 
 2. **Heavy Meta-Work** (engram-working-memory.md + thought-tiles)
-   - Pre: recall helpers (meta_work_escalation_v1, current_meta_arc).
+   - Pre: recall living anchors and helpers surfaced in the wake bundle for the active arc.
    - For edits: context_for_file + recall_in_file (AABB) pre, trace intent, update-prefer or write, post delta trace + relate.
    - Meta pattern: roadmap/policy/gap -> mint knowledge_graph or formal_spec tile at boundaries, with spatial_references, promote_hot.
    - Sub-agent governance: launch narrow one-shot for recon (e.g. sub-agent for "popular memory github patterns"), with supervisor monitoring, kill on doom, fallback synthesis. Record scar/trace for lessons. Escalate meta via subvisor H1 if no tile.
@@ -72,8 +72,8 @@ print("Rehydrated: ready to continue phase without flat context loss.")
 - **Continuation**: The next agent doesn't start from zero or flat summary; it rides the p-tensor + relations + hot cache + COMPRESS from the handoff.
 - **Self-improving**: Sub-agent lessons (doom loops) become scars/traces that future subs avoid. Meta-work forces tiles (per 2026-06 evolution).
 - **Passive spatial**: Edits to the demo itself use context/recall automatically (no manual force/save).
-- **Dogfood**: This doc + scripts were created following the rituals (pre/post traces, tile for the arc, relate to goal:1780419540, update plan).
+- **Dogfood**: This doc + scripts were created following the rituals (pre/post traces, tile for the arc, relate to the active primary goal, update plan).
 
-Run the hello-engram-agent.py first for the loader, then extend with this cycle. See SKILLS.md (root) for index, docs/skills/ for full protocols, processes/monitor/subvisor.toml for the declarative governance, and docs/SUBSTRATE_WINS_PLAN.md for harness injection.
+Run the hello-engram-agent.py first for the loader, then extend with this cycle. See SKILLS.md (root) for index, docs/skills/ for full protocols, processes/monitor/subvisor.toml for the declarative governance, and docs/HARNESS_INJECTION.md for wake injection.
 
 **As an agent**: Load docs/skills/engram-*.md, follow this cycle on your own ambitious tasks. The manifold will make you better over time.

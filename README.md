@@ -11,11 +11,21 @@
 
 Engram is a local, hardware-native memory substrate that gives AI agents coherent, long-term memory with structure-preserving compression, synthetic calculus over both words and numbers, and true continuity across cold shutdowns.
 
-> **Share on X:** attach [docs/images/engram-share-x.png](docs/images/engram-share-x.png) (1280×720) — use the LEG Browser shot below for in-repo demo depth.
+> **Share on X / GitHub:** [docs/images/engram-share-x.png](docs/images/engram-share-x.png) (1280×720). For the repo social preview card: GitHub → **Settings → General → Social preview** → upload that image.
 
 Unlike vector databases or simple logs, Engram uses fixed-size holographic blocks, VSA operations, sheaf gluing, and categorical reasoning to maintain meaning and relationships even after heavy compression and long-running sessions.
 
 It is designed as a drop-in backend for any LLM (Grok, Claude, Llama, etc.) via the Model Context Protocol (MCP) and is fully open for anyone to build on.
+
+### New here?
+
+| You are… | Do this |
+|----------|---------|
+| **A human** (“should my AI use this?”) | Skim [Quick start](#quick-start) below. If it looks right, tell your agent: *“Clone this repo, follow [FIRST_RUN.md](FIRST_RUN.md) steps 1–4, add the MCP config from FIRST_RUN §2, then use the [8-tool contract](docs/AGENT_MEMORY_CONTRACT.md).”* Optional: `./scripts/leg --live` to review what the agent remembers. |
+| **An AI agent** (you were pointed here) | Human must finish [FIRST_RUN.md](FIRST_RUN.md) §1–2 (build + MCP) so you have `mcp_engram_*` tools. Then read [docs/AGENT_MEMORY_CONTRACT.md](docs/AGENT_MEMORY_CONTRACT.md) and run the copy-paste loop at the bottom. **First call every session:** `mcp_engram_session_start(intent="…")`. |
+| **Curious about the theory** | [docs/GEOMETRIC_MEMORY.md](docs/GEOMETRIC_MEMORY.md) · [MANIFESTO.md](MANIFESTO.md) — after you have a working install. |
+
+**Rituals** = documented MCP habits (wake → trace decisions → handoff) so memory compounds across sessions — not mysticism, just the discipline that beats flat RAG.
 
 Engram is particularly well-suited for:
 - Long-running agentic systems
@@ -25,12 +35,15 @@ Engram is particularly well-suited for:
 
 | Start here | Doc |
 |------------|-----|
+| **New users & agents** | [FIRST_RUN.md](FIRST_RUN.md) |
+| **Lean contract (8 tools)** | [docs/AGENT_MEMORY_CONTRACT.md](docs/AGENT_MEMORY_CONTRACT.md) |
 | **Grok Build / xAI reviewers** | [docs/GROK_BUILD_MEMORY.md](docs/GROK_BUILD_MEMORY.md) |
-| **Any agent (lean contract)** | [docs/AGENT_MEMORY_CONTRACT.md](docs/AGENT_MEMORY_CONTRACT.md) + [FIRST_RUN.md](FIRST_RUN.md) |
-| **JIT deformation / RSI** | [docs/DEFORMATION_PLAYBOOKS.md](docs/DEFORMATION_PLAYBOOKS.md) |
-| **Ritual skills** | [SKILLS.md](SKILLS.md) → `docs/skills/` |
-| **Deep operators** | [HOW_WE_ACTUALLY_USE_THIS_IN_2026.md](HOW_WE_ACTUALLY_USE_THIS_IN_2026.md) |
-| **Substrate builders (BYOP)** | [AGENT_INTEGRATION_GUIDE.md](AGENT_INTEGRATION_GUIDE.md) |
+| **MCP setup (all ecosystems)** | [integrations/README.md](integrations/README.md) |
+| **Human review (LEG Browser)** | [docs/LEG_BROWSER.md](docs/LEG_BROWSER.md) |
+| **Personal knowledge wiki** | [docs/PERSONAL_KNOWLEDGE_WIKI.md](docs/PERSONAL_KNOWLEDGE_WIKI.md) |
+| **Power users (70 tools)** | [docs/TOOL_DECISION_MAP.md](docs/TOOL_DECISION_MAP.md) |
+| **Ritual skills** | [SKILLS.md](SKILLS.md) → [docs/skills/](docs/skills/) |
+| **Deep mode (after install)** | [AGENT_INTEGRATION_GUIDE.md](AGENT_INTEGRATION_GUIDE.md) |
 
 **Human review (LEG Browser beta):** `./scripts/leg` (static) or `./scripts/leg --live` — see [docs/LEG_BROWSER.md](docs/LEG_BROWSER.md).
 
@@ -40,12 +53,12 @@ Engram is particularly well-suited for:
 
 | | Flat vector / markdown | Engram |
 |--|------------------------|--------|
-| Storage | append-log / chunks | 256KB geometric blocks (q/p/CRS/Merkle) |
-| Wake | cold start | `session_start` + JIT harness + verified tile playbooks |
-| Integrity | none | `verify_*`, scars, CRS ≥ 0.74 |
-| Code context | RAG chunks | `context_for_edit` + spatial AABB |
-| Agent discipline | hope | rituals + subvisor H¹ + process sheaf |
-| Human mirror | none | LEG Browser beta — live traces, goals, tiles |
+| Storage | append-log / chunks | Structured blocks with integrity checks (details: [GEOMETRIC_MEMORY](docs/GEOMETRIC_MEMORY.md)) |
+| Wake | cold start every time | `session_start` restores goals, last session, suggested next steps |
+| Integrity | none | `verify_*`, scars, lawfulness gates (CRS ≥ 0.74) |
+| Code context | RAG chunks | `context_for_edit` — file-scoped memory before you edit |
+| Agent discipline | hope the model remembers | Documented rituals + optional governance processes |
+| Human mirror | none | LEG Browser beta — see traces, goals, tiles locally |
 
 Full comparison vs mem0/Letta/chroma: see [docs/GROK_BUILD_MEMORY.md](docs/GROK_BUILD_MEMORY.md).
 
@@ -57,7 +70,7 @@ Full comparison vs mem0/Letta/chroma: see [docs/GROK_BUILD_MEMORY.md](docs/GROK_
 git clone https://github.com/staticroostermedia-arch/engram.git
 cd engram
 cargo build -p engram-server
-target/debug/engram --version   # 0.7.0-beta.1
+target/debug/engram --version   # 0.7.0-beta.2
 ```
 
 **MCP config** (Grok Build / Cursor — use `scripts/engram-grok`):
@@ -126,16 +139,15 @@ flowchart LR
   H --> W
 ```
 
-## What's new in v0.7.0-beta.1
+## What's new in v0.7.0-beta.2
 
-- **LEG Browser beta:** agent memory mirror — wake queue, ego evolution strip, continuity playbook, presentation stratum galaxy, live activity SSE. One command: `./scripts/leg --live`.
-- **JIT deformation:** task-type playbooks + `verified_processes` at wake — agents construct tool calls as context requires; scars repulse, tiles condense arcs ([DEFORMATION_PLAYBOOKS.md](docs/DEFORMATION_PLAYBOOKS.md)).
-- **Presentation stratum:** agents wake into ~40–64 CRS-ranked nodes (goals/traces/tiles/process), not the full cold manifold.
-- **Harness continuity:** `ego_snapshot`, `continuity_playbook`, wake queue gate (`soft`/`hard`/`off`) + `mcp_engram_ack_wake_queue`.
-- **70 MCP tools** smoke-tested (67 pass in isolated harness); lean default remains **8 essential**.
-- **REST:** `/api/consciousness-surface`, enhanced `/api/context-window` for the viewer.
+- **Cold-start onboarding:** README human→agent fork, FIRST_RUN role split, contract bootstrap checklist — install path works without insider context.
+- **Public docs polish:** personal knowledge wiki, `docs/internal/` maintainer journals, external-reader tone pass.
+- **JIT deformation:** task-type playbooks + `verified_processes` at wake ([DEFORMATION_PLAYBOOKS.md](docs/DEFORMATION_PLAYBOOKS.md)).
+- **70 MCP tools** smoke-tested (67 pass in harness); lean default remains **8 essential**.
+- **LEG Browser beta** (from beta.1): `./scripts/leg --live` — memory review UI, wake queue, presentation stratum.
 
-See [CHANGELOG.md](CHANGELOG.md). v0.6.0 brought .leg3 optimizations (tiered blocks, hybrid wire, SOA+arena, homo+zk transforms).
+Full history: [CHANGELOG.md](CHANGELOG.md).
 
 ## Categorical Linguistic Calculus
 
@@ -188,18 +200,41 @@ Grok plugin slash commands: [grok-plugin-engram/commands/](grok-plugin-engram/co
 
 ## Deep dive (linked, not repeated here)
 
+### Users
+
 | Topic | Doc |
 |-------|-----|
 | LEG Browser (beta) | [docs/LEG_BROWSER.md](docs/LEG_BROWSER.md) |
-| 256KB / NVMe / GPU backends | [docs/architecture.md](docs/architecture.md) |
-| CRS / scars / lawfulness | [docs/GEOMETRIC_MEMORY.md](docs/GEOMETRIC_MEMORY.md) |
-| Process sheaf + sub-agent governance | [processes/README.md](processes/README.md) |
-| Substrate wins roadmap | [docs/SUBSTRATE_WINS_PLAN.md](docs/SUBSTRATE_WINS_PLAN.md) |
+| Personal knowledge wiki | [docs/PERSONAL_KNOWLEDGE_WIKI.md](docs/PERSONAL_KNOWLEDGE_WIKI.md) |
+| Deployment & hardware backends | [docs/DEPLOYMENT_MODES.md](docs/DEPLOYMENT_MODES.md) · [docs/architecture.md](docs/architecture.md) |
 | Marketplace submission | [docs/MARKETPLACE_SUBMISSION.md](docs/MARKETPLACE_SUBMISSION.md) |
-| Philosophy | [MANIFESTO.md](MANIFESTO.md) · [PHILOSOPHY.md](PHILOSOPHY.md) |
-| Contributor / operator depth | [docs/SUBSTRATE_WINS_PLAN.md](docs/SUBSTRATE_WINS_PLAN.md) · [docs/LONG_SLEEP_WAKEUP_PROTOCOL.md](docs/LONG_SLEEP_WAKEUP_PROTOCOL.md) |
 
-**Hardware:** CPU (default), CUDA, ROCm, Metal, WebGPU — see [docs/DEPLOYMENT_MODES.md](docs/DEPLOYMENT_MODES.md).
+### Agents
+
+| Topic | Doc |
+|-------|-----|
+| JIT deformation / RSI | [docs/DEFORMATION_PLAYBOOKS.md](docs/DEFORMATION_PLAYBOOKS.md) |
+| Harness injection at wake | [docs/HARNESS_INJECTION.md](docs/HARNESS_INJECTION.md) |
+| Ritual overview | [docs/RITUALS.md](docs/RITUALS.md) |
+| MCP tools reference (70) | [docs/MCP_TOOLS_REFERENCE.md](docs/MCP_TOOLS_REFERENCE.md) |
+| Long-sleep return | [docs/LONG_SLEEP_WAKEUP_PROTOCOL.md](docs/LONG_SLEEP_WAKEUP_PROTOCOL.md) |
+
+### Contributors
+
+| Topic | Doc |
+|-------|-----|
+| Maintainer workflow | [docs/internal/MAINTAINER_WORKFLOW.md](docs/internal/MAINTAINER_WORKFLOW.md) |
+| Harness program (shipped) | [docs/SUBSTRATE_WINS_PLAN.md](docs/SUBSTRATE_WINS_PLAN.md) · [docs/HARNESS_INJECTION.md](docs/HARNESS_INJECTION.md) |
+| Process sheaf + sub-agent governance | [processes/README.md](processes/README.md) |
+| Contributing | [CONTRIBUTING.md](CONTRIBUTING.md) · [AGENTS.md](AGENTS.md) |
+
+### Theory
+
+| Topic | Doc |
+|-------|-----|
+| CRS / scars / lawfulness | [docs/GEOMETRIC_MEMORY.md](docs/GEOMETRIC_MEMORY.md) |
+| Categorical linguistic calculus | [docs/CATEGORICAL_LINGUISTIC_CALCULUS.md](docs/CATEGORICAL_LINGUISTIC_CALCULUS.md) |
+| Philosophy | [MANIFESTO.md](MANIFESTO.md) · [PHILOSOPHY.md](PHILOSOPHY.md) |
 
 **CLI:** `engram remember|recall|forget|list|ingest|trace|distill|build-index`
 

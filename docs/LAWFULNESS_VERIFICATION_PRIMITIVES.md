@@ -10,7 +10,7 @@ The core promise of this memory system for "True AGI" style agents is:
 
 > An agent must be able to be powered off for arbitrary periods and, upon waking, credibly verify that its own accumulated knowledge, decisions, and operational protocols remain lawful and untampered — using only local resources and the intrinsic properties of the substrate.
 
-**CodeLand Lineage Note (v1)**: The 6 logophysics invariants + Gurdjieff legominism principles (see living block `legominism_mapping_table_v1`) provide the deep mechanical source for what "lawful" means in this substrate. The Liber/False Empire experiment was explicitly testing attention mechanics, durable forms (legominisms), metabolism via A/D/R, and conscience shocks — precisely the dynamics these verification primitives must protect. All verification must respect the frozen .leg3 block invariants (binary vector isomorphism, hardware alignment for direct movement, backwards compatibility — see `leg_block_invariants_guardrail_v1`). Evolution of verification logic itself must use Allowed Transforms.
+**Design lineage:** Logophysics and legominism (durable transmitted forms, A/D/R metabolism, attention/conscience dynamics) inform what "lawful" means here — expressed as CRS gates, trace chains, scars, and allowed transforms. All verification must respect frozen `.leg3` block invariants (binary vector isomorphism, hardware alignment, backwards compatibility). Evolution of verification logic itself must use **Allowed Transforms** only.
 
 Current state:
 - The `.leg` format already provides excellent tamper-evidence via the 6-deep BLAKE3 chain (`sig_0`–`sig_5`) + `merkle_sub_root` on relations.
@@ -139,6 +139,6 @@ This makes "verify its lawfulness without calling an external server" a concrete
 
 ---
 
-This document will be the living spec for Item #1 in the roadmap.
+This document is the living spec for lawfulness verification primitives (foundation for long-sleep agent autonomy).
 
 Once we have working primitives here, the rest of the vision (long-sleep protocols, Praxis as executable objects, etc.) becomes much more credible.

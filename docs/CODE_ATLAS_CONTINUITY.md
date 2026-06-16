@@ -52,7 +52,7 @@ Source stays clean. Manifold holds the archaeology.
 
 The next instance inherits **decisions + momentum + structure**, not grep and hope.
 
-Humans oversee via LEG (consciousness mirror, trace chain, geosphere) without reading every agent step.
+Humans oversee via LEG (memory review UI, trace chain, geosphere) without reading every agent step.
 
 ---
 
@@ -133,7 +133,7 @@ mcp_engram_relate(trace_concept, "store__fn__context_for_edit", "edited_at")
 
 As agent autonomy grows, you won't read every step. You **will** read:
 
-- LEG hygiene + consciousness surface (what's active)
+- LEG hygiene + memory review surface (what's active)
 - Trace chain at decision forks
 - `__arc` snippets at loci you care about
 - Geosphere (place + learned + scene time on tiles)

@@ -2,9 +2,9 @@
 
 Rituals turn the geometric substrate into living self-model and continuity for agents.
 
-**Dogfooding:** When the agent uses these rituals (and the underlying mcp_engram_remember/relate/record_reasoning_trace/update/goal/scar/verify/spatial + thought_tile tools) *on its own work and decisions*, the activity becomes first-class persistent geometry (traces, relations, CRS evolution, structured tiles for compression). See docs/SUBSTRATE_WINS_PLAN.md for the harness injection learning loop.
+**Dogfooding:** When the agent uses these rituals (and the underlying mcp_engram_remember/relate/record_reasoning_trace/update/goal/scar/verify/spatial + thought_tile tools) *on its own work and decisions*, the activity becomes first-class persistent geometry (traces, relations, CRS evolution, structured tiles for compression). See [HARNESS_INJECTION.md](HARNESS_INJECTION.md) for wake injection; [SUBSTRATE_WINS_PLAN.md](SUBSTRATE_WINS_PLAN.md) for the historical program record.
 
-**Recognition for update and tiles + automatic escalation (ritual process update 2026-06):** See working-memory "Recognition Heuristics" and "Automatic Escalation", thought-tiles "Recognition triggers" and "Expected for Re-hydration". In practice: recall `helper:meta_work_escalation_v1` + `helper:current_meta_arc` for meta arcs; ki/wake/session/subvisor auto prompt for tile/update; tiles expected (not optional) for bundles/re-hydration. Reconcile step via helper:reconcile_step_v1. See docs/SUBSTRATE_WINS_PLAN.md.
+**Recognition for update and tiles + automatic escalation (ritual process update 2026-06):** See working-memory "Recognition Heuristics" and "Automatic Escalation", thought-tiles "Recognition triggers" and "Expected for Re-hydration". For meta-work arcs (design:/progress: prefixes), recall living anchors from the wake bundle, prefer `update` over duplicate `remember`, and mint tiles at arc boundaries — tiles are expected (not optional) for bundles and re-hydration. See [HARNESS_INJECTION.md](HARNESS_INJECTION.md) and [DEFORMATION_PLAYBOOKS.md](DEFORMATION_PLAYBOOKS.md) for current ops.
 
 ## Core Rituals (Skills)
 
@@ -49,7 +49,7 @@ Narrow one-shot only (single action, mcp geometric first, Primary Objective + ne
 
 verify_manifold_integrity, verify_block_lawfulness, genesis, spatial_status, ki freshness. metric:wake_up_verification_<iso> + trend. overall_lawful + score.
 
-See [docs/skills/](skills/), [SUBSTRATE_WINS_PLAN.md](SUBSTRATE_WINS_PLAN.md), [HARNESS_INJECTION.md](HARNESS_INJECTION.md).
+See [docs/skills/](skills/), [HARNESS_INJECTION.md](HARNESS_INJECTION.md), [SUBSTRATE_WINS_PLAN.md](SUBSTRATE_WINS_PLAN.md) (historical).
 
 For external agents: follow rituals for lawful use of the substrate.
 
@@ -61,13 +61,4 @@ Additive P5 (coord + sub5): `processes/ritual/ritual_linguistic_wake.toml` + ext
 - Integrates NREM (produces ego.leg3 + hot + linguistic crs gate 0.85 + homotopy fibered check) with mcp linguistic calculus surface (P3 compress/de/fibered + P4 calculus ops) + session.
 - load_process_sheaf (mcp.rs) picks "ritual" dir (and linguistic/) at wake; P5 tomls now present + active.
 - Full pipeline survival: Leg3 mint linguistic (P1) → op compress/diff/operad (P3/P4 via mcp_linguistic_calculus etc) → decompress → NREM (toml + promote/records) → ego.leg3 (verify/concept high CRS) with homotopy/text-coeff fidelity >=0.85.
-- Dogfood: traces/relates to active goals; see Phase 6 e2e test in crates/engram-server/src/mcp.rs, MCP_TOOLS_REFERENCE.md, SUBSTRATE_WINS_PLAN.md.
-
-These close the categorical/linguistic calculus loop for geometric self-model (non-flat).
-
-## Phase 6: Public documentation (linguistic calculus)
-
-- [`CATEGORICAL_LINGUISTIC_CALCULUS.md`](CATEGORICAL_LINGUISTIC_CALCULUS.md) — public overview, CRS gates, how to try.
-- [`MCP_TOOLS_REFERENCE.md`](MCP_TOOLS_REFERENCE.md) — linguistic tool surface (P1–P5).
-- E2e: `cargo test -p engram-server` (linguistic pipeline + CRS ≥ 0.85).
-- Invariants unchanged: .leg3 layout, p-momentum on `update`, sheaf/H¹ from `processes/linguistic/*.toml`.
+- Dogfood: traces/relates to active goals; see `cargo test -p engram-server` (linguistic pipeline), [MCP_TOOLS_REFERENCE.md](MCP_TOOLS_REFERENCE.md), [CATEGORICAL_LINGUISTIC_CALCULUS.md](CATEGORICAL_LINGUISTIC_CALCULUS.md).

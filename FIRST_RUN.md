@@ -1,9 +1,25 @@
 # Engram — First Run Guide
 
-> **For new users and AI agents.** Run through this guide once when you first install Engram.
-> After completing it, MCP is verified, your store is seeded, and you know the **8-tool lean contract**.
+> **For new users and AI agents.** Run through this once on a fresh install.
+> After it, MCP works, your store is seeded, and the **8-tool lean contract** is proven.
 
 **Canonical reference:** [docs/AGENT_MEMORY_CONTRACT.md](docs/AGENT_MEMORY_CONTRACT.md)
+
+### Who does what?
+
+| Role | Steps |
+|------|-------|
+| **Human** | §1 Build · §2 MCP config in IDE · restart IDE · optional §6 embeddings · optional `./scripts/leg --live` to review memory |
+| **AI agent** | After human completes §2: §3 `session_start` · §4 first `remember`/`recall` · §5 `context_for_edit` when editing code · §7 `session_end` every session · follow [AGENT_MEMORY_CONTRACT](docs/AGENT_MEMORY_CONTRACT.md) thereafter |
+
+**Paste to your agent (after §2):**
+
+```
+Engram MCP is configured. Read docs/AGENT_MEMORY_CONTRACT.md.
+Run mcp_engram_session_start(intent="First session on Engram").
+Follow the 8-tool loop; do not call watch_workspace at wake.
+End with mcp_engram_session_end(summary=...).
+```
 
 ---
 
@@ -15,7 +31,7 @@ cd engram
 cargo build -p engram-server
 
 target/debug/engram --version
-# engram 0.7.0-beta.1
+# engram 0.7.0-beta.2
 ```
 
 ---
@@ -162,6 +178,6 @@ This produces a structured handoff packet. Your **next** `session_start` will su
 1. Load [SKILLS.md](SKILLS.md) + `docs/skills/engram-wake-up.md` into your agent instructions.
 2. Read [docs/GROK_BUILD_MEMORY.md](docs/GROK_BUILD_MEMORY.md) for Grok Build integration.
 3. Run `examples/hello-engram-agent.py` to see the lean loop.
-4. For deep rituals: [docs/RITUALS.md](docs/RITUALS.md) + [HOW_WE_ACTUALLY_USE_THIS_IN_2026.md](HOW_WE_ACTUALLY_USE_THIS_IN_2026.md).
+4. For deep rituals: [docs/RITUALS.md](docs/RITUALS.md) + [docs/skills/](docs/skills/). Contributors: [docs/internal/MAINTAINER_WORKFLOW.md](docs/internal/MAINTAINER_WORKFLOW.md).
 
 *First-run complete. Your manifold is ready.*

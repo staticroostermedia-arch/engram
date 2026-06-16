@@ -98,8 +98,20 @@ Run `/engram-wake` first in every session.
 |-------|-----|
 | MCP "not found" | Open a **new Grok session** after install |
 | `grok mcp doctor` fails while TUI open | **Expected** — only one `engram mcp` per store. Run `./scripts/engram-mcp-health.sh` instead |
+| Generic TUI commands like `/goal` not appearing in autocomplete | When the Engram plugin + MCP is active, the session toolset uses Engram's goal system (`/engram-goal` + `mcp_engram_goal_*` tools) for persistent, geometric goals. Generic TUI `/goal` (simple session goals via `update_goal`) may not show because it requires the plain `update_goal` builtin in the toolset. This is expected for Engram users. Use the Engram equivalents for work that should persist in the manifold. Generic TUI builtins should still be available for other features. See coexistence notes below and [docs/PERSONAL_KNOWLEDGE_WIKI.md](../docs/PERSONAL_KNOWLEDGE_WIKI.md). |
 | Lock error on restart | Close Grok session or `pkill -f "engram.*mcp"` then new session |
 | Binary missing | Run `scripts/install-engram-plugin.sh` |
+
+## Coexistence with Generic TUI Features
+
+Engram is designed to augment the Grok Build TUI with a superior geometric memory substrate, not to replace core TUI conveniences.
+
+- **Slash commands**: Engram adds `/engram-*` (20+ commands for wake, edit, recall, goals, tiles, etc.). Generic TUI commands (`/goal`, `/loop`, `/btw`, `/theme`, `/feedback`, etc.) are intended to remain available.
+- **Goals**: Use `/engram-goal` + Engram MCP goal tools for anything that should be persistent, traceable, and linked to tiles or your personal knowledge wiki. The generic TUI `/goal` is for lightweight, ephemeral session objectives.
+- **Multi-chat / multi-agent use**: Many chats and agents can contribute to the same manifold. Engram's namespace, continuation, and sub-governor features support this pattern. See [docs/PERSONAL_KNOWLEDGE_WIKI.md](../docs/PERSONAL_KNOWLEDGE_WIKI.md) for setup and coexistence guidance.
+- If a generic TUI feature disappears in your session, open a new chat or check with `/context`. Report it — we want full coexistence so using Engram doesn't mean losing built-in TUI power.
+
+Coexistence behavior is actively improved; contributors are encouraged to trace issues and fixes in the manifold.
 
 ## License
 

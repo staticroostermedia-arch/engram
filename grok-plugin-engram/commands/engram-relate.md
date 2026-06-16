@@ -7,7 +7,7 @@ Run when a meaningful relationship exists between two memories (goal ↔ trace, 
 
 1. Confirm both concepts exist: `mcp_engram_recall` or `mcp_engram_read_concept` on each.
 2. Call `mcp_engram_relate` with:
-   - `concept_a` — source (e.g. `trace:1781201680_...`)
+   - `concept_a` — source (e.g. `trace:your_trace_id`)
    - `concept_b` — target (e.g. `goal:mvp_gap_closure_v1`)
    - `label` — semantic edge: `serves`, `derived_from`, `implements`, `contradicts`, `depends_on`, `produces`, etc.
 3. For multiple edges, use `mcp_engram_relate_batch` if available in schema; otherwise repeat `relate`.

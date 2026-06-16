@@ -1,14 +1,16 @@
 # examples/hello-engram-agent.py
-# Lean 8-tool contract demo for external agents.
+#
+# START HERE if you opened examples/ first:
+#   1. Human: FIRST_RUN.md §1–2 (build + MCP config)
+#   2. Agent: docs/AGENT_MEMORY_CONTRACT.md (8-tool loop)
+#   3. Then run this demo (shim — wire integrations/python for live MCP)
 #
 # Run (after engram MCP is available):
+#   cargo build -p engram-server
 #   PYTHONPATH=integrations/python python examples/hello-engram-agent.py
 #
-# Demonstrates the Agent Memory MVP loop:
-#   session_start → context_for_edit → recall → quick_trace → remember → session_end
-#
-# Load docs/AGENT_MEMORY_CONTRACT.md + SKILLS.md into real agent instructions.
-# Current build: target/debug/engram (cargo build -p engram-server)
+# Loop: session_start → context_for_edit → recall → quick_trace → remember → session_end
+# Build: target/debug/engram --version  # expect 0.7.0-beta.2
 
 import os
 

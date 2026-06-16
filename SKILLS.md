@@ -2,7 +2,7 @@
 
 **For AI agents (Grok, Claude, custom, etc.) using the Engram MCP server:**
 
-This is the canonical entry point for the published ritual protocols.
+You were probably sent here after [FIRST_RUN.md](FIRST_RUN.md) and [docs/AGENT_MEMORY_CONTRACT.md](docs/AGENT_MEMORY_CONTRACT.md). This index links the step-by-step ritual protocols (wake, working memory, session end, tiles, personal wiki).
 
 ## Start Here — 8-Tool Agent Memory Contract
 
@@ -25,6 +25,7 @@ Load the ritual skills in `docs/skills/` for full protocol detail (all aligned t
 - [docs/skills/engram-working-memory.md](docs/skills/engram-working-memory.md) — Runtime discipline (`context_for_edit`, anchor-first recall, `quick_trace`, update-preferred).
 - [docs/skills/engram-session-end.md](docs/skills/engram-session-end.md) — Structured handoff packet (`session_end` JSON, COMPRESS, anchors).
 - [docs/skills/engram-thought-tiles.md](docs/skills/engram-thought-tiles.md) — Structured offload (mandatory for meta, promote_hot for re-hydration).
+- [docs/skills/engram-leg-wiki-starter.md](docs/skills/engram-leg-wiki-starter.md) — Bootstrap a personal knowledge wiki (LEG Browser + tiles).
 
 ## Declarative Process Sheaf
 
@@ -40,6 +41,8 @@ See:
 - `examples/hello-engram-agent.py` (tiny self-contained demo that loads skills + walks one full loop).
 - `examples/mcp_client.py` (MCP usage with rituals).
 - `examples/ritual_verify.md` (Code Edit + working-memory).
+- `examples/personal-wiki-cookbook.md` (5-chat personal wiki maintenance).
+- [docs/PERSONAL_KNOWLEDGE_WIKI.md](docs/PERSONAL_KNOWLEDGE_WIKI.md) (product overview).
 - `examples/spatial_geosphere_demo.py` (spatial passive + geosphere).
 - `docs/examples/sub_agent_governance.md` (subvisor H¹, narrow prompts, escalation, doom-loop prevention).
 ## Full Cycle Demo
@@ -53,11 +56,11 @@ See `docs/examples/full_ritual_cycle.md` (or the python equiv) for a complete ru
 3. For work: follow `engram-working-memory.md` (`context_for_edit` for edits, `recall(scope=anchors)`, `quick_trace`, `remember`/`update`, tiles for deep meta).
 4. At end: `mcp_engram_session_end` (structured handoff packet) per `engram-session-end.md`.
 
-This gives you the same geometric continuation, self-model, and lawfulness we use internally.
+This gives you geometric continuation, self-model, and lawfulness on the same substrate the project exercises in development.
 
-**Dogfooding**: The best way to use Engram is to use these rituals *on your own development/meta-work*. The manifold will compound your agent's capability.
+**Optional — dogfooding:** Using these rituals on your own development or meta-work can compound capability over time; the manifold learns from repeated geometric use.
 
-See also `docs/AGENT_MEMORY_CONTRACT.md` (8-tool contract), `docs/GEOMETRIC_MEMORY.md`, `docs/RITUALS.md`, `docs/MCP_TOOLS_REFERENCE.md`, `docs/SUBSTRATE_WINS_PLAN.md` (harness injection + sub-agent governance).
+See also `docs/AGENT_MEMORY_CONTRACT.md` (8-tool contract), `docs/GEOMETRIC_MEMORY.md`, `docs/RITUALS.md`, `docs/MCP_TOOLS_REFERENCE.md`, `docs/HARNESS_INJECTION.md` (wake injection), `docs/DEFORMATION_PLAYBOOKS.md` (JIT playbooks).
 
 ---
 

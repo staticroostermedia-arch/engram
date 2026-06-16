@@ -154,4 +154,4 @@ Escalation examples (construct args JIT):
 
 - [HARNESS_INJECTION.md](HARNESS_INJECTION.md) — wake queue, continuity playbook
 - [CODE_ATLAS_CONTINUITY.md](CODE_ATLAS_CONTINUITY.md) — `__arc` deformation on code
-- [SUBSTRATE_WINS_PLAN.md](SUBSTRATE_WINS_PLAN.md) — WS-2/WS-4 verified_sequence
+- [SUBSTRATE_WINS_PLAN.md](SUBSTRATE_WINS_PLAN.md) — historical WS-2/WS-4 verified_sequence program

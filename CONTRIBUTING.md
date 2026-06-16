@@ -104,11 +104,12 @@ These are for substrate builders and long-running operator setups:
 
 | Doc | Purpose |
 |-----|---------|
-| [docs/SUBSTRATE_WINS_PLAN.md](docs/SUBSTRATE_WINS_PLAN.md) | Harness injection + learning loop roadmap |
+| [docs/SUBSTRATE_WINS_PLAN.md](docs/SUBSTRATE_WINS_PLAN.md) | Harness injection program (shipped; historical record) |
+| [docs/HARNESS_INJECTION.md](docs/HARNESS_INJECTION.md) | Current wake injection contract |
 | [docs/LONG_SLEEP_WAKEUP_PROTOCOL.md](docs/LONG_SLEEP_WAKEUP_PROTOCOL.md) | Cold-boot / long-sleep wake |
 | [docs/AGENTIC_FIRST_LONG_SLEEP_SUBSTRATE.md](docs/AGENTIC_FIRST_LONG_SLEEP_SUBSTRATE.md) | Agentic-first substrate notes |
 | [docs/long_sleep_verification_suite_design.md](docs/long_sleep_verification_suite_design.md) | Verification suite design |
-| [docs/real_usage_testing_guide.md](docs/real_usage_testing_guide.md) | Real-usage testing |
+| [docs/internal/real_usage_testing_guide.md](docs/internal/real_usage_testing_guide.md) | Real-usage testing (maintainer) |
 | [processes/meta/](processes/meta/) | Advanced `/loop` workflow playbooks (not sheaf-loaded) |
 
 ---

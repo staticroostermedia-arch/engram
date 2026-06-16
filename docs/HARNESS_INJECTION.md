@@ -142,9 +142,9 @@ Low-fidelity handoffs produce thin `suggested_actions` — the substrate feeds b
 
 ---
 
-## Roadmap (next wins)
+## Program history (shipped)
 
-Implementation plan: **[SUBSTRATE_WINS_PLAN.md](SUBSTRATE_WINS_PLAN.md)** — Cursor auto-wake, auto-tile draft, process metrics, `verified_sequence` schema.
+The harness injection learning loop (Cursor auto-wake, auto-tile draft, process metrics, `verified_sequence` schema) is **implemented**. Historical design record: **[SUBSTRATE_WINS_PLAN.md](SUBSTRATE_WINS_PLAN.md)**. **Current ops:** this doc + **[DEFORMATION_PLAYBOOKS.md](DEFORMATION_PLAYBOOKS.md)**.
 
 ---
 
@@ -167,7 +167,7 @@ Wake injection is **not** a fixed script. See **[DEFORMATION_PLAYBOOKS.md](DEFOR
 ## Related
 
 - [DEFORMATION_PLAYBOOKS.md](DEFORMATION_PLAYBOOKS.md) — JIT homotopy + verified tiles + RSI
-- [SUBSTRATE_WINS_PLAN.md](SUBSTRATE_WINS_PLAN.md) — phased PR stack
+- [SUBSTRATE_WINS_PLAN.md](SUBSTRATE_WINS_PLAN.md) — historical program record (shipped)
 - [RITUALS.md](RITUALS.md) — thought tiles mandatory for meta
 - [docs/skills/engram-thought-tiles.md](skills/engram-thought-tiles.md)
 - `processes/monitor/subvisor.toml` — doom loop / meta escalation

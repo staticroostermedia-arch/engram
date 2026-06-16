@@ -13,8 +13,8 @@
 - decision: Add/improve ritual_verify example per plan.
 - why: Fulfill examples/ 3+ runnable + docs polish for representation of rituals (scar/verify/trace). Addresses sparse examples gap from popular recon.
 - spatial: context_for_file + force_spatial_ingest on examples/plan/README (145 AST from rs files); bootstrap_in_progress noted.
-- goal: goal:1780419540_prepare-and-polish-current-engram-mvp-for-public
-- prev: (chain from prior like 1780422227...)
+- goal: goal:your_project_goal
+- prev: (chain from your prior trace, e.g. trace:your_previous_trace_id)
 
 ## Verify (ritual + lawfulness)
 mcp_engram_verify_manifold_integrity (min_crs=0.74, sample=20)  # expect healthy, 0 issues

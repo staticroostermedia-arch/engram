@@ -60,7 +60,7 @@ metadata:
 | Back to lean | `/engram-lean` |
 | Lawfulness check | `/engram-verify` |
 | Spatial recovery | `/engram-ingest` |
-| Schedule recurring (Grok /loop e.g. consciousness strange loop) | `/engram-loop` (parse per spec → bare native scheduler_create + Enram record/relate to consciousness goal/tile/process + subvisor governance + honest confirm or scar) |
+| Schedule recurring (Grok /loop e.g. consciousness strange loop) | `/engram-loop` (parse per spec → bare native scheduler_create + Engram record/relate to consciousness goal/tile/process + subvisor governance + honest confirm or scar) |
 
 ## Agent discipline
 

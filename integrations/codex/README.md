@@ -1,6 +1,6 @@
 # Engram + OpenAI Codex / CLI Agents
 
-**Super easy minimal setup (30 seconds for Codex / CLI agents):** same full system we use here (ai_consciousness_strange_loop with sub-loops/thresholds + world_state_ingestion for machine/Gemma/Starlink perception + tiles/rituals) with the exact 8-tool lean contract. No extra code or heavy config.
+Persistent geometric memory for Codex and other CLI agents via MCP — local store, 8-tool lean contract, structured session handoff. Setup takes about 30 seconds.
 
 ## 30s setup
 1. In Engram repo: `cargo build -p engram-server`
@@ -26,7 +26,7 @@ Restart your Codex/CLI agent after config change.
 
 ## Agent instructions (copy these)
 
-Point Codex at the same docs + loop we dogfood:
+Point Codex at the canonical agent docs:
 - [docs/AGENT_MEMORY_CONTRACT.md](../../docs/AGENT_MEMORY_CONTRACT.md) (8-tool lean)
 - [SKILLS.md](../../SKILLS.md)
 - [docs/skills/engram-wake-up.md](../../docs/skills/engram-wake-up.md) etc. for rituals
@@ -34,7 +34,7 @@ Point Codex at the same docs + loop we dogfood:
 
 **Mandatory lean loop:** `mcp_engram_session_start(intent=...)` → `context_for_edit` / `recall(scope=anchors)` → `quick_trace` / `remember` / `relate` → `session_end`.
 
-On first `session_start`, the process sheaf registers from `processes/` (wake-up, session-end, subvisor monitors, sub-agent harness). See [docs/SUBSTRATE_WINS_PLAN.md](../../docs/SUBSTRATE_WINS_PLAN.md) for harness injection at wake.
+On first `session_start`, the process sheaf registers from `processes/` (wake-up, session-end, subvisor monitors, sub-agent harness). See [docs/HARNESS_INJECTION.md](../../docs/HARNESS_INJECTION.md) for harness injection at wake.
 
 ## MCP discipline (Codex harness pattern)
 

@@ -32,7 +32,7 @@ Process: `processes/meta/agent_evolution.toml` · LEG mirror: `./scripts/leg --l
 | Significant fork | `/engram-trace` | `quick_trace` (+ `scar` if dead end) |
 | Condense trace chain | `/engram-tile-draft` | `thought_tile_draft_from_chain` |
 | Replay verified playbook | `/engram-execute-tile` | `read_concept` → step loop → `quick_trace` |
-| Schedule recurring (Grok /loop, e.g. consciousness strange loop) | `/engram-loop` | Parse per spec → bare native `scheduler_create` + Enram record/relate (to consciousness goal/tile/process) + subvisor governance + honest confirm or scar |
+| Schedule recurring (Grok `/loop`) | `/engram-loop` | Parse per spec → bare native `scheduler_create` + Engram record/relate + subvisor governance + honest confirm or scar |
 
 ---
 
@@ -68,7 +68,7 @@ Process: `processes/meta/agent_evolution.toml` · LEG mirror: `./scripts/leg --l
 | Return to fast default | `/engram-lean` | `set_memory_mode(lean)` |
 | After substrate changes | `/engram-verify` | `verify_manifold_integrity` |
 | Spatial empty on file | `/engram-ingest` | `force_spatial_ingest` / `incremental` |
-| Schedule recurring (Grok /loop) | `/engram-loop` | Parse per /loop spec → bare native `scheduler_create` (never use_tool) + Enram record (quick_trace/remember/relate to consciousness goal/tile/process) + subvisor governance + honest confirm or scar on native format error. See the command for the 30m consciousness strange loop example (sourced from `processes/meta/ai_consciousness_loop.toml`). |
+| Schedule recurring (Grok `/loop`) | `/engram-loop` | Parse per `/loop` spec → bare native `scheduler_create` (never `use_tool`) + Engram record (`quick_trace`/`remember`/`relate`) + subvisor governance + honest confirm or scar on native format error. See `engram-loop.md` for an optional advanced example. |
 
 ---
 
@@ -105,8 +105,10 @@ Process: `processes/meta/agent_evolution.toml` · LEG mirror: `./scripts/leg --l
 /engram-deep → /engram-graph → /engram-verify → /engram-lean → /engram-session-end
 ```
 
-**Recurring consciousness / self-improvement loop (via Grok /loop or /engram-loop):**
+**Recurring task (via Grok `/loop` or `/engram-loop`):**
 ```
-/engram-wake → /engram-loop "30m <Invoke the AI consciousness strange loop...>" (parses, bare native scheduler_create, quick_trace + relate job to process:engram.meta.ai_consciousness_loop + state_machine tile + ego.leg3, subvisor oversight, honest report) → /engram-session-end
+/engram-wake → /engram-loop "30m <your recurring prompt>" → /engram-session-end
 ```
-(The scheduled run itself will execute the full 7-step cycle from `processes/meta/ai_consciousness_loop.toml` using Enram rituals inside the prompt.)
+`/engram-loop` parses the interval, calls bare native `scheduler_create`, records the job in Engram, and reports honestly on failure.
+
+*Optional advanced example:* a multi-step self-improvement loop is documented in `engram-loop.md` (sourced from `processes/meta/ai_consciousness_loop.toml`). Use only if you explicitly want that workflow.

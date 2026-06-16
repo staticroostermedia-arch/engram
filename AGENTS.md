@@ -2,11 +2,11 @@
 
 **Primary Objective**: `goal:engram_mvp_v1` (harness continuity; operationalize "Against Flat Knowledge" via geometric sheaf replacing flat weights/text/vec DBs).
 
-This file + CLAUDE.md + docs/ + .grok/skills/ + processes/*.toml + docs/SUBSTRATE_WINS_PLAN.md define the contract for any agent editing the Engram substrate or its representation.
+This file + CLAUDE.md + docs/ + `docs/skills/` + processes/*.toml define the contract for any agent editing the Engram substrate or its representation.
 
 ## Start Here — 8-Tool Agent Memory Contract (Lean Default)
 
-**Read first:** [docs/AGENT_MEMORY_CONTRACT.md](docs/AGENT_MEMORY_CONTRACT.md) · **All 70 tools:** [docs/TOOL_DECISION_MAP.md](docs/TOOL_DECISION_MAP.md) · **JIT deformation:** [docs/DEFORMATION_PLAYBOOKS.md](docs/DEFORMATION_PLAYBOOKS.md) · **Harness injection:** [docs/HARNESS_INJECTION.md](docs/HARNESS_INJECTION.md) · **Roadmap:** [docs/SUBSTRATE_WINS_PLAN.md](docs/SUBSTRATE_WINS_PLAN.md)
+**Read first:** [docs/AGENT_MEMORY_CONTRACT.md](docs/AGENT_MEMORY_CONTRACT.md) · **All 70 tools:** [docs/TOOL_DECISION_MAP.md](docs/TOOL_DECISION_MAP.md) · **JIT deformation:** [docs/DEFORMATION_PLAYBOOKS.md](docs/DEFORMATION_PLAYBOOKS.md) · **Harness injection:** [docs/HARNESS_INJECTION.md](docs/HARNESS_INJECTION.md) · **Harness (shipped):** [docs/HARNESS_INJECTION.md](docs/HARNESS_INJECTION.md) · [docs/SUBSTRATE_WINS_PLAN.md](docs/SUBSTRATE_WINS_PLAN.md) (historical)
 
 | Phase | Tools |
 |-------|-------|
@@ -38,7 +38,7 @@ Escalate with `set_memory_mode("deep")` when lean bundle is insufficient (meta a
   4. Anchor first: ritual:*, goal:*, trace:*, process:engram.* .
 - **Recall before derive**. `mcp_engram_update` preferred (Lyapunov drift); never `forget` + `remember`.
 - **Every significant decision/fork/edit**: `mcp_engram_record_reasoning_trace` (or `quick_trace`) with `decision_point`, `justification`, `alternatives_considered`, `falsifiability`, `spatial_context`, `goal_context`, `prev_trace` (chain), `related_entities`.
-- **Code Edit Ritual v1** (mandatory for crates/, .grok/skills/, mcp.rs, store.rs, daemon, processes/, integrations/):
+- **Code Edit Ritual v1** (mandatory for crates/, docs/skills/, mcp.rs, store.rs, daemon, processes/, integrations/):
   - Pre: `context_for_edit` + recall_in_file + intent trace.
   - Edit (search_replace/write after read).
   - Post: re-context, delta trace (chained), relate edit to goal/arc, `remember_solution` or `scar`.
@@ -46,7 +46,7 @@ Escalate with `set_memory_mode("deep")` when lean bundle is insufficient (meta a
 - **Goals**: Use `engram-goal` skill / mcp goal_* ; set primary; decompose; status updates with traces.
 - **Spatial (Item 1.5)**: Lean path uses `context_for_edit` per file. Deep may add `watch_workspace` once per project. `force_spatial_ingest` for recovery only.
 - **Sub-agent governance**: Narrow one-shot prompts only (~20 calls max). Kill on "doom loop detected". See `processes/monitor.subvisor.toml`.
-- **Meta-work escalation**: For design:/progress: arcs, recall `helper:meta_work_escalation_v1` + `helper:current_meta_arc`; mint tiles at boundaries.
+- **Meta-work escalation**: For design:/progress: arcs, recall relevant helpers and living anchors from the wake bundle; mint tiles at arc boundaries.
 
 ## Representing Engram (GitHub / Public)
 
@@ -88,12 +88,11 @@ Documentation alone does not create memory. **Every session:**
 If you completed substantive work without calling these tools, the substrate has no geometric record — treat that as a contract violation. Slash commands (`/engram-wake`, `/engram-edit`, `/engram-trace`, `/engram-session-end`) exist to make invocation habitual.
 
 See also:
-- **Public agent rituals**: [SKILLS.md](SKILLS.md) + `docs/skills/`
+- **Public agent rituals**: [SKILLS.md](SKILLS.md) + `docs/skills/` (canonical skill protocols)
 - **Grok Build pitch**: [docs/GROK_BUILD_MEMORY.md](docs/GROK_BUILD_MEMORY.md)
 - **8-tool contract**: [docs/AGENT_MEMORY_CONTRACT.md](docs/AGENT_MEMORY_CONTRACT.md)
 - Full cycle: `docs/examples/full_ritual_cycle.md`, `examples/hello-engram-agent.py`
-- Internal TUI: `.grok/skills/engram-*.md`
-- docs/RITUALS.md, docs/SUBSTRATE_WINS_PLAN.md, docs/MCP_TOOLS_REFERENCE.md, docs/GEOMETRIC_MEMORY.md
+- docs/RITUALS.md, docs/HARNESS_INJECTION.md, docs/DEFORMATION_PLAYBOOKS.md, docs/MCP_TOOLS_REFERENCE.md, docs/GEOMETRIC_MEMORY.md
 - MANIFESTO.md, CONTRIBUTING.md, .github/PULL_REQUEST_TEMPLATE.md
 
 **Violations of this contract are scarred immediately.** The manifold will deflect future attempts.
