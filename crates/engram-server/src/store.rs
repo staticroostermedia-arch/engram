@@ -1069,13 +1069,9 @@ pub(crate) fn normalize_spatial_context(raw: &str) -> Result<SpatialContextNorma
         });
     }
 
-    let require_line = std::env::var("ENGRAM_REQUIRE_LINE_CONTEXT")
-        .ok()
-        .as_deref()
-        == Some("1");
-    let warning = format!(
-        "spatial_context missing line number; use file.rs:line format (got '{raw}')"
-    );
+    let require_line = std::env::var("ENGRAM_REQUIRE_LINE_CONTEXT").ok().as_deref() == Some("1");
+    let warning =
+        format!("spatial_context missing line number; use file.rs:line format (got '{raw}')");
 
     if require_line {
         return Err(format!("Error: {warning}"));
@@ -2611,8 +2607,7 @@ impl StoreHandle {
             if out.len() >= cap {
                 break;
             }
-            let (stem, loci, _) =
-                self.spatial_loci_at_file(&path, None, None, 8, false);
+            let (stem, loci, _) = self.spatial_loci_at_file(&path, None, None, 8, false);
             if stem.is_empty() {
                 continue;
             }
@@ -2931,8 +2926,10 @@ impl StoreHandle {
         };
 
         let _lcs_touched = crate::local_stratum::bootstrap(self);
-        let local_stratum =
-            crate::local_stratum::build_local_stratum_slice(self, crate::local_stratum::local_budget());
+        let local_stratum = crate::local_stratum::build_local_stratum_slice(
+            self,
+            crate::local_stratum::local_budget(),
+        );
 
         let harness = crate::harness_injection::build_harness_bundle(self, session_intent);
 
@@ -3682,9 +3679,8 @@ impl StoreHandle {
         }
 
         let existing_provlog = engram_core::storage::read_provlog(&block);
-        let splice_mode = provlog_mode.unwrap_or_else(|| {
-            engram_core::storage::infer_provlog_splice_mode(concept, new_text)
-        });
+        let splice_mode = provlog_mode
+            .unwrap_or_else(|| engram_core::storage::infer_provlog_splice_mode(concept, new_text));
         let spliced =
             engram_core::storage::splice_provlog(&existing_provlog, new_text, splice_mode);
         let prov_chars = spliced.chars().count();
@@ -3695,15 +3691,15 @@ impl StoreHandle {
         let provlog_coherence = match coherence_mode {
             crate::coherence::UpdateCoherenceMode::Off => None,
             crate::coherence::UpdateCoherenceMode::Warn
-            | crate::coherence::UpdateCoherenceMode::Block => Some(
-                crate::coherence::update_provlog_coherence(
+            | crate::coherence::UpdateCoherenceMode::Block => {
+                Some(crate::coherence::update_provlog_coherence(
                     self,
                     &block,
                     &spliced,
                     splice_mode,
                     &new_block.q,
-                ),
-            ),
+                ))
+            }
         };
 
         if let Some(coherence) = provlog_coherence {
@@ -4681,13 +4677,8 @@ impl StoreHandle {
         max_loci: usize,
         auto_ingest: bool,
     ) -> (String, Vec<String>, bool) {
-        let (stem, spatial_items, ingest_performed) = self.spatial_items_at_file(
-            file_path,
-            line_start,
-            line_end,
-            max_loci,
-            auto_ingest,
-        );
+        let (stem, spatial_items, ingest_performed) =
+            self.spatial_items_at_file(file_path, line_start, line_end, max_loci, auto_ingest);
         let loci: Vec<String> = spatial_items
             .iter()
             .filter_map(|v| {
@@ -4737,7 +4728,10 @@ impl StoreHandle {
         })
     }
 
-    fn trace_summary_json(concept: &str, block: &engram_core::types::Leg3Pointer) -> serde_json::Value {
+    fn trace_summary_json(
+        concept: &str,
+        block: &engram_core::types::Leg3Pointer,
+    ) -> serde_json::Value {
         let text = engram_core::storage::read_provlog(block);
         let spatial_raw = Self::trace_field_from_text(&text, "spatial_context");
         let decision = Self::trace_field_from_text(&text, "decision_point");
@@ -4830,7 +4824,8 @@ impl StoreHandle {
         let mut relation_linked = Vec::new();
         for ast_concept in spatial_concept_ids {
             let mut candidates: Vec<(String, String)> = Vec::new();
-            for (label, other) in self.search_relations(ast_concept, Some("decision_at_locus"), "from")
+            for (label, other) in
+                self.search_relations(ast_concept, Some("decision_at_locus"), "from")
             {
                 if other.starts_with("trace:") {
                     candidates.push((label, other));
@@ -4854,10 +4849,7 @@ impl StoreHandle {
                 let mut summary = Self::trace_summary_json(&concept, &block);
                 if let Some(obj) = summary.as_object_mut() {
                     obj.insert("via".to_string(), serde_json::json!(via));
-                    obj.insert(
-                        "linked_from".to_string(),
-                        serde_json::json!(ast_concept),
-                    );
+                    obj.insert("linked_from".to_string(), serde_json::json!(ast_concept));
                 }
                 relation_linked.push(summary);
                 if relation_linked.len() >= limit {
@@ -5971,14 +5963,7 @@ mod traces_at_locus_tests {
             )
             .unwrap();
 
-        let tiers = store.collect_traces_at_locus(
-            "store",
-            "/tmp/store.rs",
-            40.0,
-            60.0,
-            &[],
-            8,
-        );
+        let tiers = store.collect_traces_at_locus("store", "/tmp/store.rs", 40.0, 60.0, &[], 8);
 
         assert_eq!(tiers.line_precise.len(), 1);
         assert_eq!(
@@ -6003,14 +5988,7 @@ mod traces_at_locus_tests {
             )
             .unwrap();
 
-        let tiers = store.collect_traces_at_locus(
-            "store",
-            "/tmp/store.rs",
-            40.0,
-            60.0,
-            &[],
-            8,
-        );
+        let tiers = store.collect_traces_at_locus("store", "/tmp/store.rs", 40.0, 60.0, &[], 8);
 
         assert!(tiers.line_precise.is_empty());
         assert_eq!(tiers.file_level.len(), 1);
@@ -6034,21 +6012,12 @@ mod traces_at_locus_tests {
             )
             .unwrap();
 
-        let tiers = store.collect_traces_at_locus(
-            "store",
-            "/tmp/store.rs",
-            40.0,
-            60.0,
-            &[],
-            8,
-        );
+        let tiers = store.collect_traces_at_locus("store", "/tmp/store.rs", 40.0, 60.0, &[], 8);
 
         assert!(tiers.line_precise.is_empty());
         assert_eq!(tiers.file_level.len(), 1);
         assert_eq!(
-            tiers.file_level[0]
-                .get("concept")
-                .and_then(|v| v.as_str()),
+            tiers.file_level[0].get("concept").and_then(|v| v.as_str()),
             Some("trace:outside_window_ws2")
         );
         let _ = std::fs::remove_dir_all(&dir);
@@ -6059,7 +6028,10 @@ mod traces_at_locus_tests {
         let dir = test_store_dir("relation_linked");
         let mut store = StoreHandle::new(&dir.to_string_lossy());
         store
-            .remember("store__fn__collect_traces_at_locus", "fn collect_traces_at_locus() {}")
+            .remember(
+                "store__fn__collect_traces_at_locus",
+                "fn collect_traces_at_locus() {}",
+            )
             .unwrap();
         store
             .remember(
@@ -6122,7 +6094,10 @@ mod traces_at_locus_tests {
 
         let out = store.context_for_edit("/tmp/store.rs", Some(40), Some(60), false);
 
-        assert_eq!(out.get("atlas_version").and_then(|v| v.as_str()), Some("v2.1"));
+        assert_eq!(
+            out.get("atlas_version").and_then(|v| v.as_str()),
+            Some("v2.1")
+        );
         let flat = out
             .get("traces_at_locus")
             .and_then(|v| v.as_array())
@@ -6178,12 +6153,11 @@ mod spatial_context_tests {
         let out = normalize_spatial_context("store.rs").expect("normalize");
         assert_eq!(out.value, "store.rs");
         assert!(out.warning.is_some());
-        assert!(
-            out.warning
-                .as_deref()
-                .unwrap_or("")
-                .contains("missing line number")
-        );
+        assert!(out
+            .warning
+            .as_deref()
+            .unwrap_or("")
+            .contains("missing line number"));
     }
 
     #[test]

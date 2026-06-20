@@ -342,11 +342,7 @@ pub fn on_arc_updated(concept: &str) {
 }
 
 /// Acknowledge or skip pending edit-arc debt for one or all loci.
-pub fn ack_edit_arc(
-    concepts: Option<&[String]>,
-    skip: bool,
-    note: Option<&str>,
-) -> Value {
+pub fn ack_edit_arc(concepts: Option<&[String]>, skip: bool, note: Option<&str>) -> Value {
     with_session(|s| {
         let cleared = if let Some(list) = concepts {
             let mut names = HashSet::new();

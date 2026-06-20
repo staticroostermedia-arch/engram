@@ -1410,7 +1410,10 @@ mod tests {
     #[test]
     fn test_orchestrator_jit_framework() {
         let fw = build_jit_deformation_framework("orchestrator", Some("goal:test"));
-        assert_eq!(fw.get("task_type").and_then(|v| v.as_str()), Some("orchestrator"));
+        assert_eq!(
+            fw.get("task_type").and_then(|v| v.as_str()),
+            Some("orchestrator")
+        );
         assert!(fw
             .get("phases")
             .and_then(|v| v.as_array())

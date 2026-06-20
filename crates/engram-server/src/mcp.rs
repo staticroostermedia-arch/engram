@@ -321,9 +321,8 @@ fn load_process_sheaf(store: &SharedStore) -> Result<(), String> {
         }
         let _ = hlock.promote_tile_to_high_priority("process:engram.ritual.wake-up");
         let _ = hlock.promote_tile_to_high_priority("process:engram.ritual.nrem-consolidation");
-        let _ = hlock.promote_tile_to_high_priority(
-            "process:engram.ritual.local-context-working-memory",
-        );
+        let _ = hlock
+            .promote_tile_to_high_priority("process:engram.ritual.local-context-working-memory");
         let _ = hlock.promote_tile_to_high_priority("process:engram.monitor.subvisor");
         let _ = hlock.promote_tile_to_high_priority("ritual:wake_up_anchor");
         let _ = hlock.promote_tile_to_high_priority("ritual:engram.working-memory");
@@ -2149,9 +2148,7 @@ fn normalize_spatial_context_input(raw: &str) -> Result<(String, Option<String>)
 }
 
 fn spatial_warning_suffix(warning: Option<String>) -> String {
-    warning
-        .map(|w| format!(" | ⚠ {w}"))
-        .unwrap_or_default()
+    warning.map(|w| format!(" | ⚠ {w}")).unwrap_or_default()
 }
 
 // ── Shared helper for Item 1-style automatic goal linking (used by traces + Thought Tiles) ──
@@ -3018,7 +3015,10 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
             // Hot path upgrade (Tier 2 broader adoption): read_concept is the primary way to pull full high-value blocks.
             if let Some(block) = lock.fetch_block_high_priority(raw_concept) {
                 let full_text = engram_core::storage::read_provlog(&block);
-                lock.log_probe("read_concept", &format!("concept={}", probe_short_concept(raw_concept)));
+                lock.log_probe(
+                    "read_concept",
+                    &format!("concept={}", probe_short_concept(raw_concept)),
+                );
                 json!({ "content": [{ "type": "text", "text": full_text }] })
             } else {
                 json!({ "content": [{ "type": "text", "text": format!("Error: Memory not found for '{}'. Did you type the concept name exactly?", concept) }], "isError": true })
@@ -3515,16 +3515,25 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
         "mcp_engram_ack_edit_arc" => {
             let skip = args.get("skip").and_then(|v| v.as_bool()).unwrap_or(true);
             let note = args.get("note").and_then(|v| v.as_str());
-            let concepts: Option<Vec<String>> = args.get("concepts").and_then(|v| v.as_array()).map(|arr| {
-                arr.iter()
-                    .filter_map(|c| c.as_str().map(str::to_string))
-                    .collect()
-            });
+            let concepts: Option<Vec<String>> =
+                args.get("concepts").and_then(|v| v.as_array()).map(|arr| {
+                    arr.iter()
+                        .filter_map(|c| c.as_str().map(str::to_string))
+                        .collect()
+                });
             let concept_refs = concepts.as_deref();
             let payload = crate::edit_arc_gate::ack_edit_arc(concept_refs, skip, note);
             if let Ok(mut lock) = store.lock() {
-                let detail = note.unwrap_or(if skip { "arc debt skipped" } else { "arc debt acked" });
-                lock.log_activity("ritual:edit_arc_gate", if skip { "skip" } else { "ack" }, Some(detail));
+                let detail = note.unwrap_or(if skip {
+                    "arc debt skipped"
+                } else {
+                    "arc debt acked"
+                });
+                lock.log_activity(
+                    "ritual:edit_arc_gate",
+                    if skip { "skip" } else { "ack" },
+                    Some(detail),
+                );
             }
             json!({
                 "content": [{
@@ -3620,7 +3629,8 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                 let _ = hlock.promote_tile_to_high_priority(
                     "process:engram.ritual.local-context-working-memory",
                 );
-                let _ = hlock.promote_tile_to_high_priority(crate::local_stratum::LOCAL_HOST_PROFILE);
+                let _ =
+                    hlock.promote_tile_to_high_priority(crate::local_stratum::LOCAL_HOST_PROFILE);
                 let _ = hlock.promote_tile_to_high_priority(crate::local_stratum::LOCAL_HOST_MCP);
             });
 
@@ -4177,7 +4187,9 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                     if let Some(ref pv) = program_traces_var {
                         response.push_str(&format!(
                             "\n  → Program traces var refreshed: `{}` ({} slots)",
-                            pv.get("var").and_then(|v| v.as_str()).unwrap_or("var:ctx_program_traces"),
+                            pv.get("var")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("var:ctx_program_traces"),
                             pv.get("bound").and_then(|v| v.as_u64()).unwrap_or(0)
                         ));
                     }
@@ -5264,7 +5276,8 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                 .unwrap_or("")
                 .trim()
                 .to_string();
-            if user_utterance.is_empty() || assistant_output.is_empty() || human_forward.is_empty() {
+            if user_utterance.is_empty() || assistant_output.is_empty() || human_forward.is_empty()
+            {
                 return json!({
                     "content": [{ "type": "text", "text": "Error: user_utterance, assistant_output, and human_forward are required." }],
                     "isError": true
@@ -5281,9 +5294,7 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                 .and_then(|v| v.as_str())
                 .filter(|s| !s.trim().is_empty())
                 .map(|s| s.trim().to_string())
-                .unwrap_or_else(|| {
-                    human_forward.chars().take(72).collect::<String>()
-                });
+                .unwrap_or_else(|| human_forward.chars().take(72).collect::<String>());
             let conv_arc = args
                 .get("conv_arc")
                 .and_then(|v| v.as_str())
@@ -5308,13 +5319,16 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                 .unwrap_or("")
                 .trim()
                 .to_string();
-            let since_ts = args.get("since_ts").and_then(|v| v.as_u64()).unwrap_or_else(|| {
-                let now = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_millis() as u64;
-                now.saturating_sub(600_000)
-            });
+            let since_ts = args
+                .get("since_ts")
+                .and_then(|v| v.as_u64())
+                .unwrap_or_else(|| {
+                    let now = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_millis() as u64;
+                    now.saturating_sub(600_000)
+                });
 
             let mut payload = serde_json::json!({
                 "version": "response_tile_schema_v3",
@@ -6063,24 +6077,22 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
             })
         }
 
-        "mcp_engram_ingest_reference_frame" => {
-            match store.lock() {
-                Ok(mut lock) => {
-                    let payload = crate::linguistic_reference_frame::ingest_reference_frame(&mut lock);
-                    lock.log_probe("ingest_reference_frame", "ws5");
-                    json!({
-                        "content": [{
-                            "type": "text",
-                            "text": payload.to_string()
-                        }]
-                    })
-                }
-                Err(p) => json!({
-                    "content": [{ "type": "text", "text": format!("Error: store mutex poisoned: {}", p) }],
-                    "isError": true
-                }),
+        "mcp_engram_ingest_reference_frame" => match store.lock() {
+            Ok(mut lock) => {
+                let payload = crate::linguistic_reference_frame::ingest_reference_frame(&mut lock);
+                lock.log_probe("ingest_reference_frame", "ws5");
+                json!({
+                    "content": [{
+                        "type": "text",
+                        "text": payload.to_string()
+                    }]
+                })
             }
-        }
+            Err(p) => json!({
+                "content": [{ "type": "text", "text": format!("Error: store mutex poisoned: {}", p) }],
+                "isError": true
+            }),
+        },
 
         "mcp_engram_evolution_at_locus" => {
             let path = args["path"].as_str().unwrap_or("").trim();
@@ -6418,7 +6430,11 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                     if concept.ends_with("__arc") {
                         crate::edit_arc_gate::on_arc_updated(&concept);
                         if let Ok(mut lock) = store.lock() {
-                            lock.log_activity("ritual:edit_arc_gate", "arc_updated", Some(&concept));
+                            lock.log_activity(
+                                "ritual:edit_arc_gate",
+                                "arc_updated",
+                                Some(&concept),
+                            );
                         }
                     }
                     info!("updated: {concept}");
@@ -6690,7 +6706,8 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
             let min_crs = args["min_crs"].as_f64().unwrap_or(0.74) as f32;
             let coherence_min = args["coherence_min"]
                 .as_f64()
-                .unwrap_or(crate::scrub_export::DEFAULT_COHERENCE_MIN as f64) as f32;
+                .unwrap_or(crate::scrub_export::DEFAULT_COHERENCE_MIN as f64)
+                as f32;
             let mint_derivatives = args["mint_derivatives"].as_bool().unwrap_or(true);
             let limit = args["limit"].as_u64().unwrap_or(32) as usize;
 
@@ -6705,8 +6722,7 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                 .unwrap_or_default();
 
             if let Some(prefixes) = args["prefixes"].as_array() {
-                let prefix_refs: Vec<&str> =
-                    prefixes.iter().filter_map(|v| v.as_str()).collect();
+                let prefix_refs: Vec<&str> = prefixes.iter().filter_map(|v| v.as_str()).collect();
                 if !prefix_refs.is_empty() {
                     let lock = store.lock().unwrap();
                     let candidates = crate::scrub_export::candidates_by_prefix(
@@ -6777,11 +6793,19 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
             }
             let concepts: Vec<String> = args["concepts"]
                 .as_array()
-                .map(|a| a.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                        .collect()
+                })
                 .unwrap_or_default();
             let prefixes: Vec<String> = args["prefixes"]
                 .as_array()
-                .map(|a| a.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                        .collect()
+                })
                 .unwrap_or_default();
             let min_crs = args["min_crs"].as_f64().unwrap_or(0.74) as f32;
             let preview_chars = args["preview_chars"].as_u64().unwrap_or(120) as usize;
@@ -6810,7 +6834,9 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                     let s = serde_json::to_string_pretty(&body).unwrap_or_default();
                     json!({ "content": [{ "type": "text", "text": format!("✓ Declared {} ({} slots):\n```json\n{s}\n```", r.var_concept, r.bound) }] })
                 }
-                Err(e) => json!({ "content": [{ "type": "text", "text": format!("Error: {e}") }], "isError": true }),
+                Err(e) => {
+                    json!({ "content": [{ "type": "text", "text": format!("Error: {e}") }], "isError": true })
+                }
             }
         }
 
@@ -6827,7 +6853,9 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                     let s = serde_json::to_string_pretty(&v).unwrap_or_default();
                     json!({ "content": [{ "type": "text", "text": format!("var_query ({mode}):\n```json\n{s}\n```") }] })
                 }
-                Err(e) => json!({ "content": [{ "type": "text", "text": format!("Error: {e}") }], "isError": true }),
+                Err(e) => {
+                    json!({ "content": [{ "type": "text", "text": format!("Error: {e}") }], "isError": true })
+                }
             }
         }
 
@@ -6841,7 +6869,9 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                 let lock = store.lock().unwrap();
                 let bundle = match crate::context_var::load_bundle(&lock, source) {
                     Some(b) => b,
-                    None => return json!({ "content": [{ "type": "text", "text": format!("Error: var not found: {source}") }], "isError": true }),
+                    None => {
+                        return json!({ "content": [{ "type": "text", "text": format!("Error: var not found: {source}") }], "isError": true })
+                    }
                 };
                 let ling = crate::context_var::context_bundle_to_linguistic(&bundle);
                 let out = json!({
@@ -6867,7 +6897,8 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
             });
             let target = args["target_name"].as_str();
             let mut lock = store.lock().unwrap();
-            match crate::context_var::var_project(&mut lock, source, operation, &proj_args, target) {
+            match crate::context_var::var_project(&mut lock, source, operation, &proj_args, target)
+            {
                 Ok(r) => {
                     let body = json!({
                         "var": r.var_concept,
@@ -6878,7 +6909,9 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                     let s = serde_json::to_string_pretty(&body).unwrap_or_default();
                     json!({ "content": [{ "type": "text", "text": format!("✓ Projected → {}:\n```json\n{s}\n```", r.var_concept) }] })
                 }
-                Err(e) => json!({ "content": [{ "type": "text", "text": format!("Error: {e}") }], "isError": true }),
+                Err(e) => {
+                    json!({ "content": [{ "type": "text", "text": format!("Error: {e}") }], "isError": true })
+                }
             }
         }
 
@@ -6908,10 +6941,7 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
             }
 
             if action == "verify" {
-                let packs: Vec<Value> = args["packs"]
-                    .as_array()
-                    .cloned()
-                    .unwrap_or_default();
+                let packs: Vec<Value> = args["packs"].as_array().cloned().unwrap_or_default();
                 if packs.is_empty() {
                     return json!({ "content": [{ "type": "text", "text": "Error: packs array required for verify." }], "isError": true });
                 }
@@ -6937,12 +6967,8 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                 mint_derivatives,
             };
             let mut lock = store.lock().unwrap();
-            let result = crate::leg_corpus::build_training_corpus(
-                &mut lock,
-                &cfg,
-                corpus_concept,
-                persist,
-            );
+            let result =
+                crate::leg_corpus::build_training_corpus(&mut lock, &cfg, corpus_concept, persist);
             let out = crate::leg_corpus::corpus_response(&result);
             let s = serde_json::to_string_pretty(&out).unwrap_or_default();
             info!(

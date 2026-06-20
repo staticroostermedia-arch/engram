@@ -89,7 +89,10 @@ pub fn slim_continuation_bundle(full: &Value) -> Value {
 
     let structured_handoff = full.get("structured_handoff").cloned();
 
-    let local_stratum = full.get("local_stratum").cloned().unwrap_or_else(|| json!({}));
+    let local_stratum = full
+        .get("local_stratum")
+        .cloned()
+        .unwrap_or_else(|| json!({}));
     let local_node_count = local_stratum.get("node_count").cloned().unwrap_or(json!(0));
     let local_previews: Vec<Value> = local_stratum
         .get("nodes")

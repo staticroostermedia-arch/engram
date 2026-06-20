@@ -33,13 +33,7 @@ impl Default for CorpusConfig {
 /// Training-eligible concepts: recent access + ZEDOS tag / prefix filters.
 pub fn collect_corpus_candidates(store: &StoreHandle, config: &CorpusConfig) -> Vec<String> {
     let mut out = Vec::new();
-    let prefixes = [
-        "pattern:export_",
-        "trace:",
-        "tile:",
-        "design:",
-        "progress:",
-    ];
+    let prefixes = ["pattern:export_", "trace:", "tile:", "design:", "progress:"];
 
     for (concept, _) in store.access_index.recent(800) {
         if out.len() >= config.limit {
@@ -106,7 +100,11 @@ pub fn verify_pack_homotopy(packs: &[Value], min_coherence: f32) -> HomotopyRepo
         passed,
         failed,
         min_coherence,
-        mean_coherence: if checked > 0 { sum / checked as f32 } else { 0.0 },
+        mean_coherence: if checked > 0 {
+            sum / checked as f32
+        } else {
+            0.0
+        },
     }
 }
 
@@ -152,7 +150,11 @@ pub fn build_training_corpus(
             serde_json::to_string_pretty(&manifest).unwrap_or_default()
         );
         let _ = store.remember(corpus_concept, &text);
-        let _ = store.relate(corpus_concept, "corpus_of", "program:context-extension-training-v1");
+        let _ = store.relate(
+            corpus_concept,
+            "corpus_of",
+            "program:context-extension-training-v1",
+        );
     }
 
     CorpusBuildResult {

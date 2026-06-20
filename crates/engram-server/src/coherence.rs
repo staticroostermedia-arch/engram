@@ -155,7 +155,9 @@ mod provlog_coherence_tests {
         let dir = test_store_dir("append");
         let mut store = StoreHandle::new(&dir.to_string_lossy());
         let base = "**decision:** Use context_for_edit before editing store.rs";
-        store.remember("trace:provlog_coherence_append", base).unwrap();
+        store
+            .remember("trace:provlog_coherence_append", base)
+            .unwrap();
         let delta = "\n\n**rationale:** spatial context reduces drift";
         let result = store
             .update_with_provlog_mode(

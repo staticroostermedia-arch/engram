@@ -258,10 +258,7 @@ mod provlog_splice_tests {
     #[test]
     fn infer_ast_replace_on_source() {
         assert_eq!(
-            infer_provlog_splice_mode(
-                "store__fn__update",
-                "pub fn update() { Ok(()) }"
-            ),
+            infer_provlog_splice_mode("store__fn__update", "pub fn update() { Ok(()) }"),
             ProvlogSpliceMode::Replace
         );
     }

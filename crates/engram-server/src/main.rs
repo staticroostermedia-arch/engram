@@ -26,31 +26,31 @@
 //!   --light     : Force CPU backend (ENGRAM_FORCE_CPU_BACKEND), skips CUDA/Metal/BVH heavy init for fast non-GPU startup during UI testing.
 //!   --no-scout  : Skip scout_daemon supervisor (avoids port 8088 contention/spam when only using /api/* for dynamic views).
 
-pub mod daemon;
 mod cockpit_cache;
-mod harness_injection;
-mod local_stratum;
-mod context_var;
-mod leg_corpus;
 mod coherence;
-mod scrub_export;
+mod context_var;
+pub mod daemon;
+mod edit_arc_gate;
+mod evolution_at_locus;
+mod harness_injection;
 pub mod ki_hijacker;
+mod leg_corpus;
+mod linguistic_reference_frame;
+mod local_stratum;
 mod mcp;
-mod mirror;
 mod mcp_lock;
+mod mirror;
 mod presentation_stratum;
 mod process_metrics;
 mod profile;
 pub mod scout;
 pub mod scout_supervisor;
+mod scrub_export;
 mod serve;
 mod session_lifecycle;
 mod store;
 mod tile_draft;
 mod wake_bundle;
-mod edit_arc_gate;
-mod evolution_at_locus;
-mod linguistic_reference_frame;
 mod wake_queue_gate;
 pub mod watchdog;
 
@@ -303,7 +303,9 @@ fn main() -> anyhow::Result<()> {
                     std::env::set_var("ENGRAM_PROFILE", "cockpit");
                 }
                 profile::EngramProfile::Cockpit.apply();
-                tracing::info!("[SERVE] --cockpit: glass-box LEG profile (presentation cache + lazy galaxy).");
+                tracing::info!(
+                    "[SERVE] --cockpit: glass-box LEG profile (presentation cache + lazy galaxy)."
+                );
             } else if light {
                 if std::env::var("ENGRAM_PROFILE").is_err() {
                     std::env::set_var("ENGRAM_PROFILE", "ui");

@@ -607,10 +607,12 @@ async fn recent_concepts(
 
 /// Root for property geo assets (LiDAR point clouds, GeoJSON). Instance data — not in git.
 fn geo_assets_root() -> PathBuf {
-    env::var("ENGRAM_ASSETS").map(PathBuf::from).unwrap_or_else(|_| {
-        let home = env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
-        PathBuf::from(home).join(".engram/assets")
-    })
+    env::var("ENGRAM_ASSETS")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| {
+            let home = env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+            PathBuf::from(home).join(".engram/assets")
+        })
 }
 
 /// GET /api/geo-asset/*path
@@ -672,12 +674,7 @@ async fn get_geo_asset(
         _ => "application/octet-stream",
     };
 
-    (
-        StatusCode::OK,
-        [(header::CONTENT_TYPE, ct)],
-        bytes,
-    )
-        .into_response()
+    (StatusCode::OK, [(header::CONTENT_TYPE, ct)], bytes).into_response()
 }
 
 /// GET /api/block/:concept
@@ -936,10 +933,7 @@ fn anchor_bullets_from_block(
     text: &str,
 ) -> Vec<String> {
     let mut bullets: Vec<String> = Vec::new();
-    if slot == "handoff"
-        || concept.contains("handoff")
-        || concept.starts_with("session_end")
-    {
+    if slot == "handoff" || concept.contains("handoff") || concept.starts_with("session_end") {
         if let Some(packet) = crate::harness_injection::parse_handoff_packet_json(text) {
             if let Some(arr) = packet.get("decisions").and_then(|v| v.as_array()) {
                 for d in arr.iter().take(4) {
@@ -1063,7 +1057,10 @@ fn push_agent_anchor(
         let text = engram_core::storage::read_provlog(&b);
         let galaxy = galaxy_meta_from_text(&text);
         entry["bullets"] = serde_json::json!(anchor_bullets_from_block(
-            lock, input.concept, input.slot, &text
+            lock,
+            input.concept,
+            input.slot,
+            &text
         ));
         entry["crs"] = serde_json::json!(b.crs_score);
         entry["kind"] = serde_json::json!(if input.concept.starts_with("tile:") {
@@ -1671,7 +1668,12 @@ fn build_context_window_json(store: &SharedStore) -> serde_json::Value {
         &lock,
         crate::local_stratum::local_budget(),
     );
-    for n in local_stratum.get("nodes").and_then(|v| v.as_array()).into_iter().flatten() {
+    for n in local_stratum
+        .get("nodes")
+        .and_then(|v| v.as_array())
+        .into_iter()
+        .flatten()
+    {
         if let Some(c) = n.get("concept").and_then(|v| v.as_str()) {
             concepts.insert(c.to_string());
         }

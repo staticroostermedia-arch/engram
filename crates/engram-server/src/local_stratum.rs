@@ -8,7 +8,6 @@ use engram_core::storage;
 use engram_core::types::ZEDOS_DECLARATIVE;
 use serde_json::{json, Value};
 
-
 pub const LOCAL_HOST_PROFILE: &str = "local:host:profile";
 pub const LOCAL_HOST_MCP: &str = "local:host:mcp";
 pub const LOCAL_HOST_READINESS: &str = "local:host:readiness_cache";
@@ -102,7 +101,11 @@ fn host_profile_text(store: &StoreHandle) -> String {
         "**sovereignty:** local_only".to_string(),
         "**export_policy:** deny".to_string(),
         String::new(),
-        format!("**os:** {} {}", std::env::consts::OS, std::env::consts::ARCH),
+        format!(
+            "**os:** {} {}",
+            std::env::consts::OS,
+            std::env::consts::ARCH
+        ),
         format!("**engram_profile:** {profile}"),
         format!("**memory_mode:** {memory_mode}"),
         format!("**store_path:** {store_path}"),
@@ -157,10 +160,7 @@ fn touch_block_crs(store: &mut StoreHandle, concept: &str) {
 }
 
 fn stale(concept: &str, store: &StoreHandle, ttl: u64) -> bool {
-    let ts = store
-        .access_index
-        .last_accessed(concept)
-        .unwrap_or(0);
+    let ts = store.access_index.last_accessed(concept).unwrap_or(0);
     if ts == 0 {
         return true;
     }
@@ -179,10 +179,7 @@ pub fn bootstrap(store: &mut StoreHandle) -> Vec<String> {
     let profile_stale = stale(LOCAL_HOST_PROFILE, store, PROFILE_TTL_SECS)
         || block_text(store, LOCAL_HOST_PROFILE).is_none()
         || block_text(store, LOCAL_HOST_PROFILE)
-            .map(|t| {
-                is_corrupted_local_block(&t)
-                    || !t.contains(&effective_store_path())
-            })
+            .map(|t| is_corrupted_local_block(&t) || !t.contains(&effective_store_path()))
             .unwrap_or(true);
     if profile_stale && upsert_declarative(store, LOCAL_HOST_PROFILE, &profile_txt) {
         touch_block_crs(store, LOCAL_HOST_PROFILE);
@@ -191,7 +188,8 @@ pub fn bootstrap(store: &mut StoreHandle) -> Vec<String> {
     }
 
     let mcp_txt = host_mcp_text();
-    if (store.fetch_block(LOCAL_HOST_MCP).is_none() || stale(LOCAL_HOST_MCP, store, PROFILE_TTL_SECS))
+    if (store.fetch_block(LOCAL_HOST_MCP).is_none()
+        || stale(LOCAL_HOST_MCP, store, PROFILE_TTL_SECS))
         && upsert_declarative(store, LOCAL_HOST_MCP, &mcp_txt)
     {
         touch_block_crs(store, LOCAL_HOST_MCP);
@@ -232,7 +230,11 @@ pub fn bootstrap(store: &mut StoreHandle) -> Vec<String> {
         "produces",
         LOCAL_HOST_PROFILE,
     );
-    let _ = store.relate("ritual:engram.working-memory", "enforced_by", LOCAL_HOST_PROFILE);
+    let _ = store.relate(
+        "ritual:engram.working-memory",
+        "enforced_by",
+        LOCAL_HOST_PROFILE,
+    );
 
     touched
 }
@@ -240,7 +242,12 @@ pub fn bootstrap(store: &mut StoreHandle) -> Vec<String> {
 fn preview_for(store: &StoreHandle, concept: &str) -> Option<Value> {
     let block = store.fetch_block_high_priority(concept)?;
     let text = storage::read_provlog(&block);
-    let preview: String = text.lines().skip_while(|l| l.starts_with('#')).take(4).collect::<Vec<_>>().join(" ");
+    let preview: String = text
+        .lines()
+        .skip_while(|l| l.starts_with('#'))
+        .take(4)
+        .collect::<Vec<_>>()
+        .join(" ");
     let preview = if preview.len() > 160 {
         format!("{}…", preview.chars().take(159).collect::<String>())
     } else if preview.is_empty() {

@@ -46,7 +46,8 @@ pub fn cache_enabled() -> bool {
 }
 
 fn activity_feed_stamp() -> u64 {
-    let path = PathBuf::from(shellexpand::tilde("~/.engram").into_owned()).join("activity_feed.jsonl");
+    let path =
+        PathBuf::from(shellexpand::tilde("~/.engram").into_owned()).join("activity_feed.jsonl");
     std::fs::metadata(&path)
         .ok()
         .and_then(|m| m.modified().ok())
@@ -73,7 +74,10 @@ fn get_cached(slot: &Mutex<Option<Entry>>) -> Option<Value> {
         return None;
     }
     let guard = slot.lock().ok()?;
-    guard.as_ref().filter(|e| entry_fresh(e)).map(|e| e.payload.clone())
+    guard
+        .as_ref()
+        .filter(|e| entry_fresh(e))
+        .map(|e| e.payload.clone())
 }
 
 fn put_cached(slot: &Mutex<Option<Entry>>, payload: Value) {

@@ -80,9 +80,11 @@ fn arc_stability_from_block(block: &engram_core::types::Leg3Pointer) -> &'static
 }
 
 fn traces_head_concept(traces: &[Value]) -> Option<String> {
-    traces
-        .first()
-        .and_then(|v| v.get("concept").and_then(|c| c.as_str()).map(str::to_string))
+    traces.first().and_then(|v| {
+        v.get("concept")
+            .and_then(|c| c.as_str())
+            .map(str::to_string)
+    })
 }
 
 fn walk_trace_chain(store: &StoreHandle, head: &str, depth: usize) -> Vec<Value> {
@@ -125,11 +127,7 @@ fn walk_trace_chain(store: &StoreHandle, head: &str, depth: usize) -> Vec<Value>
     chain
 }
 
-fn build_arcs_for_loci(
-    store: &StoreHandle,
-    loci: &[String],
-    preview_chars: usize,
-) -> Vec<Value> {
+fn build_arcs_for_loci(store: &StoreHandle, loci: &[String], preview_chars: usize) -> Vec<Value> {
     loci.iter()
         .filter_map(|concept| {
             let arc_name = StoreHandle::arc_concept_name(concept);
@@ -167,14 +165,7 @@ pub fn build_evolution_at_locus(
     let start_line = params.line_start.map(|l| l as f32).unwrap_or(0.0);
     let end_line = params.line_end.map(|l| l as f32).unwrap_or(999999.0);
 
-    let tiers = store.collect_traces_at_locus(
-        &stem,
-        params.path,
-        start_line,
-        end_line,
-        &loci,
-        12,
-    );
+    let tiers = store.collect_traces_at_locus(&stem, params.path, start_line, end_line, &loci, 12);
 
     let trace_chain = traces_head_concept(&tiers.line_precise)
         .or_else(|| traces_head_concept(&tiers.file_level))
@@ -213,7 +204,7 @@ pub fn build_evolution_at_locus(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use engram_core::storage::{ProvlogSpliceMode, splice_provlog};
+    use engram_core::storage::{splice_provlog, ProvlogSpliceMode};
 
     fn test_store_dir(suffix: &str) -> std::path::PathBuf {
         std::env::set_var("ENGRAM_DISABLE_SHEAF", "1");
@@ -238,12 +229,7 @@ mod tests {
         )
     }
 
-    fn seed_spatial_locus(
-        store: &mut StoreHandle,
-        concept: &str,
-        line_start: i32,
-        line_end: i32,
-    ) {
+    fn seed_spatial_locus(store: &mut StoreHandle, concept: &str, line_start: i32, line_end: i32) {
         store
             .remember(concept, &format!("fn {concept}() {{}}"))
             .unwrap();
@@ -289,16 +275,10 @@ mod tests {
         let mut store = StoreHandle::new(&dir.to_string_lossy());
 
         store
-            .remember(
-                "trace:evo_head",
-                &trace_body("evo.rs:10", "head decision"),
-            )
+            .remember("trace:evo_head", &trace_body("evo.rs:10", "head decision"))
             .unwrap();
         store
-            .remember(
-                "trace:evo_prev",
-                &trace_body("evo.rs:99", "older decision"),
-            )
+            .remember("trace:evo_prev", &trace_body("evo.rs:99", "older decision"))
             .unwrap();
         store
             .relate("trace:evo_prev", "trace:evo_head", "prev_in_trace")
@@ -355,9 +335,7 @@ mod tests {
         seed_spatial_locus(&mut store, "evo__fn__bar", 20, 40);
         store.ensure_edit_arc("evo__fn__bar").unwrap();
         let arc = StoreHandle::arc_concept_name("evo__fn__bar");
-        store
-            .update(&arc, "first delta narrative")
-            .unwrap();
+        store.update(&arc, "first delta narrative").unwrap();
         store.update(&arc, "second delta narrative").unwrap();
 
         let out = build_evolution_at_locus(
@@ -378,13 +356,15 @@ mod tests {
 
         let arcs = out.get("arcs").and_then(|v| v.as_array()).unwrap();
         assert_eq!(arcs.len(), 1);
-        assert_eq!(arcs[0].get("concept").and_then(|v| v.as_str()), Some(arc.as_str()));
-        let segments = arcs[0]
-            .get("segments")
-            .and_then(|v| v.as_array())
-            .unwrap();
+        assert_eq!(
+            arcs[0].get("concept").and_then(|v| v.as_str()),
+            Some(arc.as_str())
+        );
+        let segments = arcs[0].get("segments").and_then(|v| v.as_array()).unwrap();
         assert!(!segments.is_empty());
-        assert!(segments.iter().any(|s| s.as_str().unwrap().contains("--- update @")));
+        assert!(segments
+            .iter()
+            .any(|s| s.as_str().unwrap().contains("--- update @")));
 
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -413,10 +393,7 @@ mod tests {
             },
         );
 
-        let handles = out
-            .get("var_handles")
-            .and_then(|v| v.as_array())
-            .unwrap();
+        let handles = out.get("var_handles").and_then(|v| v.as_array()).unwrap();
         assert_eq!(handles.len(), 1);
         assert_eq!(handles[0].as_str(), Some(VAR_CTX_PROGRAM_TRACES));
 

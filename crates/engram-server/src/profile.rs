@@ -147,7 +147,9 @@ impl EngramProfile {
         }
         if nvidia_gpu_available() && std::env::var("ENGRAM_DEFER_BVH").is_err() {
             std::env::set_var("ENGRAM_DEFER_BVH", "0");
-            tracing::info!("[PROFILE] cockpit — ENGRAM_DEFER_BVH=0 (hot GPU detected via nvidia-smi)");
+            tracing::info!(
+                "[PROFILE] cockpit — ENGRAM_DEFER_BVH=0 (hot GPU detected via nvidia-smi)"
+            );
         }
         let sheaf_path = shellexpand::tilde("~/.engram/sheaf.toml").into_owned();
         if std::path::Path::new(&sheaf_path).exists() {
@@ -182,10 +184,7 @@ mod tests {
         let _guard = TEST_LOCK.lock().unwrap();
         std::env::remove_var("ENGRAM_WAKE_QUEUE_GATE");
         EngramProfile::Agent.apply();
-        assert_eq!(
-            std::env::var("ENGRAM_WAKE_QUEUE_GATE").unwrap(),
-            "hard"
-        );
+        assert_eq!(std::env::var("ENGRAM_WAKE_QUEUE_GATE").unwrap(), "hard");
         std::env::remove_var("ENGRAM_WAKE_QUEUE_GATE");
     }
 
@@ -194,10 +193,7 @@ mod tests {
         let _guard = TEST_LOCK.lock().unwrap();
         std::env::remove_var("ENGRAM_UPDATE_COHERENCE");
         EngramProfile::Agent.apply();
-        assert_eq!(
-            std::env::var("ENGRAM_UPDATE_COHERENCE").unwrap(),
-            "warn"
-        );
+        assert_eq!(std::env::var("ENGRAM_UPDATE_COHERENCE").unwrap(), "warn");
         std::env::remove_var("ENGRAM_UPDATE_COHERENCE");
     }
 }

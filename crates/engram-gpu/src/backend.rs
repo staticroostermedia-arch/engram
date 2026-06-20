@@ -114,9 +114,7 @@ impl CudaBackend {
         let gpu_available = Self::probe_cuda();
         let hot_device = std::env::var("ENGRAM_GPU_HOT_DEVICE").unwrap_or_else(|_| "0".into());
         if gpu_available {
-            eprintln!(
-                "[engram-gpu] CUDA device detected (ENGRAM_GPU_HOT_DEVICE={hot_device})."
-            );
+            eprintln!("[engram-gpu] CUDA device detected (ENGRAM_GPU_HOT_DEVICE={hot_device}).");
         } else if cfg!(target_os = "macos") {
             eprintln!("[engram-gpu] macOS detected — use MetalBackend for Apple Silicon GPU. CPU BVH active.");
         } else {

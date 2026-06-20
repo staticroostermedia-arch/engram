@@ -155,10 +155,7 @@ pub fn parse_bundle_from_block(concept: &str, provlog: &str) -> Option<ContextBu
             .and_then(|x| x.as_str())
             .unwrap_or("context_var")
             .to_string(),
-        created_at: v
-            .get("created_at")
-            .and_then(|x| x.as_u64())
-            .unwrap_or(0),
+        created_at: v.get("created_at").and_then(|x| x.as_u64()).unwrap_or(0),
     })
 }
 
@@ -302,8 +299,14 @@ pub fn var_declare(
     })
 }
 
-pub fn var_query(store: &StoreHandle, var_name: &str, mode: &str, preview_chars: usize) -> Result<Value, String> {
-    let bundle = load_bundle(store, var_name).ok_or_else(|| format!("var not found: {var_name}"))?;
+pub fn var_query(
+    store: &StoreHandle,
+    var_name: &str,
+    mode: &str,
+    preview_chars: usize,
+) -> Result<Value, String> {
+    let bundle =
+        load_bundle(store, var_name).ok_or_else(|| format!("var not found: {var_name}"))?;
     let key = normalize_var_name(var_name);
 
     Ok(match mode {
@@ -333,7 +336,11 @@ pub fn var_query(store: &StoreHandle, var_name: &str, mode: &str, preview_chars:
         "relations" => {
             let mut edges = Vec::new();
             for slot in bundle.slots.iter().take(16) {
-                for (label, other) in store.search_relations(&slot.concept, None, "both").into_iter().take(8) {
+                for (label, other) in store
+                    .search_relations(&slot.concept, None, "both")
+                    .into_iter()
+                    .take(8)
+                {
                     edges.push(json!({
                         "from": slot.concept,
                         "label": label,
@@ -384,7 +391,8 @@ pub fn var_project(
     args: &Value,
     target_name: Option<&str>,
 ) -> Result<ProjectResult, String> {
-    let source = load_bundle(store, source_var).ok_or_else(|| format!("source var not found: {source_var}"))?;
+    let source = load_bundle(store, source_var)
+        .ok_or_else(|| format!("source var not found: {source_var}"))?;
 
     let filtered: Vec<ContextSlot> = match operation {
         "filter_crs" => {
@@ -431,7 +439,11 @@ pub fn var_project(
             let k = args.get("k").and_then(|v| v.as_u64()).unwrap_or(8) as usize;
             let mut out = source.slots.clone();
             let mut seen: HashSet<String> = out.iter().map(|s| s.concept.clone()).collect();
-            for (label, other) in store.search_relations(seed, None, "both").into_iter().take(k) {
+            for (label, other) in store
+                .search_relations(seed, None, "both")
+                .into_iter()
+                .take(k)
+            {
                 if !seen.insert(other.clone()) {
                     continue;
                 }
@@ -477,7 +489,12 @@ pub fn var_project(
 
     let mut block = store.encode(&bundle_provlog(&bundle));
     block.zedos_tag = ZEDOS_OPERATIONAL;
-    block.crs_score = bundle.slots.iter().map(|s| s.crs).fold(0.0f32, f32::max).min(0.99);
+    block.crs_score = bundle
+        .slots
+        .iter()
+        .map(|s| s.crs)
+        .fold(0.0f32, f32::max)
+        .min(0.99);
     store
         .store(&target, block)
         .map_err(|e| format!("store failed: {e}"))?;
@@ -643,16 +660,17 @@ mod tests {
         ));
         std::fs::create_dir_all(&dir).ok();
         let mut store = StoreHandle::new(&dir.to_string_lossy());
-        store.remember("trace:var_test_a", "**decision:** test A").unwrap();
-        store.remember("trace:var_test_b", "**decision:** test B").unwrap();
+        store
+            .remember("trace:var_test_a", "**decision:** test A")
+            .unwrap();
+        store
+            .remember("trace:var_test_b", "**decision:** test B")
+            .unwrap();
         let r = var_declare(
             &mut store,
             VarDeclareRequest {
                 name: "test_bundle",
-                concepts: &[
-                    "trace:var_test_a".into(),
-                    "trace:var_test_b".into(),
-                ],
+                concepts: &["trace:var_test_a".into(), "trace:var_test_b".into()],
                 prefixes: &[],
                 min_crs: 0.5,
                 preview_chars: 40,
@@ -682,17 +700,21 @@ mod tests {
         std::fs::create_dir_all(&dir).ok();
         let mut store = StoreHandle::new(&dir.to_string_lossy());
         store
-            .remember("trace:prog_a", "**decision:** alpha decision with enough text")
+            .remember(
+                "trace:prog_a",
+                "**decision:** alpha decision with enough text",
+            )
             .unwrap();
         store
-            .remember("trace:prog_b", "**decision:** beta decision with enough text")
+            .remember(
+                "trace:prog_b",
+                "**decision:** beta decision with enough text",
+            )
             .unwrap();
 
-        let r = refresh_program_traces_var(
-            &mut store,
-            &["trace:prog_a".into(), "trace:prog_b".into()],
-        )
-        .expect("refresh");
+        let r =
+            refresh_program_traces_var(&mut store, &["trace:prog_a".into(), "trace:prog_b".into()])
+                .expect("refresh");
 
         assert_eq!(r.var_concept, VAR_CTX_PROGRAM_TRACES);
         assert_eq!(r.bound, 2);

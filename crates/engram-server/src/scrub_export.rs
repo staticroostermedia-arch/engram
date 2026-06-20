@@ -82,7 +82,12 @@ fn relations_for(store: &StoreHandle, concept: &str) -> Vec<Value> {
 }
 
 fn merkle_hex(block: &Leg3Pointer) -> String {
-    block.footer.merkle_sub_root.iter().map(|b| format!("{b:02x}")).collect()
+    block
+        .footer
+        .merkle_sub_root
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
 }
 
 /// Build one `leg_block_pack_v1` entry (geometry on disk via `geometry_ref`).
@@ -242,9 +247,8 @@ mod tests {
 
     #[test]
     fn scrub_redacts_email_keeps_decision() {
-        let (s, redacted) = scrub_provlog(
-            "**decision:** Use context_for_edit\nContact: user@example.com",
-        );
+        let (s, redacted) =
+            scrub_provlog("**decision:** Use context_for_edit\nContact: user@example.com");
         assert!(s.contains("context_for_edit"));
         assert!(s.contains("[REDACTED_EMAIL]"));
         assert!(!s.contains("user@example.com"));
@@ -262,7 +266,13 @@ mod tests {
     #[test]
     fn scrub_coherence_check_roundtrip() {
         std::env::set_var("ENGRAM_DISABLE_SHEAF", "1");
-        let dir = std::env::temp_dir().join(format!("scrub_test_{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs()));
+        let dir = std::env::temp_dir().join(format!(
+            "scrub_test_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs()
+        ));
         std::fs::create_dir_all(&dir).ok();
         let mut store = StoreHandle::new(&dir.to_string_lossy());
         let text = "**decision:** Always call session_start at wake";

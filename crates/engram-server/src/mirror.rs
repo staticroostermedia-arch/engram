@@ -2,7 +2,9 @@
 //!
 //! DRY helpers for `/api/agent-mirror`, `/api/trace-chain`, and `/api/spatial-live`.
 
-use crate::harness_injection::{parse_handoff_packet_json, walk_trace_chain, SESSION_HANDOFF_LATEST};
+use crate::harness_injection::{
+    parse_handoff_packet_json, walk_trace_chain, SESSION_HANDOFF_LATEST,
+};
 use crate::store::{ActivityEvent, StoreHandle};
 use engram_core::storage;
 use serde_json::{json, Value};
@@ -41,7 +43,10 @@ fn truncate_chars(s: &str, max: usize) -> String {
     if s.chars().count() <= max {
         s.to_string()
     } else {
-        format!("{}…", s.chars().take(max.saturating_sub(1)).collect::<String>())
+        format!(
+            "{}…",
+            s.chars().take(max.saturating_sub(1)).collect::<String>()
+        )
     }
 }
 
@@ -233,8 +238,7 @@ pub fn build_spatial_hotspots(store: &mut StoreHandle) -> Vec<Value> {
 /// Presentation stratum node previews for mirror panel.
 pub fn build_presentation_previews(store: &mut StoreHandle) -> Vec<Value> {
     let budget = crate::presentation_stratum::presentation_budget();
-    let stratum =
-        crate::presentation_stratum::build_presentation_stratum(store, budget, None);
+    let stratum = crate::presentation_stratum::build_presentation_stratum(store, budget, None);
     stratum
         .get("nodes")
         .and_then(|v| v.as_array())
