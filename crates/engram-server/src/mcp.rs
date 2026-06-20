@@ -4169,6 +4169,8 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                                 serde_json::json!({
                                     "var": r.var_concept,
                                     "bound": r.bound,
+                                    "slot_count": r.bundle.slots.len(),
+                                    "skipped": r.skipped,
                                     "trace_concepts": trace_concepts,
                                 })
                             });
@@ -6391,7 +6393,15 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
 
         "mcp_engram_update" => {
             let concept = args["concept"].as_str().unwrap_or("").trim().to_string();
-            let new_text = args["new_text"].as_str().unwrap_or("").trim().to_string();
+            let mut new_text = args["new_text"].as_str().unwrap_or("").trim().to_string();
+            if concept.ends_with("__arc") && !new_text.contains("--- etymology @") {
+                if let Some(note) = new_text.strip_prefix("etymology:").map(str::trim) {
+                    if !note.is_empty() {
+                        new_text =
+                            crate::linguistic_reference_frame::format_etymology_segment(note);
+                    }
+                }
+            }
             if concept.is_empty() || new_text.is_empty() {
                 return json!({ "content": [{ "type": "text", "text": "Error: concept and new_text are required." }], "isError": true });
             }

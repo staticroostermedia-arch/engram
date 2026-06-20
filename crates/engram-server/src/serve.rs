@@ -2623,12 +2623,10 @@ fn extract_geosphere_binding(
     })
 }
 
-/// GET /api/consciousness-surface — O(hot) presentation layer for LEG + agent wake.
-/// Hot/warm nodes + serving edges + Geosphere lens. Never scans full manifold list().
-async fn get_consciousness_surface(State(store): State<SharedStore>) -> impl IntoResponse {
+fn build_consciousness_surface_json(store: &SharedStore) -> serde_json::Value {
     use std::collections::HashSet;
 
-    let mut lock = lock_store(&store);
+    let mut lock = lock_store(store);
     let total_blocks = lock.leg_block_count();
     let large = total_blocks > crate::store::StoreHandle::LARGE_MANIFOLD_THRESHOLD;
 
@@ -2769,34 +2767,39 @@ async fn get_consciousness_surface(State(store): State<SharedStore>) -> impl Int
         .take(8)
         .collect();
 
-    (
-        StatusCode::OK,
-        Json(serde_json::json!({
-            "stats": {
-                "leg_block_count": total_blocks,
-                "surface_node_count": nodes.len(),
-                "serving_count": serving.len(),
-                "recall_mode": if large { "sampled_bounded" } else { "full" },
-                "large_manifold": large
-            },
-            "primary_intent": primary_intent,
-            "nodes": nodes,
-            "edges": edges,
-            "geosphere": {
-                "frame_origin": frame_origin,
-                "frame_step": frame_step,
-                "lens_active": lens_active,
-                "lens_location": { "lat": lens_lat, "lng": lens_lng },
-                "model": "place + learned_at + scene_time",
-                "note": "Each thought tile binds a geographic place, when it was learned (ingested), and a scene-time lens (when it took place there). Expandable to full world map."
-            },
-            "warm": {
-                "condensation_recent": condensation_recent
-            },
-            "presentation_stratum": stratum,
-            "note": "Consciousness surface — logophysics presentation stratum (distilled process/ritual). Cold manifold on NVMe excluded; lineage on each node."
-        })),
-    )
+    serde_json::json!({
+        "stats": {
+            "leg_block_count": total_blocks,
+            "surface_node_count": nodes.len(),
+            "serving_count": serving.len(),
+            "recall_mode": if large { "sampled_bounded" } else { "full" },
+            "large_manifold": large
+        },
+        "primary_intent": primary_intent,
+        "nodes": nodes,
+        "edges": edges,
+        "geosphere": {
+            "frame_origin": frame_origin,
+            "frame_step": frame_step,
+            "lens_active": lens_active,
+            "lens_location": { "lat": lens_lat, "lng": lens_lng },
+            "model": "place + learned_at + scene_time",
+            "note": "Each thought tile binds a geographic place, when it was learned (ingested), and a scene-time lens (when it took place there). Expandable to full world map."
+        },
+        "warm": {
+            "condensation_recent": condensation_recent
+        },
+        "presentation_stratum": stratum,
+        "note": "Consciousness surface — logophysics presentation stratum (distilled process/ritual). Cold manifold on NVMe excluded; lineage on each node."
+    })
+}
+
+/// GET /api/consciousness-surface — O(hot) presentation layer for LEG + agent wake.
+/// Hot/warm nodes + serving edges + Geosphere lens. Never scans full manifold list().
+async fn get_consciousness_surface(State(store): State<SharedStore>) -> impl IntoResponse {
+    let payload =
+        crate::cockpit_cache::consciousness_surface(|| build_consciousness_surface_json(&store));
+    (StatusCode::OK, Json(payload))
 }
 
 /// GET /api/hygiene — agent discipline debt surfaced for humans (demotion, sprawl, stale goals).
