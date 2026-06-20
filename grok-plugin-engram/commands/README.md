@@ -2,10 +2,10 @@
 
 **You (the AI) are the primary user.** Each command maps to one **decision moment** — not one MCP tool. Run the full ritual inside each command file.
 
-**Map of all 70 tools:** [docs/TOOL_DECISION_MAP.md](../../docs/TOOL_DECISION_MAP.md)  
+**Map of all 79 tools:** [docs/TOOL_DECISION_MAP.md](../../docs/TOOL_DECISION_MAP.md)  
 **Harness injection (auto context):** [docs/HARNESS_INJECTION.md](../../docs/HARNESS_INJECTION.md)
 
-At wake: execute `suggested_actions` → `mcp_engram_ack_wake_queue` → then `context_for_edit`. Read `ego_snapshot` + `continuity_playbook`. Gate: `/engram-ack-wake` (soft=warn, hard=block).
+At wake: execute `suggested_actions` → `mcp_engram_ack_wake_queue` → then `context_for_edit`. Read `ego_snapshot` + `continuity_playbook`. Gate: `/engram-ack-wake` (`ENGRAM_PROFILE=agent` defaults **hard**).
 At edit: read `harness_injection` on `context_for_edit` response (scars, last-session-touched).  
 Process: `processes/meta/agent_evolution.toml` · LEG mirror: `./scripts/leg --live` left rail.
 
@@ -16,6 +16,7 @@ Process: `processes/meta/agent_evolution.toml` · LEG mirror: `./scripts/leg --l
 | Moment | Command | MCP core |
 |--------|---------|----------|
 | Chat / task start | `/engram-wake` | `session_start` |
+| Wake queue ack | `/engram-ack-wake` | `ack_wake_queue` |
 | Review geometric mind (LEG Browser) | `/engram-leg` | `./scripts/leg --live` (serve :3456 + viewer :8765) |
 | End of work block | `/engram-session-end` | `session_end` |
 
@@ -26,6 +27,8 @@ Process: `processes/meta/agent_evolution.toml` · LEG mirror: `./scripts/leg --l
 | Moment | Command | MCP core |
 |--------|---------|----------|
 | Before editing a file | `/engram-edit` | `context_for_edit` + recall + trace |
+| Arc evolution recon | `/engram-evolution` | `evolution_at_locus` |
+| Read-only repeat on edited file | `/engram-ack-edit-arc` | `ack_edit_arc` |
 | Stuck — goals, decisions | `/engram-recall` | `recall(scope=anchors)` |
 | Preview too short | `/engram-read` | `read_concept` |
 | Recall feels weak | `/engram-ready` | `get_backend_readiness` |
@@ -87,7 +90,7 @@ Process: `processes/meta/agent_evolution.toml` · LEG mirror: `./scripts/leg --l
 
 **Code fix on Engram repo:**
 ```
-/engram-wake → /engram-edit path → [work] → /engram-trace → /engram-solution (if verified) → /engram-session-end
+/engram-wake → /engram-ack-wake → /engram-edit path → [work] → /engram-trace → /engram-update __arc → /engram-solution (if verified) → /engram-session-end
 ```
 
 **Meta design arc:**

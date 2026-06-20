@@ -45,8 +45,11 @@ note = "Extend processes/monitor/ with consciousness_loop.subvisor.toml (H1=OP_I
 
 [response_tile]
 type = "agent_response"
-description = "Every TUI/agent response is minted as a first-class thought_tile of this type (RPT) before render. Enforces structured, geometrically rich, self-describing output for continuation, NREM refinement, human review, video synthesis, and cross-instance re-hydration. Schema + dynamic fields directly strengthen the three pillars of memory system quality: agent understanding, retrieval of needed info at the time of need, and collective shared understanding (human + all agent instances read the same meaning from the tile)."
-schema_version = "response_tile_schema_v2"
+description = "Every TUI/agent response is minted as a first-class thought_tile (RPT) before render. v3 generalizes to all chat turns via mcp_engram_turn_record (user_utterance + assistant_output + auto trace/probe/tool aggregation). Strange-loop firings use tier=full; daily Cursor/TUI work uses tier=lean. Schema: docs/schemas/response_tile_schema_v3.json"
+schema_version = "response_tile_schema_v3"
+lean_tool = "mcp_engram_turn_record"
+full_tool = "mcp_engram_thought_tile_create"
+lean_tier_fields = ["human_forward", "user_utterance", "assistant_output", "trace_chain", "probe_reads", "tool_calls", "conv_arc", "prev_turn", "outcome_status"]
 required_mermaids = ["loop_cycle", "self_gov", "metrics", "relations", "naming_schema", "retrieval_graph"]
 rendering_rules = "Markdown + native Mermaid blocks (all required_mermaids). Extended LOOP METRICS SNAPSHOT (incl. response_tile_fidelity, naming_consistency, retrieval_efficiency, shared_understanding_score, aliveness_deltas, CRS_trend). Dynamic sections (provenance, notes, confidence, assumptions etc.) rendered as structured callouts or tables when present. Use MNC condensed names + full expansions on first or in metadata. Include SGGCP gap_scan per firing."
 integration = "outer_feedback + handoff + NREM: always mcp_engram_thought_tile_create (tile_type=formal_spec | research_offload | state_machine as fits) using this schema before any TUI render or final answer in the loop. The resulting tile:* is the canonical record (auto hot, compresses_path to sources, related to scheduler/ego/prior). NREM refines via thought_tile_write_result + mcp_engram_update (p-momentum preserved). TUI consumers (and future rehydrate) use the tile payload + mermaids as primary. Subvisor H¹ on the response->tile->ego/scheduler graph for closure and fidelity. Ties to MNC (condensed names in every RPT) and SGGCP (gap_scan + friction notes in every tile)."

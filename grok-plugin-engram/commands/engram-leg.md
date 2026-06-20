@@ -14,7 +14,9 @@ From the Engram repo root:
 ```
 
 This:
-- Starts `engram serve --light --no-scout` on port **3456** (same `ENGRAM_STORE` as MCP)
+- Starts `ENGRAM_PROFILE=cockpit engram serve --no-scout` on port **3456** (same `ENGRAM_STORE` as MCP)
+- **Cockpit** (default): GPU hot stratum, presentation cache, lazy galaxy — fast live LEG review
+- **Legacy CPU-only**: `./scripts/leg --live --ui` (`ENGRAM_PROFILE=ui`; `--light` is deprecated alias)
 - Serves `tools/leg-browser/index.html` on **8765** (fresh temp copy, cache-busted)
 - Auto-probes live mode; hero pulls `helper:session_handoff_latest` + `/api/hydrate` + `/api/active-context`
 - Demo consciousness emitter is **off** by default (it used to flood the UI with fake tiles). Presenter sim only: `./scripts/leg --live --demo-emitter`

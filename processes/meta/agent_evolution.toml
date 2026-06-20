@@ -40,6 +40,7 @@ list = [
 [produces]
 list = [
   "helper:session_handoff_latest",
+  "var:ctx_program_traces",
   "trace:*",
   "tile:*",
   "{stem}__fn__*__arc",
@@ -67,7 +68,7 @@ composed_from = ["self_improvement_loop", "memory_consolidation_loop", "agent:en
 
 [wake]
 ritual = "engram-wake-up"
-mandate = "Execute suggested_actions → mcp_engram_ack_wake_queue → then context_for_edit (ENGRAM_WAKE_QUEUE_GATE=soft default)"
+mandate = "Execute suggested_actions → mcp_engram_ack_wake_queue → then context_for_edit (ENGRAM_PROFILE=agent: ENGRAM_WAKE_QUEUE_GATE=hard default)"
 tools = ["mcp_engram_session_start", "mcp_engram_ack_wake_queue"]
 read_fields = ["suggested_actions", "presentation_stratum", "trace_chain", "trusted_tiles", "ego_snapshot", "continuity_playbook", "condensation_hints", "wake_queue_gate"]
 

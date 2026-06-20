@@ -59,8 +59,10 @@ Load into system prompt / project rules / `AGENTS.md`:
 **Lean wake (mandatory):**
 
 ```
-session_start(intent) → context_for_edit(path) → recall(scope=anchors) → quick_trace / remember → session_end(summary)
+session_start(intent) → ack_wake_queue → context_for_edit(path) → recall(scope=anchors) → quick_trace / remember → session_end(summary)
 ```
+
+With `ENGRAM_PROFILE=agent`, wake gate defaults to **hard** — `ack_wake_queue` is required before `context_for_edit` (empty queue auto-acks at wake).
 
 **Do not** at wake: `watch_workspace`, `summarize`, `rebuild_bvh`. Slim `session_start` is the default wake payload; call `get_continuation_bundle` only when you need the full harness inline.
 

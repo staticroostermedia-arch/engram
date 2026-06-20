@@ -82,6 +82,6 @@ Slash: `/engram-leg`. Hygiene demotion: `mcp_engram_demote_from_context` (agents
 ## Docs
 
 - `docs/AGENT_MEMORY_CONTRACT.md` — 8-tool highway
-- `docs/TOOL_DECISION_MAP.md` — all 70 tools + mermaid
+- `docs/TOOL_DECISION_MAP.md` — all 79 tools + mermaid
 - `docs/DEFORMATION_PLAYBOOKS.md` — JIT deformation + verified tile replay
 - `docs/GROK_BUILD_MEMORY.md`
