@@ -1,10 +1,10 @@
-# Tool Decision Map — All 70 MCP Tools
+# Tool Decision Map — All 79 MCP Tools
 
 **Audience:** Any agent on Engram MCP (Grok Build, Cursor, Claude, custom)  
 **Companion:** [AGENT_MEMORY_CONTRACT.md](AGENT_MEMORY_CONTRACT.md) — the **8-tool lean highway**  
 **Principle:** Layer 0 is default throttle; escalate through Layers 1–4 when the highway cannot answer your question.
 
-Engram exposes **70 tools** (66 `mcp_engram_*` + 4 linguistic). Do not call all 70 every session. Use this map to pick **one path** per situation. JIT orchestration: [`DEFORMATION_PLAYBOOKS.md`](DEFORMATION_PLAYBOOKS.md).
+Engram exposes **79 tools** (75 `mcp_engram_*` + 4 linguistic). Do not call all 79 every session. Use this map to pick **one path** per situation. JIT orchestration: [`DEFORMATION_PLAYBOOKS.md`](DEFORMATION_PLAYBOOKS.md).
 
 ---
 
@@ -52,7 +52,10 @@ flowchart TB
   end
 
   subgraph EDIT["File / code"]
+    AWQ["ack_wake_queue — after wake queue"]
     CFE["context_for_edit — preferred"]
+    EAL["evolution_at_locus — arc + trace chain"]
+    AEA["ack_edit_arc — read-only debt clear"]
     CFF["context_for_file — legacy"]
     RIF["recall_in_file"]
     ISI["incremental_spatial_ingest"]
@@ -104,7 +107,10 @@ flowchart TB
 
   WORK{What are you doing?}
   WORK -->|orient / stuck| READ
+  SS --> AWQ
+  AWQ --> CFE
   WORK -->|edit file| CFE
+  CFE -->|arc archaeology| EAL
   WORK -->|goal stack| GOALS
   WORK -->|design / policy arc| META
   WORK -->|post-change audit| VERIFY
@@ -176,7 +182,10 @@ Always **`recall(scope=anchors)` first**. Escalate only when anchors do not answ
 | What's *trending* in this arc? | `query_with_momentum` | q+p blend — direction, not keyword |
 | What's *geometrically similar*? | `query_pure` | K-NN on phase vectors |
 | What's *connected* to X? | `search_by_relation` → `visualize` | Sheaf graph, not similarity |
-| Pre-edit one file | `context_for_edit` | Spatial AABB + anchors in one call |
+| Pre-edit one file | `context_for_edit` | Spatial AABB + atlas v2.1 in one call |
+| Arc segments + trace chain at locus | `evolution_at_locus` | Bounded evolution bundle without full `read_concept` |
+| Wake queue executed | `ack_wake_queue` | Unblocks `context_for_edit` when gate is hard |
+| Read-only repeat on edited file | `ack_edit_arc` | Clears `edit_arc_debt` without `update(__arc)` |
 | Recall feels sampled/bounded | `get_backend_readiness` → `rebuild_bvh` (deep only) | Quality gate |
 
 ---
@@ -219,6 +228,9 @@ See [MCP_TOOLS_REFERENCE.md](MCP_TOOLS_REFERENCE.md) for parameter detail. Quick
 ### Layer 0 — Essential (8)
 `session_start`, `context_for_edit`, `recall`, `quick_trace`, `remember`, `session_end`, `get_backend_readiness`, `set_memory_mode`
 
+### Layer 0 — Gate (power; agent profile)
+`ack_wake_queue`, `ack_edit_arc`
+
 ### Layer 1 — Write & graph
 `update`, `remember_solution`, `scar`, `relate`, `relate_batch`, `batch_remember`, `pin`, `forget`, `forget_old`, `record_reasoning_trace`
 
@@ -228,6 +240,9 @@ See [MCP_TOOLS_REFERENCE.md](MCP_TOOLS_REFERENCE.md) for parameter detail. Quick
 ### Layer 3 — Goals, tiles, verify
 `goal_create`, `goal_set_primary`, `goal_list`, `goal_status`, `goal_update_status`, `goal_decompose`, `goal_get_children`, `goal_search`, `thought_tile_create`, `thought_tile_write_result`, `thought_tile_create_visualization`, `promote_hot`, `promote_hot_batch`, `verify_manifold_integrity`, `verify_block_lawfulness`, `verify_behavior`, `genesis`, `spatial_status`, `stats`
 
+### Layer 4 — Code atlas & reference frame
+`evolution_at_locus`, `ingest_reference_frame`
+
 ### Layer 4 — Spatial deep (lean: avoid)
 `context_for_file`, `recall_in_file`, `incremental_spatial_ingest`, `force_spatial_ingest`, `watch_workspace`, `rebuild_bvh`
 
@@ -235,7 +250,7 @@ See [MCP_TOOLS_REFERENCE.md](MCP_TOOLS_REFERENCE.md) for parameter detail. Quick
 `mcp_linguistic_calculus`, `mcp_compress_linguistic`, `mcp_decompress_linguistic`, `mcp_fibered_linguistic_equivalence`
 
 ### Layer 4 — Specialist
-`set_geosphere_frame`, `get_geosphere_frame`, `clear_geosphere_frame`, `export`, `import`, `scout`, `invoke_protocol`, `list_namespaces`, `set_namespace`, `list_concepts`, `track_user`
+`set_geosphere_frame`, `get_geosphere_frame`, `clear_geosphere_frame`, `export`, `import`, `scrub_export`, `leg_corpus`, `scout`, `invoke_protocol`, `list_namespaces`, `set_namespace`, `list_concepts`, `track_user`, `var_declare`, `var_query`, `var_project`, `demote_from_context`, `process_metrics`, `turn_record`, `thought_tile_draft_from_chain`
 
 ### Automatic (do not call directly)
 `load_process_sheaf` — runs inside `session_start` from `processes/*.toml`
@@ -249,6 +264,9 @@ Each command = one **decision moment**, not one tool. Full agent guide: [grok-pl
 | Moment | Command | Layer | MCP core |
 |--------|---------|-------|----------|
 | Session start | `/engram-wake` | 0 | `session_start` |
+| Wake queue ack | `/engram-ack-wake` | 0 | `ack_wake_queue` |
+| Arc evolution recon | `/engram-evolution` | 4 | `evolution_at_locus` |
+| Edit-arc debt ack | `/engram-ack-edit-arc` | 0 | `ack_edit_arc` |
 | Session end | `/engram-session-end` | 0 | `session_end` |
 | Before file edit | `/engram-edit` | 0 | `context_for_edit` + recall + trace |
 | Stuck | `/engram-recall` | 0 | `recall(anchors)` |

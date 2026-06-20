@@ -17,6 +17,9 @@ Instead of blind overwrites, Engram calculates the **Lyapunov Stability Drift** 
 ## 3. The NREM Pipeline (Sleep & Consolidation)
 When the session ends (`mcp_engram_session_end`), the system enters the NREM phase. During NREM, Engram processes the day's episodic and operational memories to consolidate knowledge.
 
+### 3.0. Large-store bounds (`ENGRAM_PROFILE=agent`)
+On stores with 100k+ blocks, NREM does **not** walk the full manifold. The agent profile defaults `ENGRAM_NREM_DISABLE=1` and uses a bounded candidate scan (`nrem_candidate_concepts`, cap ~8000) so `session_end` and subsequent MCP calls stay responsive. Deep consolidation remains available via explicit `engram distill` / deep-mode rituals — not on every lean handoff.
+
 ### 3.1. Distillation (Crystallization)
 The `engram distill` command sweeps through recent EPISODIC and OPERATIONAL blocks, clustering them using DBScan over their `p` (momentum) and `q` tensors.
 - Highly related problem/solution pairs are crystallized into new **ZEDOS_PRAXIS** blocks.

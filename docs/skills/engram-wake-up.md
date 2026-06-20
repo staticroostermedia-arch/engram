@@ -31,6 +31,7 @@ mcp_engram_session_start(
 
 **Execute `suggested_actions`** (in `continuation`) **before any edit or broad read**:
 - Run the queue in priority order (handoff → goal → trusted tiles → condensation drafts).
+- **`mcp_engram_ack_wake_queue(executed=true)`** — required before `context_for_edit` when `ENGRAM_PROFILE=agent` (hard gate default). Empty queue auto-acks at wake.
 - Read slim `ego_snapshot` (NREM step, drift, stability). Expand via `get_continuation_bundle` for full `continuity_playbook`.
 - Cursor: read `.cursor/engram-wake.md` first if present (`./scripts/cursor-engram-preflight.sh` regenerates it).
 - LEG Browser: left rail shows the same queue + ego evolution (`./scripts/leg --live`).

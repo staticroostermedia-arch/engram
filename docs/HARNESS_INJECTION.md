@@ -76,8 +76,8 @@ flowchart LR
 
 | `ENGRAM_WAKE_QUEUE_GATE` | Behavior |
 |--------------------------|----------|
-| `soft` (agent profile default) | `context_for_edit` succeeds with `wake_queue_gate.warning` until ack |
-| `hard` | `context_for_edit` returns 403 until `mcp_engram_ack_wake_queue` |
+| `hard` (**agent profile default**) | `context_for_edit` returns 403 until `mcp_engram_ack_wake_queue` |
+| `soft` | `context_for_edit` succeeds with `wake_queue_gate.warning` until ack |
 | `off` | Disabled (CI / dev) |
 
 **Flow:** `session_start` → execute `suggested_actions` → `mcp_engram_ack_wake_queue(executed=true)` → `context_for_edit`.
@@ -85,6 +85,18 @@ flowchart LR
 Empty queue **auto-acks** at `session_start` (zero friction on fresh stores).
 
 Violations log to `activity_feed.jsonl` → LEG hygiene `wake_queue_debt`. Optional scars: `ENGRAM_WAKE_QUEUE_SCAR=5` in hard mode only.
+
+### Edit-arc gate (post-edit ritual enforcement)
+
+| `ENGRAM_EDIT_ARC_GATE` | Behavior |
+|------------------------|----------|
+| `soft` (agent profile default) | Repeat `context_for_edit` on same path warns until `__arc` updated or acked |
+| `hard` | Blocks repeat `context_for_edit` on same locus until `mcp_engram_update` on `__arc` or `mcp_engram_ack_edit_arc` |
+| `off` | Disabled |
+
+**Preferred post-edit:** `update("{stem}__fn__{name}__arc", "delta: …")` using args from `post_edit_palette`. **Read-only recon:** `ack_edit_arc(skip=true, note="read-only pass")`.
+
+`edit_arc_debt` appears in atlas JSON and LEG hygiene when arcs are pending.
 
 ---
 
@@ -97,6 +109,7 @@ Per-file `harness_injection`:
 | `last_session_touched` | File appeared in last `session_end` handoff |
 | `open_scars` | Scar concepts matching module stem |
 | `suggested_actions` | `quick_trace` before edit if continued file; read scar if present |
+| `post_edit_palette` | Concrete `mcp_engram_update` queue on `__arc` concepts when `spatial_items` present |
 | `at_edit_mandatory` | Reminder to trace after substantive change |
 
 ---

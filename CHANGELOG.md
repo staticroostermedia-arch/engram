@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Code atlas continuity v2:** Situated edit memory — agents inherit codebase evolution at the locus without full-repo context. See [docs/CODE_ATLAS_CONTINUITY.md](docs/CODE_ATLAS_CONTINUITY.md).
+- **Atlas v2.1:** `traces_at_locus_tiers` (exact line / file / stem tiers) in `context_for_edit`; `spatial_context` normalization on `quick_trace`.
+- **`mcp_engram_evolution_at_locus`:** Bounded evolution bundle (loci, arc segments, trace chain, scars) at a file window; auto-ingest when loci empty.
+- **`mcp_engram_ack_edit_arc`:** Clear edit-arc debt when `ENGRAM_EDIT_ARC_GATE=hard`; prefer `update` on `__arc` after edits.
+- **`mcp_engram_ingest_reference_frame`:** Mint `formal_spec:linguistic_reference_frame_v1` + genesis pillar blocks (CodeLand / etymology grounding); relates to patent container when present.
+- **Harness enforcement (WS1):** `post_edit_palette` with concrete `mcp_engram_update` args in per-file harness; `edit_arc_debt` in atlas JSON.
+- **Update coherence (WS4):** `ENGRAM_UPDATE_COHERENCE=warn` (agent profile default) — provlog splice coherence check on `update`.
+- **LEG evolution panel:** `GET /api/code-atlas?evolution=1` + timeline in `tools/leg-browser/index.html`.
+- **Plugin commands:** `engram-ack-wake` (existing), `engram-evolution`, `engram-ack-edit-arc`.
+
+### Changed
+
+- **`ENGRAM_WAKE_QUEUE_GATE=hard`** is the default when `ENGRAM_PROFILE=agent` — `mcp_engram_ack_wake_queue` required before `context_for_edit` (empty queue auto-acks at wake).
+- **Large-store responsiveness:** Bounded NREM candidate scan (`nrem_candidate_concepts`); batched relation flush during AST ingest; shared `spatial_items_at_file` with stem-prefix scan — `read_concept`, `evolution_at_locus`, and wake return in seconds on ~192k-block stores (was minutes).
+- **MCP tool count:** 79 registered (75 `mcp_engram_*` + 4 linguistic); lean default remains **8 essential**.
+
+### Fixed
+
+- **`evolution_at_locus` empty loci** on large stores — auto-ingest + bounded spatial resolution.
+- **MCP hangs on `update` / `read_concept`** — eliminated full-store `list()` in NREM hot path and per-relate relation-index flush during bulk ingest.
+
 ## [0.7.0-beta.2] - 2026-06-15
 
 ### Added
