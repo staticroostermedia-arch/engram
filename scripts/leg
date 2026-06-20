@@ -55,6 +55,7 @@ DEMO_EMITTER=false
 OPEN_BROWSER=true
 VERBOSE=false
 SERVE_PORT=3456
+SERVE_PROFILE="cockpit"
 HTTP_PID=""
 SERVE_PID=""
 STARTED_SERVE=false
@@ -87,7 +88,9 @@ Usage:
   ./scripts/leg [options]
 
 Options:
-  --live, -l          Start engram serve (background) for full LIVE dynamic mode
+  --live, -l          Start engram serve (background) for full LIVE dynamic mode (cockpit profile)
+  --ui                Legacy CPU-only serve profile (ui; was --light)
+  --light             Deprecated alias for --ui (legacy CPU-only)
   --demo-emitter      Also run bg demo tile emitter (presenter mode only; pollutes /api/recent)
   --port N            HTTP port for the viewer (default: 8765)
   --no-open           Do not auto-open browser
@@ -101,7 +104,8 @@ Modes explained:
                      review right now.
 
   LIVE (--live):     Same beautiful UI + auto-polling /api/recent + momentum
-                     + real block details from 'engram serve --light --no-scout'.
+                     + real block details from 'ENGRAM_PROFILE=cockpit engram serve --no-scout'.
+                     Use --ui (or deprecated --light) for legacy CPU-only ui profile.
                      Bg consciousness emitter auto-starts (new tile:consciousness:live-demo:*
                      + world_state:* every 7s via /api/remember). Pill emerald.
                      Consciousness Dashboard auto-pulls live tiles (dynamic loop state,
@@ -120,6 +124,12 @@ EOF
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --live|-l) LIVE_MODE=true; shift ;;
+    --ui) SERVE_PROFILE="ui"; shift ;;
+    --light)
+      echo -e "${YELLOW}WARNING: --light is deprecated; use --ui for legacy CPU-only serve.${RESET}" >&2
+      SERVE_PROFILE="ui"
+      shift
+      ;;
     --demo-emitter) DEMO_EMITTER=true; shift ;;
     --port) HTTP_PORT="$2"; shift 2 ;;
     --no-open) OPEN_BROWSER=false; shift ;;
@@ -323,8 +333,8 @@ start_engram_serve() {
     rm -f "$PID_FILE_SERVE"
   fi
 
-  # Launch with --light --no-scout for fast impressive leg-browser consciousness demo (CPU only, no heavy GPU/BVH/scout init; designed for /api live + leg-browser)
-  nohup env ENGRAM_STORE="$STORE" "$bin" --store "$STORE" serve --light --no-scout --port "$SERVE_PORT" > "$SERVE_LOG" 2>&1 &
+  # Cockpit profile by default (GPU hot stratum + presentation cache); --ui/--light for legacy CPU-only
+  nohup env ENGRAM_STORE="$STORE" ENGRAM_PROFILE="$SERVE_PROFILE" "$bin" --store "$STORE" serve --no-scout --port "$SERVE_PORT" > "$SERVE_LOG" 2>&1 &
   SERVE_PID=$!
   STARTED_SERVE=true
   echo "$SERVE_PID" > "$PID_FILE_SERVE"
@@ -498,7 +508,7 @@ echo ""
 
 if $LIVE_MODE; then
   echo -e "${BOLD}${GREEN}LIVE MODE — tile-native LEG Browser${RESET}"
-  echo "  • engram serve --light --no-scout on :$SERVE_PORT (same ENGRAM_STORE as MCP)"
+  echo "  • ENGRAM_PROFILE=$SERVE_PROFILE engram serve --no-scout on :$SERVE_PORT (same ENGRAM_STORE as MCP)"
   echo "  • Viewer auto-connects; each .leg block JIT-renders from its own payload"
   echo "  • Demo emitter OFF (add --demo-emitter only for presenter sim)"
   echo ""

@@ -7,7 +7,7 @@ You were probably sent here after [FIRST_RUN.md](FIRST_RUN.md) and [docs/AGENT_M
 ## Start Here — 8-Tool Agent Memory Contract
 
 **Read this first:** [docs/AGENT_MEMORY_CONTRACT.md](docs/AGENT_MEMORY_CONTRACT.md)  
-**Full tool map (70 tools):** [docs/TOOL_DECISION_MAP.md](docs/TOOL_DECISION_MAP.md) · **JIT deformation:** [docs/DEFORMATION_PLAYBOOKS.md](docs/DEFORMATION_PLAYBOOKS.md)  
+**Full tool map (79 tools):** [docs/TOOL_DECISION_MAP.md](docs/TOOL_DECISION_MAP.md) · **JIT deformation:** [docs/DEFORMATION_PLAYBOOKS.md](docs/DEFORMATION_PLAYBOOKS.md)  
 **Slash commands (agent primary user):** [grok-plugin-engram/commands/README.md](grok-plugin-engram/commands/README.md)
 
 The minimal agent path on large stores (181k+ blocks):

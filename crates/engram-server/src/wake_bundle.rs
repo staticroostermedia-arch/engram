@@ -89,6 +89,30 @@ pub fn slim_continuation_bundle(full: &Value) -> Value {
 
     let structured_handoff = full.get("structured_handoff").cloned();
 
+    let local_stratum = full
+        .get("local_stratum")
+        .cloned()
+        .unwrap_or_else(|| json!({}));
+    let local_node_count = local_stratum.get("node_count").cloned().unwrap_or(json!(0));
+    let local_previews: Vec<Value> = local_stratum
+        .get("nodes")
+        .and_then(|v| v.as_array())
+        .map(|nodes| {
+            nodes
+                .iter()
+                .take(5)
+                .map(|n| {
+                    json!({
+                        "concept": n.get("concept"),
+                        "preview": n.get("preview"),
+                        "crs": n.get("crs"),
+                        "tier": n.get("tier"),
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
     let task_type = harness
         .get("task_type")
         .cloned()
@@ -116,6 +140,12 @@ pub fn slim_continuation_bundle(full: &Value) -> Value {
         "presentation_stratum": {
             "node_count": node_count,
             "previews": previews,
+        },
+        "local_stratum": {
+            "node_count": local_node_count,
+            "previews": local_previews,
+            "sovereignty_note": local_stratum.get("sovereignty_note"),
+            "process": local_stratum.get("process"),
         },
         "structured_handoff": structured_handoff,
         "recall_hint": "Slim wake — call mcp_engram_get_continuation_bundle for full JIT framework, verified_processes, and scars.",

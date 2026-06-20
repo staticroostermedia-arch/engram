@@ -605,6 +605,78 @@ async fn recent_concepts(
     (StatusCode::OK, Json(res))
 }
 
+/// Root for property geo assets (LiDAR point clouds, GeoJSON). Instance data — not in git.
+fn geo_assets_root() -> PathBuf {
+    env::var("ENGRAM_ASSETS")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| {
+            let home = env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+            PathBuf::from(home).join(".engram/assets")
+        })
+}
+
+/// GET /api/geo-asset/*path
+/// Serves files under ENGRAM_ASSETS (default ~/.engram/assets). Router blocks reference paths like `ariel/lidar/pointcloud.xyz`.
+async fn get_geo_asset(
+    axum::extract::Path(rel_path): axum::extract::Path<String>,
+) -> impl IntoResponse {
+    if rel_path.is_empty() || rel_path.contains("..") || rel_path.starts_with('/') {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": "invalid asset path" })),
+        )
+            .into_response();
+    }
+
+    let root = geo_assets_root();
+    let candidate = root.join(&rel_path);
+    let canonical = match tokio::fs::canonicalize(&candidate).await {
+        Ok(p) => p,
+        Err(_) => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(serde_json::json!({
+                    "error": "asset not found",
+                    "path": rel_path
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    let root_canon = tokio::fs::canonicalize(&root).await.ok();
+    if let Some(ref rc) = root_canon {
+        if !canonical.starts_with(rc) {
+            return (
+                StatusCode::FORBIDDEN,
+                Json(serde_json::json!({ "error": "path outside ENGRAM_ASSETS" })),
+            )
+                .into_response();
+        }
+    }
+
+    let bytes = match tokio::fs::read(&canonical).await {
+        Ok(b) => b,
+        Err(_) => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(serde_json::json!({ "error": "read failed", "path": rel_path })),
+            )
+                .into_response();
+        }
+    };
+
+    let ct = match canonical.extension().and_then(|e| e.to_str()) {
+        Some("xyz") => "text/plain",
+        Some("json") | Some("geojson") => "application/json",
+        Some("png") => "image/png",
+        Some("jpg") | Some("jpeg") => "image/jpeg",
+        _ => "application/octet-stream",
+    };
+
+    (StatusCode::OK, [(header::CONTENT_TYPE, ct)], bytes).into_response()
+}
+
 /// GET /api/block/:concept
 /// Rich structured response for Obsidian-like / manifold UI clients.
 /// Uses fetch_block_high_priority (hot geometric fast path) + store search_relations (cheap index).
@@ -854,6 +926,114 @@ struct AgentAnchorInput<'a> {
     extra: serde_json::Value,
 }
 
+fn anchor_bullets_from_block(
+    lock: &crate::store::StoreHandle,
+    concept: &str,
+    slot: &str,
+    text: &str,
+) -> Vec<String> {
+    let mut bullets: Vec<String> = Vec::new();
+    if slot == "handoff" || concept.contains("handoff") || concept.starts_with("session_end") {
+        if let Some(packet) = crate::harness_injection::parse_handoff_packet_json(text) {
+            if let Some(arr) = packet.get("decisions").and_then(|v| v.as_array()) {
+                for d in arr.iter().take(4) {
+                    if let Some(s) = d.as_str() {
+                        let t = s.trim().trim_start_matches('-').trim();
+                        if !t.is_empty() {
+                            bullets.push(t.chars().take(100).collect());
+                        }
+                    }
+                }
+            }
+            if let Some(arr) = packet.get("files_touched").and_then(|v| v.as_array()) {
+                for f in arr.iter().take(3) {
+                    if let Some(p) = f.as_str() {
+                        let stem = p.rsplit('/').next().unwrap_or(p);
+                        bullets.push(format!("Touched: {stem}"));
+                    }
+                }
+            }
+            if let Some(arr) = packet.get("open_questions").and_then(|v| v.as_array()) {
+                for q in arr.iter().take(2) {
+                    if let Some(s) = q.as_str() {
+                        bullets.push(format!("Open: {}", s.chars().take(90).collect::<String>()));
+                    }
+                }
+            }
+        }
+    } else if slot == "intent" || concept == "primary_goal" {
+        if let Some(line) = text.lines().find(|l| l.contains("goal:")) {
+            bullets.push(line.trim().chars().take(100).collect());
+        }
+        for (_lab, c) in lock
+            .search_relations("primary_goal", Some("serves"), "from")
+            .into_iter()
+            .take(4)
+        {
+            bullets.push(format!("Serving: {}", short_concept_label(&c)));
+        }
+    } else if slot == "goal" || concept.starts_with("goal:") {
+        for (lab, c) in lock
+            .search_relations(concept, None, "from")
+            .into_iter()
+            .take(4)
+        {
+            bullets.push(format!("{lab} → {}", short_concept_label(&c)));
+        }
+        if let Some(hf) = galaxy_meta_from_text(text)
+            .get("human_forward")
+            .and_then(|v| v.as_str())
+        {
+            if !hf.is_empty() {
+                bullets.push(hf.chars().take(100).collect());
+            }
+        }
+    } else if slot == "chain" || concept.starts_with("tile:chain_summary_") {
+        if let Some(hf) = galaxy_meta_from_text(text)
+            .get("human_forward")
+            .and_then(|v| v.as_str())
+        {
+            bullets.push(hf.chars().take(100).collect());
+        }
+    } else if concept.starts_with("tile:") {
+        if let Some(title) = text
+            .lines()
+            .find(|l| l.starts_with("**title:**"))
+            .map(|l| l.trim_start_matches("**title:**").trim())
+        {
+            bullets.push(title.chars().take(100).collect());
+        }
+        for (lab, c) in lock
+            .search_relations(concept, None, "from")
+            .into_iter()
+            .take(3)
+        {
+            bullets.push(format!("{lab} → {}", short_concept_label(&c)));
+        }
+    }
+    if bullets.is_empty() {
+        for (lab, c) in lock
+            .search_relations(concept, None, "from")
+            .into_iter()
+            .take(4)
+        {
+            bullets.push(format!("{lab} → {}", short_concept_label(&c)));
+        }
+    }
+    bullets.truncate(5);
+    bullets
+}
+
+fn short_concept_label(concept: &str) -> String {
+    concept
+        .rsplit(':')
+        .next()
+        .unwrap_or(concept)
+        .chars()
+        .take(48)
+        .collect()
+}
+
 fn push_agent_anchor(
     lock: &crate::store::StoreHandle,
     anchors: &mut Vec<serde_json::Value>,
@@ -870,11 +1050,18 @@ fn push_agent_anchor(
         "preview": input.preview.unwrap_or_default(),
         "crs": 0.0,
         "kind": "memory",
-        "role": "anchor"
+        "role": "anchor",
+        "bullets": []
     });
     if let Some(b) = lock.fetch_block_high_priority(input.concept) {
         let text = engram_core::storage::read_provlog(&b);
         let galaxy = galaxy_meta_from_text(&text);
+        entry["bullets"] = serde_json::json!(anchor_bullets_from_block(
+            lock,
+            input.concept,
+            input.slot,
+            &text
+        ));
         entry["crs"] = serde_json::json!(b.crs_score);
         entry["kind"] = serde_json::json!(if input.concept.starts_with("tile:") {
             "tile"
@@ -1236,7 +1423,39 @@ async fn put_pins(
 //   "recent_sessions": [{ "concept", "age", "text" }],
 //   "stats": { "genesis_loaded", "genesis_total", "session_count" }
 // }
-async fn hydrate(State(store): State<SharedStore>) -> impl IntoResponse {
+async fn hydrate(
+    State(store): State<SharedStore>,
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> impl IntoResponse {
+    let lazy = params
+        .get("lazy")
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false);
+
+    if lazy {
+        let mut lock = lock_store(&store);
+        let budget = crate::presentation_stratum::presentation_budget();
+        let stratum =
+            crate::presentation_stratum::build_presentation_stratum(&mut lock, budget, None);
+        let trace_head = lock
+            .access_index
+            .recent(80)
+            .into_iter()
+            .find(|(c, _)| c.starts_with("trace:"))
+            .map(|(c, _)| c);
+        return (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "lazy": true,
+                "presentation_stratum": stratum,
+                "trace_head": trace_head,
+                "profile": crate::profile::current_profile_name(),
+                "total_memories": lock.leg_block_count(),
+                "note": "Lazy cockpit hydrate — presentation stratum only; use /api/galaxy for paginated cold nodes."
+            })),
+        );
+    }
+
     let mut lock = lock_store(&store);
     let mut payload = lock.build_hydration_payload();
 
@@ -1376,9 +1595,9 @@ async fn hydrate(State(store): State<SharedStore>) -> impl IntoResponse {
     (StatusCode::OK, Json(payload))
 }
 
-/// GET /api/context-window — harness-isomorphic agent context for LEG Browser memory review UI.
-async fn get_context_window(State(store): State<SharedStore>) -> impl IntoResponse {
-    let mut lock = lock_store(&store);
+fn build_context_window_json(store: &SharedStore) -> serde_json::Value {
+    let mut lock = lock_store(store);
+    let _ = crate::local_stratum::bootstrap(&mut lock);
     let harness = crate::harness_injection::build_harness_bundle(&mut lock, None);
 
     let mut concepts = std::collections::HashSet::new();
@@ -1445,24 +1664,46 @@ async fn get_context_window(State(store): State<SharedStore>) -> impl IntoRespon
         }
     }
 
+    let local_stratum = crate::local_stratum::build_local_stratum_slice(
+        &lock,
+        crate::local_stratum::local_budget(),
+    );
+    for n in local_stratum
+        .get("nodes")
+        .and_then(|v| v.as_array())
+        .into_iter()
+        .flatten()
+    {
+        if let Some(c) = n.get("concept").and_then(|v| v.as_str()) {
+            concepts.insert(c.to_string());
+        }
+    }
+
     let concept_list: Vec<String> = concepts.into_iter().collect();
 
-    (
-        StatusCode::OK,
-        Json(serde_json::json!({
-            "concepts": concept_list,
-            "count": concept_list.len(),
-            "harness": harness,
-            "presentation_stratum": harness
-                .get("presentation_stratum")
-                .cloned()
-                .unwrap_or(serde_json::Value::Null),
-            "wake_queue_gate": crate::wake_queue_gate::public_config(),
-            "files_from_handoff": files_from_handoff,
-            "file_tile_bridge": file_tile_bridge,
-            "note": "Harness-isomorphic context window — mirrors session_start injection for the memory review UI UI."
-        })),
-    )
+    serde_json::json!({
+        "concepts": concept_list,
+        "count": concept_list.len(),
+        "harness": harness,
+        "presentation_stratum": harness
+            .get("presentation_stratum")
+            .cloned()
+            .unwrap_or(serde_json::Value::Null),
+        "local_stratum": local_stratum,
+        "wake_queue_gate": crate::wake_queue_gate::public_config(),
+        "edit_arc_gate": crate::edit_arc_gate::public_config(),
+        "edit_arc_debt": crate::edit_arc_gate::debt_status_json(),
+        "files_from_handoff": files_from_handoff,
+        "file_tile_bridge": file_tile_bridge,
+        "profile": crate::profile::current_profile_name(),
+        "note": "Harness-isomorphic context window — mirrors session_start injection for the memory review UI."
+    })
+}
+
+/// GET /api/context-window — harness-isomorphic agent context for LEG Browser memory review UI.
+async fn get_context_window(State(store): State<SharedStore>) -> impl IntoResponse {
+    let payload = crate::cockpit_cache::context_window(|| build_context_window_json(&store));
+    (StatusCode::OK, Json(payload))
 }
 
 /// GET /api/activity?since=<unix>&limit=30 — near-real-time agent process mirror.
@@ -1503,7 +1744,12 @@ async fn get_activity(
 
     let chain = events
         .iter()
-        .filter(|e| e.action == "trace" || e.action == "relate" || e.concept.starts_with("trace:"))
+        .filter(|e| {
+            e.action == "trace_fork"
+                || e.action == "trace"
+                || e.action == "relate"
+                || e.concept.starts_with("trace:")
+        })
         .take(8)
         .map(|e| {
             serde_json::json!({
@@ -1539,7 +1785,7 @@ fn spawn_activity_broadcaster(tx: tokio::sync::broadcast::Sender<String>) {
         let mut offset: u64 = 0;
         let mut seen = std::collections::HashSet::<String>::new();
         loop {
-            tokio::time::sleep(Duration::from_millis(200)).await;
+            tokio::time::sleep(Duration::from_millis(80)).await;
             let Ok(meta) = std::fs::metadata(&path) else {
                 continue;
             };
@@ -1572,11 +1818,63 @@ fn spawn_activity_broadcaster(tx: tokio::sync::broadcast::Sender<String>) {
                     seen.clear();
                 }
                 if let Ok(json) = serde_json::to_string(&event) {
+                    crate::cockpit_cache::invalidate_all();
                     let _ = tx.send(json);
                 }
             }
         }
     });
+}
+
+/// GET /api/galaxy?offset=0&limit=200 — paginated warm/recent nodes (lazy cold lane).
+async fn get_galaxy(
+    State(store): State<SharedStore>,
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> impl IntoResponse {
+    let offset = params
+        .get("offset")
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(0);
+    let limit = params
+        .get("limit")
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(200)
+        .clamp(1, 500);
+
+    let lock = lock_store(&store);
+    let window = offset.saturating_add(limit).saturating_add(32);
+    let recent = lock.access_index.recent(window);
+    let mut nodes: Vec<serde_json::Value> = Vec::new();
+    for (concept, ts) in recent.into_iter().skip(offset).take(limit) {
+        let preview = lock
+            .fetch_block_high_priority(&concept)
+            .map(|b| {
+                let text = engram_core::storage::read_provlog(&b);
+                if text.len() > 160 {
+                    format!("{}…", &text[..157])
+                } else {
+                    text
+                }
+            })
+            .unwrap_or_default();
+        nodes.push(serde_json::json!({
+            "concept": concept,
+            "ts": ts,
+            "preview": preview,
+        }));
+    }
+
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({
+            "offset": offset,
+            "limit": limit,
+            "count": nodes.len(),
+            "nodes": nodes,
+            "profile": crate::profile::current_profile_name(),
+            "note": "Paginated access-index galaxy — not full manifold scan."
+        })),
+    )
 }
 
 /// GET /api/activity/stream — SSE push for near-instant memory review UI updates.
@@ -1589,7 +1887,17 @@ async fn get_activity_stream(
         .data(r#"{"note":"activity SSE — events from activity_feed.jsonl"}"#);
     let stream = stream::once(async move { Ok(init) }).chain(stream::unfold(rx, |mut rx| async {
         match rx.recv().await {
-            Ok(data) => Some((Ok(Event::default().event("activity").data(data)), rx)),
+            Ok(data) => {
+                let event_name = serde_json::from_str::<crate::store::ActivityEvent>(&data)
+                    .map(|ev| match ev.action.as_str() {
+                        "trace_fork" => "trace_fork",
+                        "probe" => "probe",
+                        "turn" => "turn",
+                        _ => "activity",
+                    })
+                    .unwrap_or("activity");
+                Some((Ok(Event::default().event(event_name).data(data)), rx))
+            }
             Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
                 Some((Ok(Event::default().comment("lag")), rx))
             }
@@ -1603,34 +1911,6 @@ async fn get_activity_stream(
     )
 }
 
-fn trace_field(text: &str, field: &str) -> Option<String> {
-    let marker = format!("**{field}:**");
-    let rest = text.split(&marker).nth(1)?;
-    let val = rest.split("\n**").next()?.trim();
-    if val.is_empty() {
-        None
-    } else {
-        Some(val.to_string())
-    }
-}
-
-fn parse_spatial_context_field(text: &str) -> Option<serde_json::Value> {
-    let ctx = trace_field(text, "spatial_context")?;
-    if let Some((_file, line_str)) = ctx.rsplit_once(':') {
-        if !line_str.is_empty() && line_str.chars().all(|c| c.is_ascii_digit()) {
-            if let Ok(line) = line_str.parse::<i32>() {
-                let file = ctx[..ctx.len().saturating_sub(line_str.len() + 1)].to_string();
-                return Some(serde_json::json!({
-                    "raw": ctx,
-                    "file": file,
-                    "line": line,
-                }));
-            }
-        }
-    }
-    Some(serde_json::json!({ "raw": ctx, "file": ctx, "line": serde_json::Value::Null }))
-}
-
 /// GET /api/trace-chain?head=<trace>&depth=24 — decision chain for LEG timeline scrubber.
 async fn get_trace_chain(
     State(store): State<SharedStore>,
@@ -1642,18 +1922,12 @@ async fn get_trace_chain(
         .unwrap_or(24)
         .clamp(1, 48);
 
-    let lock = lock_store(&store);
+    let mut lock = lock_store(&store);
     let head = params
         .get("head")
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
-        .or_else(|| {
-            lock.access_index
-                .recent(80)
-                .into_iter()
-                .find(|(c, _)| c.starts_with("trace:"))
-                .map(|(c, _)| c)
-        });
+        .or_else(|| crate::mirror::resolve_trace_head(&lock));
 
     let Some(head) = head else {
         return (
@@ -1667,42 +1941,7 @@ async fn get_trace_chain(
         );
     };
 
-    let raw = crate::harness_injection::walk_trace_chain(&lock, &head, depth);
-    let mut chain: Vec<serde_json::Value> = Vec::new();
-    for (i, entry) in raw.iter().enumerate() {
-        let concept = entry
-            .get("concept")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
-        let preview = entry
-            .get("preview")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
-        let (decision, justification, spatial, ts) =
-            if let Some(block) = lock.fetch_block_high_priority(concept) {
-                let text = engram_core::storage::read_provlog(&block);
-                (
-                    trace_field(&text, "decision_point"),
-                    trace_field(&text, "justification"),
-                    parse_spatial_context_field(&text),
-                    lock.access_index
-                        .last_accessed(concept)
-                        .unwrap_or(block.last_accessed_timestamp),
-                )
-            } else {
-                (None, None, None, 0)
-            };
-        chain.push(serde_json::json!({
-            "index": i,
-            "concept": concept,
-            "preview": preview,
-            "decision_point": decision,
-            "justification": justification,
-            "spatial_context": spatial,
-            "ts": ts,
-        }));
-    }
-    chain.reverse();
+    let chain = crate::mirror::build_trace_chain(&mut lock, &head, depth);
 
     (
         StatusCode::OK,
@@ -1715,73 +1954,23 @@ async fn get_trace_chain(
     )
 }
 
+/// GET /api/agent-mirror — combined trace chain, spatial hotspots, and presentation previews.
+async fn get_agent_mirror(State(store): State<SharedStore>) -> impl IntoResponse {
+    let mut lock = lock_store(&store);
+    let payload = crate::mirror::build_agent_mirror_payload(&mut lock);
+    (StatusCode::OK, Json(payload))
+}
+
 /// GET /api/spatial-live — active file/line hotspots from recent traces + AST spatial blocks.
 async fn get_spatial_live(State(store): State<SharedStore>) -> impl IntoResponse {
     let mut lock = lock_store(&store);
-    let mut hotspots: Vec<serde_json::Value> = Vec::new();
+    let hotspots = crate::mirror::build_spatial_hotspots(&mut lock);
     let mut file_paths: Vec<String> = Vec::new();
     let mut seen_files = std::collections::HashSet::new();
-
-    for (concept, ts) in lock.access_index.recent(60) {
-        if concept.starts_with("trace:") {
-            if let Some(block) = lock.fetch_block_high_priority(&concept) {
-                let text = engram_core::storage::read_provlog(&block);
-                let decision = trace_field(&text, "decision_point");
-                if let Some(spatial) = parse_spatial_context_field(&text) {
-                    let file = spatial
-                        .get("file")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .to_string();
-                    if !file.is_empty() && seen_files.insert(file.clone()) {
-                        file_paths.push(file.clone());
-                    }
-                    hotspots.push(serde_json::json!({
-                        "concept": concept,
-                        "kind": "trace",
-                        "file": file,
-                        "line": spatial.get("line").cloned().unwrap_or(serde_json::Value::Null),
-                        "label": decision,
-                        "ts": ts,
-                    }));
-                }
-            }
-            continue;
-        }
-
-        if let Some(block) = lock.fetch_block_high_priority(&concept) {
-            if block.aabb_max[0] > 0.0 {
-                let stem = concept
-                    .split("::")
-                    .next()
-                    .or_else(|| concept.split("__").next())
-                    .unwrap_or(&concept)
-                    .to_string();
-                hotspots.push(serde_json::json!({
-                    "concept": concept,
-                    "kind": "ast",
-                    "file": stem,
-                    "line_start": block.aabb_min[0] as i32,
-                    "line_end": block.aabb_max[0] as i32,
-                    "ts": ts,
-                }));
-            }
-        }
-    }
-
-    if let Some(block) =
-        lock.fetch_block_high_priority(crate::harness_injection::SESSION_HANDOFF_LATEST)
-    {
-        let text = engram_core::storage::read_provlog(&block);
-        if let Some(packet) = crate::harness_injection::parse_handoff_packet_json(&text) {
-            if let Some(arr) = packet.get("files_touched").and_then(|v| v.as_array()) {
-                for f in arr {
-                    if let Some(p) = f.as_str() {
-                        if seen_files.insert(p.to_string()) {
-                            file_paths.push(p.to_string());
-                        }
-                    }
-                }
+    for h in &hotspots {
+        if let Some(file) = h.get("file").and_then(|v| v.as_str()) {
+            if !file.is_empty() && seen_files.insert(file.to_string()) {
+                file_paths.push(file.to_string());
             }
         }
     }
@@ -1790,9 +1979,6 @@ async fn get_spatial_live(State(store): State<SharedStore>) -> impl IntoResponse
     for fp in file_paths.iter().take(4) {
         file_contexts.push(lock.context_for_edit(fp, None, None, false));
     }
-
-    hotspots.sort_by_key(|h| std::cmp::Reverse(h.get("ts").and_then(|v| v.as_u64()).unwrap_or(0)));
-    hotspots.truncate(24);
 
     let active = hotspots.first().cloned().unwrap_or(serde_json::Value::Null);
 
@@ -1888,8 +2074,36 @@ async fn get_code_atlas(
         .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
         .unwrap_or(false);
 
+    let evolution = params
+        .get("evolution")
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false);
+
     let mut lock = lock_store(&store);
-    let payload = lock.context_for_edit(&file_path, line_start, line_end, auto_ingest);
+    let mut payload = lock.context_for_edit(&file_path, line_start, line_end, auto_ingest);
+
+    if evolution {
+        let preview_chars = params
+            .get("preview_chars")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(crate::evolution_at_locus::DEFAULT_PREVIEW_CHARS);
+        let trace_depth = params
+            .get("trace_depth")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(crate::evolution_at_locus::DEFAULT_TRACE_DEPTH);
+        payload["evolution"] = crate::evolution_at_locus::build_evolution_at_locus(
+            &mut lock,
+            crate::evolution_at_locus::EvolutionAtLocusParams {
+                path: &file_path,
+                line_start,
+                line_end,
+                preview_chars,
+                trace_depth,
+                auto_ingest,
+            },
+        );
+    }
+
     (StatusCode::OK, Json(payload))
 }
 
@@ -2411,12 +2625,10 @@ fn extract_geosphere_binding(
     })
 }
 
-/// GET /api/consciousness-surface — O(hot) presentation layer for LEG + agent wake.
-/// Hot/warm nodes + serving edges + Geosphere lens. Never scans full manifold list().
-async fn get_consciousness_surface(State(store): State<SharedStore>) -> impl IntoResponse {
+fn build_consciousness_surface_json(store: &SharedStore) -> serde_json::Value {
     use std::collections::HashSet;
 
-    let mut lock = lock_store(&store);
+    let mut lock = lock_store(store);
     let total_blocks = lock.leg_block_count();
     let large = total_blocks > crate::store::StoreHandle::LARGE_MANIFOLD_THRESHOLD;
 
@@ -2557,34 +2769,39 @@ async fn get_consciousness_surface(State(store): State<SharedStore>) -> impl Int
         .take(8)
         .collect();
 
-    (
-        StatusCode::OK,
-        Json(serde_json::json!({
-            "stats": {
-                "leg_block_count": total_blocks,
-                "surface_node_count": nodes.len(),
-                "serving_count": serving.len(),
-                "recall_mode": if large { "sampled_bounded" } else { "full" },
-                "large_manifold": large
-            },
-            "primary_intent": primary_intent,
-            "nodes": nodes,
-            "edges": edges,
-            "geosphere": {
-                "frame_origin": frame_origin,
-                "frame_step": frame_step,
-                "lens_active": lens_active,
-                "lens_location": { "lat": lens_lat, "lng": lens_lng },
-                "model": "place + learned_at + scene_time",
-                "note": "Each thought tile binds a geographic place, when it was learned (ingested), and a scene-time lens (when it took place there). Expandable to full world map."
-            },
-            "warm": {
-                "condensation_recent": condensation_recent
-            },
-            "presentation_stratum": stratum,
-            "note": "Consciousness surface — logophysics presentation stratum (distilled process/ritual). Cold manifold on NVMe excluded; lineage on each node."
-        })),
-    )
+    serde_json::json!({
+        "stats": {
+            "leg_block_count": total_blocks,
+            "surface_node_count": nodes.len(),
+            "serving_count": serving.len(),
+            "recall_mode": if large { "sampled_bounded" } else { "full" },
+            "large_manifold": large
+        },
+        "primary_intent": primary_intent,
+        "nodes": nodes,
+        "edges": edges,
+        "geosphere": {
+            "frame_origin": frame_origin,
+            "frame_step": frame_step,
+            "lens_active": lens_active,
+            "lens_location": { "lat": lens_lat, "lng": lens_lng },
+            "model": "place + learned_at + scene_time",
+            "note": "Each thought tile binds a geographic place, when it was learned (ingested), and a scene-time lens (when it took place there). Expandable to full world map."
+        },
+        "warm": {
+            "condensation_recent": condensation_recent
+        },
+        "presentation_stratum": stratum,
+        "note": "Consciousness surface — logophysics presentation stratum (distilled process/ritual). Cold manifold on NVMe excluded; lineage on each node."
+    })
+}
+
+/// GET /api/consciousness-surface — O(hot) presentation layer for LEG + agent wake.
+/// Hot/warm nodes + serving edges + Geosphere lens. Never scans full manifold list().
+async fn get_consciousness_surface(State(store): State<SharedStore>) -> impl IntoResponse {
+    let payload =
+        crate::cockpit_cache::consciousness_surface(|| build_consciousness_surface_json(&store));
+    (StatusCode::OK, Json(payload))
 }
 
 /// GET /api/hygiene — agent discipline debt surfaced for humans (demotion, sprawl, stale goals).
@@ -2713,7 +2930,34 @@ async fn get_hygiene(State(store): State<SharedStore>) -> impl IntoResponse {
             "samples": wake_debt_events.iter().take(5).collect::<Vec<_>>(),
             "agent_action": "session_start → execute suggested_actions → mcp_engram_ack_wake_queue → then context_for_edit",
             "fix_tool": "mcp_engram_ack_wake_queue",
-            "human_note": "Set ENGRAM_WAKE_QUEUE_GATE=hard for strict block; default soft warns only"
+            "human_note": "ENGRAM_PROFILE=agent defaults to hard; set ENGRAM_WAKE_QUEUE_GATE=soft to warn-only"
+        }));
+    }
+
+    let arc_debt_events: Vec<String> =
+        crate::store::StoreHandle::read_shared_activity_since(now.saturating_sub(3600), 40)
+            .into_iter()
+            .filter(|e| {
+                e.concept == "ritual:edit_arc_gate"
+                    && (e.action == "unacked_edit"
+                        || e.action == "blocked_edit"
+                        || e.action == "session_end_debt")
+            })
+            .map(|e| e.detail.unwrap_or_else(|| e.action.clone()))
+            .collect();
+    if !arc_debt_events.is_empty() {
+        issues.push(serde_json::json!({
+            "severity": "info",
+            "code": "edit_arc_debt",
+            "message": format!(
+                "{} edit arc violation(s) in last hour — agent re-read locus before update(__arc)",
+                arc_debt_events.len()
+            ),
+            "concepts": ["ritual:edit_arc_gate"],
+            "samples": arc_debt_events.iter().take(5).collect::<Vec<_>>(),
+            "agent_action": "After edits: mcp_engram_update on __arc; or mcp_engram_ack_edit_arc(skip=true, note) before repeat context_for_edit",
+            "fix_tool": "mcp_engram_ack_edit_arc",
+            "human_note": "ENGRAM_PROFILE=agent defaults edit-arc gate to soft; set ENGRAM_EDIT_ARC_GATE=hard to block repeat context_for_edit"
         }));
     }
 
@@ -2972,6 +3216,29 @@ async fn shutdown_signal() {
     }
 }
 
+async fn get_health(State(store): State<SharedStore>) -> impl IntoResponse {
+    let lock = lock_store(&store);
+    let profile = crate::profile::current_profile_name();
+    let readiness = lock.backend_readiness();
+    let gpu_accel = readiness
+        .get("gpu_accel_available")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let mut body = serde_json::json!({
+        "status": "ok",
+        "version": env!("CARGO_PKG_VERSION"),
+        "profile": profile,
+        "presentation_cache": crate::cockpit_cache::cache_enabled(),
+        "readiness": readiness,
+    });
+    if profile == "cockpit" && !gpu_accel {
+        body["warnings"] = serde_json::json!([
+            "No CUDA device — cockpit degraded to CPU BVH fallback (serve continues normally)"
+        ]);
+    }
+    Json(body)
+}
+
 pub async fn run(store: SharedStore, port: u16, mcp_http_enabled: bool) -> anyhow::Result<()> {
     // ── Boot the Background Worker ─────────────────────────────────
     crate::store::StoreHandle::boot_daemon(store.clone());
@@ -2992,6 +3259,7 @@ pub async fn run(store: SharedStore, port: u16, mcp_http_enabled: bool) -> anyho
         .route("/api/list", get(list_concepts))
         .route("/api/recent", get(recent_concepts))
         .route("/api/block/:concept", get(get_block))
+        .route("/api/geo-asset/*path", get(get_geo_asset))
         .route("/api/graph", get(get_graph))
         .route("/api/anchors", get(get_anchors))
         .route("/api/pins", get(get_pins).put(put_pins))
@@ -3002,26 +3270,20 @@ pub async fn run(store: SharedStore, port: u16, mcp_http_enabled: bool) -> anyho
         .route("/api/activity", get(get_activity))
         .route("/api/activity/stream", get(get_activity_stream))
         .route("/api/trace-chain", get(get_trace_chain))
+        .route("/api/agent-mirror", get(get_agent_mirror))
         .route("/api/spatial-live", get(get_spatial_live))
         .route("/api/hygiene", get(get_hygiene))
         .route("/api/consciousness-surface", get(get_consciousness_surface))
         .route("/api/code-atlas", get(get_code_atlas))
         // ─ Agent Hydration (Phase 2) ─
         .route("/api/hydrate", get(hydrate))
+        .route("/api/galaxy", get(get_galaxy))
         .route("/api/active-context", get(active_context))
         // ─ Scout Pipeline (Phase 4) ─
         .route("/api/scout", post(scout_handler))
         // ─ System ─
         .route("/api/boot_agent", post(boot_agent))
-        .route(
-            "/health",
-            get(|| async {
-                Json(serde_json::json!({
-                    "status": "ok",
-                    "version": env!("CARGO_PKG_VERSION")
-                }))
-            }),
-        );
+        .route("/health", get(get_health));
 
     // ─ HTTP MCP Transport (conditional on --mcp-http flag) ─
     let app = if mcp_http_enabled {

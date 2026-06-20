@@ -1,4 +1,5 @@
 //! Trace-chain → verified_sequence draft builder (WS-2 / WS-4).
+//! RPT v3 turn aggregation + validation (`response_tile_schema_v3`).
 
 use crate::store::StoreHandle;
 use engram_core::storage;
@@ -44,6 +45,124 @@ pub fn validate_verified_sequence_v0(payload: &Value) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+/// Validate `response_tile_schema_v3` payload (lean or full tier).
+pub fn validate_response_tile_v3(payload: &Value) -> Result<(), String> {
+    let version = payload
+        .get("version")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    if version != "response_tile_schema_v3" {
+        return Err(format!(
+            "agent_response requires version \"response_tile_schema_v3\", got \"{}\"",
+            version
+        ));
+    }
+    let tier = payload
+        .get("tier")
+        .and_then(|v| v.as_str())
+        .unwrap_or("lean");
+    if tier != "lean" && tier != "full" {
+        return Err("tier must be \"lean\" or \"full\"".to_string());
+    }
+    for field in ["human_forward", "user_utterance", "assistant_output"] {
+        let val = payload.get(field).and_then(|v| v.as_str()).unwrap_or("");
+        if val.is_empty() {
+            return Err(format!("agent_response requires {}", field));
+        }
+    }
+    if tier == "full" {
+        let facts = payload
+            .get("key_facts_for_shared_understanding")
+            .and_then(|v| v.as_array())
+            .map(|a| !a.is_empty())
+            .unwrap_or(false);
+        if !facts {
+            return Err(
+                "full tier requires non-empty key_facts_for_shared_understanding[]".to_string(),
+            );
+        }
+    }
+    Ok(())
+}
+
+/// Aggregate trace/probe/activity from shared feed for a turn window.
+pub fn aggregate_turn_activity(since_ts: u64, limit: usize) -> Value {
+    let events = StoreHandle::read_shared_activity_since(since_ts, limit);
+    let mut trace_chain: Vec<String> = Vec::new();
+    let mut probe_reads: Vec<Value> = Vec::new();
+    let mut tool_calls: Vec<Value> = Vec::new();
+
+    for e in events.iter().rev() {
+        if e.action == "trace_fork"
+            && e.concept.starts_with("trace:")
+            && !trace_chain.contains(&e.concept)
+        {
+            trace_chain.push(e.concept.clone());
+        }
+        if e.action == "probe" {
+            let tool = e
+                .concept
+                .strip_prefix("probe:")
+                .unwrap_or(&e.concept)
+                .to_string();
+            probe_reads.push(json!({
+                "tool": tool,
+                "concept": e.concept,
+                "detail": e.detail,
+                "ts": e.ts,
+            }));
+        }
+        if e.action != "turn" {
+            tool_calls.push(json!({
+                "action": e.action,
+                "concept": e.concept,
+                "detail": e.detail,
+                "ts": e.ts,
+            }));
+        }
+    }
+
+    let until_ts = events.first().map(|e| e.ts).unwrap_or(since_ts);
+    json!({
+        "trace_chain": trace_chain,
+        "probe_reads": probe_reads,
+        "tool_calls": tool_calls,
+        "activity_window": { "since_ts": since_ts, "until_ts": until_ts },
+    })
+}
+
+/// Merge auto-collected turn activity into payload when fields are absent.
+pub fn enrich_turn_payload(mut payload: Value, since_ts: u64, limit: usize) -> Value {
+    let agg = aggregate_turn_activity(since_ts, limit);
+    let obj = payload.as_object_mut();
+    if let Some(obj) = obj {
+        if !obj.contains_key("trace_chain") {
+            if let Some(arr) = agg.get("trace_chain") {
+                obj.insert("trace_chain".into(), arr.clone());
+            }
+        }
+        if !obj.contains_key("probe_reads") {
+            if let Some(arr) = agg.get("probe_reads") {
+                obj.insert("probe_reads".into(), arr.clone());
+            }
+        }
+        if !obj.contains_key("tool_calls") {
+            if let Some(arr) = agg.get("tool_calls") {
+                obj.insert("tool_calls".into(), arr.clone());
+            }
+        }
+        if !obj.contains_key("activity_window") {
+            if let Some(win) = agg.get("activity_window") {
+                obj.insert("activity_window".into(), win.clone());
+            }
+        }
+        if !obj.contains_key("outcome_status") {
+            obj.insert("outcome_status".into(), json!("completed"));
+        }
+    }
+    payload
 }
 
 /// Structured trace fields extracted from ProvLog (record_reasoning_trace + quick_trace).
@@ -503,6 +622,30 @@ mod tests {
         };
         let hints = infer_tool_hints(&seg);
         assert!(hints.contains(&"mcp_engram_scar".to_string()));
+    }
+
+    #[test]
+    fn validate_response_tile_v3_lean_ok() {
+        let p = json!({
+            "version": "response_tile_schema_v3",
+            "tier": "lean",
+            "human_forward": "Shipped RPT v3.",
+            "user_utterance": "yes proceed",
+            "assistant_output": "Done.",
+        });
+        assert!(validate_response_tile_v3(&p).is_ok());
+    }
+
+    #[test]
+    fn validate_response_tile_v3_full_requires_key_facts() {
+        let p = json!({
+            "version": "response_tile_schema_v3",
+            "tier": "full",
+            "human_forward": "x",
+            "user_utterance": "y",
+            "assistant_output": "z",
+        });
+        assert!(validate_response_tile_v3(&p).is_err());
     }
 
     #[test]

@@ -76,6 +76,17 @@ pub fn commit_minimal_session_end(
     }
 
     let handoff = lock.persist_session_handoff_latest(summary, &key);
+    let trace_concepts = lock.collect_program_trace_concepts_for_handoff(summary, 8);
+    let program_traces_var = crate::context_var::refresh_program_traces_var(lock, &trace_concepts)
+        .ok()
+        .map(|r| {
+            json!({
+                "var": r.var_concept,
+                "bound": r.bound,
+                "slot_count": r.bundle.slots.len(),
+                "skipped": r.skipped,
+            })
+        });
     lock.mark_ki_rebake_needed();
     lock.invalidate_continuation_bundle_cache();
 
@@ -85,6 +96,7 @@ pub fn commit_minimal_session_end(
         "session_end_key": key,
         "boundary_trace": boundary_trace_key,
         "handoff": handoff,
+        "program_traces_var": program_traces_var,
         "message": format!("✓ Minimal session_end committed: {}", key),
         "next_wake_hint": "mcp_engram_session_start(intent=...) → read helper:session_handoff_latest → mcp_engram_get_continuation_bundle if deep context needed"
     }))

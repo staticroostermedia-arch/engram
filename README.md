@@ -40,8 +40,9 @@ Engram is particularly well-suited for:
 | **Grok Build / xAI reviewers** | [docs/GROK_BUILD_MEMORY.md](docs/GROK_BUILD_MEMORY.md) |
 | **MCP setup (all ecosystems)** | [integrations/README.md](integrations/README.md) |
 | **Human review (LEG Browser)** | [docs/LEG_BROWSER.md](docs/LEG_BROWSER.md) |
+| **Situated edit memory (code atlas)** | [docs/CODE_ATLAS_CONTINUITY.md](docs/CODE_ATLAS_CONTINUITY.md) |
 | **Personal knowledge wiki** | [docs/PERSONAL_KNOWLEDGE_WIKI.md](docs/PERSONAL_KNOWLEDGE_WIKI.md) |
-| **Power users (70 tools)** | [docs/TOOL_DECISION_MAP.md](docs/TOOL_DECISION_MAP.md) |
+| **Power users (79 tools)** | [docs/TOOL_DECISION_MAP.md](docs/TOOL_DECISION_MAP.md) |
 | **Ritual skills** | [SKILLS.md](SKILLS.md) → [docs/skills/](docs/skills/) |
 | **Deep mode (after install)** | [AGENT_INTEGRATION_GUIDE.md](AGENT_INTEGRATION_GUIDE.md) |
 
@@ -114,11 +115,12 @@ Local, read-only mirror of agent memory — no cloud, no npm, no account. Your m
 **What you get (beta):**
 
 - Wake queue + continuity playbook (same harness agents see at `session_start`)
+- Code atlas + evolution timeline at file loci (`__arc` segments, trace chain)
 - Presentation stratum (~40–64 distilled nodes, not the full cold manifold)
 - Activity feed, traces, goals, thought tiles, relations, geosphere view
-- Hygiene controls (demote sprawl, condensation hints)
+- Hygiene controls (demote sprawl, condensation hints, wake/edit-arc debt)
 
-**Beta caveats:** single-file SPA; large stores may be slow on some panels; hard-refresh after updates. Static mode is a demo snapshot — `--live` shows real MCP work.
+**Beta caveats:** single-file SPA; galaxy view may be slow on 100k+ stores; agent MCP paths stay bounded. Hard-refresh after `index.html` updates. Static mode is a demo snapshot — `--live` shows real MCP work.
 
 Full guide: [docs/LEG_BROWSER.md](docs/LEG_BROWSER.md). Safe serve restart (does not kill MCP): `./scripts/restart-leg-serve.sh`.
 
@@ -139,15 +141,14 @@ flowchart LR
   H --> W
 ```
 
-## What's new in v0.7.0-beta.2
+## What's new ([Unreleased] — see CHANGELOG)
 
-- **Cold-start onboarding:** README human→agent fork, FIRST_RUN role split, contract bootstrap checklist — install path works without insider context.
-- **Public docs polish:** personal knowledge wiki, `docs/internal/` maintainer journals, external-reader tone pass.
-- **JIT deformation:** task-type playbooks + `verified_processes` at wake ([DEFORMATION_PLAYBOOKS.md](docs/DEFORMATION_PLAYBOOKS.md)).
-- **70 MCP tools** smoke-tested (67 pass in harness); lean default remains **8 essential**.
-- **LEG Browser beta** (from beta.1): `./scripts/leg --live` — memory review UI, wake queue, presentation stratum.
+- **Code atlas continuity v2:** situated edit memory at the locus — atlas v2.1, `evolution_at_locus`, hard wake gate, `post_edit_palette`, update coherence. [CODE_ATLAS_CONTINUITY.md](docs/CODE_ATLAS_CONTINUITY.md)
+- **Large-store perf:** bounded NREM + relation batching — wake and evolution recon in seconds on ~192k blocks.
+- **79 MCP tools** registered; lean default remains **8 essential**.
+- **LEG evolution panel:** `./scripts/leg --live` + `GET /api/code-atlas?evolution=1`.
 
-Full history: [CHANGELOG.md](CHANGELOG.md).
+Prior release **v0.7.0-beta.2:** cold-start onboarding, JIT deformation, LEG Browser beta. Full history: [CHANGELOG.md](CHANGELOG.md).
 
 ## Categorical Linguistic Calculus
 
@@ -192,7 +193,7 @@ Build against `target/debug/engram` during development.
 
 ## MCP tools
 
-**8 essential** for daily work — **70 registered** (66 `mcp_engram_*` + 4 linguistic); full map: [docs/TOOL_DECISION_MAP.md](docs/TOOL_DECISION_MAP.md). Categorized reference: [docs/MCP_TOOLS_REFERENCE.md](docs/MCP_TOOLS_REFERENCE.md). Harness matrix: `tools/test-harness/python/mcp_tool_matrix.py`.
+**8 essential** for daily work — **79 registered** (75 `mcp_engram_*` + 4 linguistic); full map: [docs/TOOL_DECISION_MAP.md](docs/TOOL_DECISION_MAP.md). Categorized reference: [docs/MCP_TOOLS_REFERENCE.md](docs/MCP_TOOLS_REFERENCE.md). Harness matrix: `tools/test-harness/python/mcp_tool_matrix.py`.
 
 Grok plugin slash commands: [grok-plugin-engram/commands/](grok-plugin-engram/commands/).
 
@@ -216,7 +217,7 @@ Grok plugin slash commands: [grok-plugin-engram/commands/](grok-plugin-engram/co
 | JIT deformation / RSI | [docs/DEFORMATION_PLAYBOOKS.md](docs/DEFORMATION_PLAYBOOKS.md) |
 | Harness injection at wake | [docs/HARNESS_INJECTION.md](docs/HARNESS_INJECTION.md) |
 | Ritual overview | [docs/RITUALS.md](docs/RITUALS.md) |
-| MCP tools reference (70) | [docs/MCP_TOOLS_REFERENCE.md](docs/MCP_TOOLS_REFERENCE.md) |
+| MCP tools reference (79) | [docs/MCP_TOOLS_REFERENCE.md](docs/MCP_TOOLS_REFERENCE.md) |
 | Long-sleep return | [docs/LONG_SLEEP_WAKEUP_PROTOCOL.md](docs/LONG_SLEEP_WAKEUP_PROTOCOL.md) |
 
 ### Contributors

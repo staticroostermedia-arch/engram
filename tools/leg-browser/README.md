@@ -34,8 +34,11 @@ To restart the serve process without killing your IDE/TUI MCP session:
 - **Recent + momentum sidebar** — what is trending in your manifold
 - **Block inspector** — click any concept for full payload and relations
 - **Consciousness surface** — distilled goals, traces, and tiles at a glance
+- **Agent Mirror** (right rail) — live trace fork chain with justification, alternatives, and falsifiability; polls `/api/agent-mirror` every 1s and prefers SSE `trace_fork` for instant updates
 
-The viewer is a single-file SPA (`index.html`) — vanilla JS + Tailwind CDN. Fork and improve freely.
+Glass-box tagline: *Substrate interface visible; model weights opaque by design.*
+
+The viewer is a single-file SPA (`index.html`) — vanilla JS + dark cockpit theme. Fork and improve freely.
 
 ## Related docs
 

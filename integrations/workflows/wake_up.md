@@ -40,12 +40,14 @@ mcp_engram_session_start(
 
 ### After the response
 
-1. Read `continuation_bundle.primary_goal` and `last_session_end.preview`.
-2. State continuation: *"I am continuing prior work on X; last session ended with Y."*
-3. If you need full text on an artifact: `mcp_engram_recall(query="<keywords>", scope="anchors", k=5)`.
-4. Proceed to work per [engram-working-memory.md](../../docs/skills/engram-working-memory.md).
+1. Execute `suggested_actions` from the continuation bundle (priority order).
+2. **`mcp_engram_ack_wake_queue(executed=true)`** — required before `context_for_edit` when `ENGRAM_PROFILE=agent` (hard gate default). Empty queue auto-acks at wake.
+3. Read `continuation_bundle.primary_goal` and `last_session_end.preview`.
+4. State continuation: *"I am continuing prior work on X; last session ended with Y."*
+5. If you need full text on an artifact: `mcp_engram_recall(query="<keywords>", scope="anchors", k=5)`.
+6. Proceed to work per [engram-working-memory.md](../../docs/skills/engram-working-memory.md).
 
-**Target:** <2s wake, <500MB RSS on 181k+ stores.
+**Target:** <8s wake, <500MB RSS on 181k+ stores.
 
 ---
 
@@ -103,6 +105,6 @@ mcp_engram_session_end(summary="Decisions, files changed, open questions, next s
 - Working-memory discipline active (`context_for_edit` before edits)
 - `session_end` planned for handoff
 
-**Power tools** (62 total): [docs/MCP_TOOLS_REFERENCE.md](../../docs/MCP_TOOLS_REFERENCE.md)
+**Power tools** (71 total): [docs/MCP_TOOLS_REFERENCE.md](../../docs/MCP_TOOLS_REFERENCE.md)
 
 **Grok Build integration:** [docs/GROK_BUILD_MEMORY.md](../../docs/GROK_BUILD_MEMORY.md)

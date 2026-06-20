@@ -26,6 +26,9 @@ pub fn is_surface_eligible(c: &str) -> bool {
         || c.starts_with("ritual:")
         || c.starts_with("praxis:")
         || c.starts_with("scar:")
+        || c.starts_with("local:")
+        || c.starts_with("host:")
+        || c.starts_with("env:")
 }
 
 /// Dynamic K from memory mode / env override.

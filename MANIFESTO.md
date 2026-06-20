@@ -213,7 +213,7 @@ cargo install engram --git https://github.com/staticroostermedia-arch/engram
 engram mcp --store ~/.engram/manifold
 ```
 
-The MCP server exposes **70 registered tools** (8 essential for daily agent work — see [docs/AGENT_MEMORY_CONTRACT.md](docs/AGENT_MEMORY_CONTRACT.md) and [docs/TOOL_DECISION_MAP.md](docs/TOOL_DECISION_MAP.md)). The REST server (`engram serve --port 3456`) gives Python agents, LangChain pipelines, and AutoGen frameworks direct HTTP access to the same geometric manifold.
+The MCP server exposes **79 registered tools** (8 essential for daily agent work — see [docs/AGENT_MEMORY_CONTRACT.md](docs/AGENT_MEMORY_CONTRACT.md) and [docs/TOOL_DECISION_MAP.md](docs/TOOL_DECISION_MAP.md)). The REST server (`engram serve --port 3456`) gives Python agents, LangChain pipelines, and AutoGen frameworks direct HTTP access to the same geometric manifold.
 
 If you are building an AI agent and you want its memory to be physically correct, mathematically rigorous, and cryptographically provable — read the [architecture docs](docs/architecture.md) and start with the [first run guide](FIRST_RUN.md).
 

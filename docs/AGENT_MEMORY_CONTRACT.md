@@ -10,11 +10,11 @@
 2. **First call:** `mcp_engram_session_start(intent="<what you're doing>")`. Read `continuation` in the response (goals, suggested actions, last session preview).
 3. **Every session:** wake → work with the 8 tools below → `session_end(summary=…)`. That handoff is what makes the next wake feel continuous.
 4. **Do not at wake:** `watch_workspace`, `rebuild_bvh`, `summarize`, `list_concepts` — use `context_for_edit(path)` per file instead.
-5. **Need more?** 62 power tools exist; escalate deliberately via [TOOL_DECISION_MAP.md](TOOL_DECISION_MAP.md). Ritual detail: [docs/skills/engram-wake-up.md](skills/engram-wake-up.md), [engram-working-memory.md](skills/engram-working-memory.md), [engram-session-end.md](skills/engram-session-end.md).
+5. **Need more?** 71 power tools exist; escalate deliberately via [TOOL_DECISION_MAP.md](TOOL_DECISION_MAP.md). Ritual detail: [docs/skills/engram-wake-up.md](skills/engram-wake-up.md), [engram-working-memory.md](skills/engram-working-memory.md), [engram-session-end.md](skills/engram-session-end.md).
 
-> **62 more tools exist** (70 total). Power tools (`update`, `query_with_momentum`, `search_by_relation`, `remember_solution`, `scar`, `thought_tile_create`, …) remain available. This contract is the **Layer 0 highway** — not the full map.
+> **71 more tools exist** (79 total). Power tools (`update`, `ack_wake_queue`, `evolution_at_locus`, `query_with_momentum`, `search_by_relation`, `remember_solution`, `scar`, `thought_tile_create`, …) remain available. This contract is the **Layer 0 highway** — not the full map.
 
-**Full decision map:** [TOOL_DECISION_MAP.md](TOOL_DECISION_MAP.md) — mermaid flows for all 70 tools, write path (`update` vs `remember`), read escalation, and Grok Build vs Cursor throttle. **JIT RSI:** [DEFORMATION_PLAYBOOKS.md](DEFORMATION_PLAYBOOKS.md).
+**Full decision map:** [TOOL_DECISION_MAP.md](TOOL_DECISION_MAP.md) — mermaid flows for all 79 tools, write path (`update` vs `remember`), read escalation, and Grok Build vs Cursor throttle. **JIT RSI:** [DEFORMATION_PLAYBOOKS.md](DEFORMATION_PLAYBOOKS.md).
 
 ---
 
@@ -34,12 +34,13 @@
 ### Tool summaries
 
 **`session_start(intent, include_spatial?)`** — Mandatory first call. Mints `session_start_*` episodic block, loads process sheaf, and returns:
+- **After wake:** execute `suggested_actions`, then **`mcp_engram_ack_wake_queue(executed=true)`** before `context_for_edit` when `ENGRAM_PROFILE=agent` (hard gate default). Empty queue auto-acks at wake.
 - **`continuation` (slim by default, `ENGRAM_WAKE_BUNDLE=slim`)** — `primary_goal`, top 5 `suggested_actions`, `trace_chain_head`, slim `ego_snapshot`, `presentation_stratum` node_count + 5 previews
 - **Full bundle on demand:** `mcp_engram_get_continuation_bundle` (set `ENGRAM_WAKE_BUNDLE=full` to restore legacy inline payload)
 - `backend_readiness` (bvh_ready, recall_mode, leg_block_count)
 - Optional `spatial_delta` when `include_spatial=true` (incremental ingest summary, not full force)
 
-**`context_for_edit(path, line_start?, line_end?)`** — **Code atlas v2** pre-edit recon. Returns `spatial_items` (AST + `edit_arc` per locus), `traces_at_locus`, `scars_at_locus`, `spatial_siblings`, and anchor goals/traces — **without** `watch_workspace` or full-store scan. Post-edit: `update({concept}__arc)` with delta narrative; never bury history in source comments. See [CODE_ATLAS_CONTINUITY.md](CODE_ATLAS_CONTINUITY.md).
+**`context_for_edit(path, line_start?, line_end?)`** — **Code atlas v2.1** pre-edit recon. Returns `spatial_items` (AST + `edit_arc` per locus), `traces_at_locus`, `traces_at_locus_tiers`, `scars_at_locus`, `spatial_siblings`, `edit_arc_debt`, and per-file `post_edit_palette` — **without** `watch_workspace` or full-store scan. Post-edit: `update({concept}__arc)` with delta narrative (use palette args when present); never bury history in source comments. Optional recon: `evolution_at_locus(path, line_start, line_end)`. See [CODE_ATLAS_CONTINUITY.md](CODE_ATLAS_CONTINUITY.md).
 
 **`recall(query, k?, scope?)`** — Lexical similarity search. `scope` tiers results:
 - `anchors` (default in lean) — `goal:`, `trace:`, `ritual:`, `helper:`, `praxis:` before episodic noise
@@ -308,7 +309,7 @@ mcp_engram_session_end(summary="<decisions, files, next steps>")
 - [docs/skills/engram-wake-up.md](skills/engram-wake-up.md) — 1-call wake protocol
 - [docs/skills/engram-working-memory.md](skills/engram-working-memory.md) — edit loop with `context_for_edit`
 - [docs/skills/engram-session-end.md](skills/engram-session-end.md) — handoff packet protocol
-- [docs/MCP_TOOLS_REFERENCE.md](MCP_TOOLS_REFERENCE.md) — all 70 tools (8 essential)
+- [docs/MCP_TOOLS_REFERENCE.md](MCP_TOOLS_REFERENCE.md) — all 79 tools (8 essential)
 - [docs/HARNESS_INJECTION.md](HARNESS_INJECTION.md) — wake queue, ego snapshot, continuity playbook
 
 ---

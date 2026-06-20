@@ -12,7 +12,7 @@ All workstreams in this plan (WS-1 through WS-5) shipped. **Do not treat this fi
 |------|----------------|
 | Wake injection, `suggested_actions`, trace chains, trusted tiles | [HARNESS_INJECTION.md](HARNESS_INJECTION.md) |
 | JIT deformation, verified-sequence replay, RSI playbooks | [DEFORMATION_PLAYBOOKS.md](DEFORMATION_PLAYBOOKS.md) |
-| Tool selection across 70 MCP tools | [TOOL_DECISION_MAP.md](TOOL_DECISION_MAP.md) |
+| Tool selection across 79 MCP tools | [TOOL_DECISION_MAP.md](TOOL_DECISION_MAP.md) |
 
 The sections below are **historical design record** (dependency DAG, phase breakdown, verification gates). Use them for archaeology and onboarding context, not for day-to-day agent operations.
 

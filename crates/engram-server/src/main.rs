@@ -26,16 +26,26 @@
 //!   --light     : Force CPU backend (ENGRAM_FORCE_CPU_BACKEND), skips CUDA/Metal/BVH heavy init for fast non-GPU startup during UI testing.
 //!   --no-scout  : Skip scout_daemon supervisor (avoids port 8088 contention/spam when only using /api/* for dynamic views).
 
+mod cockpit_cache;
+mod coherence;
+mod context_var;
 pub mod daemon;
+mod edit_arc_gate;
+mod evolution_at_locus;
 mod harness_injection;
 pub mod ki_hijacker;
+mod leg_corpus;
+mod linguistic_reference_frame;
+mod local_stratum;
 mod mcp;
 mod mcp_lock;
+mod mirror;
 mod presentation_stratum;
 mod process_metrics;
 mod profile;
 pub mod scout;
 pub mod scout_supervisor;
+mod scrub_export;
 mod serve;
 mod session_lifecycle;
 mod store;
@@ -100,6 +110,10 @@ enum Commands {
         /// Light / UI-test mode for leg-browser dynamic GUI: force CPU-only backend (no CUDA/Metal/GPU BVH heavy init). Fast startup, sufficient for /api/block /api/hydrate /api/recent etc. (see parent goal:1780106168)
         #[arg(long, default_value_t = false)]
         light: bool,
+
+        /// LEG glass-box cockpit profile (GPU-hot presentation cache, lazy galaxy). Preferred over --light for live LEG.
+        #[arg(long, default_value_t = false)]
+        cockpit: bool,
 
         /// Disable the scout_daemon.py supervisor (port 8088 web-search companion). Recommended with --light when only using serve for live leg-browser views (no /api/scout needed).
         #[arg(long, default_value_t = false)]
@@ -279,16 +293,27 @@ fn main() -> anyhow::Result<()> {
             port,
             no_genesis,
             light,
+            cockpit,
             no_scout: _,
             mcp_http,
         } => {
             // Serve mode (HTTP) — stabilized for leg-browser dynamic GUI (parent goal:1780106168_make-the-leg-browser-a-seamless--truly-dynamic-g ; sub0:1780106172).
-            if light {
+            if cockpit {
+                if std::env::var("ENGRAM_PROFILE").is_err() {
+                    std::env::set_var("ENGRAM_PROFILE", "cockpit");
+                }
+                profile::EngramProfile::Cockpit.apply();
+                tracing::info!(
+                    "[SERVE] --cockpit: glass-box LEG profile (presentation cache + lazy galaxy)."
+                );
+            } else if light {
                 if std::env::var("ENGRAM_PROFILE").is_err() {
                     std::env::set_var("ENGRAM_PROFILE", "ui");
                 }
                 profile::EngramProfile::Ui.apply();
                 tracing::info!("[SERVE] --light: ui profile (CPU-only, fast leg-browser).");
+            } else if std::env::var("ENGRAM_PROFILE").is_ok() {
+                profile::EngramProfile::from_env().apply();
             }
 
             // Serve mode (HTTP) can afford the full heavy initialization (unless light).

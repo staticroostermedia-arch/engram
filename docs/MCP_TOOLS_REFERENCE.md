@@ -1,8 +1,8 @@
 # MCP Tools Reference
 
-Engram exposes **70 MCP tools** (66 `mcp_engram_*` + 4 linguistic). Most agents should use **8** — see [`AGENT_MEMORY_CONTRACT.md`](AGENT_MEMORY_CONTRACT.md).
+Engram exposes **79 MCP tools** (75 `mcp_engram_*` + 4 linguistic). Most agents should use **8** — see [`AGENT_MEMORY_CONTRACT.md`](AGENT_MEMORY_CONTRACT.md).
 
-**Decision map (all 70):** [`TOOL_DECISION_MAP.md`](TOOL_DECISION_MAP.md) — when to escalate to `update`, `query_with_momentum`, `search_by_relation`, goals, tiles, linguistic tools. **JIT deformation:** [`DEFORMATION_PLAYBOOKS.md`](DEFORMATION_PLAYBOOKS.md).
+**Decision map (all 79):** [`TOOL_DECISION_MAP.md`](TOOL_DECISION_MAP.md) — when to escalate to `update`, `query_with_momentum`, `search_by_relation`, goals, tiles, linguistic tools. **JIT deformation:** [`DEFORMATION_PLAYBOOKS.md`](DEFORMATION_PLAYBOOKS.md).
 
 Tools are grouped by tier:
 
@@ -31,15 +31,25 @@ Tools are grouped by tier:
 ### Lean session loop
 
 ```
-session_start → [work: context_for_edit + recall(scope=anchors) + quick_trace + remember] → session_end
+session_start → ack_wake_queue → [work: context_for_edit + recall(scope=anchors) + quick_trace + remember] → session_end
 ```
+
+With `ENGRAM_PROFILE=agent`, wake gate defaults to **hard** — `ack_wake_queue` is required before `context_for_edit` unless the queue was empty (auto-ack at wake).
 
 ---
 
 ## Tier 2 — Power (use deliberately)
 
+### Harness gates (agent profile)
+- `ack_wake_queue` — after executing wake `suggested_actions`; unblocks `context_for_edit` in hard mode
+- `ack_edit_arc` — clear edit-arc debt on read-only repeat passes; prefer `update` on `__arc` after edits
+
+### Code atlas (situated edit memory)
+- `evolution_at_locus` — bounded loci + arc segments + trace chain at a file window (`auto_ingest` default true)
+- `ingest_reference_frame` — mint linguistic reference frame + pillar blocks (one-shot, idempotent)
+
 ### Memory writes & evolution
-- `update` — **preferred** over forget+remember (Lyapunov drift)
+- `update` — **preferred** over forget+remember (Lyapunov drift); `ENGRAM_UPDATE_COHERENCE=warn` checks provlog coherence (agent default)
 - `batch_remember`, `pin`, `forget`, `forget_old`
 - `remember_solution` — crystallize working fixes to praxis
 - `record_reasoning_trace` — full A/D/R trace (use `quick_trace` for daily work)
@@ -73,9 +83,14 @@ session_start → [work: context_for_edit + recall(scope=anchors) + quick_trace 
 ### Session / handoff extras
 - `rebuild_bvh` — on-demand full index (deep mode; RAM/time cost)
 
+### Context variables & corpus
+- `var_declare`, `var_query`, `var_project` — session/program trace handles (e.g. `var:ctx_program_traces` at session_end)
+- `leg_corpus`, `scrub_export` — LEG export and corpus hygiene
+
 ### Other power
 - `list_concepts`, `list_namespaces`, `set_namespace`
 - `export`, `import`, `scout`, `invoke_protocol`, `track_user`
+- `demote_from_context`, `process_metrics`, `turn_record`, `thought_tile_draft_from_chain`
 
 ---
 
@@ -102,9 +117,13 @@ session_start → [work: context_for_edit + recall(scope=anchors) + quick_trace 
 
 ## Environment variables (MCP defaults)
 
-| Variable | Default (lean) | Effect |
-|----------|----------------|--------|
+| Variable | Default (`ENGRAM_PROFILE=agent`) | Effect |
+|----------|----------------------------------|--------|
 | `ENGRAM_MEMORY_MODE` | `lean` | Anchor-first recall; no auto-BVH |
+| `ENGRAM_WAKE_QUEUE_GATE` | `hard` | Block `context_for_edit` until `ack_wake_queue` |
+| `ENGRAM_EDIT_ARC_GATE` | `soft` | Warn on repeat `context_for_edit` without `__arc` update |
+| `ENGRAM_UPDATE_COHERENCE` | `warn` | Provlog coherence check on `update` (`off`\|`warn`\|`block`) |
+| `ENGRAM_NREM_DISABLE` | `1` | Skip heavy NREM walk on large stores at session_end |
 | `ENGRAM_DEFER_BVH` | `1` | Skip background BVH build |
 | `ENGRAM_DEFER_WATCH_INGEST` | `1` | No recursive watch/ingest on bind |
 | `ENGRAM_DISABLE_SHEAF` | `1` | Single backend on `--store` |

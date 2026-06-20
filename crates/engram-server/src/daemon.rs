@@ -511,10 +511,18 @@ const NREM_TRAINING_BIAS_FACTOR: f32 = 2.0;
 fn run_nrem_consolidation(store: &crate::store::SharedStore) {
     info!("[NREM] Starting dream consolidation pass (CRS threshold = {}) — CodeLand-enhanced (ego-friction + Riemannian + Tier5 ZEDOS + Logenergetics)…", NREM_CRS_THRESHOLD);
 
-    // Collect all concept names while holding the lock briefly.
+    // Bounded candidate pool on large stores — full list()+scan blocks MCP for minutes.
     let concepts: Vec<String> = {
         let lock = store.lock().unwrap();
-        lock.list()
+        if lock.leg_block_count() > crate::store::StoreHandle::LARGE_MANIFOLD_THRESHOLD {
+            tracing::info!(
+                "[NREM] Large manifold — bounded candidate pool ({} blocks), skipping full list()",
+                lock.leg_block_count()
+            );
+            lock.nrem_candidate_concepts(8000)
+        } else {
+            lock.list()
+        }
     };
 
     // ── Item 1 NREM Ego/Goal Bias Pre-computation (recency-weighted + mass-capped) ──

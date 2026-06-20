@@ -526,6 +526,13 @@
     }
     .brand h1 { margin: 0; font-size: 15px; font-weight: 700; letter-spacing: -0.02em; }
     .brand p { margin: 2px 0 0; font-size: 11px; color: var(--muted); }
+    .brand .glass-box-tagline {
+      margin: 4px 0 0;
+      font-size: 10px;
+      color: #7dd3fc;
+      line-height: 1.35;
+      opacity: 0.92;
+    }
     .status {
       margin: 12px 16px 0;
       padding: 10px 12px;
@@ -1022,6 +1029,7 @@
     #activity-strip .act-badge.relate { background: rgba(196,181,253,0.2); color: #ddd6fe; }
     #activity-strip .act-badge.unrelate { background: rgba(248,113,113,0.2); color: #fca5a5; }
     #activity-strip .act-badge.write { background: rgba(148,163,184,0.15); color: #cbd5e1; }
+    #activity-strip .act-badge.probe { background: rgba(251,191,36,0.12); color: #fcd34d; }
     #activity-strip .act-label {
       font-family: ui-monospace, monospace;
       color: #e2e8f0;
@@ -1053,11 +1061,69 @@
       text-transform: uppercase;
       color: #7dd3fc;
     }
+    #process-feed .process-item.probe-item .pi-action { color: #fcd34d; }
+    #activity-strip .act-chip.probe-chip { border-color: rgba(251,191,36,0.25); }
+    details.rail-collapse { margin-bottom: 8px; }
+    details.rail-collapse > summary { list-style: none; }
+    details.rail-collapse > summary::-webkit-details-marker { display: none; }
+    #substrate-rail .substrate-file {
+      font-size: 10px; color: #6ee7b7; cursor: pointer; margin-top: 6px;
+    }
+    #substrate-rail .substrate-file code { color: #a7f3d0; }
     #process-feed .process-item .pi-concept {
       font-family: ui-monospace, monospace;
       color: #cbd5e1;
       margin-top: 2px;
       word-break: break-all;
+    }
+    #now-rail .velocity-now-card {
+      margin-bottom: 0;
+      cursor: pointer;
+    }
+    #now-rail .velocity-just {
+      margin-top: 6px;
+      font-size: 10px;
+      line-height: 1.4;
+      color: #64748b;
+      font-style: italic;
+    }
+    .velocity-empty {
+      padding: 8px 4px;
+      font-size: 10px;
+      color: #64748b;
+      line-height: 1.45;
+    }
+    #code-focus-rail .code-focus-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 6px;
+      padding: 7px 9px;
+      margin-bottom: 5px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,0.03);
+      font-size: 10px;
+      cursor: pointer;
+      line-height: 1.35;
+    }
+    #code-focus-rail .code-focus-row:hover { border-color: rgba(110,231,183,0.35); }
+    #code-focus-rail .code-focus-row.active {
+      border-color: rgba(110,231,183,0.45);
+      background: rgba(6,78,59,0.2);
+    }
+    #code-focus-rail .code-focus-mark { color: #6ee7b7; flex-shrink: 0; }
+    #code-focus-rail .code-focus-row code {
+      color: #a7f3d0;
+      font-size: 9px;
+      word-break: break-all;
+      flex: 1;
+    }
+    #code-focus-rail .code-focus-meta {
+      font-size: 8px;
+      color: #64748b;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      flex-shrink: 0;
     }
     .tool-btn.live-watch.active {
       border-color: #0369a1;
@@ -1131,6 +1197,89 @@
       accent-color: #38bdf8;
       height: 4px;
     }
+    #geo-lens-overlay {
+      position: absolute;
+      inset: 0;
+      z-index: 18;
+      display: none;
+      background: radial-gradient(ellipse at 50% 120%, #0a1628 0%, #070b12 70%);
+    }
+    #geo-lens-overlay.active { display: block; }
+    #geo-lens-canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+      cursor: grab;
+    }
+    #geo-lens-hud {
+      position: absolute;
+      left: 12px;
+      top: 12px;
+      z-index: 20;
+      background: var(--glass-strong);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 10px;
+      font-size: 10px;
+      color: var(--muted);
+      max-width: 280px;
+      pointer-events: none;
+    }
+    #geo-lens-hud .geo-lens-title { color: #6ee7b7; font-weight: 700; display: block; margin-bottom: 4px; }
+    #geo-lens-pins {
+      position: absolute;
+      right: 12px;
+      top: 12px;
+      width: 200px;
+      max-height: calc(100% - 24px);
+      overflow-y: auto;
+      z-index: 20;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    #geo-lens-pins .geo-pin {
+      background: var(--glass-strong);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px;
+      font-size: 10px;
+      cursor: pointer;
+    }
+    #geo-lens-pins .geo-pin:hover { border-color: #6ee7b7; }
+    #geo-lens-ops {
+      position: absolute;
+      left: 12px;
+      right: 12px;
+      bottom: 12px;
+      z-index: 20;
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      pointer-events: auto;
+    }
+    #geo-lens-ops .geo-ops-tile {
+      background: var(--glass-strong);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 12px;
+      font-size: 10px;
+      cursor: pointer;
+      min-width: 88px;
+    }
+    #geo-lens-ops .geo-ops-tile:hover { border-color: #38bdf8; }
+    #geo-lens-ops .geo-ops-tile .ops-kind { color: #64748b; font-size: 9px; display: block; }
+    #geo-lens-ops .geo-ops-tile .ops-label { color: #e2e8f0; font-weight: 600; }
+    #geo-lens-north-star {
+      display: none;
+      margin-top: 6px;
+      color: #38bdf8;
+      cursor: pointer;
+      pointer-events: auto;
+      text-decoration: underline;
+      font-size: 9px;
+    }
+    #geo-lens-north-star:hover { color: #6ee7b7; }
     #spatial-overlay {
       position: absolute;
       right: 12px;
@@ -1286,6 +1435,154 @@
       background: rgba(252, 211, 77, 0.08);
       border-left: 2px solid #fcd34d;
     }
+    #code-atlas-panel .atlas-evolution-timeline {
+      margin: 8px 0 4px;
+      padding-left: 10px;
+      border-left: 2px solid rgba(167, 139, 250, 0.45);
+    }
+    #code-atlas-panel .atlas-evolution-seg {
+      position: relative;
+      padding: 4px 0 8px 12px;
+      color: #c4b5fd;
+      font-size: 9px;
+    }
+    #code-atlas-panel .atlas-evolution-seg::before {
+      content: '';
+      position: absolute;
+      left: -5px;
+      top: 8px;
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #a78bfa;
+      box-shadow: 0 0 6px rgba(167, 139, 250, 0.6);
+    }
+    #code-atlas-panel .atlas-locus-highlight,
+    #code-atlas-panel .atlas-head.atlas-locus-highlight {
+      border-color: rgba(56, 189, 248, 0.55);
+      box-shadow: 0 0 12px rgba(56, 189, 248, 0.25);
+      animation: atlas-locus-pulse 1.8s ease-in-out infinite;
+    }
+    @keyframes atlas-locus-pulse {
+      0%, 100% { box-shadow: 0 0 8px rgba(56, 189, 248, 0.2); }
+      50% { box-shadow: 0 0 16px rgba(56, 189, 248, 0.45); }
+    }
+    #agent-mirror-panel.mirror-rail {
+      max-height: 44vh;
+      min-height: 120px;
+    }
+    #agent-mirror-panel .mirror-empty {
+      font-size: 10px;
+      color: #64748b;
+      line-height: 1.45;
+      padding: 4px 0;
+    }
+    #agent-mirror-panel .mirror-goal {
+      font-size: 10px;
+      color: #fde68a;
+      line-height: 1.4;
+      padding: 6px 8px;
+      margin-bottom: 8px;
+      border-radius: 8px;
+      border: 1px solid rgba(251, 191, 36, 0.28);
+      background: rgba(69, 26, 3, 0.35);
+    }
+    #agent-mirror-panel .mirror-head {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: #7dd3fc;
+      margin-bottom: 6px;
+    }
+    #agent-mirror-panel .mirror-pos {
+      margin-left: auto;
+      font-family: ui-monospace, monospace;
+      color: #64748b;
+      font-weight: 400;
+      text-transform: none;
+      letter-spacing: 0;
+    }
+    #agent-mirror-panel .mirror-steps {
+      display: flex;
+      gap: 4px;
+      overflow-x: auto;
+      padding-bottom: 6px;
+      margin-bottom: 8px;
+    }
+    #agent-mirror-panel .mirror-step {
+      flex: 0 0 auto;
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      border: 1px solid rgba(56, 189, 248, 0.35);
+      background: rgba(255,255,255,0.06);
+      cursor: pointer;
+    }
+    #agent-mirror-panel .mirror-step:hover { border-color: #7dd3fc; transform: scale(1.15); }
+    #agent-mirror-panel .mirror-step.active {
+      background: #38bdf8;
+      border-color: #7dd3fc;
+      box-shadow: 0 0 10px rgba(56, 189, 248, 0.45);
+    }
+    #agent-mirror-panel .mirror-step.head { border-color: #6ee7b7; }
+    #agent-mirror-panel .mirror-decision {
+      font-size: 12px;
+      color: #e2e8f0;
+      line-height: 1.45;
+      margin-bottom: 8px;
+      font-weight: 500;
+    }
+    #agent-mirror-panel .mirror-expand {
+      margin-bottom: 6px;
+      border-radius: 8px;
+      border: 1px solid rgba(56, 189, 248, 0.18);
+      background: rgba(8, 14, 24, 0.55);
+      font-size: 10px;
+    }
+    #agent-mirror-panel .mirror-expand summary {
+      cursor: pointer;
+      padding: 6px 8px;
+      color: #7dd3fc;
+      font-weight: 600;
+      list-style: none;
+    }
+    #agent-mirror-panel .mirror-expand summary::-webkit-details-marker { display: none; }
+    #agent-mirror-panel .mirror-body {
+      padding: 0 8px 8px;
+      color: #cbd5e1;
+      line-height: 1.45;
+      white-space: pre-wrap;
+    }
+    #agent-mirror-panel .mirror-spatial {
+      margin-top: 6px;
+      padding: 6px 8px;
+      border-radius: 8px;
+      border: 1px solid rgba(16, 185, 129, 0.28);
+      background: rgba(5, 46, 22, 0.35);
+      font-size: 10px;
+      cursor: pointer;
+    }
+    #agent-mirror-panel .mirror-spatial:hover { border-color: #6ee7b7; }
+    #agent-mirror-panel .mirror-spatial code {
+      font-family: ui-monospace, monospace;
+      color: #a7f3d0;
+      word-break: break-all;
+    }
+    #agent-mirror-panel .mirror-foot {
+      margin-top: 6px;
+      font-size: 9px;
+      color: #64748b;
+    }
+    #agent-mirror-panel .mirror-head-id {
+      font-family: ui-monospace, monospace;
+      color: #67c3f3;
+      cursor: pointer;
+    }
+    #agent-mirror-panel .mirror-head-id:hover { color: #7dd3fc; }
     #code-atlas-panel .atlas-scar {
       padding: 6px 8px;
       margin-bottom: 6px;
@@ -1397,6 +1694,7 @@
         <div class="leg-mark" title=".leg3 — geometry inherent in structure"></div>
         <div>
           <h1>LEG Browser</h1>
+          <p id="glass-box-tagline" class="glass-box-tagline">Substrate interface visible; model weights opaque by design</p>
           <p id="block-count">.leg3 manifold • inherent geometry</p>
         </div>
       </div>
@@ -1404,26 +1702,29 @@
         Offline — click to connect or run <code>./scripts/leg --live</code>
       </div>
       <div class="rail-scroll">
-        <div class="section-label">Primary intent</div>
-        <div id="primary-row"></div>
-        <div class="section-label">Active work</div>
-        <div id="active-list"></div>
-        <div class="section-label">Agent evolution</div>
-        <div id="ego-evolution-strip"></div>
-        <div class="section-label">Continuity playbook</div>
-        <div id="continuity-playbook"></div>
-        <div class="section-label">Wake queue <span id="wake-queue-badge" style="color:#64748b;font-weight:400"></span></div>
-        <div id="agent-queue">
-          <div class="queue-row" id="agent-queue-row"></div>
+        <div class="section-label">Now <span id="now-badge" style="color:#64748b;font-weight:400"></span></div>
+        <div id="now-rail">
+          <div class="velocity-empty">Scrubbed fork — live decision at this moment in the trace chain.</div>
         </div>
-        <div class="section-label">Context lens</div>
-        <div id="context-lens-card"><strong>Agent context lens</strong><span class="ctx-in">warming up…</span></div>
-        <div class="section-label">Process <span id="process-badge" style="color:#64748b;font-weight:400">live</span></div>
+        <div class="section-label">Recent writes <span id="process-badge" style="color:#64748b;font-weight:400">live</span></div>
         <div id="process-feed">
-          <div style="padding:6px 4px;font-size:10px;color:#64748b">Connect — agent writes surface here in ~1s.</div>
+          <div class="velocity-empty">Manifold writes stream here — traces, tiles, relates (~1s).</div>
+        </div>
+        <div class="section-label">Code focus</div>
+        <div id="code-focus-rail">
+          <div class="velocity-empty">File:line locus from scrubbed fork + spatial hotspots.</div>
         </div>
         <div class="section-label">Pinned</div>
         <div id="pinned-list"></div>
+        <details class="rail-collapse" id="left-rail-meta">
+          <summary class="section-label" style="cursor:pointer">Context &amp; evolution</summary>
+          <div id="context-lens-card" style="margin-bottom:8px"><strong>Context lens</strong><span class="ctx-in"> warming up…</span></div>
+          <div id="ego-evolution-strip"></div>
+          <div id="continuity-playbook" style="margin-top:6px"></div>
+        </details>
+        <div id="agent-queue" style="display:none">
+          <div class="queue-row" id="agent-queue-row"></div>
+        </div>
       </div>
     </aside>
     <main class="center-stage">
@@ -1434,17 +1735,19 @@
         <div class="toolbar">
           <button class="tool-btn active" id="btn-galaxy" onclick="leg.showGalaxy()">Galaxy</button>
           <button class="tool-btn" id="btn-geosphere" onclick="leg.showGeosphere()">Geosphere</button>
+          <button class="tool-btn" id="btn-geo-lens" onclick="leg.showGeoLens()" title="Property geo lens — reads formal_spec:geo_lens_* router tile">Property Lens</button>
           <button class="tool-btn" id="btn-block" onclick="leg.showBlockOnly()">Block</button>
           <button class="tool-btn active" id="btn-compress" onclick="leg.toggleCompress()" title="Collapse trace/session chains">⊟ Compress</button>
           <button class="tool-btn live-watch active" id="btn-live-watch" onclick="leg.toggleLiveWatch()" title="SSE activity push + faster galaxy refresh">◉ Live</button>
           <button class="pin-btn" id="pin-active" onclick="leg.togglePinActive()" title="Pin active block">☆ Pin</button>
+          <button class="pin-btn" id="set-user-slot" onclick="leg.setUserAnchor()" title="Set cockpit slot 5 (Yours) from active tile">◎ Slot 5</button>
         </div>
       </header>
       <div class="stage-body">
         <div id="center-column">
           <div id="hygiene-strip" class="healthy" style="display:none">
             <span class="hygiene-label">Hygiene</span>
-            <div class="hygiene-chips" id="hygiene-chips"></div>
+            <div class="hygiene-chips" id="hygiene-chips"><span id="mirror-live-chip"></span></div>
             <span id="hygiene-badge" class="hygiene-badge"></span>
           </div>
           <div id="anchor-stack">
@@ -1489,6 +1792,16 @@
               <div class="spatial-head">Code focus</div>
               <div class="spatial-empty" id="spatial-empty">Spatial hotspots from trace context + AST ingest appear here.</div>
             </div>
+            <div id="geo-lens-overlay">
+              <canvas id="geo-lens-canvas"></canvas>
+              <div id="geo-lens-hud">
+                <span class="geo-lens-title">Property Geo Lens</span>
+                <span id="geo-lens-status">Load a formal_spec:geo_lens_* router tile via MCP.</span>
+                <span id="geo-lens-north-star" onclick="leg.open('design:ariel_property_holographic_mind_map_north_star')" title="Ariel property holographic mind map north star">↗ North star design</span>
+              </div>
+              <div id="geo-lens-pins"></div>
+              <div id="geo-lens-ops"></div>
+            </div>
             <div id="galaxy-hud">hover tiles for relations • inner ring = likely in context window</div>
             <div id="tile-overlay">
               <div id="tile-overlay-backdrop" onclick="leg.closeOverlay()" title="Minimize (Esc)"></div>
@@ -1516,17 +1829,17 @@
           </div>
         </div>
         <aside id="right-rail" class="rail">
-          <div class="section-label">Focus <span id="focus-badge" style="color:#64748b;font-weight:400"></span></div>
-          <div id="focus-rail" class="rail-section">
-            <div class="inbox-empty">Open a tile over the galaxy — relational meta appears here.</div>
+          <div class="section-label">Agent Mirror <span id="mirror-badge" style="color:#64748b;font-weight:400">live</span></div>
+          <div id="agent-mirror-panel" class="rail-section mirror-rail">
+            <div class="mirror-empty">Connect live mode — trace forks mirror here in &lt;3s.</div>
           </div>
-          <div class="section-label">Session files <span id="file-badge" style="color:#64748b;font-weight:400"></span></div>
-          <div id="file-rail" class="rail-section">
-            <div class="inbox-empty">Files from last handoff and their linked thought tiles.</div>
+          <div class="section-label">Do next <span id="action-badge" style="color:#64748b;font-weight:400"></span></div>
+          <div id="action-rail" class="rail-section">
+            <div class="inbox-empty">Harness suggested actions — what the agent (or you) should read/do on wake.</div>
           </div>
-          <div class="section-label">Serving stack</div>
-          <div id="serving-rail" class="rail-section">
-            <div class="inbox-empty">Artifacts primary_goal currently serves.</div>
+          <div class="section-label">Last handoff <span id="handoff-badge" style="color:#64748b;font-weight:400"></span></div>
+          <div id="handoff-digest-rail" class="rail-section">
+            <div class="inbox-empty">Prior session decisions, files touched, and open questions.</div>
           </div>
           <div class="section-label">Hygiene <span id="inbox-badge" style="color:#64748b;font-weight:400"></span></div>
           <div id="hygiene-inbox">
@@ -1540,6 +1853,8 @@
   <script>
     const LIVE_BASE = `http://${window.location.hostname || '127.0.0.1'}:3456`;
     const PINS_KEY = 'leg-browser-pins-v1';
+    const USER_ANCHOR_KEY = 'leg-user-anchor-v1';
+    const COCKPIT_PROGRAM_CONCEPT = 'tile:formal_spec_leg-glass-box-cockpit-program-v1---execution-pla';
     let liveMode = false;
     let liveWatch = true;
     let activeConcept = null;
@@ -1554,10 +1869,58 @@
     let processEvents = [];
     let traceChain = [];
     let scrubIndex = 0;
+    let mirrorFollowLive = true;
+    let mirrorChainReq = 0;
     let spatialLive = null;
+    let agentMirror = null;
+    let mirrorPollTimer = null;
+    let mirrorChainPollTimer = null;
+    let lastMirrorRailsSig = '';
+    let lastMirrorPanelSig = '';
+    let lastMirrorPreviewsSig = '';
+    let lastNowRailSig = '';
+    let lastCodeFocusSig = '';
+    let lastTraceScrubberSig = '';
+    let lastCockpitBarSig = '';
+    let lastGalaxyMirrorSyncKey = '';
+    let lastAnchorsCache = null;
+    let cockpitBarEnriched = false;
+
+    let mirrorSpatialFocus = null;
     let galaxy = null;
     let geosphereView = null;
+    let geoLensView = null;
     let stageView = 'galaxy';
+    const NORTH_STAR_DESIGN = 'design:ariel_property_holographic_mind_map_north_star';
+    const GEO_LENS_OPS_TILES = [
+      { concept: 'ops:hw:ariel_camera_rlc_823s1w_primary', kind: 'hw', fallback: 'RLC-823A Camera' },
+      { concept: 'ops:stream:ariel_pi_primary', kind: 'stream', fallback: 'Stream Pi' },
+      { concept: 'ops:media:ariel_youtube_channel', kind: 'media', fallback: 'YouTube Channel' }
+    ];
+
+    function resolveGeoLensConcept() {
+      const params = new URLSearchParams(location.search);
+      const direct = params.get('geo_lens');
+      if (direct) return direct;
+      const stored = localStorage.getItem('LEG_DEFAULT_GEO_LENS');
+      if (stored) {
+        if (stored.includes(':')) return stored;
+        return `formal_spec:${stored}`;
+      }
+      if (params.get('cockpit') === 'ariel') {
+        return 'tile:formal_spec_geo-lens-router--ariel-v1';
+      }
+      return 'tile:formal_spec_geo-lens-router--ariel-v1';
+    }
+
+    function shouldBootCockpitAriel() {
+      const params = new URLSearchParams(location.search);
+      if (params.get('cockpit') === 'ariel') return true;
+      return !!localStorage.getItem('LEG_DEFAULT_GEO_LENS');
+    }
+
+    const GEO_LENS_CONCEPT = resolveGeoLensConcept();
+    const COCKPIT_ARIEL_BOOT = shouldBootCockpitAriel();
     let compressChains = true;
 
     let substratePins = [];
@@ -1596,12 +1959,385 @@
 
     const ACTIVITY_ACTION_LABEL = {
       trace: 'trace',
+      trace_fork: 'trace',
+      turn: 'turn',
       tile: 'tile',
       goal: 'goal',
       write: 'write',
       relate: 'relate',
-      unrelate: 'unrelate'
+      unrelate: 'unrelate',
+      probe: 'read'
     };
+
+    function probeChipLabel(event) {
+      if (!event?.detail) return shortLabel(event?.concept || 'probe');
+      const d = String(event.detail);
+      return d.length > 52 ? d.slice(0, 50) + '…' : d;
+    }
+
+    function openProbeChip(detail) {
+      const d = String(detail || '');
+      const conceptMatch = d.match(/concept=([^·]+)/);
+      if (conceptMatch) {
+        leg.open(conceptMatch[1].trim());
+        return;
+      }
+      alert(d || 'Agent read probe');
+    }
+
+    function findChainIndexForConcept(concept) {
+      if (!concept || !traceChain.length) return -1;
+      for (let i = traceChain.length - 1; i >= 0; i--) {
+        if (traceChain[i].concept === concept) return i;
+      }
+      return -1;
+    }
+
+    function highlightCodeAtlasLocus(file, line, concept) {
+      const panel = document.getElementById('code-atlas-panel');
+      if (!panel || panel.style.display === 'none') return;
+      const fileBase = String(file || '').split('/').pop() || file;
+      let matched = false;
+      panel.querySelectorAll('.atlas-trace').forEach(el => {
+        const c = el.dataset.concept || '';
+        const hit = concept ? c === concept : false;
+        el.classList.toggle('atlas-locus-highlight', hit);
+        if (hit) matched = true;
+      });
+      const head = panel.querySelector('.atlas-head');
+      if (head) {
+        const headHit = matched || (fileBase && (head.textContent || '').includes(fileBase));
+        head.classList.toggle('atlas-locus-highlight', headHit);
+      }
+    }
+
+    function mirrorRailsSignature(step) {
+      if (!step) return '';
+      return `${scrubIndex}:${step.concept}:${step.decision_point || ''}:${agentMirror?.active_goal || ''}`;
+    }
+
+    function mirrorPreviewsSignature() {
+      return (agentMirror?.presentation_previews || []).slice(0, 6).map(p => p.concept).join('|');
+    }
+
+    function traceScrubberSignature() {
+      const step = traceChain[scrubIndex];
+      return `${scrubIndex}:${traceChain.length}:${traceChain.map(s => s.concept).join('|')}:${step?.decision_point || ''}`;
+    }
+
+    function cockpitBarSignature(anchors, step) {
+      return cockpitSlotDefs(anchors, step).map(s =>
+        `${s.key}:${s.concept || ''}:${s.slot}:${s.key === 'intent' ? (step?.decision_point || '') : ''}`
+      ).join('|');
+    }
+
+    function updateMirrorLiveChip(step, decision, procCtx) {
+      const wrap = document.getElementById('mirror-live-chip');
+      const strip = document.getElementById('hygiene-strip');
+      if (!wrap || !strip || !liveWatch || !step?.concept) return;
+      strip.style.display = 'flex';
+      let fork = wrap.querySelector('.mirror-fork-chip');
+      let proc = wrap.querySelector('.mirror-proc-chip');
+      if (!fork) {
+        wrap.innerHTML = '<span class="hygiene-chip active mirror-fork-chip"></span><span class="hygiene-chip mirror-proc-chip" style="display:none"></span>';
+        fork = wrap.querySelector('.mirror-fork-chip');
+        proc = wrap.querySelector('.mirror-proc-chip');
+      }
+      fork.title = decision;
+      fork.textContent = '◎ Live fork';
+      fork.onclick = () => leg.scrubToTraceChip(step.concept);
+      if (procCtx) {
+        proc.style.display = '';
+        proc.textContent = shortLabel(procCtx);
+        proc.title = 'Process / goal context';
+        proc.onclick = () => leg.open(procCtx);
+      } else if (proc) {
+        proc.style.display = 'none';
+      }
+    }
+
+    function renderNowRail(step) {
+      const el = document.getElementById('now-rail');
+      const badge = document.getElementById('now-badge');
+      if (!el) return;
+      if (!liveWatch || !liveMode || !step?.concept) {
+        if (lastNowRailSig !== 'idle') {
+          lastNowRailSig = 'idle';
+          el.innerHTML = '<div class="velocity-empty">Live fork appears when the agent traces — scrub via mirror or activity chips.</div>';
+        }
+        if (badge) badge.textContent = '';
+        return;
+      }
+      const sig = `${scrubIndex}:${step.concept}:${step.decision_point || ''}:${(step.justification || '').slice(0, 60)}`;
+      if (sig === lastNowRailSig) return;
+      lastNowRailSig = sig;
+      const decision = step.decision_point || step.preview || shortLabel(step.concept);
+      const just = step.justification || '';
+      const justShort = just.slice(0, 150);
+      if (badge) badge.textContent = traceChain.length ? `· ${scrubIndex + 1}/${traceChain.length}` : '';
+      const proc = step.goal_context || step.process_context || agentMirror?.active_goal;
+      const procChip = proc
+        ? `<div class="velocity-just" style="font-style:normal;color:#7dd3fc" onclick="event.stopPropagation();leg.open('${escapeAttr(proc)}')">${escapeHtml(shortLabel(proc))}</div>`
+        : '';
+      el.innerHTML = `<div class="velocity-now-card manifold-tile tile-accent-trace${activeConcept === step.concept ? ' active' : ''}"
+        data-concept="${escapeAttr(step.concept)}" onclick="leg.open('${escapeAttr(step.concept)}')">
+        <div class="slot">fork · scrubbed</div>
+        <div class="label">${escapeHtml(shortLabel(step.concept, step))}</div>
+        <div class="payload">${escapeHtml(decision)}</div>
+        ${justShort ? `<div class="velocity-just">${escapeHtml(justShort)}${just.length > 150 ? '…' : ''}</div>` : ''}
+        ${procChip}
+      </div>`;
+    }
+
+    function renderCodeFocusRail(step) {
+      const el = document.getElementById('code-focus-rail');
+      if (!el) return;
+      const spatial = step?.spatial_context;
+      const hotspots = spatialLive?.hotspots || [];
+      const sig = `${spatial?.file || ''}:${spatial?.line || ''}:${hotspots.map(h => h.file).join('|')}`;
+      if (sig === lastCodeFocusSig) return;
+      lastCodeFocusSig = sig;
+      const rows = [];
+      if (spatial?.file) {
+        rows.push(`<div class="code-focus-row active" onclick="leg.openSpatialFocus()" title="Open trace + code atlas">
+          <span class="code-focus-mark">◎</span>
+          <code>${escapeHtml(spatial.file)}${spatial.line ? ':' + spatial.line : ''}</code>
+          <span class="code-focus-meta">fork</span>
+        </div>`);
+      }
+      for (const h of hotspots.slice(0, 6)) {
+        if (spatial?.file && h.file === spatial.file) continue;
+        const file = h.file || '—';
+        const line = h.line ?? h.line_start;
+        const click = h.concept ? `onclick="leg.open('${escapeAttr(h.concept)}')"` : '';
+        rows.push(`<div class="code-focus-row" ${click}>
+          <span class="code-focus-mark">·</span>
+          <code>${escapeHtml(String(file).split('/').pop() || file)}${line ? ':' + line : ''}</code>
+          <span class="code-focus-meta">${escapeHtml(h.kind || 'hot')}</span>
+        </div>`);
+      }
+      el.innerHTML = rows.length
+        ? rows.join('')
+        : '<div class="velocity-empty">Spatial locus from trace context + AST ingest.</div>';
+    }
+
+    function updateMirrorDrivenRails(step) {
+      if (!step) return;
+      const sig = mirrorRailsSignature(step);
+      const previews = agentMirror?.presentation_previews || [];
+      const decision = step.decision_point || step.preview || shortLabel(step.concept);
+      const procCtx = step.goal_context || step.process_context || '';
+
+      const previewsSig = mirrorPreviewsSignature();
+      const railsChanged = sig !== lastMirrorRailsSig;
+      const previewsChanged = previewsSig !== lastMirrorPreviewsSig;
+      if (!railsChanged && !previewsChanged) return;
+      if (railsChanged) lastMirrorRailsSig = sig;
+      if (previewsChanged) lastMirrorPreviewsSig = previewsSig;
+
+      if (railsChanged) {
+        renderNowRail(step);
+        renderCodeFocusRail(step);
+        updateMirrorLiveChip(step, decision, procCtx);
+        lastCockpitBarSig = '';
+        renderCockpitBar(lastAnchorsCache);
+      }
+
+      const ctxRing = new Set(['primary_goal']);
+      if (step.concept) ctxRing.add(step.concept);
+      if (step.goal_context) ctxRing.add(step.goal_context);
+      for (const s of traceChain) if (s.concept) ctxRing.add(s.concept);
+      for (const p of previews.slice(0, 8)) if (p?.concept) ctxRing.add(p.concept);
+      agentContextWindow = ctxRing;
+      if (galaxy) {
+        galaxy.setContextWindow(ctxRing);
+        updateContextLens();
+      }
+    }
+
+    function applyMirrorSpatialFocus(step) {
+      const spatial = step?.spatial_context;
+      if (!spatial?.file) {
+        mirrorSpatialFocus = null;
+        renderCodeFocusRail(step);
+        return;
+      }
+      mirrorSpatialFocus = {
+        file: spatial.file,
+        line: spatial.line,
+        concept: step.concept,
+        raw: spatial.raw
+      };
+      spatialLive = spatialLive || { hotspots: [] };
+      spatialLive.active = {
+        file: spatial.file,
+        line: spatial.line,
+        concept: step.concept
+      };
+      renderSpatialOverlay();
+      renderCodeFocusRail(step);
+      highlightCodeAtlasLocus(spatial.file, spatial.line, step.concept);
+      if (geosphereView && step.concept && stageView === 'geosphere') {
+        geosphereView.pulseEdgeToGoal(step.concept, 'primary_goal');
+      }
+      if (galaxy && step.concept && stageView === 'galaxy') {
+        galaxy.mirrorEdgeUntil = Date.now() + 4500;
+        galaxy.mirrorEdgeFrom = step.concept;
+        galaxy.mirrorEdgeTo = 'primary_goal';
+      }
+    }
+
+    function renderAgentMirrorPanel() {
+      const panel = document.getElementById('agent-mirror-panel');
+      const badge = document.getElementById('mirror-badge');
+      if (!panel) return;
+      if (badge) badge.textContent = liveWatch ? 'live' : 'paused';
+      if (!liveWatch || !liveMode) {
+        if (lastMirrorPanelSig !== 'paused') {
+          lastMirrorPanelSig = 'paused';
+          panel.innerHTML = '<div class="mirror-empty">Live Watch paused — mirror panel idle.</div>';
+        }
+        return;
+      }
+      if (!traceChain.length) {
+        if (lastMirrorPanelSig !== 'empty') {
+          lastMirrorPanelSig = 'empty';
+          panel.innerHTML = '<div class="mirror-empty">Waiting for trace forks — <code>quick_trace</code> writes appear here via SSE.</div>';
+        }
+        return;
+      }
+      const step = traceChain[scrubIndex];
+      const panelSig = `${scrubIndex}:${step?.concept}:${step?.decision_point || ''}:${step?.justification?.slice(0, 80) || ''}`;
+      if (panelSig === lastMirrorPanelSig) return;
+      lastMirrorPanelSig = panelSig;
+      const goal = agentMirror?.active_goal;
+      const head = agentMirror?.trace_head;
+      const just = step?.justification || '';
+      const alts = step?.alternatives_considered || '';
+      const fals = step?.falsifiability || '';
+      const spatial = step?.spatial_context;
+      const spatialHtml = spatial?.file
+        ? `<div class="mirror-spatial" onclick="leg.openSpatialFocus()" title="Highlight code atlas + geosphere edge">
+            <span class="mirror-spatial-label">◎</span>
+            <code>${escapeHtml(spatial.file)}${spatial.line ? ':' + spatial.line : ''}</code>
+          </div>`
+        : '';
+      panel.innerHTML = `
+        ${goal ? `<div class="mirror-goal" title="Active goal">${escapeHtml(String(goal).slice(0, 180))}</div>` : ''}
+        <div class="mirror-head">
+          <span>Fork deconstructor</span>
+          <span class="mirror-pos">${scrubIndex + 1} / ${traceChain.length}</span>
+        </div>
+        <div class="mirror-steps">${traceChain.map((s, i) => {
+          const headCls = i === traceChain.length - 1 ? ' head' : '';
+          const activeCls = i === scrubIndex ? ' active' : '';
+          return `<span class="mirror-step${headCls}${activeCls}" title="${escapeAttr(s.decision_point || s.concept)}" onclick="leg.scrubTo(${i})"></span>`;
+        }).join('')}</div>
+        <div class="mirror-decision">${escapeHtml(step?.decision_point || step?.preview || shortLabel(step?.concept) || '—')}</div>
+        ${just ? `<details class="mirror-expand" open><summary>Justification</summary><div class="mirror-body">${escapeHtml(just)}</div></details>` : ''}
+        ${alts ? `<details class="mirror-expand"><summary>Alternatives considered</summary><div class="mirror-body">${escapeHtml(alts)}</div></details>` : ''}
+        ${fals ? `<details class="mirror-expand"><summary>Falsifiability</summary><div class="mirror-body">${escapeHtml(fals)}</div></details>` : ''}
+        ${spatialHtml}
+        <div class="mirror-foot">${head ? `<span class="mirror-head-id" onclick="leg.open('${escapeAttr(head)}')">${escapeHtml(shortLabel(head))}</span>` : ''}</div>`;
+    }
+
+    /** Fast path: trace-chain only (~1–2s). Drives scrubber + mirror panel in near real time. */
+    async function refreshTraceChainLive(head = null, follow = null) {
+      if (!liveMode || !liveWatch) return;
+      const reqId = ++mirrorChainReq;
+      try {
+        const q = head ? `?head=${encodeURIComponent(head)}&depth=28` : '?depth=28';
+        const r = await fetch(`${LIVE_BASE}/api/trace-chain${q}`);
+        if (!r.ok || reqId !== mirrorChainReq) return;
+        const data = await r.json();
+        const chain = data.chain || [];
+        if (!chain.length) return;
+        const prevLen = traceChain.length;
+        traceChain = chain;
+        const shouldFollow = follow ?? mirrorFollowLive;
+        if (head) {
+          const hi = findChainIndexForConcept(head);
+          scrubIndex = hi >= 0 ? hi : chain.length - 1;
+        } else if (shouldFollow || chain.length > prevLen) {
+          scrubIndex = chain.length - 1;
+        } else if (scrubIndex >= traceChain.length) {
+          scrubIndex = traceChain.length - 1;
+        }
+        if (agentMirror) agentMirror.trace_head = data.head;
+        lastTraceScrubberSig = '';
+        lastMirrorPanelSig = '';
+        lastMirrorRailsSig = '';
+        lastNowRailSig = '';
+        lastCodeFocusSig = '';
+        renderTraceScrubber(true);
+        renderAgentMirrorPanel();
+        const step = traceChain[scrubIndex];
+        if (step) updateMirrorDrivenRails(step);
+        if (galaxy) galaxy.ensureMirrorTraceNodes(traceChain);
+      } catch (e) {
+        console.warn('trace chain refresh failed', e);
+      }
+    }
+
+    async function loadAgentMirror(head = null) {
+      if (!liveMode || !liveWatch) return;
+      try {
+        let data = null;
+        if (window.__AGENT_MIRROR_FIXTURE__) {
+          data = typeof window.__AGENT_MIRROR_FIXTURE__ === 'function'
+            ? window.__AGENT_MIRROR_FIXTURE__()
+            : window.__AGENT_MIRROR_FIXTURE__;
+        } else {
+          const r = await fetch(`${LIVE_BASE}/api/agent-mirror`);
+          if (!r.ok) return;
+          data = await r.json();
+        }
+        if (!data) return;
+        agentMirror = data;
+        const chain = data.chain || [];
+        if (chain.length) {
+          const prevLen = traceChain.length;
+          traceChain = chain;
+          if (head) {
+            const hi = findChainIndexForConcept(head);
+            scrubIndex = hi >= 0 ? hi : chain.length - 1;
+          } else if (mirrorFollowLive || chain.length > prevLen) {
+            scrubIndex = chain.length - 1;
+          } else if (scrubIndex >= traceChain.length) {
+            scrubIndex = traceChain.length - 1;
+          }
+        }
+        spatialLive = {
+          hotspots: data.spatial_hotspots || [],
+          active: mirrorSpatialFocus || spatialLive?.active || null
+        };
+        renderTraceScrubber();
+        renderAgentMirrorPanel();
+        renderSpatialOverlay();
+        if (galaxy && spatialLive.hotspots?.length) {
+          galaxy.setSpatialHotspots(spatialLive.hotspots);
+        }
+        const step = traceChain[scrubIndex];
+        if (step) updateMirrorDrivenRails(step);
+        if (data.last_activity?.length) {
+          renderProcessFeed(data.last_activity);
+        }
+      } catch (e) {
+        console.warn('agent mirror load failed', e);
+      }
+    }
+
+    function scheduleMirrorPoll() {
+      if (mirrorPollTimer) clearInterval(mirrorPollTimer);
+      if (mirrorChainPollTimer) clearInterval(mirrorChainPollTimer);
+      mirrorPollTimer = null;
+      mirrorChainPollTimer = null;
+      if (!liveMode || !liveWatch) return;
+      refreshTraceChainLive();
+      loadAgentMirror();
+      mirrorChainPollTimer = setInterval(() => refreshTraceChainLive(), 1500);
+      mirrorPollTimer = setInterval(() => loadAgentMirror(), 8000);
+    }
 
     function activityKey(e) {
       return `${e.ts}:${e.concept}:${e.action}`;
@@ -1609,7 +2345,8 @@
 
     function formatActivityAgo(ts) {
       if (!ts) return '';
-      const sec = Math.max(0, Math.floor(Date.now() / 1000) - Number(ts));
+      const tsMs = Number(ts) > 1e12 ? Number(ts) : Number(ts) * 1000;
+      const sec = Math.max(0, Math.floor((Date.now() - tsMs) / 1000));
       if (sec < 5) return 'just now';
       if (sec < 60) return `${sec}s ago`;
       if (sec < 3600) return `${Math.floor(sec / 60)}m ago`;
@@ -1637,16 +2374,24 @@
           : (liveWatch ? 'watching…' : 'paused');
       }
       if (!events?.length) {
-        row.innerHTML = '<span class="act-empty">Manifold writes appear here as the agent traces, tiles, and relates.</span>';
+        row.innerHTML = '<span class="act-empty">Agent reads and writes appear here — traces, probes, tiles, relates.</span>';
         return;
       }
       row.innerHTML = events.slice(0, 10).map((e, i) => {
         const act = ACTIVITY_ACTION_LABEL[e.action] || e.action || 'write';
         const freshCls = i === 0 && activityKey(e) === lastActivityKey ? ' fresh' : '';
         const detail = e.detail ? ` title="${escapeAttr(e.detail)}"` : '';
-        return `<span class="act-chip${freshCls}" onclick="leg.open('${escapeAttr(e.concept)}')"${detail}>
+        const isProbe = e.action === 'probe';
+        const isTraceChip = e.action === 'trace' || e.action === 'trace_fork' || (e.concept || '').startsWith('trace:');
+        const click = isProbe
+          ? `openProbeChip('${escapeAttr(e.detail || '')}')`
+          : isTraceChip
+          ? `leg.scrubToTraceChip('${escapeAttr(e.concept)}')`
+          : `leg.open('${escapeAttr(e.concept)}')`;
+        const label = isProbe ? probeChipLabel(e) : shortLabel(e.concept);
+        return `<span class="act-chip${freshCls}${isProbe ? ' probe-chip' : ''}" onclick="${click}"${detail}>
           <span class="act-badge ${escapeAttr(act)}">${escapeHtml(act)}</span>
-          <span class="act-label">${escapeHtml(shortLabel(e.concept))}</span>
+          <span class="act-label">${escapeHtml(label)}</span>
         </span>`;
       }).join('');
     }
@@ -1657,14 +2402,22 @@
       if (!feed) return;
       if (badge) badge.textContent = liveWatch ? 'live' : 'paused';
       if (!events?.length) {
-        feed.innerHTML = '<div style="padding:6px 4px;font-size:10px;color:#64748b">No recent writes — agent traces and tiles will stream here.</div>';
+        feed.innerHTML = '<div style="padding:6px 4px;font-size:10px;color:#64748b">No recent activity — agent reads (probe) and writes stream here.</div>';
         return;
       }
       feed.innerHTML = events.slice(0, 12).map(e => {
         const act = ACTIVITY_ACTION_LABEL[e.action] || e.action || 'write';
-        return `<div class="process-item" onclick="leg.open('${escapeAttr(e.concept)}')">
+        const isProbe = e.action === 'probe';
+        const isTraceChip = e.action === 'trace' || e.action === 'trace_fork' || (e.concept || '').startsWith('trace:');
+        const click = isProbe
+          ? `openProbeChip('${escapeAttr(e.detail || '')}')`
+          : isTraceChip
+          ? `leg.scrubToTraceChip('${escapeAttr(e.concept)}')`
+          : `leg.open('${escapeAttr(e.concept)}')`;
+        const label = isProbe ? probeChipLabel(e) : shortLabel(e.concept);
+        return `<div class="process-item${isProbe ? ' probe-item' : ''}" onclick="${click}" title="${escapeAttr(e.detail || '')}">
           <div class="pi-action">${escapeHtml(act)} · ${escapeHtml(formatActivityAgo(e.ts))}</div>
-          <div class="pi-concept">${escapeHtml(shortLabel(e.concept))}</div>
+          <div class="pi-concept">${escapeHtml(label)}</div>
         </div>`;
       }).join('');
     }
@@ -1680,14 +2433,17 @@
       }
       renderActivityStrip(processEvents, meta.trace_head, meta.agent_path);
       renderProcessFeed(processEvents);
-      if (galaxy) {
+      if (galaxy && event.action !== 'probe') {
         galaxy.pulseActivity(event.concept, event.action);
-        if (!galaxy.nodes.find(n => n.id === event.concept)) galaxy.load();
+        if (!galaxy.nodes.find(n => n.id === event.concept) && traceChain.length) {
+          galaxy.ensureMirrorTraceNodes(traceChain);
+        }
       }
-      if (event.action === 'trace' || event.concept.startsWith('trace:')) {
-        loadTraceChain(event.concept.startsWith('trace:') ? event.concept : null);
+      if (event.action === 'trace_fork' && event.concept.startsWith('trace:')) {
+        refreshTraceChainLive(event.concept, true);
+      } else if (event.action === 'trace' || event.concept.startsWith('trace:')) {
+        refreshTraceChainLive(event.concept.startsWith('trace:') ? event.concept : null);
       }
-      loadSpatialLive();
     }
 
     function closeActivitySse() {
@@ -1703,6 +2459,18 @@
       try {
         activitySse = new EventSource(`${LIVE_BASE}/api/activity/stream`);
         activitySse.addEventListener('activity', (ev) => {
+          try {
+            const event = JSON.parse(ev.data);
+            ingestActivityEvent(event);
+          } catch (_) {}
+        });
+        activitySse.addEventListener('trace_fork', (ev) => {
+          try {
+            const event = JSON.parse(ev.data);
+            ingestActivityEvent(event);
+          } catch (_) {}
+        });
+        activitySse.addEventListener('probe', (ev) => {
           try {
             const event = JSON.parse(ev.data);
             ingestActivityEvent(event);
@@ -1759,8 +2527,12 @@
       }, galaxyMs);
       if (liveWatch) {
         connectActivitySse();
-        loadTraceChain();
-        loadSpatialLive();
+        scheduleMirrorPoll();
+      } else {
+        if (mirrorPollTimer) clearInterval(mirrorPollTimer);
+        if (mirrorChainPollTimer) clearInterval(mirrorChainPollTimer);
+        mirrorPollTimer = null;
+        mirrorChainPollTimer = null;
       }
     }
 
@@ -1779,7 +2551,7 @@
       }
     }
 
-    function renderTraceScrubber() {
+    function renderTraceScrubber(force = false) {
       const panel = document.getElementById('trace-scrubber');
       const track = document.getElementById('scrub-track');
       const slider = document.getElementById('scrub-slider');
@@ -1788,14 +2560,21 @@
       if (!panel || !track) return;
       if (!traceChain.length) {
         panel.classList.remove('visible');
+        lastTraceScrubberSig = '';
         return;
       }
+      const sig = traceScrubberSignature();
+      const unchanged = sig === lastTraceScrubberSig;
+      if (!force && unchanged) return;
+      lastTraceScrubberSig = sig;
       panel.classList.add('visible');
-      track.innerHTML = traceChain.map((step, i) => {
-        const headCls = i === traceChain.length - 1 ? ' head' : '';
-        const activeCls = i === scrubIndex ? ' active' : '';
-        return `<span class="scrub-step${headCls}${activeCls}" title="${escapeAttr(step.decision_point || step.concept)}" onclick="leg.scrubTo(${i})"></span>`;
-      }).join('');
+      if (!unchanged || force) {
+        track.innerHTML = traceChain.map((step, i) => {
+          const headCls = i === traceChain.length - 1 ? ' head' : '';
+          const activeCls = i === scrubIndex ? ' active' : '';
+          return `<span class="scrub-step${headCls}${activeCls}" title="${escapeAttr(step.decision_point || step.concept)}" onclick="leg.scrubTo(${i})"></span>`;
+        }).join('');
+      }
       if (slider) {
         slider.max = String(Math.max(0, traceChain.length - 1));
         slider.value = String(scrubIndex);
@@ -1811,7 +2590,15 @@
         preview.textContent = `${label}${spatial}`;
       }
       if (galaxy && step?.concept) {
-        galaxy.setAgentPath(traceChain.map(s => s.concept).filter(Boolean));
+        const path = traceChain.map(s => s.concept).filter(Boolean);
+        galaxy.setAgentPath(path);
+        galaxy.ensureMirrorTraceNodes(traceChain);
+        galaxy.syncToMirrorStep(step, path);
+      }
+      renderAgentMirrorPanel();
+      if (step) {
+        applyMirrorSpatialFocus(step);
+        updateMirrorDrivenRails(step);
       }
     }
 
@@ -1822,6 +2609,7 @@
         if (!r.ok) return;
         spatialLive = await r.json();
         renderSpatialOverlay();
+        renderCodeFocusRail(traceChain[scrubIndex]);
         if (galaxy && spatialLive?.hotspots?.length) {
           galaxy.setSpatialHotspots(spatialLive.hotspots);
         }
@@ -2098,11 +2886,10 @@
       const inGalaxy = galaxy?.nodes?.filter(nd => agentContextWindow.has(nd.id)).length || 0;
       const queueN = contextWindowApi?.harness?.suggested_actions?.length || 0;
       const bridgeN = contextWindowApi?.file_tile_bridge?.length || 0;
-      el.innerHTML = `<strong>Agent context lens</strong>
-        <span class="ctx-in">${n} tiles likely in context</span><br>
-        <span class="ctx-out">${inGalaxy} visible in galaxy · ${(galaxy?.nodes?.length || 0) - inGalaxy} outside ring</span>
-        ${queueN ? `<br><span class="ctx-out">${queueN} wake actions queued</span>` : ''}
-        ${bridgeN ? `<br><span class="ctx-out">${bridgeN} file→tile bridges from handoff</span>` : ''}`;
+      el.innerHTML = `<strong>Context lens</strong>
+        <span class="ctx-in">${n} in lens · ${inGalaxy} in galaxy ring</span>
+        ${queueN ? `<br><span class="ctx-out">${queueN} wake actions (see right rail)</span>` : ''}
+        ${bridgeN ? `<br><span class="ctx-out">${bridgeN} file→tile bridges</span>` : ''}`;
     }
 
     function manifoldTileHtml(item, opts = {}) {
@@ -2207,7 +2994,11 @@
           activitySince = Math.floor(Date.now() / 1000) - 120;
           scheduleRefreshTimers();
           syncPinsFromSubstrate().catch(() => {});
+          bootstrapCockpit().catch(e => console.warn('bootstrapCockpit', e));
           this.refresh().catch(e => console.warn('refresh', e));
+          if (COCKPIT_ARIEL_BOOT) {
+            this.showGeoLens().catch(e => console.warn('cockpit ariel boot', e));
+          }
           galaxy.load().catch(e => console.warn('galaxy load', e));
         } catch (e) {
           liveMode = false;
@@ -2220,6 +3011,10 @@
       showGalaxy() {
         stageView = 'galaxy';
         this.closeOverlay();
+        document.getElementById('geo-lens-overlay')?.classList.remove('active');
+        const canvas = document.getElementById('galaxy-canvas');
+        if (canvas) canvas.style.visibility = '';
+        document.getElementById('btn-geo-lens')?.classList.remove('active');
         const col = document.getElementById('center-column');
         if (col) col.style.display = '';
         document.getElementById('btn-galaxy')?.classList.add('active');
@@ -2234,9 +3029,37 @@
         if (galaxy) galaxy.resize();
       },
 
+      async showGeoLens() {
+        stageView = 'geo_lens';
+        this.closeOverlay();
+        const col = document.getElementById('center-column');
+        if (col) col.style.display = '';
+        document.getElementById('btn-galaxy')?.classList.remove('active');
+        document.getElementById('btn-geosphere')?.classList.remove('active');
+        document.getElementById('btn-geo-lens')?.classList.add('active');
+        document.getElementById('btn-block')?.classList.remove('active');
+        document.getElementById('geosphere-hud')?.classList.remove('visible');
+        document.getElementById('geosphere-time-legend')?.classList.remove('visible');
+        const ghud = document.getElementById('galaxy-hud');
+        if (ghud) ghud.style.display = 'none';
+        document.getElementById('view-title').textContent = 'Property Geo Lens';
+        document.getElementById('view-type').textContent = 'topo · routers';
+        document.getElementById('view-crs').textContent = 'CRS —';
+        const overlay = document.getElementById('geo-lens-overlay');
+        if (overlay) overlay.classList.add('active');
+        const canvas = document.getElementById('galaxy-canvas');
+        if (canvas) canvas.style.visibility = 'hidden';
+        if (!geoLensView) geoLensView = new GeoLensView();
+        await geoLensView.load(GEO_LENS_CONCEPT);
+      },
+
       showGeosphere() {
         stageView = 'geosphere';
         this.closeOverlay();
+        document.getElementById('geo-lens-overlay')?.classList.remove('active');
+        const canvas = document.getElementById('galaxy-canvas');
+        if (canvas) canvas.style.visibility = '';
+        document.getElementById('btn-geo-lens')?.classList.remove('active');
         const col = document.getElementById('center-column');
         if (col) col.style.display = '';
         document.getElementById('btn-galaxy')?.classList.remove('active');
@@ -2318,17 +3141,48 @@
         if (!liveWatch) {
           document.getElementById('trace-scrubber')?.classList.remove('visible');
           if (galaxy) galaxy.setSpatialHotspots([]);
+          if (mirrorPollTimer) {
+            clearInterval(mirrorPollTimer);
+            mirrorPollTimer = null;
+          }
+          renderAgentMirrorPanel();
+          lastNowRailSig = '';
+          lastCodeFocusSig = '';
+          renderNowRail(null);
+          renderCodeFocusRail(null);
         }
       },
 
       scrubTo(index) {
+        mirrorFollowLive = false;
         scrubIndex = Math.max(0, Math.min(index, traceChain.length - 1));
-        renderTraceScrubber();
-        const step = traceChain[scrubIndex];
-        if (step?.concept && galaxy) {
-          galaxy.pulseActivity(step.concept, 'trace');
-          galaxy.setHighlight(step.concept);
+        lastTraceScrubberSig = '';
+        lastMirrorRailsSig = '';
+        lastNowRailSig = '';
+        lastCodeFocusSig = '';
+        lastGalaxyMirrorSyncKey = '';
+        renderTraceScrubber(true);
+      },
+
+      scrubToTraceChip(concept) {
+        let idx = findChainIndexForConcept(concept);
+        if (idx < 0) {
+          refreshTraceChainLive(concept, true).then(() => {
+            idx = findChainIndexForConcept(concept);
+            if (idx >= 0) {
+              mirrorFollowLive = false;
+              this.scrubTo(idx);
+            } else this.open(concept);
+          });
+          return;
         }
+        mirrorFollowLive = false;
+        this.scrubTo(idx);
+      },
+
+      openSpatialFocus() {
+        if (!mirrorSpatialFocus?.concept) return;
+        this.open(mirrorSpatialFocus.concept);
       },
 
       scrubOpen() {
@@ -2345,6 +3199,16 @@
           document.getElementById('view').innerHTML = '<div class="empty"><p>No tile selected — click a tile in the galaxy or left rail.</p></div>';
           this.showTileOverlay();
         }
+      },
+
+      setUserAnchor(concept) {
+        const c = concept || activeConcept;
+        if (!c) return;
+        try { localStorage.setItem(USER_ANCHOR_KEY, c); } catch (_) {}
+        lastCockpitBarSig = '';
+        cockpitBarEnriched = false;
+        renderCockpitBar(lastAnchorsCache);
+        enrichAnchorPreviews(lastAnchorsCache);
       },
 
       async togglePinActive() {
@@ -2394,24 +3258,12 @@
           renderEgoEvolution(contextWindowApi);
           renderContinuityPlaybook(contextWindowApi);
           renderAgentQueue(contextWindowApi);
-          renderRightRail(relationalDigest);
+          renderRightRail(relationalDigest, contextWindowApi);
           if (hydrate?.total_memories) {
             const n = hydrate.total_memories;
             document.getElementById('block-count').textContent =
               n >= 1000 ? `~${Math.round(n / 1000)}k .leg blocks` : `${n} blocks`;
           }
-          const primary = hydrate?.primary_intent || ctx?.primary_intent;
-          const goal = extractGoal(primary?.text) || 'primary_goal';
-          document.getElementById('primary-row').innerHTML = manifoldTileHtml({
-            concept: 'primary_goal',
-            crs: primary?.crs,
-            label: goal,
-            kind: 'goal',
-            slot: 'intent',
-            preview: payloadExcerpt({ text: primary?.text }),
-            human_forward: primary?.human_forward
-          }, { active: activeConcept === 'primary_goal', showPin: false });
-
           const pins = getPins();
 
           document.getElementById('pinned-list').innerHTML = pins.length
@@ -2421,40 +3273,15 @@
               label: shortLabel(c),
               slot: 'pinned'
             }, { active: activeConcept === c })).join('')
-            : '<div style="padding:8px;font-size:11px;color:#64748b">Pin tiles from the galaxy — geometry stays in the manifold.</div>';
+            : '<div class="velocity-empty">Pin tiles from the galaxy — your working set.</div>';
 
-          const seen = new Set(['primary_goal', ...pins]);
-          const activeItems = [];
-          for (const a of (hydrate?.serving_artifacts || [])) {
-            if (!seen.has(a.concept) && !isSessionNoise(a.concept)) {
-              seen.add(a.concept);
-              const slot = a.concept?.startsWith('goal:') ? 'objective'
-                : (a.concept?.startsWith('trace:') ? 'trace' : 'serving');
-              activeItems.push({ ...a, slot, kind: kindFromConcept(a.concept) });
-            }
+          const step = traceChain[scrubIndex];
+          if (step) {
+            lastNowRailSig = '';
+            lastCodeFocusSig = '';
+            renderNowRail(step);
+            renderCodeFocusRail(step);
           }
-          for (const tile of contextWindowApi?.harness?.trusted_tiles || []) {
-            if (tile.concept && !seen.has(tile.concept) && !isSessionNoise(tile.concept)) {
-              seen.add(tile.concept);
-              activeItems.push({ ...tile, slot: 'loop', kind: 'tile' });
-            }
-          }
-          for (const t of (ctx?.recent_traces || [])) {
-            if (!seen.has(t.concept) && !isSessionNoise(t.concept)) {
-              seen.add(t.concept);
-              activeItems.push({ ...t, slot: 'trace', kind: 'trace' });
-            }
-          }
-          for (const t of (ctx?.recent_tiles || [])) {
-            if (!seen.has(t.concept) && !isSessionNoise(t.concept)) {
-              seen.add(t.concept);
-              activeItems.push({ ...t, slot: 'tile', kind: 'tile' });
-            }
-          }
-
-          document.getElementById('active-list').innerHTML = activeItems.slice(0, 14).map(it =>
-            manifoldTileHtml(it, { active: activeConcept === it.concept })
-          ).join('') || '<div style="padding:8px;font-size:11px;color:#64748b">No active work surfaced yet — agent loops and objectives appear here.</div>';
 
           lastHydrate = hydrate;
           lastCtx = ctx;
@@ -2463,9 +3290,11 @@
           if (galaxy) galaxy.setContextWindow(agentContextWindow);
           updateContextLens();
           if (anchors) {
+            lastCockpitBarSig = '';
             renderAnchorBar(anchors);
             enrichAnchorPreviews(anchors);
           }
+          if (contextWindowApi) renderRightRail(relationalDigest, contextWindowApi);
           this.refreshSidebarLinks();
           bindTileHover();
         } catch (e) {
@@ -2548,7 +3377,7 @@
             if (activeConcept !== concept) return;
             if (digest) {
               relationalDigest = digest;
-              renderRightRail(digest);
+              renderRightRail(digest, contextWindowApi);
             }
           }).catch(() => {});
         } catch (e) {
@@ -2951,11 +3780,93 @@
       }).join('');
     }
 
-    function renderRightRail(digest) {
-      if (!digest) return;
-      renderFocusRail(digest);
-      renderFileRail(digest);
-      renderServingRail(digest);
+    function renderActionRail(ctxWin) {
+      const el = document.getElementById('action-rail');
+      const badge = document.getElementById('action-badge');
+      if (!el) return;
+      const actions = ctxWin?.harness?.suggested_actions || [];
+      if (badge) badge.textContent = actions.length ? `· ${actions.length}` : '';
+      if (!actions.length) {
+        el.innerHTML = '<div class="inbox-empty">No wake actions — fresh session or thin handoff.</div>';
+        return;
+      }
+      el.innerHTML = actions.slice(0, 6).map((a, i) => {
+        const tool = toolShortName(a.tool);
+        const reason = a.reason || 'harness suggested action';
+        const concept = conceptFromAction(a);
+        const pri = a.priority != null ? `p${a.priority}` : '';
+        const open = concept && !String(concept).startsWith('/')
+          ? `onclick="leg.open('${escapeAttr(concept)}')"`
+          : '';
+        return `<div class="meta-card" ${open} title="${escapeAttr(a.tool || '')}">
+          <div class="meta-title">#${i + 1} · ${escapeHtml(tool)} <span style="color:#64748b;font-weight:400">${escapeHtml(pri)}</span></div>
+          <div class="meta-row">${escapeHtml(reason)}</div>
+          ${concept ? `<div class="meta-row"><code>${escapeHtml(shortLabel(concept))}</code></div>` : ''}
+        </div>`;
+      }).join('');
+    }
+
+    function renderHandoffDigestRail(ctxWin) {
+      const el = document.getElementById('handoff-digest-rail');
+      const badge = document.getElementById('handoff-badge');
+      if (!el) return;
+      const hf = previewForConcept('helper:session_handoff_latest', ctxWin);
+      const packet = parseHandoffPacket(hf?.preview || '');
+      const files = ctxWin?.files_from_handoff || packet?.files_touched || [];
+      const decisions = packet?.decisions || [];
+      const openQs = packet?.open_questions || [];
+      if (badge) {
+        const n = decisions.length + files.length;
+        badge.textContent = n ? `· ${n} items` : '';
+      }
+      if (!decisions.length && !files.length && !openQs.length) {
+        el.innerHTML = '<div class="inbox-empty">No structured handoff yet — session_end populates decisions and files.</div>';
+        return;
+      }
+      const decHtml = decisions.slice(0, 4).map(d =>
+        `<li>${escapeHtml(String(d).replace(/^\s*-\s*/, '').slice(0, 120))}</li>`
+      ).join('');
+      const fileHtml = files.slice(0, 5).map(f => {
+        const stem = String(f).split('/').pop();
+        const bridge = (ctxWin?.file_tile_bridge || []).find(b => b.file === f || b.file?.endsWith(stem));
+        const click = bridge?.concept ? `onclick="leg.open('${escapeAttr(bridge.concept)}')"` : '';
+        return `<div class="meta-row substrate-file" ${click}><code>${escapeHtml(stem)}</code></div>`;
+      }).join('');
+      const openHtml = openQs.slice(0, 2).map(q =>
+        `<li style="color:#fbbf24">${escapeHtml(String(q).slice(0, 100))}</li>`
+      ).join('');
+      el.innerHTML = `<div class="meta-card" onclick="leg.open('helper:session_handoff_latest')">
+        <div class="meta-title">Session handoff packet</div>
+        ${decisions.length ? `<ul class="anchor-bullets" style="margin-top:6px">${decHtml}</ul>` : ''}
+        ${files.length ? `<div style="margin-top:8px;font-size:9px;color:#64748b;text-transform:uppercase;letter-spacing:0.05em">Files touched</div>${fileHtml}` : ''}
+        ${openQs.length ? `<ul class="anchor-bullets" style="margin-top:6px">${openHtml}</ul>` : ''}
+      </div>`;
+    }
+
+    function renderRightRail(digest, ctxWin) {
+      const win = ctxWin || contextWindowApi;
+      if (win) {
+        renderActionRail(win);
+        renderHandoffDigestRail(win);
+      }
+    }
+
+    async function bootstrapCockpit() {
+      try {
+        const [ctxWin, anchors] = await Promise.all([
+          fetchContextWindow(),
+          fetchAnchors()
+        ]);
+        if (ctxWin) contextWindowApi = ctxWin;
+        if (anchors) {
+          lastAnchorsCache = anchors;
+          lastCockpitBarSig = '';
+          renderCockpitBar(anchors);
+        }
+        if (ctxWin) renderRightRail(null, ctxWin);
+      } catch (e) {
+        console.warn('bootstrapCockpit failed', e);
+      }
     }
 
     async function fetchContextWindow() {
@@ -3140,26 +4051,178 @@
       return a.kind || kindFromConcept(a.concept);
     }
 
-    function renderAnchorBar(anchors) {
+    function getUserAnchorConcept() {
+      try { return localStorage.getItem(USER_ANCHOR_KEY) || ''; } catch (_) { return ''; }
+    }
+
+    function presentationPreviews(ctxWin) {
+      return ctxWin?.presentation_stratum?.previews
+        || ctxWin?.harness?.presentation_stratum?.previews
+        || agentMirror?.presentation_previews
+        || [];
+    }
+
+    function previewForConcept(concept, ctxWin) {
+      if (!concept) return null;
+      const hit = presentationPreviews(ctxWin).find(p => p.concept === concept);
+      if (hit) return hit;
+      const anchor = (lastAnchorsCache || []).find(a => a.concept === concept);
+      return anchor ? { concept, preview: anchor.preview, crs: anchor.crs } : null;
+    }
+
+    function parseHandoffPacket(text) {
+      if (!text) return null;
+      const start = text.indexOf('{');
+      const end = text.lastIndexOf('}');
+      if (start < 0 || end <= start) return null;
+      try { return JSON.parse(text.slice(start, end + 1)); } catch (_) { return null; }
+    }
+
+    function buildSlotBullets(slotDef, ctxWin, hydrate) {
+      const bullets = [];
+      const key = slotDef.key;
+      const concept = slotDef.concept;
+      if (slotDef.bullets?.length) return slotDef.bullets.slice(0, 5);
+
+      if (key === 'intent') {
+        const pri = hydrate?.primary_intent;
+        const goal = extractGoal(pri?.text || slotDef.preview || '');
+        if (goal) bullets.push(`Goal: ${shortLabel(goal)}`);
+        const pg = previewForConcept('primary_goal', ctxWin);
+        if (pg?.preview) {
+          const line = pg.preview.split('\n').map(l => l.trim()).find(l => l && !l.startsWith('**') && !l.startsWith('PRIMARY'));
+          if (line) bullets.push(line.slice(0, 95));
+        }
+        for (const a of hydrate?.serving_artifacts?.slice(0, 3) || []) {
+          bullets.push(`Serving: ${shortLabel(a.concept)}`);
+        }
+      } else if (key === 'handoff') {
+        const hf = previewForConcept('helper:session_handoff_latest', ctxWin);
+        const packet = parseHandoffPacket(hf?.preview || slotDef.preview || '');
+        if (packet?.decisions?.length) {
+          packet.decisions.slice(0, 3).forEach(d => bullets.push(String(d).replace(/^\s*-\s*/, '').slice(0, 95)));
+        }
+        if (packet?.files_touched?.length) {
+          packet.files_touched.slice(0, 2).forEach(f => bullets.push(`File: ${String(f).split('/').pop()}`));
+        }
+        if (packet?.open_questions?.length) {
+          packet.open_questions.slice(0, 1).forEach(q => bullets.push(`Open: ${String(q).slice(0, 90)}`));
+        }
+        for (const f of ctxWin?.files_from_handoff?.slice(0, 2) || []) {
+          bullets.push(`Touched: ${String(f).split('/').pop()}`);
+        }
+      } else if (key === 'goal') {
+        if (slotDef.preview && !slotDef.preview.startsWith('Structured goal')) {
+          bullets.push(slotDef.preview.slice(0, 95));
+        }
+        if (slotDef.human_forward) bullets.push(String(slotDef.human_forward).slice(0, 95));
+        const head = ctxWin?.harness?.primary_goal || agentMirror?.active_goal;
+        if (head && concept) bullets.push(`Primary serves this objective`);
+      } else if (key === 'program') {
+        const prev = previewForConcept(COCKPIT_PROGRAM_CONCEPT, ctxWin);
+        if (prev?.preview) {
+          const title = prev.preview.split('\n').find(l => l.includes('title:') || l.startsWith('**'));
+          if (title) bullets.push(title.replace(/\*\*/g, '').slice(0, 95));
+        }
+        bullets.push('Sub-agent DAG + acceptance gates');
+        bullets.push('Mirror → galaxy wiring');
+        bullets.push('Cockpit cache hot path');
+      } else if (key === 'user' && concept) {
+        const prev = previewForConcept(concept, ctxWin);
+        if (prev?.preview) bullets.push(prev.preview.split('\n').filter(Boolean)[0]?.slice(0, 95) || shortLabel(concept));
+        else bullets.push(shortLabel(concept));
+      }
+
+      if (!bullets.length && slotDef.preview) bullets.push(slotDef.preview.slice(0, 95));
+      return bullets.slice(0, 5);
+    }
+
+    function cockpitSlotDefs(anchors, step) {
+      const api = anchors || [];
+      const byConcept = new Map(api.filter(a => a.concept).map(a => [a.concept, a]));
+      const servesGoal = api.find(a => a.slot === 'goal' || a.concept?.startsWith('goal:'));
+      const userConcept = getUserAnchorConcept();
+      const slots = [
+        {
+          key: 'intent',
+          concept: 'primary_goal',
+          slot: '1 · Intent',
+          label: 'Primary intent',
+          preview: step?.decision_point || byConcept.get('primary_goal')?.preview || 'What we are building toward.',
+          kind: 'goal'
+        },
+        {
+          key: 'handoff',
+          concept: 'helper:session_handoff_latest',
+          slot: '2 · Handoff',
+          label: 'Last session',
+          preview: 'Decisions, files touched, open questions from prior wake.',
+          kind: 'handoff'
+        },
+        {
+          key: 'goal',
+          concept: servesGoal?.concept || step?.goal_context || '',
+          slot: '3 · Goal',
+          label: servesGoal ? shortLabel(servesGoal.concept) : 'Active goal',
+          preview: servesGoal?.preview || 'Structured goal linked to primary intent.',
+          kind: 'goal'
+        },
+        {
+          key: 'program',
+          concept: COCKPIT_PROGRAM_CONCEPT,
+          slot: '4 · Program',
+          label: 'Glass-box plan',
+          preview: 'LEG cockpit execution spec — sub-agent DAG + acceptance gates.',
+          kind: 'tile'
+        },
+        {
+          key: 'user',
+          concept: userConcept,
+          slot: '5 · Yours',
+          label: userConcept ? shortLabel(userConcept) : 'Pin a tile',
+          preview: userConcept
+            ? 'Your pinned cockpit anchor — click active tile + Set user slot.'
+            : 'Click any tile, then toolbar ☆ or leg.setUserAnchor()',
+          kind: userConcept ? kindFromConcept(userConcept) : 'mem'
+        }
+      ];
+      return slots.map(s => {
+        const apiHit = s.concept ? byConcept.get(s.concept) : null;
+        const merged = { ...s, ...(apiHit || {}), slot: s.slot, label: s.label || shortLabel(s.concept) };
+        merged.bullets = buildSlotBullets(merged, contextWindowApi, lastHydrate);
+        if (merged.key === 'intent' && step?.decision_point) {
+          merged.bullets = [`Now: ${step.decision_point.slice(0, 88)}`, ...merged.bullets].slice(0, 5);
+        }
+        return merged;
+      });
+    }
+
+    function renderCockpitBar(anchors) {
       const bar = document.getElementById('anchor-bar');
       if (!bar) return;
-      const items = (anchors || []).slice(0, 5);
-      while (items.length < 5) {
-        items.push({ concept: '', slot: '—', preview: 'Connect to engram serve for agent continuity anchors.', label: 'open slot' });
-      }
+      const step = traceChain[scrubIndex];
+      const sig = cockpitBarSignature(anchors, step);
+      if (sig === lastCockpitBarSig) return;
+      lastCockpitBarSig = sig;
+      const items = cockpitSlotDefs(anchors, step);
       bar.innerHTML = items.map(a => {
         if (!a.concept) {
-          return `<div class="manifold-tile tile-accent-mem" style="opacity:0.45;cursor:default">
-            <div class="slot">—</div><div class="label">open slot</div>
+          return `<div class="manifold-tile tile-accent-mem" style="opacity:0.55;cursor:pointer" onclick="leg.setUserAnchor()" title="Set slot 5 from active tile">
+            <div class="slot">${escapeHtml(a.slot)}</div><div class="label">${escapeHtml(a.label)}</div>
             <div class="payload">${escapeHtml(a.preview)}</div></div>`;
         }
         return manifoldTileHtml({
           ...a,
           kind: anchorKind(a),
           label: a.label || shortLabel(a.concept),
-          slot: a.slot || a.role || 'anchor'
-        }, { active: activeConcept === a.concept, size: 'anchor', showPin: !a.concept.startsWith('anchor:') });
+          slot: a.slot
+        }, { active: activeConcept === a.concept, size: 'anchor', showPin: a.key !== 'user' });
       }).join('');
+    }
+
+    function renderAnchorBar(anchors) {
+      lastAnchorsCache = anchors;
+      renderCockpitBar(anchors);
     }
 
     async function fetchAnchors() {
@@ -3183,7 +4246,11 @@
       if (!liveMode || !anchors?.length) return;
       const bar = document.getElementById('anchor-bar');
       if (!bar) return;
-      await Promise.all(anchors.slice(0, 5).map(async (a) => {
+      if (cockpitBarEnriched) return;
+      cockpitBarEnriched = true;
+      const concepts = new Set(cockpitSlotDefs(anchors, traceChain[scrubIndex]).map(s => s.concept).filter(Boolean));
+      await Promise.all([...concepts].slice(0, 5).map(async (concept) => {
+        const a = { concept };
         if (!a.concept || a.concept.startsWith('anchor:')) return;
         try {
           const res = await fetch(`${LIVE_BASE}/api/block/${encodeURIComponent(a.concept)}`);
@@ -3280,24 +4347,14 @@
       label.textContent = `Related to ${shortLabel(concept)} · galaxy shifted`;
       row.innerHTML = related.map(r => {
         const kind = kindFromConcept(r.concept);
+        const body = r.human_forward || r.preview || r.display_name || shortLabel(r.concept, r);
         return `<div class="mini-tile ${tileAccentClass(kind)}" data-concept="${escapeAttr(r.concept)}"
           onclick="leg.open('${escapeAttr(r.concept)}')">
           <div class="mini-label">${escapeHtml(r.label)} → ${displayNameHtml(r.concept, r)}</div>
-          <div class="mini-body" id="mini-body-${escapeAttr(r.concept).replace(/[^a-zA-Z0-9_-]/g, '_')}">loading…</div>
+          <div class="mini-body">${escapeHtml(String(body).slice(0, 120))}</div>
         </div>`;
       }).join('');
       strip.classList.add('visible');
-      related.forEach(async (r) => {
-        try {
-          const res = await fetch(`${LIVE_BASE}/api/block/${encodeURIComponent(r.concept)}`);
-          if (!res.ok) return;
-          const block = await res.json();
-          const body = payloadExcerpt({ human_forward: block.galaxy?.human_forward, text: block.text });
-          const tile = [...row.querySelectorAll('.mini-tile')].find(t => t.dataset.concept === r.concept);
-          const el = tile?.querySelector('.mini-body');
-          if (el) el.textContent = body || block.type || '…';
-        } catch (_) {}
-      });
       if (galaxy) galaxy.setHoverFocus(concept, related.map(r => r.concept));
     }
 
@@ -3312,7 +4369,7 @@
         hoverStripTimer = setTimeout(async () => {
           const related = await fetchRelatedConcepts(concept);
           renderHoverStrip(concept, related);
-        }, 140);
+        }, 300);
       };
       const onLeave = (e) => {
         const tile = e.target.closest('[data-hover="1"]');
@@ -3354,6 +4411,174 @@
       </div>`;
     }
 
+    function extractTilePayload(text) {
+      if (!text) return null;
+      const idx = text.indexOf('**payload:**');
+      if (idx < 0) return null;
+      const rest = text.slice(idx);
+      const start = rest.indexOf('{');
+      if (start < 0) return null;
+      let depth = 0;
+      for (let i = start; i < rest.length; i++) {
+        if (rest[i] === '{') depth++;
+        else if (rest[i] === '}') {
+          depth--;
+          if (depth === 0) {
+            try { return JSON.parse(rest.slice(start, i + 1)); } catch (_) { return null; }
+          }
+        }
+      }
+      return null;
+    }
+
+    class GeoLensView {
+      constructor() {
+        this.canvas = document.getElementById('geo-lens-canvas');
+        this.ctx = this.canvas?.getContext('2d');
+        this.points = [];
+        this.resize = this.resize.bind(this);
+        window.addEventListener('resize', this.resize);
+      }
+
+      resize() {
+        if (!this.canvas) return;
+        const wrap = this.canvas.parentElement;
+        const w = wrap?.clientWidth || 800;
+        const h = wrap?.clientHeight || 500;
+        this.canvas.width = w;
+        this.canvas.height = h;
+        this.draw();
+      }
+
+      elevationColor(t) {
+        const r = Math.round(120 + 80 * (1 - t));
+        const g = Math.round(60 + 140 * t);
+        const b = Math.round(200 + 55 * t);
+        return `rgb(${r},${g},${b})`;
+      }
+
+      draw() {
+        if (!this.ctx || !this.canvas || !this.points.length) return;
+        const ctx = this.ctx;
+        const w = this.canvas.width;
+        const h = this.canvas.height;
+        ctx.fillStyle = '#070b12';
+        ctx.fillRect(0, 0, w, h);
+        let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+        let minY = Infinity, maxY = -Infinity;
+        for (const p of this.points) {
+          minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
+          minZ = Math.min(minZ, p.z); maxZ = Math.max(maxZ, p.z);
+          minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y);
+        }
+        const pad = 24;
+        const sx = (maxX - minX) || 1;
+        const sz = (maxZ - minZ) || 1;
+        const r = Math.max(1.2, Math.min(w, h) / Math.max(sx, sz) * 0.85);
+        const ox = w / 2 - ((minX + maxX) / 2) * r;
+        const oz = h / 2 - ((minZ + maxZ) / 2) * r;
+        const yRange = (maxY - minY) || 1;
+        for (const p of this.points) {
+          const t = (p.y - minY) / yRange;
+          const px = ox + p.x * r;
+          const py = oz + p.z * r;
+          ctx.fillStyle = this.elevationColor(t);
+          ctx.beginPath();
+          ctx.arc(px, py, 2.2, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+
+      async load(concept) {
+        const status = document.getElementById('geo-lens-status');
+        const pinsEl = document.getElementById('geo-lens-pins');
+        if (status) status.textContent = `Loading router ${concept}…`;
+        if (!liveMode) {
+          if (status) status.textContent = 'Live mode required — run ./scripts/leg --live';
+          return;
+        }
+        try {
+          const r = await fetch(`${LIVE_BASE}/api/block/${encodeURIComponent(concept)}`);
+          if (!r.ok) throw new Error('router block not found');
+          const block = await r.json();
+          const payload = extractTilePayload(block.text || '');
+          if (!payload) throw new Error('no payload in geo_lens tile');
+          const assetPath = payload.nvme_assets?.pointcloud || payload.nvme_path;
+          if (!assetPath) throw new Error('nvme_assets.pointcloud missing');
+          const pr = await fetch(`${LIVE_BASE}/api/geo-asset/${assetPath}`);
+          if (!pr.ok) throw new Error(`asset ${assetPath} not found — run fetch_lidar.py`);
+          const txt = await pr.text();
+          this.points = txt.trim().split('\n').map(line => {
+            const [x, y, z] = line.split(/\s+/).map(Number);
+            return { x, y, z };
+          }).filter(p => Number.isFinite(p.x) && Number.isFinite(p.y) && Number.isFinite(p.z));
+          this.resize();
+          if (status) {
+            status.textContent = `${this.points.length} pts • ${assetPath} • ${payload.backing_concept || ''}`;
+          }
+          if (pinsEl && Array.isArray(payload.pinned_concepts)) {
+            pinsEl.innerHTML = payload.pinned_concepts.map(c =>
+              `<div class="geo-pin" onclick="leg.open('${escapeAttr(c)}')">${escapeHtml(c)}</div>`
+            ).join('');
+          }
+          await this.loadOpsStrip(payload);
+          await this.loadNorthStarLink();
+        } catch (e) {
+          console.warn('GeoLens load', e);
+          if (status) status.textContent = String(e.message || e);
+        }
+      }
+
+      async opsTileLabel(concept, fallback) {
+        try {
+          const r = await fetch(`${LIVE_BASE}/api/block/${encodeURIComponent(concept)}`);
+          if (!r.ok) return fallback;
+          const block = await r.json();
+          const g = block.galaxy || {};
+          return g.display_name || g.human_forward || shortLabel(concept);
+        } catch (_) {
+          return fallback;
+        }
+      }
+
+      async loadOpsStrip(payload) {
+        const opsEl = document.getElementById('geo-lens-ops');
+        if (!opsEl) return;
+        const pinned = new Set([
+          ...(Array.isArray(payload?.pinned_concepts) ? payload.pinned_concepts : []),
+          ...getPins()
+        ]);
+        const tiles = [...GEO_LENS_OPS_TILES];
+        const seen = new Set(tiles.map(t => t.concept));
+        for (const c of pinned) {
+          if (c.startsWith('ops:') && !seen.has(c)) {
+            tiles.push({ concept: c, kind: 'pinned', fallback: shortLabel(c) });
+            seen.add(c);
+          }
+        }
+        const labels = await Promise.all(
+          tiles.map(t => this.opsTileLabel(t.concept, t.fallback))
+        );
+        opsEl.innerHTML = tiles.map((t, i) =>
+          `<div class="geo-ops-tile" onclick="leg.open('${escapeAttr(t.concept)}')" title="${escapeAttr(t.concept)}">
+            <span class="ops-kind">${escapeHtml(t.kind)}</span>
+            <span class="ops-label">${escapeHtml(labels[i])}</span>
+          </div>`
+        ).join('');
+      }
+
+      async loadNorthStarLink() {
+        const el = document.getElementById('geo-lens-north-star');
+        if (!el) return;
+        try {
+          const r = await fetch(`${LIVE_BASE}/api/block/${encodeURIComponent(NORTH_STAR_DESIGN)}`);
+          el.style.display = r.ok ? 'block' : 'none';
+        } catch (_) {
+          el.style.display = 'none';
+        }
+      }
+    }
+
     class GalaxyView {
       constructor() {
         this.canvas = document.getElementById('galaxy-canvas');
@@ -3379,6 +4604,9 @@
         this.bloomed = null;
         this.bloomNodes = [];
         this.focusNode = null;
+        this.mirrorEdgeFrom = null;
+        this.mirrorEdgeTo = null;
+        this.mirrorEdgeUntil = 0;
         this.panX = 0;
         this.panY = 0;
         this.zoom = 1;
@@ -3627,6 +4855,65 @@
       }
 
       setHighlight(id) { this.highlight = id; }
+
+      ensureMirrorTraceNodes(chain) {
+        if (!Array.isArray(chain) || !chain.length) return;
+        const primary = this.nodes.find(n => n.primary);
+        const cx = primary?.x ?? 0;
+        const cy = primary?.y ?? 0;
+        const keep = new Set(chain.map(s => s.concept).filter(Boolean));
+        this.nodes = this.nodes.filter(n => !n.mirrorEphemeral || keep.has(n.id));
+        this.edges = this.edges.filter(e => !e.mirrorEphemeral);
+        const existing = new Set(this.nodes.map(n => n.id));
+        chain.forEach((step, i) => {
+          const id = step.concept;
+          if (!id || existing.has(id)) return;
+          const ang = -Math.PI / 2 + (i - (chain.length - 1) / 2) * 0.42;
+          const dist = 95 + Math.min(i, 6) * 14;
+          this.nodes.push({
+            id,
+            kind: 'trace',
+            crs: 0.82,
+            tile_type: null,
+            leg_display: { role: 'trace', shape: 'document' },
+            pinned: false,
+            primary: false,
+            mirrorEphemeral: true,
+            r: 11,
+            x: cx + Math.cos(ang) * dist,
+            y: cy + Math.sin(ang) * dist,
+            vx: 0,
+            vy: 0,
+            fx: cx + Math.cos(ang) * dist,
+            fy: cy + Math.sin(ang) * dist
+          });
+          existing.add(id);
+          if (primary) {
+            this.edges.push({ from: primary.id, to: id, label: 'prev_in_trace', mirrorEphemeral: true });
+          }
+        });
+      }
+
+      syncToMirrorStep(step, pathIds) {
+        if (!step?.concept) return;
+        const syncKey = `${step.concept}:${scrubIndex}:${(pathIds || []).join('|')}`;
+        if (syncKey === lastGalaxyMirrorSyncKey) {
+          this.setHighlight(step.concept);
+          return;
+        }
+        lastGalaxyMirrorSyncKey = syncKey;
+        this.pulseActivity(step.concept, 'trace');
+        this.setHighlight(step.concept);
+        const focus = new Set(pathIds || []);
+        focus.add(step.concept);
+        focus.add('primary_goal');
+        this.setHoverFocus(step.concept, [...focus]);
+        const node = this.nodes.find(n => n.id === step.concept);
+        if (node) {
+          this.panTargetX = -node.x * this.zoom;
+          this.panTargetY = -node.y * this.zoom;
+        }
+      }
 
       pulseActivity(concept, action) {
         this.pulseConcept = concept;
@@ -4000,20 +5287,37 @@
             .map(id => this.nodes.find(n => n.id === id))
             .filter(Boolean);
           if (pathNodes.length > 1) {
-            ctx.strokeStyle = 'rgba(56,189,248,0.38)';
-            ctx.lineWidth = 2.2;
-            ctx.setLineDash([5, 7]);
+            const t = (Date.now() % 1400) / 1400;
+            ctx.strokeStyle = `rgba(56,189,248,${0.35 + 0.25 * Math.sin(t * Math.PI * 2)})`;
+            ctx.lineWidth = 2.4;
+            ctx.setLineDash([6, 5]);
             ctx.beginPath();
             ctx.moveTo(pathNodes[0].x, pathNodes[0].y);
             for (let i = 1; i < pathNodes.length; i++) ctx.lineTo(pathNodes[i].x, pathNodes[i].y);
             ctx.stroke();
             ctx.setLineDash([]);
-            for (const pn of pathNodes) {
+            for (let i = 0; i < pathNodes.length; i++) {
+              const pn = pathNodes[i];
+              const active = pn.id === this.highlight;
               ctx.beginPath();
-              ctx.arc(pn.x, pn.y, pn.r + 4, 0, Math.PI * 2);
-              ctx.fillStyle = 'rgba(56,189,248,0.22)';
+              ctx.arc(pn.x, pn.y, pn.r + (active ? 7 : 4), 0, Math.PI * 2);
+              ctx.fillStyle = active ? 'rgba(103,195,243,0.35)' : 'rgba(56,189,248,0.18)';
               ctx.fill();
             }
+          }
+        }
+
+        if (this.mirrorEdgeFrom && this.mirrorEdgeTo && Date.now() < this.mirrorEdgeUntil) {
+          const a = this.nodes.find(n => n.id === this.mirrorEdgeFrom);
+          const b = this.nodes.find(n => n.id === this.mirrorEdgeTo);
+          if (a && b) {
+            const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 180);
+            ctx.strokeStyle = `rgba(110,231,183,${0.35 + pulse * 0.35})`;
+            ctx.lineWidth = 2.6;
+            ctx.beginPath();
+            ctx.moveTo(a.x, a.y);
+            ctx.lineTo(b.x, b.y);
+            ctx.stroke();
           }
         }
 
@@ -4156,7 +5460,23 @@
         this.tooltip = document.getElementById('galaxy-tooltip');
         this.mapW = 3600;
         this.mapH = 1800;
+        this.goalPulseFromId = null;
+        this.goalPulseGoalId = 'primary_goal';
+        this.goalPulseUntil = 0;
         this.bindEvents();
+      }
+
+      pulseEdgeToGoal(fromConcept, goalConcept) {
+        this.goalPulseFromId = fromConcept;
+        this.goalPulseGoalId = goalConcept || 'primary_goal';
+        this.goalPulseUntil = Date.now() + 4500;
+      }
+
+      nodeProject(n) {
+        const bind = n.geosphere_binding || {};
+        const place = bind.place || n.geo;
+        if (!place || place.lat == null) return null;
+        return this.project(place.lat, place.lng);
       }
 
       resize() {
@@ -4407,6 +5727,34 @@
           ctx.stroke();
         }
 
+        if (this.goalPulseUntil > Date.now() && this.goalPulseFromId) {
+          const fromNode = this.nodes.find(n => n.id === this.goalPulseFromId);
+          const goalNode = this.nodes.find(n => n.id === this.goalPulseGoalId)
+            || this.nodes.find(n => n.id === 'primary_goal' || n.kind === 'goal');
+          const fp = fromNode ? this.nodeProject(fromNode) : null;
+          const gp = goalNode ? this.nodeProject(goalNode) : null;
+          if (fp && gp) {
+            const phase = (Date.now() % 1400) / 1400;
+            const alpha = 0.35 + 0.3 * Math.sin(phase * Math.PI * 2);
+            ctx.strokeStyle = `rgba(56, 189, 248, ${alpha})`;
+            ctx.lineWidth = 2;
+            ctx.setLineDash([8, 5]);
+            ctx.beginPath();
+            ctx.moveTo(fp.x, fp.y);
+            ctx.lineTo(gp.x, gp.y);
+            ctx.stroke();
+            ctx.setLineDash([]);
+            const px = fp.x + (gp.x - fp.x) * phase;
+            const py = fp.y + (gp.y - fp.y) * phase;
+            ctx.beginPath();
+            ctx.arc(px, py, 4, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(110, 231, 183, 0.85)';
+            ctx.fill();
+          }
+        } else if (this.goalPulseUntil && this.goalPulseUntil <= Date.now()) {
+          this.goalPulseFromId = null;
+        }
+
         const hud = document.getElementById('galaxy-hud');
         if (hud && stageView === 'geosphere') {
           hud.style.display = 'block';
@@ -4505,24 +5853,54 @@
     }
 
     function renderCodeAtlasPanel(atlas) {
-      if (!atlas || atlas.atlas_version !== 'v2') {
+      const ver = atlas?.atlas_version;
+      if (!atlas || (ver !== 'v2' && ver !== 'v2.1')) {
         return '<div class="atlas-head">Code atlas</div><div style="color:#64748b">No atlas v2 data for this locus.</div>';
       }
-      const traces = (atlas.traces_at_locus || []).slice(0, 6);
+      const tiers = atlas.traces_at_locus_tiers || {};
+      const traces = [
+        ...(tiers.line_precise || []),
+        ...(tiers.file_level || []),
+        ...(tiers.relation_linked || []),
+        ...(atlas.traces_at_locus || []),
+      ].slice(0, 8);
       const scars = (atlas.scars_at_locus || []).slice(0, 4);
+      const evo = atlas.evolution || {};
+      const evoArcs = (evo.arcs || []).slice(0, 4);
       const items = atlas.spatial_items || [];
       const arc = items.find(i => i.edit_arc?.present)?.edit_arc
         || items[0]?.edit_arc;
-      let html = `<div class="atlas-head">Code atlas · ${escapeHtml(atlas.stem || '')} · situated memory</div>`;
-      if (arc?.present) {
+      let html = `<div class="atlas-head">Code atlas · ${escapeHtml(atlas.stem || '')} · ${escapeHtml(ver)} · situated memory</div>`;
+
+      if (evoArcs.length) {
+        html += '<div style="color:#a78bfa;font-size:9px;margin:6px 0 4px">Evolution timeline</div>';
+        html += '<div class="atlas-evolution-timeline">';
+        for (const a of evoArcs) {
+          const segs = (a.segments || []).slice(-4);
+          for (const seg of segs) {
+            const isUpdate = seg.includes('--- update @');
+            const isEtym = seg.includes('--- etymology @');
+            const label = isEtym ? 'etymology' : (isUpdate ? 'update' : 'seed');
+            html += `<div class="atlas-evolution-seg" title="${escapeAttr(a.concept || '')}"><span style="color:#94a3b8">${label}</span> · ${escapeHtml(seg.slice(0, 180))}</div>`;
+          }
+        }
+        html += '</div>';
+      } else if (arc?.present) {
         html += `<div class="atlas-arc"><strong>Edit arc</strong> · ${escapeHtml(arc.stability || '—')} · dv ${Number(arc.drift_velocity || 0).toFixed(2)}<br>${escapeHtml(arc.snippet || '')}</div>`;
       } else if (arc) {
         html += `<div class="atlas-arc" style="opacity:0.7">${escapeHtml(arc.hint || 'Mint __arc via update after edit')}</div>`;
       }
-      if (traces.length) {
+
+      const chain = (evo.trace_chain || []).slice(0, 4);
+      if (chain.length) {
+        html += '<div style="color:#67c3f3;font-size:9px;margin:8px 0 4px">Trace chain</div>';
+        for (const t of chain) {
+          html += `<div class="atlas-trace" onclick="leg.open('${escapeAttr(t.concept)}')"><strong>${escapeHtml(t.decision_point || shortLabel(t.concept))}</strong></div>`;
+        }
+      } else if (traces.length) {
         html += '<div style="color:#67c3f3;font-size:9px;margin:8px 0 4px">Decisions at locus</div>';
         for (const t of traces) {
-          html += `<div class="atlas-trace" onclick="leg.open('${escapeAttr(t.concept)}')"><strong>${escapeHtml(t.decision_point || shortLabel(t.concept))}</strong><br><span style="color:#94a3b8">${escapeHtml(t.justification || '')}</span></div>`;
+          html += `<div class="atlas-trace" data-concept="${escapeAttr(t.concept)}" onclick="leg.open('${escapeAttr(t.concept)}')"><strong>${escapeHtml(t.decision_point || shortLabel(t.concept))}</strong><br><span style="color:#94a3b8">${escapeHtml(t.justification || '')}</span></div>`;
         }
       }
       if (scars.length) {
@@ -4531,7 +5909,7 @@
           html += `<div class="atlas-scar" onclick="leg.open('${escapeAttr(s.concept)}')">${escapeHtml(s.preview || s.concept)}</div>`;
         }
       }
-      if (!traces.length && !scars.length && !arc?.present) {
+      if (!traces.length && !scars.length && !arc?.present && !evoArcs.length) {
         html += '<div style="color:#64748b">No traces at this locus yet — agent quick_trace(spatial_context=file:line) wires here.</div>';
       }
       return html;
@@ -4542,7 +5920,7 @@
       const isAtlas = /__fn__|__struct__|__trait__|__impl__|__arc/.test(concept);
       if (!isAtlas) return;
       const stem = concept.split('__')[0];
-      const q = new URLSearchParams({ stem });
+      const q = new URLSearchParams({ stem, evolution: '1' });
       const aabb = block?.metadata?.spatial_aabb;
       if (aabb?.aabb_min?.[0] != null) {
         q.set('line_start', String(Math.max(1, Math.floor(aabb.aabb_min[0]))));
@@ -4557,6 +5935,9 @@
       if (!panel || activeConcept !== concept) return;
       panel.innerHTML = renderCodeAtlasPanel(atlas);
       panel.style.display = 'block';
+      if (mirrorSpatialFocus?.file) {
+        highlightCodeAtlasLocus(mirrorSpatialFocus.file, mirrorSpatialFocus.line, mirrorSpatialFocus.concept);
+      }
     }
 
     function renderBlock(block) {
@@ -4664,6 +6045,10 @@
 
     window.leg = leg;
     window.onload = () => {
+      if (COCKPIT_ARIEL_BOOT) {
+        document.getElementById('btn-galaxy')?.classList.remove('active');
+        document.getElementById('btn-geo-lens')?.classList.add('active');
+      }
       document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape' && document.getElementById('tile-overlay')?.classList.contains('open')) {
           leg.closeOverlay();

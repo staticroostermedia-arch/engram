@@ -22,8 +22,8 @@ if [[ ! -x "$BINARY" ]]; then
   (cd "$REPO_ROOT" && cargo build -p engram-server)
 fi
 
-echo "Starting engram serve on :${SERVE_PORT} (MCP left running)..." >&2
-ENGRAM_STORE="$STORE" nohup "$BINARY" serve --light --no-scout --port "$SERVE_PORT" >>"$LOG" 2>&1 &
+echo "Starting engram serve (cockpit profile) on :${SERVE_PORT} (MCP left running)..." >&2
+ENGRAM_STORE="$STORE" ENGRAM_PROFILE=cockpit nohup "$BINARY" serve --no-scout --port "$SERVE_PORT" >>"$LOG" 2>&1 &
 sleep 2
 if curl -sf "http://127.0.0.1:${SERVE_PORT}/health" >/dev/null; then
   echo "OK: serve healthy on :${SERVE_PORT}"

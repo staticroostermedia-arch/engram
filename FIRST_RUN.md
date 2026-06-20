@@ -17,6 +17,7 @@
 ```
 Engram MCP is configured. Read docs/AGENT_MEMORY_CONTRACT.md.
 Run mcp_engram_session_start(intent="First session on Engram").
+Execute suggested_actions, then mcp_engram_ack_wake_queue(executed=true).
 Follow the 8-tool loop; do not call watch_workspace at wake.
 End with mcp_engram_session_end(summary=...).
 ```
@@ -71,7 +72,13 @@ In your AI agent, run:
 mcp_engram_session_start(intent="First run — verifying Engram MCP connection")
 ```
 
-Expected: JSON with `bundle_tier: "slim"`, `continuation` (primary goal + top 5 `suggested_actions`), `readiness`, and `session_key`. Wake should complete in under ~5s on large stores. Use `mcp_engram_get_continuation_bundle` when you need the full harness inline.
+Expected: JSON with `bundle_tier: "slim"`, `continuation` (primary goal + top 5 `suggested_actions`), `readiness`, and `session_key`. Wake should complete in under ~8s on large stores. Use `mcp_engram_get_continuation_bundle` when you need the full harness inline.
+
+Then acknowledge the wake queue (required with `ENGRAM_PROFILE=agent`):
+
+```
+mcp_engram_ack_wake_queue(executed=true, note="first run wake queue")
+```
 
 If this fails, check `engram --version` and that the MCP server appears in your IDE's tool list.
 
@@ -157,7 +164,7 @@ This produces a structured handoff packet. Your **next** `session_start` will su
 | `get_backend_readiness()` | Check BVH/recall mode |
 | `set_memory_mode("lean"\|"deep")` | Escalate for full recall |
 
-**62 power tools** remain available — see [docs/MCP_TOOLS_REFERENCE.md](docs/MCP_TOOLS_REFERENCE.md). Do not call `watch_workspace`, `rebuild_bvh`, or `summarize` in lean mode unless needed.
+**71 power tools** remain available — see [docs/MCP_TOOLS_REFERENCE.md](docs/MCP_TOOLS_REFERENCE.md). Do not call `watch_workspace`, `rebuild_bvh`, or `summarize` in lean mode unless needed.
 
 ---
 
@@ -167,7 +174,8 @@ This produces a structured handoff packet. Your **next** `session_start` will su
 |---------|-------|-----|
 | MCP OOM / duplicate processes | Bare `engram mcp` on large store | Use safe env (section 2) + restart IDE |
 | Slow wake (>5s) | Deep tools at wake | Follow 8-tool contract; `ENGRAM_MEMORY_MODE=lean` |
-| `context_for_edit` sparse | File never ingested | `engram ingest <path>` once, or deep `watch_workspace` |
+| `context_for_edit` 403 | Wake queue not acked | `mcp_engram_ack_wake_queue(executed=true)` after `session_start` |
+| `context_for_edit` sparse | File never ingested | `engram ingest <path>` once, or `context_for_edit` with `auto_ingest: true` |
 | Low recall quality | No embedding server | Set `ENGRAM_EMBED_URL` |
 | Lost context between sessions | Skipped `session_end` | Always end with structured summary |
 

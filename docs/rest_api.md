@@ -327,6 +327,63 @@ for entry in recent:
 
 ---
 
+### `GET /api/code-atlas`
+
+Returns code atlas v2.1 for a file window — same payload agents get from `mcp_engram_context_for_edit`, optionally with evolution bundle for LEG timeline.
+
+**Query parameters:**
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `path` | string | *required* | Absolute or workspace-relative file path |
+| `line_start` | int | — | Start line (1-based) for AABB filter |
+| `line_end` | int | — | End line (1-based) for AABB filter |
+| `evolution` | `1` | off | Include `evolution` object: loci, arc segments, trace chain |
+| `preview_chars` | int | `200` | Max chars per arc segment preview |
+| `trace_depth` | int | `6` | Max `prev_in_trace` hops from traces head |
+
+**curl:**
+```bash
+curl "http://localhost:3456/api/code-atlas?path=crates/engram-server/src/store.rs&line_start=5100&line_end=5200&evolution=1"
+```
+
+**Response (abbreviated):**
+```json
+{
+  "atlas_version": "v2.1",
+  "spatial_items": [],
+  "traces_at_locus": [],
+  "traces_at_locus_tiers": { "exact": [], "file": [], "stem": [] },
+  "edit_arc_debt": { "pending": 0 },
+  "evolution": {
+    "loci": [],
+    "arcs": [],
+    "trace_chain": []
+  }
+}
+```
+
+---
+
+### `GET /api/context-window`
+
+Wake harness bundle for LEG cockpit — `suggested_actions`, `ego_snapshot`, `continuity_playbook`, `presentation_stratum`. Used by `./scripts/leg --live`.
+
+```bash
+curl http://localhost:3456/api/context-window
+```
+
+---
+
+### `GET /api/consciousness-surface`
+
+Distilled geosphere / presentation nodes with lineage edges for LEG geosphere view.
+
+```bash
+curl http://localhost:3456/api/consciousness-surface
+```
+
+---
+
 ## Error Responses
 
 All endpoints return a consistent error shape on failure:

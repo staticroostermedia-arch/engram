@@ -18,8 +18,8 @@ mcp_engram_ack_wake_queue(executed=true, steps_completed=5, note="handoff + goal
 **When to call:** Once per session, after running the harness queue (or honestly noting a thin/empty handoff).
 
 **Gate modes** (`ENGRAM_WAKE_QUEUE_GATE`):
-- `soft` (default) — warns on `context_for_edit` until ack; edits still allowed
-- `hard` — blocks `context_for_edit` with 403 until ack
-- `off` — disabled
+- `hard` (**default** with `ENGRAM_PROFILE=agent`) — blocks `context_for_edit` with 403 until ack
+- `soft` — warns on `context_for_edit` until ack; edits still allowed
+- `off` — disabled (dev/CI)
 
 Empty `suggested_actions` auto-acks at `session_start` — no call needed.
