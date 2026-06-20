@@ -81,7 +81,33 @@ impl UpdateResult {
 }
 
 #[cfg(test)]
+mod test_env {
+    use std::sync::{Mutex, MutexGuard};
+
+    static LOCK: Mutex<()> = Mutex::new(());
+
+    pub fn lock() -> MutexGuard<'static, ()> {
+        LOCK.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    pub fn with_var(key: &str, value: Option<&str>, f: impl FnOnce()) {
+        let _g = lock();
+        let prev = std::env::var(key).ok();
+        match value {
+            Some(v) => std::env::set_var(key, v),
+            None => std::env::remove_var(key),
+        }
+        f();
+        match prev {
+            Some(v) => std::env::set_var(key, v),
+            None => std::env::remove_var(key),
+        }
+    }
+}
+
+#[cfg(test)]
 mod tests {
+    use super::test_env;
     use super::*;
 
     fn test_store_dir(suffix: &str) -> std::path::PathBuf {
@@ -115,20 +141,22 @@ mod tests {
 
     #[test]
     fn coherence_mode_from_env_defaults_warn() {
-        std::env::remove_var("ENGRAM_UPDATE_COHERENCE");
-        assert_eq!(UpdateCoherenceMode::from_env(), UpdateCoherenceMode::Warn);
+        test_env::with_var("ENGRAM_UPDATE_COHERENCE", None, || {
+            assert_eq!(UpdateCoherenceMode::from_env(), UpdateCoherenceMode::Warn);
+        });
     }
 
     #[test]
     fn coherence_mode_from_env_block() {
-        std::env::set_var("ENGRAM_UPDATE_COHERENCE", "block");
-        assert_eq!(UpdateCoherenceMode::from_env(), UpdateCoherenceMode::Block);
-        std::env::remove_var("ENGRAM_UPDATE_COHERENCE");
+        test_env::with_var("ENGRAM_UPDATE_COHERENCE", Some("block"), || {
+            assert_eq!(UpdateCoherenceMode::from_env(), UpdateCoherenceMode::Block);
+        });
     }
 }
 
 #[cfg(test)]
 mod provlog_coherence_tests {
+    use super::test_env;
     use super::*;
     use engram_core::storage::ProvlogSpliceMode;
 
@@ -151,33 +179,35 @@ mod provlog_coherence_tests {
 
     #[test]
     fn provlog_coherence_high_on_append() {
-        std::env::set_var("ENGRAM_UPDATE_COHERENCE", "warn");
-        let dir = test_store_dir("append");
-        let mut store = StoreHandle::new(&dir.to_string_lossy());
-        let base = "**decision:** Use context_for_edit before editing store.rs";
-        store
-            .remember("trace:provlog_coherence_append", base)
-            .unwrap();
-        let delta = "\n\n**rationale:** spatial context reduces drift";
-        let result = store
-            .update_with_provlog_mode(
-                "trace:provlog_coherence_append",
-                delta,
-                Some(ProvlogSpliceMode::Append),
-            )
-            .expect("append update");
-        let coh = result.provlog_coherence.expect("coherence reported");
-        assert!(
-            coh >= DEFAULT_COHERENCE_MIN,
-            "append coherence {coh} should stay high"
-        );
-        assert!(result.message.contains("coherence:"));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::env::remove_var("ENGRAM_UPDATE_COHERENCE");
+        test_env::with_var("ENGRAM_UPDATE_COHERENCE", Some("warn"), || {
+            let dir = test_store_dir("append");
+            let mut store = StoreHandle::new(&dir.to_string_lossy());
+            let base = "**decision:** Use context_for_edit before editing store.rs";
+            store
+                .remember("trace:provlog_coherence_append", base)
+                .unwrap();
+            let delta = "\n\n**rationale:** spatial context reduces drift";
+            let result = store
+                .update_with_provlog_mode(
+                    "trace:provlog_coherence_append",
+                    delta,
+                    Some(ProvlogSpliceMode::Append),
+                )
+                .expect("append update");
+            let coh = result.provlog_coherence.expect("coherence reported");
+            assert!(
+                coh >= DEFAULT_COHERENCE_MIN,
+                "append coherence {coh} should stay high"
+            );
+            assert!(result.message.contains("coherence:"));
+            let _ = std::fs::remove_dir_all(&dir);
+        });
     }
 
     #[test]
     fn provlog_coherence_block_on_replace_mismatch() {
+        let _g = test_env::lock();
+        let prev = std::env::var("ENGRAM_UPDATE_COHERENCE").ok();
         let dir = test_store_dir("block");
         let mut store = StoreHandle::new(&dir.to_string_lossy());
         let base = "**decision:** Always call session_start at wake";
@@ -221,27 +251,30 @@ mod provlog_coherence_tests {
             "block unchanged after rejected update"
         );
         let _ = std::fs::remove_dir_all(&dir);
-        std::env::remove_var("ENGRAM_UPDATE_COHERENCE");
+        match prev {
+            Some(v) => std::env::set_var("ENGRAM_UPDATE_COHERENCE", v),
+            None => std::env::remove_var("ENGRAM_UPDATE_COHERENCE"),
+        }
     }
 
     #[test]
     fn provlog_coherence_off_skips_check() {
-        std::env::set_var("ENGRAM_UPDATE_COHERENCE", "off");
-        let dir = test_store_dir("off");
-        let mut store = StoreHandle::new(&dir.to_string_lossy());
-        store
-            .remember("trace:provlog_coherence_off", "**decision:** baseline")
-            .unwrap();
-        let result = store
-            .update_with_provlog_mode(
-                "trace:provlog_coherence_off",
-                "**decision:** unrelated manifesto",
-                Some(ProvlogSpliceMode::Replace),
-            )
-            .expect("off mode never blocks");
-        assert!(result.provlog_coherence.is_none());
-        assert!(!result.message.contains("coherence:"));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::env::remove_var("ENGRAM_UPDATE_COHERENCE");
+        test_env::with_var("ENGRAM_UPDATE_COHERENCE", Some("off"), || {
+            let dir = test_store_dir("off");
+            let mut store = StoreHandle::new(&dir.to_string_lossy());
+            store
+                .remember("trace:provlog_coherence_off", "**decision:** baseline")
+                .unwrap();
+            let result = store
+                .update_with_provlog_mode(
+                    "trace:provlog_coherence_off",
+                    "**decision:** unrelated manifesto",
+                    Some(ProvlogSpliceMode::Replace),
+                )
+                .expect("off mode never blocks");
+            assert!(result.provlog_coherence.is_none());
+            assert!(!result.message.contains("coherence:"));
+            let _ = std::fs::remove_dir_all(&dir);
+        });
     }
 }
