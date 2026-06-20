@@ -17,14 +17,13 @@ const PROFILE_TTL_SECS: u64 = 86_400;
 const READINESS_TTL_SECS: u64 = 300;
 
 pub fn enabled() -> bool {
-    match std::env::var("ENGRAM_LOCAL_STRATUM")
-        .unwrap_or_else(|_| "1".to_string())
-        .to_ascii_lowercase()
-        .as_str()
-    {
-        "0" | "false" | "off" => false,
-        _ => true,
-    }
+    !matches!(
+        std::env::var("ENGRAM_LOCAL_STRATUM")
+            .unwrap_or_else(|_| "1".to_string())
+            .to_ascii_lowercase()
+            .as_str(),
+        "0" | "false" | "off"
+    )
 }
 
 pub fn local_budget() -> usize {
@@ -185,23 +184,19 @@ pub fn bootstrap(store: &mut StoreHandle) -> Vec<String> {
                     || !t.contains(&effective_store_path())
             })
             .unwrap_or(true);
-    if profile_stale
-    {
-        if upsert_declarative(store, LOCAL_HOST_PROFILE, &profile_txt) {
-            touch_block_crs(store, LOCAL_HOST_PROFILE);
-            store.mark_hot(LOCAL_HOST_PROFILE);
-            touched.push(LOCAL_HOST_PROFILE.to_string());
-        }
+    if profile_stale && upsert_declarative(store, LOCAL_HOST_PROFILE, &profile_txt) {
+        touch_block_crs(store, LOCAL_HOST_PROFILE);
+        store.mark_hot(LOCAL_HOST_PROFILE);
+        touched.push(LOCAL_HOST_PROFILE.to_string());
     }
 
     let mcp_txt = host_mcp_text();
-    if store.fetch_block(LOCAL_HOST_MCP).is_none() || stale(LOCAL_HOST_MCP, store, PROFILE_TTL_SECS)
+    if (store.fetch_block(LOCAL_HOST_MCP).is_none() || stale(LOCAL_HOST_MCP, store, PROFILE_TTL_SECS))
+        && upsert_declarative(store, LOCAL_HOST_MCP, &mcp_txt)
     {
-        if upsert_declarative(store, LOCAL_HOST_MCP, &mcp_txt) {
-            touch_block_crs(store, LOCAL_HOST_MCP);
-            store.mark_hot(LOCAL_HOST_MCP);
-            touched.push(LOCAL_HOST_MCP.to_string());
-        }
+        touch_block_crs(store, LOCAL_HOST_MCP);
+        store.mark_hot(LOCAL_HOST_MCP);
+        touched.push(LOCAL_HOST_MCP.to_string());
     }
 
     if let Some((concept, root, branch)) = git_project_fingerprint() {
@@ -209,12 +204,12 @@ pub fn bootstrap(store: &mut StoreHandle) -> Vec<String> {
             "# Local Project Root\n\n**sovereignty:** project_local\n**export_policy:** scrub_required\n\n**git_root:** {root}\n**git_branch:** {branch}\n**refreshed_at:** {}\n",
             now_secs()
         );
-        if store.fetch_block(&concept).is_none() || stale(&concept, store, PROFILE_TTL_SECS) {
-            if upsert_declarative(store, &concept, &text) {
-                touch_block_crs(store, &concept);
-                store.mark_hot(&concept);
-                touched.push(concept);
-            }
+        if (store.fetch_block(&concept).is_none() || stale(&concept, store, PROFILE_TTL_SECS))
+            && upsert_declarative(store, &concept, &text)
+        {
+            touch_block_crs(store, &concept);
+            store.mark_hot(&concept);
+            touched.push(concept);
         }
     }
 
@@ -223,14 +218,13 @@ pub fn bootstrap(store: &mut StoreHandle) -> Vec<String> {
         "# Local Readiness Cache\n\n**sovereignty:** local_only\n**export_policy:** deny\n\n```json\n{}\n```\n",
         serde_json::to_string_pretty(&readiness).unwrap_or_else(|_| "{}".to_string())
     );
-    if stale(LOCAL_HOST_READINESS, store, READINESS_TTL_SECS)
-        || store.fetch_block(LOCAL_HOST_READINESS).is_none()
+    if (stale(LOCAL_HOST_READINESS, store, READINESS_TTL_SECS)
+        || store.fetch_block(LOCAL_HOST_READINESS).is_none())
+        && upsert_declarative(store, LOCAL_HOST_READINESS, &readiness_txt)
     {
-        if upsert_declarative(store, LOCAL_HOST_READINESS, &readiness_txt) {
-            touch_block_crs(store, LOCAL_HOST_READINESS);
-            store.mark_hot(LOCAL_HOST_READINESS);
-            touched.push(LOCAL_HOST_READINESS.to_string());
-        }
+        touch_block_crs(store, LOCAL_HOST_READINESS);
+        store.mark_hot(LOCAL_HOST_READINESS);
+        touched.push(LOCAL_HOST_READINESS.to_string());
     }
 
     let _ = store.relate(

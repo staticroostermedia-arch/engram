@@ -57,10 +57,8 @@ pub fn collect_corpus_candidates(store: &StoreHandle, config: &CorpusConfig) -> 
         let tag_ok = matches!(block.zedos_tag, ZEDOS_TRAINING | ZEDOS_PRAXIS)
             || concept.starts_with("pattern:export_");
         let prefix_ok = prefixes.iter().any(|p| concept.starts_with(p));
-        if tag_ok || prefix_ok {
-            if !out.contains(&concept) {
-                out.push(concept);
-            }
+        if (tag_ok || prefix_ok) && !out.contains(&concept) {
+            out.push(concept);
         }
     }
     out

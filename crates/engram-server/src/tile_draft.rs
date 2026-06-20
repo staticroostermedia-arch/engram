@@ -95,10 +95,11 @@ pub fn aggregate_turn_activity(since_ts: u64, limit: usize) -> Value {
     let mut tool_calls: Vec<Value> = Vec::new();
 
     for e in events.iter().rev() {
-        if e.action == "trace_fork" && e.concept.starts_with("trace:") {
-            if !trace_chain.contains(&e.concept) {
-                trace_chain.push(e.concept.clone());
-            }
+        if e.action == "trace_fork"
+            && e.concept.starts_with("trace:")
+            && !trace_chain.contains(&e.concept)
+        {
+            trace_chain.push(e.concept.clone());
         }
         if e.action == "probe" {
             let tool = e

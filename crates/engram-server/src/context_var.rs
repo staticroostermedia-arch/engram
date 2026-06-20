@@ -206,16 +206,29 @@ pub struct DeclareResult {
     pub skipped: Vec<Value>,
 }
 
+pub struct VarDeclareRequest<'a> {
+    pub name: &'a str,
+    pub concepts: &'a [String],
+    pub prefixes: &'a [String],
+    pub min_crs: f32,
+    pub preview_chars: usize,
+    pub functor_metadata: &'a str,
+    pub limit: usize,
+}
+
 pub fn var_declare(
     store: &mut StoreHandle,
-    name: &str,
-    concepts: &[String],
-    prefixes: &[String],
-    min_crs: f32,
-    preview_chars: usize,
-    functor_metadata: &str,
-    limit: usize,
+    req: VarDeclareRequest<'_>,
 ) -> Result<DeclareResult, String> {
+    let VarDeclareRequest {
+        name,
+        concepts,
+        prefixes,
+        min_crs,
+        preview_chars,
+        functor_metadata,
+        limit,
+    } = req;
     let var_concept = normalize_var_name(name);
     if var_concept.is_empty() {
         return Err("var name required".into());
@@ -634,16 +647,18 @@ mod tests {
         store.remember("trace:var_test_b", "**decision:** test B").unwrap();
         let r = var_declare(
             &mut store,
-            "test_bundle",
-            &[
-                "trace:var_test_a".into(),
-                "trace:var_test_b".into(),
-            ],
-            &[],
-            0.5,
-            40,
-            "test",
-            8,
+            VarDeclareRequest {
+                name: "test_bundle",
+                concepts: &[
+                    "trace:var_test_a".into(),
+                    "trace:var_test_b".into(),
+                ],
+                prefixes: &[],
+                min_crs: 0.5,
+                preview_chars: 40,
+                functor_metadata: "test",
+                limit: 8,
+            },
         )
         .expect("declare");
         assert_eq!(r.bound, 2);

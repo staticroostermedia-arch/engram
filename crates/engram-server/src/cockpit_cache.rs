@@ -36,14 +36,13 @@ pub fn presentation_cache_hit_rate() -> f64 {
 }
 
 pub fn cache_enabled() -> bool {
-    match std::env::var("ENGRAM_PRESENTATION_CACHE")
-        .unwrap_or_else(|_| "1".to_string())
-        .to_ascii_lowercase()
-        .as_str()
-    {
-        "0" | "false" | "off" => false,
-        _ => true,
-    }
+    !matches!(
+        std::env::var("ENGRAM_PRESENTATION_CACHE")
+            .unwrap_or_else(|_| "1".to_string())
+            .to_ascii_lowercase()
+            .as_str(),
+        "0" | "false" | "off"
+    )
 }
 
 fn activity_feed_stamp() -> u64 {

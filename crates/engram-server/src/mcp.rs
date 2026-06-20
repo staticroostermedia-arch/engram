@@ -6790,13 +6790,15 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
             let mut lock = store.lock().unwrap();
             match crate::context_var::var_declare(
                 &mut lock,
-                name,
-                &concepts,
-                &prefixes,
-                min_crs,
-                preview_chars,
-                functor,
-                limit,
+                crate::context_var::VarDeclareRequest {
+                    name,
+                    concepts: &concepts,
+                    prefixes: &prefixes,
+                    min_crs,
+                    preview_chars,
+                    functor_metadata: functor,
+                    limit,
+                },
             ) {
                 Ok(r) => {
                     let body = json!({
@@ -6908,7 +6910,7 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
             if action == "verify" {
                 let packs: Vec<Value> = args["packs"]
                     .as_array()
-                    .map(|a| a.clone())
+                    .cloned()
                     .unwrap_or_default();
                 if packs.is_empty() {
                     return json!({ "content": [{ "type": "text", "text": "Error: packs array required for verify." }], "isError": true });
