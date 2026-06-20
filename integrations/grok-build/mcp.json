@@ -1,5 +1,5 @@
 {
-  "_comment": "Grok Build / Cursor MCP — copy engram block. Uses the local engram-grok wrapper (must be executable).",
+  "_comment": "Grok Build / Cursor MCP — copy engram block. Uses the local engram-grok wrapper (must be executable). ENGRAM_PROFILE=agent sets ENGRAM_WAKE_QUEUE_GATE=hard by default (ack_wake_queue required before context_for_edit).",
   "mcpServers": {
     "engram": {
       "command": "/home/a/Documents/Engram/scripts/engram-grok",

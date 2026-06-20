@@ -321,6 +321,9 @@ fn load_process_sheaf(store: &SharedStore) -> Result<(), String> {
         }
         let _ = hlock.promote_tile_to_high_priority("process:engram.ritual.wake-up");
         let _ = hlock.promote_tile_to_high_priority("process:engram.ritual.nrem-consolidation");
+        let _ = hlock.promote_tile_to_high_priority(
+            "process:engram.ritual.local-context-working-memory",
+        );
         let _ = hlock.promote_tile_to_high_priority("process:engram.monitor.subvisor");
         let _ = hlock.promote_tile_to_high_priority("ritual:wake_up_anchor");
         let _ = hlock.promote_tile_to_high_priority("ritual:engram.working-memory");
@@ -724,6 +727,28 @@ fn tool_list() -> Value {
                 }
             },
             {
+                "name": "mcp_engram_ack_edit_arc",
+                "description": "Acknowledge or skip pending edit-arc debt — unblocks repeat context_for_edit on the same path when ENGRAM_EDIT_ARC_GATE=hard. Prefer mcp_engram_update on *__arc after edits; use skip=true with an honest note only for read-only passes.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "concepts": {
+                            "type": "array",
+                            "items": { "type": "string" },
+                            "description": "Optional AST concepts to clear (default: all pending)"
+                        },
+                        "skip": {
+                            "type": "boolean",
+                            "description": "True when waiving arc update with documented reason (default true)"
+                        },
+                        "note": {
+                            "type": "string",
+                            "description": "Reason for skip or ack (e.g. read-only recon, no edits made)"
+                        }
+                    }
+                }
+            },
+            {
                 "name": "mcp_engram_session_start",
                 "description": "MANDATORY first MCP call every session. Default ENGRAM_WAKE_BUNDLE=slim: primary_goal, top 5 suggested_actions, trace_chain head, slim ego_snapshot, presentation_stratum previews. Full harness via mcp_engram_get_continuation_bundle. Execute suggested_actions BEFORE edits; ack with mcp_engram_ack_wake_queue. Lean default — do NOT call watch_workspace at wake. See docs/HARNESS_INJECTION.md + docs/AGENT_MEMORY_CONTRACT.md.",
                 "inputSchema": {
@@ -891,7 +916,7 @@ fn tool_list() -> Value {
                         },
                         "spatial_context": {
                             "type": "string",
-                            "description": "Relevant file or spatial concept this decision touched"
+                            "description": "Code locus as file.rs:line (e.g. store.rs:706). Absolute paths normalized to file.rs:line. File-only accepted with soft warning; ENGRAM_REQUIRE_LINE_CONTEXT=1 hard-rejects missing :line."
                         },
                         "prev_trace": {
                             "type": "string",
@@ -972,10 +997,77 @@ fn tool_list() -> Value {
                         },
                         "spatial_context": {
                             "type": "string",
-                            "description": "Code locus file:line (e.g. store.rs:4023) — auto-wires edited_at to matching AST blocks"
+                            "description": "Code locus as file.rs:line (e.g. store.rs:4023). Absolute paths normalized to file.rs:line. File-only accepted with soft warning; ENGRAM_REQUIRE_LINE_CONTEXT=1 hard-rejects missing :line. Auto-wires edited_at to matching AST blocks."
                         }
                     },
                     "required": ["decision", "why"]
+                }
+            },
+            {
+                "name": "mcp_engram_turn_record",
+                "description": "Mint an RPT v3 agent_response turn tile (response_tile_schema_v3). Captures user utterance + assistant output + auto-aggregated trace_chain/probe_reads/tool_calls from activity feed. Use at end of each assistant turn (lean default). Extends prior strange-loop RPT v2 convention to all chat.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "user_utterance": {
+                            "type": "string",
+                            "description": "User message that prompted this turn (verbatim or excerpt)"
+                        },
+                        "assistant_output": {
+                            "type": "string",
+                            "description": "Final user-visible assistant reply (excerpt ok)"
+                        },
+                        "human_forward": {
+                            "type": "string",
+                            "description": "Leading plain-language thesis — what happened and why it matters"
+                        },
+                        "tier": {
+                            "type": "string",
+                            "description": "lean (default) | full (strange-loop/meta with key_facts)"
+                        },
+                        "title": {
+                            "type": "string",
+                            "description": "Short tile title (defaults from human_forward)"
+                        },
+                        "conv_arc": {
+                            "type": "string",
+                            "description": "Conversation arc id e.g. conv:leg-rpt-v3"
+                        },
+                        "prev_turn": {
+                            "type": "string",
+                            "description": "Prior tile:agent_response_* for turn chaining"
+                        },
+                        "goal_context": {
+                            "type": "string",
+                            "description": "Goal this turn serves"
+                        },
+                        "agent_thesis": { "type": "string" },
+                        "user_intent": {
+                            "type": "string",
+                            "description": "question | directive | correction | steer | new_task | ack | other"
+                        },
+                        "outcome_status": {
+                            "type": "string",
+                            "description": "completed | partial | blocked | needs_user"
+                        },
+                        "since_ts": {
+                            "type": "integer",
+                            "description": "Activity window start (ms since epoch). Default: last 10 minutes."
+                        },
+                        "open_questions": {
+                            "type": "array",
+                            "items": { "type": "string" }
+                        },
+                        "spatial_touched": {
+                            "type": "array",
+                            "items": { "type": "string" }
+                        },
+                        "process_context": {
+                            "type": "string",
+                            "description": "Optional process:engram.* — realized_by edge"
+                        }
+                    },
+                    "required": ["user_utterance", "assistant_output", "human_forward"]
                 }
             },
             {
@@ -1201,7 +1293,7 @@ fn tool_list() -> Value {
                     "properties": {
                         "tile_type": {
                             "type": "string",
-                            "description": "research_offload | state_machine | tabular | knowledge_graph | formal_spec | html_visualization | verified_sequence"
+                            "description": "research_offload | state_machine | tabular | knowledge_graph | formal_spec | html_visualization | verified_sequence | agent_response (RPT v3 — use mcp_engram_turn_record for turn envelope)"
                         },
                         "title": {
                             "type": "string",
@@ -1389,6 +1481,52 @@ fn tool_list() -> Value {
                 }
             },
             {
+                "name": "mcp_engram_ingest_reference_frame",
+                "description": "WS5 — Mint formal_spec:linguistic_reference_frame_v1 + genesis pillar blocks (language, code, local_block, allowed_transform, …) into local .leg3. Relates to formal_spec:patent_us19_372_256_leg_container when present. Idempotent — skips existing concepts.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {},
+                    "required": []
+                }
+            },
+            {
+                "name": "mcp_engram_evolution_at_locus",
+                "description": "Code atlas v2 — bounded evolution bundle at a file locus. Returns loci (spatial concepts in range), arcs (edit-arc provlog segments with --- update @ --- markers), trace_chain (prev_in_trace walk from traces_at_locus head), scars_at_locus, latest chain_summary tile, and var_handles for program trace context. Auto-ingests single file when loci empty (same resolution as context_for_edit; safe on large stores via bounded stem prefix + force_ingest).",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "path": {
+                            "type": "string",
+                            "description": "Absolute or relative file path"
+                        },
+                        "line_start": {
+                            "type": "integer",
+                            "description": "Optional start line for spatial AABB filter (1-based)"
+                        },
+                        "line_end": {
+                            "type": "integer",
+                            "description": "Optional end line for spatial AABB filter (1-based)"
+                        },
+                        "preview_chars": {
+                            "type": "integer",
+                            "description": "Max chars per arc segment preview (default 200)",
+                            "default": 200
+                        },
+                        "trace_depth": {
+                            "type": "integer",
+                            "description": "Max prev_in_trace hops from traces_at_locus head (default 6)",
+                            "default": 6
+                        },
+                        "auto_ingest": {
+                            "type": "boolean",
+                            "description": "If true (default), force-ingest this file when no spatial loci match",
+                            "default": true
+                        }
+                    },
+                    "required": ["path"]
+                }
+            },
+            {
                 "name": "mcp_engram_remember_solution",
                 "description": "Store a crystallized error→solution pair as a ZEDOS_PRAXIS block, auto-pinned to CRS=1.0. Solutions never decay.",
                 "inputSchema": {
@@ -1452,11 +1590,9 @@ fn tool_list() -> Value {
                 "name": "mcp_engram_update",
                 "description": "CRITICAL: Use this whenever you need to change or append to an existing memory. \
                                 NEVER use forget+remember to update — that destroys the block's entire history. \
-                                WHAT THIS DOES DIFFERENTLY: Evaluates Lyapunov stability drift between the old \
-                                and new vector encodings. If drift is low (stable evolution), CRS is preserved. \
-                                If drift is high (contradictory change), CRS is penalized proportionally. \
-                                This creates a thermodynamic record of how a concept has evolved over time \
-                                and prevents silent rewrites of load-bearing memories.",
+                                Superposes q + accumulates p-momentum AND splices ProvLog (append for __arc/trace/design; \
+                                replace for AST structure blocks when new_text is source). Code atlas structure blocks \
+                                also refresh provlog on spatial re-ingest (ingest_ast_item).",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -1466,7 +1602,12 @@ fn tool_list() -> Value {
                         },
                         "new_text": {
                             "type": "string",
-                            "description": "The new text content to encode"
+                            "description": "Delta or full source text to encode + splice into provlog"
+                        },
+                        "provlog_mode": {
+                            "type": "string",
+                            "enum": ["append", "replace"],
+                            "description": "Optional — default inferred from concept (append for __arc/trace:*; replace for AST __fn__/* with source-shaped text)"
                         }
                     },
                     "required": ["concept", "new_text"]
@@ -1547,7 +1688,7 @@ fn tool_list() -> Value {
             },
             {
                 "name": "mcp_engram_export",
-                "description": "BEHAVIOR: Serializes the current active memory manifold (or a subset filtered by minimum CRS) into a portable JSON array. USAGE: Call this when you need to backup the project's knowledge base, migrate data to another machine, or synchronize states. OUTPUT: A serialized JSON string containing all matching blocks with their concept identifiers and text payloads.",
+                "description": "BEHAVIOR: Serializes the current active memory manifold (or a subset filtered by minimum CRS) into a portable JSON array. BLOCKED in ENGRAM_PROFILE=agent — use mcp_engram_scrub_export for training-safe block-isomorphic export. USAGE: Backup/migrate in deep|dev|ui profiles only. OUTPUT: JSON array of {concept, text, crs} — geometry degraded.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -1556,6 +1697,113 @@ fn tool_list() -> Value {
                             "description": "Only export memories with CRS >= this value (default: 0.0 = all)",
                             "default": 0.0
                         }
+                    }
+                }
+            },
+            {
+                "name": "mcp_engram_scrub_export",
+                "description": "BEHAVIOR: Sovereignty-gated three-channel export as leg_block_pack_v1 (geometry on disk + relations + scrubbed_provlog). Runs PII scrub, semantic_coherence_check (cosine q vs encode(scrubbed_provlog) >= 0.74), optional pattern:export_* derivative mint. USAGE: Training corpus / central contribution — never use raw mcp_engram_export in agent profile. OUTPUT: JSON with packs, denied, failed_coherence, minted_derivatives.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "concepts": {
+                            "type": "array",
+                            "items": { "type": "string" },
+                            "description": "Explicit concept ids to export (trace:*, tile:*, design:*, etc.)"
+                        },
+                        "prefixes": {
+                            "type": "array",
+                            "items": { "type": "string" },
+                            "description": "Optional prefix filter — auto-collect recent candidates (e.g. trace:, tile:)"
+                        },
+                        "min_crs": {
+                            "type": "number",
+                            "description": "Minimum CRS for export (default 0.74)",
+                            "default": 0.74
+                        },
+                        "coherence_min": {
+                            "type": "number",
+                            "description": "semantic_coherence_check threshold (default 0.74)",
+                            "default": 0.74
+                        },
+                        "mint_derivatives": {
+                            "type": "boolean",
+                            "description": "Mint pattern:export_* blocks with scrubbed provlog (default true)",
+                            "default": true
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "description": "Max concepts when using prefixes (default 32)",
+                            "default": 32
+                        }
+                    }
+                }
+            },
+            {
+                "name": "mcp_engram_var_declare",
+                "description": "Declare a context variable handle (var:*) binding manifold concepts without unpacking full provlog. Returns metadata + bounded previews. Generalizes LinguisticDiscourseBundle to context_bundle_v1 with geometry_ref per slot.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "name": { "type": "string", "description": "Var name (becomes var:{name})" },
+                        "concepts": { "type": "array", "items": { "type": "string" } },
+                        "prefixes": { "type": "array", "items": { "type": "string" }, "description": "Auto-collect recent candidates" },
+                        "min_crs": { "type": "number", "default": 0.74 },
+                        "preview_chars": { "type": "integer", "default": 120 },
+                        "functor_metadata": { "type": "string", "default": "context_var" },
+                        "limit": { "type": "integer", "default": 32 }
+                    },
+                    "required": ["name"]
+                }
+            },
+            {
+                "name": "mcp_engram_var_query",
+                "description": "Query a var:* handle — modes: metadata (default), preview, relations, slots. Extends context window without read_concept on every bound concept.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "var": { "type": "string", "description": "var:name or name" },
+                        "mode": { "type": "string", "enum": ["metadata", "preview", "relations", "slots"], "default": "metadata" },
+                        "preview_chars": { "type": "integer", "default": 200 }
+                    },
+                    "required": ["var"]
+                }
+            },
+            {
+                "name": "mcp_engram_var_project",
+                "description": "Project/transform a context var: filter_crs, filter_prefix, merge_vars, relate_neighborhood, to_linguistic_bundle. Mint new var:* unless to_linguistic_bundle (returns bundle for mcp_linguistic_calculus).",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "source_var": { "type": "string" },
+                        "operation": {
+                            "type": "string",
+                            "enum": ["filter_crs", "filter_prefix", "merge_vars", "relate_neighborhood", "to_linguistic_bundle"]
+                        },
+                        "target_name": { "type": "string", "description": "New var name for projected result" },
+                        "min_crs": { "type": "number" },
+                        "prefix": { "type": "string" },
+                        "vars": { "type": "array", "items": { "type": "string" } },
+                        "seed": { "type": "string" },
+                        "k": { "type": "integer", "default": 8 }
+                    },
+                    "required": ["source_var", "operation"]
+                }
+            },
+            {
+                "name": "mcp_engram_leg_corpus",
+                "description": "Build native .leg training corpus as leg_block_pack_v1 batch (three-channel). Selects ZEDOS_TRAINING/PRAXIS/pattern:export CRS>=min_crs, runs scrub_export + homotopy verify. Actions: build (default), verify (re-check packs), sample (candidates only).",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "action": { "type": "string", "enum": ["build", "verify", "sample"], "default": "build" },
+                        "min_crs": { "type": "number", "default": 0.85 },
+                        "coherence_min": { "type": "number", "default": 0.74 },
+                        "limit": { "type": "integer", "default": 64 },
+                        "mint_derivatives": { "type": "boolean", "default": false },
+                        "persist_manifest": { "type": "boolean", "default": true },
+                        "corpus_concept": { "type": "string", "default": "training:corpus:leg_geometry_v1" },
+                        "packs": { "type": "array", "description": "For verify action — leg_block_pack_v1 array" }
                     }
                 }
             },
@@ -1891,6 +2139,21 @@ fn relate_realized_by(lock: &mut crate::store::StoreHandle, emitted: &str, proce
     }
 }
 
+// ── spatial_context normalization (WS2 locus precision) ───────────────────────
+
+fn normalize_spatial_context_input(raw: &str) -> Result<(String, Option<String>), Value> {
+    match crate::store::normalize_spatial_context(raw) {
+        Ok(n) => Ok((n.value, n.warning)),
+        Err(msg) => Err(json!({ "content": [{ "type": "text", "text": msg }], "isError": true })),
+    }
+}
+
+fn spatial_warning_suffix(warning: Option<String>) -> String {
+    warning
+        .map(|w| format!(" | ⚠ {w}"))
+        .unwrap_or_default()
+}
+
 // ── Shared helper for Item 1-style automatic goal linking (used by traces + Thought Tiles) ──
 
 fn resolve_goal_context_and_link(
@@ -1929,6 +2192,21 @@ fn resolve_goal_context_and_link(
     }
 
     (goal_ctx, auto_linked_to_primary, auto_linked_from_recent)
+}
+
+fn log_mcp_probe(store: &SharedStore, tool: &str, detail: &str) {
+    if let Ok(mut lock) = store.lock() {
+        lock.log_probe(tool, detail);
+    }
+}
+
+fn probe_short_concept(concept: &str) -> String {
+    let raw = concept.split_once("::").map_or(concept, |(_, r)| r);
+    if raw.chars().count() <= 56 {
+        raw.to_string()
+    } else {
+        format!("{}…", raw.chars().take(55).collect::<String>())
+    }
 }
 
 // ── Tool dispatch ─────────────────────────────────────────────────────────────
@@ -1990,6 +2268,7 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                         | "mcp_engram_goal_status"
                         | "mcp_engram_read_concept"
                         | "mcp_engram_context_for_edit"
+                        | "mcp_engram_evolution_at_locus"
                         | "mcp_engram_session_end"
                 );
 
@@ -2654,6 +2933,16 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                 } else {
                     ""
                 };
+                let q_short = if query.chars().count() > 48 {
+                    format!("{}…", query.chars().take(47).collect::<String>())
+                } else {
+                    query.clone()
+                };
+                log_mcp_probe(
+                    store,
+                    "recall",
+                    &format!("query={q_short} · scope={effective_scope} · hits=0"),
+                );
                 return json!({
                     "content": [{ "type": "text", "text": format!("No memories found. {}\n{}", meta, lean_hint.trim()) }]
                 });
@@ -2692,6 +2981,25 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
             }
 
             debug!("recall '{}' → {} results", query, results.len());
+            let top = results
+                .iter()
+                .take(3)
+                .map(|m| probe_short_concept(&m.concept))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let q_short = if query.chars().count() > 48 {
+                format!("{}…", query.chars().take(47).collect::<String>())
+            } else {
+                query.clone()
+            };
+            log_mcp_probe(
+                store,
+                "recall",
+                &format!(
+                    "query={q_short} · scope={effective_scope} · hits={} · top={top}",
+                    results.len()
+                ),
+            );
             json!({ "content": [{ "type": "text", "text": output.trim() }] })
         }
 
@@ -2710,6 +3018,7 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
             // Hot path upgrade (Tier 2 broader adoption): read_concept is the primary way to pull full high-value blocks.
             if let Some(block) = lock.fetch_block_high_priority(raw_concept) {
                 let full_text = engram_core::storage::read_provlog(&block);
+                lock.log_probe("read_concept", &format!("concept={}", probe_short_concept(raw_concept)));
                 json!({ "content": [{ "type": "text", "text": full_text }] })
             } else {
                 json!({ "content": [{ "type": "text", "text": format!("Error: Memory not found for '{}'. Did you type the concept name exactly?", concept) }], "isError": true })
@@ -3202,6 +3511,28 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                 }]
             })
         }
+
+        "mcp_engram_ack_edit_arc" => {
+            let skip = args.get("skip").and_then(|v| v.as_bool()).unwrap_or(true);
+            let note = args.get("note").and_then(|v| v.as_str());
+            let concepts: Option<Vec<String>> = args.get("concepts").and_then(|v| v.as_array()).map(|arr| {
+                arr.iter()
+                    .filter_map(|c| c.as_str().map(str::to_string))
+                    .collect()
+            });
+            let concept_refs = concepts.as_deref();
+            let payload = crate::edit_arc_gate::ack_edit_arc(concept_refs, skip, note);
+            if let Ok(mut lock) = store.lock() {
+                let detail = note.unwrap_or(if skip { "arc debt skipped" } else { "arc debt acked" });
+                lock.log_activity("ritual:edit_arc_gate", if skip { "skip" } else { "ack" }, Some(detail));
+            }
+            json!({
+                "content": [{
+                    "type": "text",
+                    "text": payload.to_string()
+                }]
+            })
+        }
         "mcp_engram_session_start" => {
             let intent = args["intent"].as_str().unwrap_or("").trim().to_string();
             if intent.is_empty() {
@@ -3286,6 +3617,11 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                 let _ = hlock.promote_tile_to_high_priority("ritual:wake_up_anchor");
                 let _ = hlock.promote_tile_to_high_priority("ritual:engram.working-memory");
                 let _ = hlock.promote_tile_to_high_priority("process:engram.ritual.wake-up");
+                let _ = hlock.promote_tile_to_high_priority(
+                    "process:engram.ritual.local-context-working-memory",
+                );
+                let _ = hlock.promote_tile_to_high_priority(crate::local_stratum::LOCAL_HOST_PROFILE);
+                let _ = hlock.promote_tile_to_high_priority(crate::local_stratum::LOCAL_HOST_MCP);
             });
 
             let queue_len = continuation
@@ -3295,6 +3631,7 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                 .map(|a| a.len())
                 .unwrap_or(0);
             let wake_gate = crate::wake_queue_gate::on_session_start(&session_key, queue_len);
+            let edit_arc_gate = crate::edit_arc_gate::on_session_start(&session_key);
             crate::session_lifecycle::on_mcp_session_start(&session_key, &intent);
 
             let bundle_tier = crate::wake_bundle::WakeBundleTier::from_env();
@@ -3314,10 +3651,21 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                 "readiness": readiness,
                 "continuation": continuation_out,
                 "wake_queue_gate": wake_gate,
+                "edit_arc_gate": edit_arc_gate,
             });
             if let Some(spatial_val) = spatial {
                 wake_packet["spatial"] = spatial_val;
             }
+            let intent_short = if intent.chars().count() > 72 {
+                format!("{}…", intent.chars().take(71).collect::<String>())
+            } else {
+                intent.clone()
+            };
+            log_mcp_probe(
+                store,
+                "session_start",
+                &format!("intent={intent_short} · session={session_key}"),
+            );
             let text = serde_json::to_string(&wake_packet).unwrap_or_else(|_| "{}".to_string());
             json!({
                 "content": [{
@@ -3339,6 +3687,7 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
 
             if minimal {
                 crate::wake_queue_gate::on_session_end();
+                crate::edit_arc_gate::on_session_end();
                 let mut lock = match store.lock() {
                     Ok(l) => l,
                     Err(p) => {
@@ -3365,11 +3714,16 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
             }
 
             let wake_debt = crate::wake_queue_gate::handoff_debt_note();
+            let arc_debt = crate::edit_arc_gate::handoff_debt_note();
             crate::wake_queue_gate::on_session_end();
+            crate::edit_arc_gate::on_session_end();
 
             let mut lock = store.lock().unwrap();
             if let Some(ref debt) = wake_debt {
                 lock.log_activity("ritual:wake_queue_gate", "session_end_debt", Some(debt));
+            }
+            if let Some(ref debt) = arc_debt {
+                lock.log_activity("ritual:edit_arc_gate", "session_end_debt", Some(debt));
             }
 
             // Calculate average CRS of concepts touched this session
@@ -3805,6 +4159,26 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                     }
 
                     let handoff_packet = lock.persist_session_handoff_latest(&summary, &key);
+                    let trace_concepts =
+                        lock.collect_program_trace_concepts_for_handoff(&summary, 8);
+                    let program_traces_var =
+                        crate::context_var::refresh_program_traces_var(&mut lock, &trace_concepts)
+                            .ok()
+                            .filter(|r| r.bound > 0)
+                            .map(|r| {
+                                serde_json::json!({
+                                    "var": r.var_concept,
+                                    "bound": r.bound,
+                                    "trace_concepts": trace_concepts,
+                                })
+                            });
+                    if let Some(ref pv) = program_traces_var {
+                        response.push_str(&format!(
+                            "\n  → Program traces var refreshed: `{}` ({} slots)",
+                            pv.get("var").and_then(|v| v.as_str()).unwrap_or("var:ctx_program_traces"),
+                            pv.get("bound").and_then(|v| v.as_u64()).unwrap_or(0)
+                        ));
+                    }
                     let handoff_concept = handoff_packet
                         .get("handoff_concept")
                         .and_then(|v| v.as_str())
@@ -3824,6 +4198,7 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                         "handoff": handoff_packet,
                         "next_wake_hint": next_wake_hint,
                         "compression_manifest": compression_manifest,
+                        "program_traces_var": program_traces_var,
                     });
                     let response_text =
                         serde_json::to_string_pretty(&response_json).unwrap_or(response);
@@ -3875,12 +4250,20 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                 .unwrap_or("")
                 .trim()
                 .to_string();
-            let spatial_ctx = args
+            let spatial_raw = args
                 .get("spatial_context")
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
                 .trim()
                 .to_string();
+            let (spatial_ctx, spatial_warning) = if spatial_raw.is_empty() {
+                (String::new(), None)
+            } else {
+                match normalize_spatial_context_input(&spatial_raw) {
+                    Ok(v) => v,
+                    Err(err_json) => return err_json,
+                }
+            };
             let prev = args
                 .get("prev_trace")
                 .and_then(|v| v.as_str())
@@ -4086,7 +4469,7 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                     } else {
                         format!(" | edited_at→{}", wired_loci.join(","))
                     };
-                    json!({ "content": [{ "type": "text", "text": format!("✓ Reasoning trace recorded: {} (ZEDOS_TRAINING 8-prop){}", trace_key, loci_note) }] })
+                    json!({ "content": [{ "type": "text", "text": format!("✓ Reasoning trace recorded: {} (ZEDOS_TRAINING 8-prop){}{}", trace_key, loci_note, spatial_warning_suffix(spatial_warning)) }] })
                 }
                 Err(e) => {
                     json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true })
@@ -4138,12 +4521,20 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                 .unwrap_or("")
                 .trim()
                 .to_string();
-            let spatial_ctx = args
+            let spatial_raw = args
                 .get("spatial_context")
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
                 .trim()
                 .to_string();
+            let (spatial_ctx, spatial_warning) = if spatial_raw.is_empty() {
+                (String::new(), None)
+            } else {
+                match normalize_spatial_context_input(&spatial_raw) {
+                    Ok(v) => v,
+                    Err(err_json) => return err_json,
+                }
+            };
             // Phase 1 completion: A/D/R triad parity for low-friction quick_trace (schema already declared; now wired in handler for full support + test data generation)
             let affirm = args
                 .get("affirm")
@@ -4330,7 +4721,7 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                     } else {
                         format!(" | edited_at→{}", wired_loci.join(","))
                     };
-                    json!({ "content": [{ "type": "text", "text": format!("✓ Quick trace recorded: {} (ZEDOS_TRAINING 8-prop){}", trace_key, loci_note) }] })
+                    json!({ "content": [{ "type": "text", "text": format!("✓ Quick trace recorded: {} (ZEDOS_TRAINING 8-prop){}{}", trace_key, loci_note, spatial_warning_suffix(spatial_warning)) }] })
                 }
                 Err(e) => {
                     json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true })
@@ -4851,6 +5242,223 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
             json!({ "content": [{ "type": "text", "text": output }] })
         }
 
+        // --- RPT v3 turn record ---
+        "mcp_engram_turn_record" => {
+            let user_utterance = args
+                .get("user_utterance")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            let assistant_output = args
+                .get("assistant_output")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            let human_forward = args
+                .get("human_forward")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            if user_utterance.is_empty() || assistant_output.is_empty() || human_forward.is_empty() {
+                return json!({
+                    "content": [{ "type": "text", "text": "Error: user_utterance, assistant_output, and human_forward are required." }],
+                    "isError": true
+                });
+            }
+            let tier = args
+                .get("tier")
+                .and_then(|v| v.as_str())
+                .unwrap_or("lean")
+                .trim()
+                .to_string();
+            let title = args
+                .get("title")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.trim().is_empty())
+                .map(|s| s.trim().to_string())
+                .unwrap_or_else(|| {
+                    human_forward.chars().take(72).collect::<String>()
+                });
+            let conv_arc = args
+                .get("conv_arc")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            let prev_turn = args
+                .get("prev_turn")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            let goal_ctx = args
+                .get("goal_context")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            let process_context = args
+                .get("process_context")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            let since_ts = args.get("since_ts").and_then(|v| v.as_u64()).unwrap_or_else(|| {
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_millis() as u64;
+                now.saturating_sub(600_000)
+            });
+
+            let mut payload = serde_json::json!({
+                "version": "response_tile_schema_v3",
+                "tier": tier,
+                "human_forward": human_forward,
+                "user_utterance": user_utterance,
+                "assistant_output": assistant_output,
+            });
+            if let Some(obj) = payload.as_object_mut() {
+                for (key, arg_key) in [
+                    ("agent_thesis", "agent_thesis"),
+                    ("user_intent", "user_intent"),
+                    ("outcome_status", "outcome_status"),
+                    ("conv_arc", "conv_arc"),
+                    ("prev_turn", "prev_turn"),
+                ] {
+                    if let Some(v) = args.get(arg_key).and_then(|v| v.as_str()) {
+                        if !v.trim().is_empty() {
+                            obj.insert(key.into(), serde_json::json!(v.trim()));
+                        }
+                    }
+                }
+                if !prev_turn.is_empty() {
+                    obj.insert("prev_turn".into(), serde_json::json!(prev_turn));
+                }
+                if !conv_arc.is_empty() {
+                    obj.insert("conv_arc".into(), serde_json::json!(conv_arc));
+                }
+                if let Some(oq) = args.get("open_questions").and_then(|v| v.as_array()) {
+                    if !oq.is_empty() {
+                        obj.insert("open_questions".into(), serde_json::json!(oq));
+                    }
+                }
+                if let Some(st) = args.get("spatial_touched").and_then(|v| v.as_array()) {
+                    if !st.is_empty() {
+                        obj.insert("spatial_touched".into(), serde_json::json!(st));
+                    }
+                }
+            }
+            payload = crate::tile_draft::enrich_turn_payload(payload, since_ts, 80);
+            if let Err(e) = crate::tile_draft::validate_response_tile_v3(&payload) {
+                return json!({
+                    "content": [{ "type": "text", "text": format!("Error: invalid turn payload: {}", e) }],
+                    "isError": true
+                });
+            }
+
+            let mut lock = store.lock().unwrap();
+            let (goal_ctx, auto_linked_to_primary, auto_linked_from_recent) =
+                resolve_goal_context_and_link(&mut lock, goal_ctx);
+
+            let short = title
+                .chars()
+                .take(48)
+                .collect::<String>()
+                .to_lowercase()
+                .chars()
+                .map(|c| {
+                    if c.is_alphanumeric() || c == '-' {
+                        c
+                    } else {
+                        '-'
+                    }
+                })
+                .collect::<String>();
+            let tile_key = format!("tile:agent_response_{}", short);
+
+            let mut tile_payload = format!(
+                "THOUGHT TILE\n\n**tile_type:** agent_response\n**title:** {}\n\n**payload:** {}\n",
+                title,
+                serde_json::to_string_pretty(&payload).unwrap_or_default()
+            );
+            if !goal_ctx.is_empty() {
+                tile_payload.push_str(&format!("\n**goal_context:** {}\n", goal_ctx));
+                if auto_linked_to_primary {
+                    tile_payload.push_str("**auto_linked_to_primary:** true\n");
+                }
+                if auto_linked_from_recent {
+                    tile_payload.push_str("**auto_linked_from_recent_activity:** true\n");
+                }
+            }
+
+            let mut tile_block = lock.encode(&tile_payload);
+            tile_block.zedos_tag = engram_core::types::ZEDOS_EPISODIC;
+            tile_block.crs_score = 0.88;
+
+            match lock.store(&tile_key, tile_block) {
+                Ok(_) => {
+                    let hf_detail: String = human_forward.chars().take(120).collect();
+                    lock.log_activity(&tile_key, "turn", Some(&hf_detail));
+                    if !goal_ctx.is_empty() {
+                        let _ = lock.relate(&tile_key, &goal_ctx, "serves");
+                    }
+                    let pt = payload
+                        .get("prev_turn")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .trim()
+                        .to_string();
+                    if !pt.is_empty() {
+                        let _ = lock.relate(&pt, &tile_key, "next_in_turn");
+                        let _ = lock.relate(&tile_key, &pt, "prev_in_turn");
+                    }
+                    if let Some(traces) = payload.get("trace_chain").and_then(|v| v.as_array()) {
+                        for t in traces {
+                            if let Some(tc) = t.as_str() {
+                                if tc.starts_with("trace:") {
+                                    let _ = lock.relate(&tile_key, tc, "compresses_chain_from");
+                                }
+                            }
+                        }
+                    }
+                    let ca = payload
+                        .get("conv_arc")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .trim()
+                        .to_string();
+                    if !ca.is_empty() {
+                        let _ = lock.relate(&tile_key, &ca, "part_of");
+                    }
+                    relate_realized_by(&mut lock, &tile_key, &process_context);
+                    let _ = lock.promote_tile_to_high_priority(&tile_key);
+                    if auto_linked_to_primary || !goal_ctx.is_empty() {
+                        lock.mark_ki_rebake_needed();
+                    }
+                    let trace_n = payload
+                        .get("trace_chain")
+                        .and_then(|v| v.as_array())
+                        .map(|a| a.len())
+                        .unwrap_or(0);
+                    json!({
+                        "content": [{ "type": "text", "text": format!(
+                            "✓ Turn recorded: {} (RPT v3 {})\n  traces_linked: {}\n  activity_window: {:?}",
+                            tile_key,
+                            payload.get("tier").and_then(|v| v.as_str()).unwrap_or("lean"),
+                            trace_n,
+                            payload.get("activity_window"),
+                        ) }]
+                    })
+                }
+                Err(e) => {
+                    json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true })
+                }
+            }
+        }
         // --- Thought Tile handlers (Item 2) ---
         "mcp_engram_thought_tile_create" => {
             let tile_type = args
@@ -4899,6 +5507,14 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                 if let Err(e) = crate::tile_draft::validate_verified_sequence_v0(&payload) {
                     return json!({
                         "content": [{ "type": "text", "text": format!("Error: invalid verified_sequence payload: {}", e) }],
+                        "isError": true
+                    });
+                }
+            }
+            if tile_type == "agent_response" {
+                if let Err(e) = crate::tile_draft::validate_response_tile_v3(&payload) {
+                    return json!({
+                        "content": [{ "type": "text", "text": format!("Error: invalid agent_response payload: {}", e) }],
                         "isError": true
                     });
                 }
@@ -4995,6 +5611,7 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                 "html_visualization" => engram_core::types::ZEDOS_DECLARATIVE,
                 "verified_sequence" => engram_core::types::ZEDOS_PRAXIS,
                 "chain_summary" => engram_core::types::ZEDOS_OPERATIONAL,
+                "agent_response" => engram_core::types::ZEDOS_EPISODIC,
                 _ => engram_core::types::ZEDOS_OPERATIONAL, // research, state_machine, tabular, etc.
             };
             tile_block.crs_score = 0.88;
@@ -5333,15 +5950,15 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                     "isError": true
                 });
             }
-            let gate = crate::wake_queue_gate::check_context_for_edit(path);
+            let wake_gate = crate::wake_queue_gate::check_context_for_edit(path);
 
-            if !gate.allow {
-                if gate.log_activity {
+            if !wake_gate.allow {
+                if wake_gate.log_activity {
                     if let Ok(mut lock) = store.lock() {
                         lock.log_activity("ritual:wake_queue_gate", "blocked_edit", Some(path));
                     }
                 }
-                if gate.scar_eligible {
+                if wake_gate.scar_eligible {
                     if let Ok(mut lock) = store.lock() {
                         let ts = std::time::SystemTime::now()
                             .duration_since(std::time::UNIX_EPOCH)
@@ -5358,9 +5975,46 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                         lock.log_activity("ritual:wake_queue_gate", "scar_minted", Some(&scar_key));
                     }
                 }
-                let block_json = gate
+                let block_json = wake_gate
                     .block_payload
                     .unwrap_or_else(|| json!({"error": "wake_queue_not_acked", "path": path}));
+                return json!({
+                    "content": [{
+                        "type": "text",
+                        "text": block_json.to_string()
+                    }],
+                    "isError": true
+                });
+            }
+
+            let arc_gate = crate::edit_arc_gate::check_context_for_edit(path);
+
+            if !arc_gate.allow {
+                if arc_gate.log_activity {
+                    if let Ok(mut lock) = store.lock() {
+                        lock.log_activity("ritual:edit_arc_gate", "blocked_edit", Some(path));
+                    }
+                }
+                if arc_gate.scar_eligible {
+                    if let Ok(mut lock) = store.lock() {
+                        let ts = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_secs();
+                        let scar_key = format!("scar:edit_arc_gate_{ts}");
+                        let text = format!(
+                            "SCAR: repeated context_for_edit without edit arc clear (hard gate). path={path}. Remediation: mcp_engram_update on __arc or mcp_engram_ack_edit_arc."
+                        );
+                        let mut block = lock.encode(&text);
+                        block.zedos_tag = engram_core::types::ZEDOS_PRAXIS;
+                        block.crs_score = 0.92;
+                        let _ = lock.store(&scar_key, block);
+                        lock.log_activity("ritual:edit_arc_gate", "scar_minted", Some(&scar_key));
+                    }
+                }
+                let block_json = arc_gate
+                    .block_payload
+                    .unwrap_or_else(|| json!({"error": "edit_arc_debt", "path": path}));
                 return json!({
                     "content": [{
                         "type": "text",
@@ -5379,10 +6033,15 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
 
             let mut payload = match store.lock() {
                 Ok(mut l) => {
-                    if gate.log_activity {
+                    if wake_gate.log_activity {
                         l.log_activity("ritual:wake_queue_gate", "unacked_edit", Some(path));
                     }
-                    l.context_for_edit(path, line_start, line_end, auto_ingest)
+                    if arc_gate.log_activity {
+                        l.log_activity("ritual:edit_arc_gate", "unacked_edit", Some(path));
+                    }
+                    let out = l.context_for_edit(path, line_start, line_end, auto_ingest);
+                    l.log_probe("context_for_edit", &format!("path={path}"));
+                    out
                 }
                 Err(p) => {
                     return json!({
@@ -5391,13 +6050,90 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                     })
                 }
             };
-            payload = crate::wake_queue_gate::inject_gate_warning(payload, &gate);
+            let _ = crate::edit_arc_gate::register_from_context(path, &payload);
+            payload = crate::wake_queue_gate::inject_gate_warning(payload, &wake_gate);
+            payload = crate::edit_arc_gate::inject_gate_warning(payload, &arc_gate);
             json!({
                 "content": [{
                     "type": "text",
                     "text": payload.to_string()
                 }]
             })
+        }
+
+        "mcp_engram_ingest_reference_frame" => {
+            match store.lock() {
+                Ok(mut lock) => {
+                    let payload = crate::linguistic_reference_frame::ingest_reference_frame(&mut lock);
+                    lock.log_probe("ingest_reference_frame", "ws5");
+                    json!({
+                        "content": [{
+                            "type": "text",
+                            "text": payload.to_string()
+                        }]
+                    })
+                }
+                Err(p) => json!({
+                    "content": [{ "type": "text", "text": format!("Error: store mutex poisoned: {}", p) }],
+                    "isError": true
+                }),
+            }
+        }
+
+        "mcp_engram_evolution_at_locus" => {
+            let path = args["path"].as_str().unwrap_or("").trim();
+            if path.is_empty() {
+                return json!({
+                    "content": [{
+                        "type": "text",
+                        "text": serde_json::json!({"error": "path is required"}).to_string()
+                    }],
+                    "isError": true
+                });
+            }
+            let line_start = args["line_start"].as_u64().map(|v| v as u32);
+            let line_end = args["line_end"].as_u64().map(|v| v as u32);
+            let preview_chars = args
+                .get("preview_chars")
+                .and_then(|v| v.as_u64())
+                .map(|v| v as usize)
+                .unwrap_or(crate::evolution_at_locus::DEFAULT_PREVIEW_CHARS);
+            let trace_depth = args
+                .get("trace_depth")
+                .and_then(|v| v.as_u64())
+                .map(|v| v as usize)
+                .unwrap_or(crate::evolution_at_locus::DEFAULT_TRACE_DEPTH);
+            let auto_ingest = args
+                .get("auto_ingest")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(true);
+
+            match store.lock() {
+                Ok(mut lock) => {
+                    let payload = crate::evolution_at_locus::build_evolution_at_locus(
+                        &mut lock,
+                        crate::evolution_at_locus::EvolutionAtLocusParams {
+                            path,
+                            line_start,
+                            line_end,
+                            preview_chars,
+                            trace_depth,
+                            auto_ingest,
+                        },
+                    );
+                    lock.log_probe("evolution_at_locus", &format!("path={path}"));
+                    json!({
+                        "content": [{
+                            "type": "text",
+                            "text": payload.to_string()
+                        }]
+                    })
+                }
+                Err(p) => json!({
+                    "content": [{ "type": "text", "text": format!("Error: store mutex poisoned: {}", p) }],
+                    "isError": true
+                }),
+            }
         }
 
         "mcp_engram_context_for_file" => {
@@ -5659,10 +6395,30 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
             if concept.is_empty() || new_text.is_empty() {
                 return json!({ "content": [{ "type": "text", "text": "Error: concept and new_text are required." }], "isError": true });
             }
-            match store.lock().unwrap().update(&concept, &new_text) {
-                Ok(status) => {
+            let provlog_mode = args
+                .get("provlog_mode")
+                .and_then(|v| v.as_str())
+                .and_then(engram_core::storage::parse_provlog_splice_mode);
+            match store
+                .lock()
+                .unwrap()
+                .update_with_provlog_mode(&concept, &new_text, provlog_mode)
+            {
+                Ok(result) => {
+                    if concept.ends_with("__arc") {
+                        crate::edit_arc_gate::on_arc_updated(&concept);
+                        if let Ok(mut lock) = store.lock() {
+                            lock.log_activity("ritual:edit_arc_gate", "arc_updated", Some(&concept));
+                        }
+                    }
                     info!("updated: {concept}");
-                    json!({ "content": [{ "type": "text", "text": format!("✓ Updated memory '{concept}': {status}") }] })
+                    let mut payload = json!({
+                        "content": [{ "type": "text", "text": format!("✓ Updated memory '{concept}': {}", result.message) }],
+                    });
+                    if let Some(coh) = result.provlog_coherence {
+                        payload["provlog_coherence"] = json!(coh);
+                    }
+                    payload
                 }
                 Err(e) => {
                     json!({ "content": [{ "type": "text", "text": format!("Error updating '{concept}': {e}") }], "isError": true })
@@ -5881,6 +6637,15 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
         }
 
         "mcp_engram_export" => {
+            if crate::profile::EngramProfile::from_env() == crate::profile::EngramProfile::Agent {
+                return json!({
+                    "content": [{
+                        "type": "text",
+                        "text": "Export blocked in agent profile — raw JSON export degrades q/p geometry and violates sovereignty. Use mcp_engram_scrub_export for leg_block_pack_v1 training export."
+                    }],
+                    "isError": true
+                });
+            }
             let min_crs = args["min_crs"].as_f64().unwrap_or(0.0) as f32;
             let mut lock = store.lock().unwrap();
             let concepts = lock.list();
@@ -5909,6 +6674,284 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
             let json_str = serde_json::to_string_pretty(&exported).unwrap_or_default();
             info!("export: {} memories", count);
             json!({ "content": [{ "type": "text", "text": format!("Exported {} memories:\n```json\n{}\n```", count, json_str) }] })
+        }
+
+        "mcp_engram_scrub_export" => {
+            let min_crs = args["min_crs"].as_f64().unwrap_or(0.74) as f32;
+            let coherence_min = args["coherence_min"]
+                .as_f64()
+                .unwrap_or(crate::scrub_export::DEFAULT_COHERENCE_MIN as f64) as f32;
+            let mint_derivatives = args["mint_derivatives"].as_bool().unwrap_or(true);
+            let limit = args["limit"].as_u64().unwrap_or(32) as usize;
+
+            let mut concepts: Vec<String> = args["concepts"]
+                .as_array()
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|v| v.as_str().map(|s| s.trim().to_string()))
+                        .filter(|s| !s.is_empty())
+                        .collect()
+                })
+                .unwrap_or_default();
+
+            if let Some(prefixes) = args["prefixes"].as_array() {
+                let prefix_refs: Vec<&str> =
+                    prefixes.iter().filter_map(|v| v.as_str()).collect();
+                if !prefix_refs.is_empty() {
+                    let lock = store.lock().unwrap();
+                    let candidates = crate::scrub_export::candidates_by_prefix(
+                        &lock,
+                        &prefix_refs,
+                        limit.saturating_sub(concepts.len()),
+                    );
+                    drop(lock);
+                    for c in candidates {
+                        if !concepts.contains(&c) {
+                            concepts.push(c);
+                        }
+                    }
+                }
+            }
+
+            if concepts.is_empty() {
+                return json!({
+                    "content": [{ "type": "text", "text": "Error: provide concepts and/or prefixes." }],
+                    "isError": true
+                });
+            }
+
+            let mut lock = store.lock().unwrap();
+            let result = crate::scrub_export::scrub_export_concepts(
+                &mut lock,
+                &concepts,
+                min_crs,
+                coherence_min,
+                mint_derivatives,
+            );
+            drop(lock);
+
+            let pack_n = result.packs.len();
+            let out = json!({
+                "format": "leg_block_pack_v1",
+                "pack_count": pack_n,
+                "denied_count": result.denied.len(),
+                "failed_coherence_count": result.failed_coherence.len(),
+                "minted_derivatives": result.minted,
+                "packs": result.packs,
+                "denied": result.denied,
+                "failed_coherence": result.failed_coherence,
+            });
+            let json_str = serde_json::to_string_pretty(&out).unwrap_or_default();
+            info!(
+                "scrub_export: {} packs, {} denied, {} coherence_fail",
+                pack_n,
+                result.denied.len(),
+                result.failed_coherence.len()
+            );
+            json!({
+                "content": [{
+                    "type": "text",
+                    "text": format!(
+                        "Scrub export: {pack_n} leg_block_pack_v1 entries ({} denied, {} coherence_fail):\n```json\n{json_str}\n```",
+                        result.denied.len(),
+                        result.failed_coherence.len()
+                    )
+                }]
+            })
+        }
+
+        "mcp_engram_var_declare" => {
+            let name = args["name"].as_str().unwrap_or("").trim();
+            if name.is_empty() {
+                return json!({ "content": [{ "type": "text", "text": "Error: name required." }], "isError": true });
+            }
+            let concepts: Vec<String> = args["concepts"]
+                .as_array()
+                .map(|a| a.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+                .unwrap_or_default();
+            let prefixes: Vec<String> = args["prefixes"]
+                .as_array()
+                .map(|a| a.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+                .unwrap_or_default();
+            let min_crs = args["min_crs"].as_f64().unwrap_or(0.74) as f32;
+            let preview_chars = args["preview_chars"].as_u64().unwrap_or(120) as usize;
+            let functor = args["functor_metadata"].as_str().unwrap_or("context_var");
+            let limit = args["limit"].as_u64().unwrap_or(32) as usize;
+            let mut lock = store.lock().unwrap();
+            match crate::context_var::var_declare(
+                &mut lock,
+                name,
+                &concepts,
+                &prefixes,
+                min_crs,
+                preview_chars,
+                functor,
+                limit,
+            ) {
+                Ok(r) => {
+                    let body = json!({
+                        "var": r.var_concept,
+                        "bound": r.bound,
+                        "skipped": r.skipped,
+                        "bundle": crate::context_var::bundle_to_json(&r.bundle),
+                    });
+                    let s = serde_json::to_string_pretty(&body).unwrap_or_default();
+                    json!({ "content": [{ "type": "text", "text": format!("✓ Declared {} ({} slots):\n```json\n{s}\n```", r.var_concept, r.bound) }] })
+                }
+                Err(e) => json!({ "content": [{ "type": "text", "text": format!("Error: {e}") }], "isError": true }),
+            }
+        }
+
+        "mcp_engram_var_query" => {
+            let var_name = args["var"].as_str().unwrap_or("").trim();
+            if var_name.is_empty() {
+                return json!({ "content": [{ "type": "text", "text": "Error: var required." }], "isError": true });
+            }
+            let mode = args["mode"].as_str().unwrap_or("metadata");
+            let preview_chars = args["preview_chars"].as_u64().unwrap_or(200) as usize;
+            let lock = store.lock().unwrap();
+            match crate::context_var::var_query(&lock, var_name, mode, preview_chars) {
+                Ok(v) => {
+                    let s = serde_json::to_string_pretty(&v).unwrap_or_default();
+                    json!({ "content": [{ "type": "text", "text": format!("var_query ({mode}):\n```json\n{s}\n```") }] })
+                }
+                Err(e) => json!({ "content": [{ "type": "text", "text": format!("Error: {e}") }], "isError": true }),
+            }
+        }
+
+        "mcp_engram_var_project" => {
+            let source = args["source_var"].as_str().unwrap_or("").trim();
+            let operation = args["operation"].as_str().unwrap_or("").trim();
+            if source.is_empty() || operation.is_empty() {
+                return json!({ "content": [{ "type": "text", "text": "Error: source_var and operation required." }], "isError": true });
+            }
+            if operation == "to_linguistic_bundle" {
+                let lock = store.lock().unwrap();
+                let bundle = match crate::context_var::load_bundle(&lock, source) {
+                    Some(b) => b,
+                    None => return json!({ "content": [{ "type": "text", "text": format!("Error: var not found: {source}") }], "isError": true }),
+                };
+                let ling = crate::context_var::context_bundle_to_linguistic(&bundle);
+                let out = json!({
+                    "operation": "to_linguistic_bundle",
+                    "source_var": crate::context_var::normalize_var_name(source),
+                    "linguistic_bundle": {
+                        "bundle_id": ling.bundle_id,
+                        "functor_metadata": ling.functor_metadata,
+                        "words": ling.words.iter().map(|w| json!({ "text": w.text, "coeff": w.coeff })).collect::<Vec<_>>(),
+                        "patches": ling.patches.iter().map(|p| json!({ "patch_id": p.patch_id, "morphism": p.morphism })).collect::<Vec<_>>(),
+                    },
+                    "hint": "Pass linguistic_bundle to mcp_linguistic_calculus"
+                });
+                let s = serde_json::to_string_pretty(&out).unwrap_or_default();
+                return json!({ "content": [{ "type": "text", "text": format!("✓ Projected to linguistic bundle:\n```json\n{s}\n```") }] });
+            }
+            let proj_args = json!({
+                "min_crs": args.get("min_crs"),
+                "prefix": args.get("prefix"),
+                "vars": args.get("vars"),
+                "seed": args.get("seed"),
+                "k": args.get("k"),
+            });
+            let target = args["target_name"].as_str();
+            let mut lock = store.lock().unwrap();
+            match crate::context_var::var_project(&mut lock, source, operation, &proj_args, target) {
+                Ok(r) => {
+                    let body = json!({
+                        "var": r.var_concept,
+                        "operation": r.operation,
+                        "slot_count": r.bundle.slots.len(),
+                        "bundle": crate::context_var::bundle_to_json(&r.bundle),
+                    });
+                    let s = serde_json::to_string_pretty(&body).unwrap_or_default();
+                    json!({ "content": [{ "type": "text", "text": format!("✓ Projected → {}:\n```json\n{s}\n```", r.var_concept) }] })
+                }
+                Err(e) => json!({ "content": [{ "type": "text", "text": format!("Error: {e}") }], "isError": true }),
+            }
+        }
+
+        "mcp_engram_leg_corpus" => {
+            let action = args["action"].as_str().unwrap_or("build");
+            let min_crs = args["min_crs"].as_f64().unwrap_or(0.85) as f32;
+            let coherence_min = args["coherence_min"].as_f64().unwrap_or(0.74) as f32;
+            let limit = args["limit"].as_u64().unwrap_or(64) as usize;
+            let mint_derivatives = args["mint_derivatives"].as_bool().unwrap_or(false);
+            let persist = args["persist_manifest"].as_bool().unwrap_or(true);
+            let corpus_concept = args["corpus_concept"]
+                .as_str()
+                .unwrap_or(crate::leg_corpus::DEFAULT_CORPUS_CONCEPT);
+
+            if action == "sample" {
+                let lock = store.lock().unwrap();
+                let cfg = crate::leg_corpus::CorpusConfig {
+                    min_crs,
+                    coherence_min,
+                    limit,
+                    mint_derivatives,
+                };
+                let candidates = crate::leg_corpus::collect_corpus_candidates(&lock, &cfg);
+                let out = json!({ "action": "sample", "candidate_count": candidates.len(), "candidates": candidates });
+                let s = serde_json::to_string_pretty(&out).unwrap_or_default();
+                return json!({ "content": [{ "type": "text", "text": format!("leg_corpus sample:\n```json\n{s}\n```") }] });
+            }
+
+            if action == "verify" {
+                let packs: Vec<Value> = args["packs"]
+                    .as_array()
+                    .map(|a| a.clone())
+                    .unwrap_or_default();
+                if packs.is_empty() {
+                    return json!({ "content": [{ "type": "text", "text": "Error: packs array required for verify." }], "isError": true });
+                }
+                let homotopy = crate::leg_corpus::verify_pack_homotopy(&packs, coherence_min);
+                let out = json!({
+                    "action": "verify",
+                    "homotopy": {
+                        "checked": homotopy.checked,
+                        "passed": homotopy.passed,
+                        "mean_coherence": homotopy.mean_coherence,
+                        "min_coherence": homotopy.min_coherence,
+                        "failed": homotopy.failed,
+                    },
+                });
+                let s = serde_json::to_string_pretty(&out).unwrap_or_default();
+                return json!({ "content": [{ "type": "text", "text": format!("leg_corpus verify:\n```json\n{s}\n```") }] });
+            }
+
+            let cfg = crate::leg_corpus::CorpusConfig {
+                min_crs,
+                coherence_min,
+                limit,
+                mint_derivatives,
+            };
+            let mut lock = store.lock().unwrap();
+            let result = crate::leg_corpus::build_training_corpus(
+                &mut lock,
+                &cfg,
+                corpus_concept,
+                persist,
+            );
+            let out = crate::leg_corpus::corpus_response(&result);
+            let s = serde_json::to_string_pretty(&out).unwrap_or_default();
+            info!(
+                "leg_corpus: {} packs from {} candidates, homotopy {}/{}",
+                result.export.packs.len(),
+                result.candidates,
+                result.homotopy.passed,
+                result.homotopy.checked
+            );
+            json!({
+                "content": [{
+                    "type": "text",
+                    "text": format!(
+                        "leg_corpus build: {} packs (homotopy {}/{}, mean coh {:.3}):\n```json\n{s}\n```",
+                        result.export.packs.len(),
+                        result.homotopy.passed,
+                        result.homotopy.checked,
+                        result.homotopy.mean_coherence
+                    )
+                }]
+            })
         }
 
         "mcp_engram_import" => {

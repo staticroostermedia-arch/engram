@@ -141,6 +141,140 @@ pub fn write_provlog(block: &mut HolographicBlock, text: &str) {
     block.payload[..len].copy_from_slice(&buf[..len]);
 }
 
+/// Max UTF-8 chars before Cap'n Proto framing risks payload overflow (~122KB body).
+pub const PROVLOG_MAX_CHARS: usize = 96_000;
+
+/// How `update()` merges new text into existing ProvLog.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProvlogSpliceMode {
+    /// Keep prior text + delimiter + new delta (etymology / edit arcs).
+    Append,
+    /// Replace entire provlog (AST structure refresh from source).
+    Replace,
+}
+
+/// Infer splice mode from concept id + payload shape.
+pub fn infer_provlog_splice_mode(concept: &str, new_text: &str) -> ProvlogSpliceMode {
+    if concept.ends_with("__arc") {
+        return ProvlogSpliceMode::Append;
+    }
+    let append_prefixes = [
+        "trace:",
+        "design:",
+        "progress:",
+        "scar:",
+        "tile:",
+        "var:",
+        "helper:",
+        "goal:",
+        "praxis:",
+        "pattern:",
+    ];
+    if append_prefixes.iter().any(|p| concept.starts_with(p)) {
+        return ProvlogSpliceMode::Append;
+    }
+    let is_ast_structure = (concept.contains("__fn__")
+        || concept.contains("__struct__")
+        || concept.contains("__impl__")
+        || concept.contains("__mod__")
+        || concept.contains("__enum__")
+        || concept.contains("__trait__"))
+        && !concept.ends_with("__arc");
+    if is_ast_structure && looks_like_source_snippet(new_text) {
+        return ProvlogSpliceMode::Replace;
+    }
+    ProvlogSpliceMode::Append
+}
+
+fn looks_like_source_snippet(text: &str) -> bool {
+    let t = text.trim();
+    if t.is_empty() {
+        return false;
+    }
+    t.contains("fn ")
+        || t.contains("pub fn")
+        || t.starts_with("impl ")
+        || t.starts_with("struct ")
+        || t.starts_with("enum ")
+        || t.starts_with("mod ")
+        || t.starts_with("trait ")
+        || (t.contains('{') && t.lines().count() >= 2)
+}
+
+/// Merge existing provlog with update text; cap length for payload safety.
+pub fn splice_provlog(existing: &str, new_text: &str, mode: ProvlogSpliceMode) -> String {
+    let out = match mode {
+        ProvlogSpliceMode::Replace => new_text.to_string(),
+        ProvlogSpliceMode::Append => {
+            let old = existing.trim();
+            let delta = new_text.trim();
+            if old.is_empty() {
+                delta.to_string()
+            } else if delta.is_empty() {
+                old.to_string()
+            } else {
+                let ts = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs())
+                    .unwrap_or(0);
+                format!("{old}\n\n--- update @ {ts} ---\n{delta}")
+            }
+        }
+    };
+    cap_provlog_chars(&out)
+}
+
+/// Truncate from the front when provlog exceeds safe payload size.
+pub fn cap_provlog_chars(text: &str) -> String {
+    let n = text.chars().count();
+    if n <= PROVLOG_MAX_CHARS {
+        return text.to_string();
+    }
+    let skip = n.saturating_sub(PROVLOG_MAX_CHARS - 64);
+    let tail: String = text.chars().skip(skip).collect();
+    format!("[provlog truncated — {skip} chars removed from head]\n\n{tail}")
+}
+
+pub fn parse_provlog_splice_mode(s: &str) -> Option<ProvlogSpliceMode> {
+    match s.trim().to_ascii_lowercase().as_str() {
+        "append" => Some(ProvlogSpliceMode::Append),
+        "replace" => Some(ProvlogSpliceMode::Replace),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod provlog_splice_tests {
+    use super::*;
+
+    #[test]
+    fn infer_arc_append() {
+        assert_eq!(
+            infer_provlog_splice_mode("mcp__fn__update__arc", "delta"),
+            ProvlogSpliceMode::Append
+        );
+    }
+
+    #[test]
+    fn infer_ast_replace_on_source() {
+        assert_eq!(
+            infer_provlog_splice_mode(
+                "store__fn__update",
+                "pub fn update() { Ok(()) }"
+            ),
+            ProvlogSpliceMode::Replace
+        );
+    }
+
+    #[test]
+    fn splice_append_preserves_prior() {
+        let s = splice_provlog("line one", "line two", ProvlogSpliceMode::Append);
+        assert!(s.contains("line one"));
+        assert!(s.contains("line two"));
+        assert!(s.contains("--- update @"));
+    }
+}
+
 // ── Async I/O prototype (speed-up phase 2, 2026-05-28) ─────────────────────
 // Non-breaking wrappers using tokio::spawn_blocking around the existing
 // O_DIRECT sync implementations. This moves blocking storage work off the

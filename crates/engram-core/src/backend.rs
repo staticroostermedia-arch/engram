@@ -244,13 +244,10 @@ pub trait VsaBackend: Send + Sync {
         existing.l2_norm_residual = new_block.l2_norm_residual;
         existing.residual_dims_used = new_block.residual_dims_used;
 
-        // Update ProvLog payload to the latest text (most recent wins for readability)
-        let text_bytes = new_text.as_bytes();
-        let copy_len = text_bytes.len().min(existing.payload.len());
-        existing.payload[..copy_len].copy_from_slice(&text_bytes[..copy_len]);
-        if copy_len < existing.payload.len() {
-            existing.payload[copy_len..].fill(0);
-        }
+        let existing_provlog = crate::storage::read_provlog(&existing);
+        let mode = crate::storage::infer_provlog_splice_mode(concept, new_text);
+        let spliced = crate::storage::splice_provlog(&existing_provlog, new_text, mode);
+        crate::storage::write_provlog(&mut existing, &spliced);
 
         self.store(concept, existing)
     }

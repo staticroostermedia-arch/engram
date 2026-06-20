@@ -9,6 +9,36 @@ use serde_json::{json, Value};
 use std::collections::HashSet;
 
 pub const SESSION_HANDOFF_LATEST: &str = "helper:session_handoff_latest";
+pub const EXECUTION_MAP_TILE_CONTEXT_EXTENSION: &str =
+    "tile:formal_spec_program--context-extension---native-leg-training";
+pub const EXECUTION_MAP_TILE_CODE_ATLAS_CONTINUITY: &str =
+    "tile:formal_spec_program--code-atlas-continuity-v2";
+pub const PARALLEL_PROGRAM_PROCESS: &str = "process:engram.harness.parallel-program-orchestration";
+
+/// Resolve execution_map formal_spec tile from orchestrator session intent.
+pub fn execution_map_tile_for_intent(intent: &str) -> Option<&'static str> {
+    let low = intent.to_ascii_lowercase();
+    if low.contains("code-atlas-continuity")
+        || low.contains("code_atlas_continuity")
+        || low.contains("atlas-continuity-v2")
+    {
+        return Some(EXECUTION_MAP_TILE_CODE_ATLAS_CONTINUITY);
+    }
+    if low.contains("context-extension") || low.contains("context-extension-training") {
+        return Some(EXECUTION_MAP_TILE_CONTEXT_EXTENSION);
+    }
+    None
+}
+
+/// Most recent chain_summary tile from access index (bounded scan).
+pub fn latest_chain_summary_concept(store: &StoreHandle) -> Option<String> {
+    store
+        .access_index
+        .recent(200)
+        .into_iter()
+        .find(|(c, _)| c.starts_with("tile:chain_summary_"))
+        .map(|(c, _)| c)
+}
 
 /// Extract JSON object embedded in SESSION HANDOFF PACKET body text.
 pub fn parse_handoff_packet_json(body: &str) -> Option<Value> {
@@ -102,6 +132,9 @@ pub fn infer_task_type(
     }
     if let Some(intent) = session_intent {
         let low = intent.to_ascii_lowercase();
+        if low.contains("program:") || low.contains("orchestrator") {
+            return "orchestrator";
+        }
         if low.contains("meta")
             || low.contains("evolution")
             || low.contains("substrate")
@@ -303,6 +336,36 @@ pub fn build_jit_deformation_framework(task_type: &str, primary_goal: Option<&st
                 "mandatory": ["mcp_engram_quick_trace"],
                 "jit_palette": ["mcp_engram_verify_behavior", "mcp_engram_scar"],
                 "construct": "trace falsifiability; scar immediately on second failure"
+            }
+        ]),
+        "orchestrator" => json!([
+            {
+                "phase": "rehydrate_program",
+                "when": "program: or orchestrator intent at wake",
+                "mandatory": ["mcp_engram_read_concept"],
+                "jit_palette": ["mcp_engram_update", "mcp_engram_process_metrics"],
+                "construct": "read execution_map_v1 tile payload; parse track statuses; update via update only"
+            },
+            {
+                "phase": "delegate",
+                "when": "track pending and deps satisfied",
+                "mandatory": ["mcp_engram_quick_trace"],
+                "jit_palette": ["mcp_engram_thought_tile_create"],
+                "construct": "launch narrow sub-agent per track; harvest relay tile; max 4 parallel workers"
+            },
+            {
+                "phase": "turn_record",
+                "when": "orchestrator tick completes substantive work",
+                "mandatory": [],
+                "jit_palette": ["mcp_engram_turn_record", "mcp_engram_session_end"],
+                "construct": "turn_record(human_forward=thesis) + session_end(prepare_compression=true) for chain_summary"
+            },
+            {
+                "phase": "verify",
+                "when": "all tracks done",
+                "mandatory": ["mcp_engram_verify_manifold_integrity"],
+                "jit_palette": ["mcp_engram_scrub_export"],
+                "construct": "mint chain_summary tile; scrub_export high-CRS traces/tiles for training corpus"
             }
         ]),
         _ => json!([
@@ -509,6 +572,20 @@ pub fn build_suggested_actions(
         );
     }
 
+    if crate::local_stratum::enabled()
+        && store
+            .fetch_block_high_priority(crate::local_stratum::LOCAL_HOST_PROFILE)
+            .is_some()
+    {
+        push_action(
+            &mut actions,
+            "mcp_engram_read_concept",
+            json!({ "concept": crate::local_stratum::LOCAL_HOST_PROFILE }),
+            "local context stratum — sovereign host profile (previews in session_start.local_stratum)",
+            2,
+        );
+    }
+
     if let Some(block) = store.fetch_block_high_priority(SESSION_HANDOFF_LATEST) {
         let text = storage::read_provlog(&block);
         if let Some(packet) = parse_handoff_packet_json(&text) {
@@ -572,6 +649,52 @@ pub fn build_suggested_actions(
                 "primary goal from marker",
                 2,
             );
+        }
+    }
+
+    // Orchestrator program wake — front execution map + parallel program process.
+    if let Some(intent) = session_intent {
+        let low = intent.to_ascii_lowercase();
+        if low.contains("program:") || low.contains("orchestrator") {
+            if let Some(tile) = execution_map_tile_for_intent(intent) {
+                push_action(
+                    &mut actions,
+                    "mcp_engram_read_concept",
+                    json!({ "concept": tile }),
+                    "execution_map_v1 formal_spec — parse tracks/steps before delegating workers",
+                    1,
+                );
+            }
+            push_action(
+                &mut actions,
+                "mcp_engram_read_concept",
+                json!({ "concept": PARALLEL_PROGRAM_PROCESS }),
+                "parallel program orchestration process — worker_loop + update_contract",
+                2,
+            );
+            push_jit_action(
+                &mut actions,
+                "mcp_engram_quick_trace",
+                json!({
+                    "decision": "orchestrator_tick",
+                    "why": "<track status delta>",
+                    "goal_context": primary_goal,
+                    "process_context": PARALLEL_PROGRAM_PROCESS,
+                }),
+                "orchestrator tick trace — chain from prior orchestrator trace",
+                5,
+                true,
+                Some("orchestrator task_type"),
+            );
+            if let Some(chain_tile) = latest_chain_summary_concept(store) {
+                push_action(
+                    &mut actions,
+                    "mcp_engram_read_concept",
+                    json!({ "concept": chain_tile }),
+                    "chain_summary distillate — compressed prior trace/session chain",
+                    6,
+                );
+            }
         }
     }
 
@@ -665,6 +788,74 @@ pub fn build_suggested_actions(
             true,
             Some("meta_evolution task_type"),
         );
+    }
+
+    // Task-type tile delivery — formal_spec for orchestrator, agent_response turn_record ritual.
+    if task_type == "orchestrator" {
+        push_jit_action(
+            &mut actions,
+            "mcp_engram_scrub_export",
+            json!({
+                "concepts": [],
+                "prefixes": ["trace:", "tile:"],
+                "min_crs": 0.74,
+                "mint_derivatives": true,
+                "limit": 8
+            }),
+            "training corpus — scrub_export high-CRS traces/tiles after track milestones",
+            19,
+            true,
+            Some("orchestrator verify phase"),
+        );
+    }
+
+    if !matches!(task_type, "wake_only" | "recovery") {
+        let process_ctx = if task_type == "orchestrator" {
+            Some(PARALLEL_PROGRAM_PROCESS)
+        } else {
+            None
+        };
+        push_jit_action(
+            &mut actions,
+            "mcp_engram_turn_record",
+            json!({
+                "user_utterance": "<session user message>",
+                "assistant_output": "<your reply excerpt>",
+                "human_forward": "<one-sentence thesis>",
+                "goal_context": primary_goal,
+                "process_context": process_ctx,
+                "tier": if task_type == "orchestrator" { "full" } else { "lean" },
+                "outcome_status": "partial"
+            }),
+            "RPT v3 turn_record — extend context window without replaying full chat",
+            21,
+            true,
+            Some("turn_record ritual"),
+        );
+    }
+
+    if let Some(head) = handoff_packet
+        .as_ref()
+        .and_then(|p| p.get("trace_chain_head").and_then(|v| v.as_str()))
+    {
+        let chain_len = walk_trace_chain(store, head, 32).len();
+        if chain_len >= 8 {
+            let chain_reason = format!(
+                "trace chain depth {chain_len} — session_end mints chain_summary for continuation"
+            );
+            push_jit_action(
+                &mut actions,
+                "mcp_engram_session_end",
+                json!({
+                    "prepare_compression": true,
+                    "summary": "<decisions, files, open questions>"
+                }),
+                &chain_reason,
+                23,
+                true,
+                Some("chain_summary ritual"),
+            );
+        }
     }
 
     actions.sort_by_key(|a| a.get("priority").and_then(|p| p.as_u64()).unwrap_or(99));
@@ -892,8 +1083,47 @@ pub fn build_harness_bundle(store: &mut StoreHandle, session_intent: Option<&str
     })
 }
 
+/// Concrete post-edit `mcp_engram_update` palette from spatial loci (atlas v2.1).
+pub fn post_edit_update_actions(spatial_concepts: &[String]) -> Vec<Value> {
+    if spatial_concepts.is_empty() {
+        return vec![json!({
+            "tool": "mcp_engram_update",
+            "reason": "post-edit: append delta to {stem}__fn__*__arc — situated edit memory",
+            "priority": 2,
+            "args_hint": {
+                "concept": "{ast_concept}__arc",
+                "new_text": "delta: what changed and why"
+            },
+        })];
+    }
+
+    spatial_concepts
+        .iter()
+        .filter(|c| !c.ends_with("__arc"))
+        .take(4)
+        .map(|ast| {
+            let arc = crate::store::StoreHandle::arc_concept_name(ast);
+            json!({
+                "tool": "mcp_engram_update",
+                "reason": format!("post-edit: append delta to {arc}"),
+                "priority": 2,
+                "args": {
+                    "concept": arc,
+                    "new_text": "delta: what changed and why (replace with actual narrative)"
+                },
+                "ast_concept": ast,
+            })
+        })
+        .collect()
+}
+
 /// Per-file injection for context_for_edit.
-pub fn build_file_injection(store: &mut StoreHandle, file_path: &str, stem: &str) -> Value {
+pub fn build_file_injection(
+    store: &mut StoreHandle,
+    file_path: &str,
+    stem: &str,
+    spatial_concepts: &[String],
+) -> Value {
     let mut last_session_touched = false;
     let mut files_from_handoff: Vec<String> = Vec::new();
 
@@ -944,19 +1174,15 @@ pub fn build_file_injection(store: &mut StoreHandle, file_path: &str, stem: &str
         }));
     }
 
-    file_actions.push(json!({
-        "tool": "mcp_engram_update",
-        "reason": "post-edit: append delta to {stem}__fn__*__arc — situated edit memory, not source comments",
-        "priority": 2,
-        "args_hint": { "concept": "{ast_concept}__arc", "text": "delta: what changed and why" },
-    }));
+    file_actions.extend(post_edit_update_actions(spatial_concepts));
 
     json!({
         "last_session_touched": last_session_touched,
         "files_from_handoff": files_from_handoff,
         "open_scars": open_scars,
         "suggested_actions": file_actions,
-        "jit_construct": "Per-file actions are hints — construct quick_trace/update args from atlas traces_at_locus and current edit",
+        "post_edit_palette": post_edit_update_actions(spatial_concepts),
+        "jit_construct": "post_edit_palette has concrete args when spatial_items present; else use args_hint",
         "at_edit_mandatory": "quick_trace(spatial_context=file:line) then update(__arc) after substantive change",
         "code_atlas": "structure block = current AST; __arc block = evolving edit narrative (p-momentum)",
         "on_repeat_failure": "mcp_engram_scar immediately — RSI repulsion",
@@ -1130,6 +1356,65 @@ mod tests {
             infer_task_type(None, Some("substrate meta evolution"), false, 0),
             "meta_evolution"
         );
+    }
+
+    #[test]
+    fn test_infer_task_type_orchestrator_from_intent() {
+        assert_eq!(
+            infer_task_type(
+                None,
+                Some("program:context-extension-training-v1 orchestrator tick"),
+                false,
+                0
+            ),
+            "orchestrator"
+        );
+    }
+
+    #[test]
+    fn test_execution_map_tile_for_intent() {
+        assert_eq!(
+            execution_map_tile_for_intent("program:context-extension-training-v1"),
+            Some(EXECUTION_MAP_TILE_CONTEXT_EXTENSION)
+        );
+        assert_eq!(
+            execution_map_tile_for_intent("program:code-atlas-continuity-v2 orchestrator"),
+            Some(EXECUTION_MAP_TILE_CODE_ATLAS_CONTINUITY)
+        );
+    }
+
+    #[test]
+    fn test_post_edit_palette_concrete_args_when_spatial_present() {
+        let actions = post_edit_update_actions(&[
+            "store__fn__context_for_edit".to_string(),
+            "store__fn__update".to_string(),
+        ]);
+        assert_eq!(actions.len(), 2);
+        let args = actions[0].get("args").expect("concrete args");
+        assert_eq!(
+            args.get("concept").and_then(|v| v.as_str()),
+            Some("store__fn__context_for_edit__arc")
+        );
+        assert!(args.get("new_text").is_some());
+        assert!(actions[0].get("args_hint").is_none());
+    }
+
+    #[test]
+    fn test_post_edit_palette_hint_when_no_spatial() {
+        let actions = post_edit_update_actions(&[]);
+        assert_eq!(actions.len(), 1);
+        assert!(actions[0].get("args_hint").is_some());
+        assert!(actions[0].get("args").is_none());
+    }
+
+    #[test]
+    fn test_orchestrator_jit_framework() {
+        let fw = build_jit_deformation_framework("orchestrator", Some("goal:test"));
+        assert_eq!(fw.get("task_type").and_then(|v| v.as_str()), Some("orchestrator"));
+        assert!(fw
+            .get("phases")
+            .and_then(|v| v.as_array())
+            .is_some_and(|a| a.len() >= 3));
     }
 
     #[test]

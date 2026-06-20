@@ -112,8 +112,11 @@ impl CudaBackend {
         std::fs::create_dir_all(&path).ok();
 
         let gpu_available = Self::probe_cuda();
+        let hot_device = std::env::var("ENGRAM_GPU_HOT_DEVICE").unwrap_or_else(|_| "0".into());
         if gpu_available {
-            eprintln!("[engram-gpu] CUDA device detected.");
+            eprintln!(
+                "[engram-gpu] CUDA device detected (ENGRAM_GPU_HOT_DEVICE={hot_device})."
+            );
         } else if cfg!(target_os = "macos") {
             eprintln!("[engram-gpu] macOS detected — use MetalBackend for Apple Silicon GPU. CPU BVH active.");
         } else {
@@ -183,6 +186,20 @@ impl CudaBackend {
     /// Whether a CUDA-capable GPU was detected at startup.
     pub fn is_gpu_available(&self) -> bool {
         self.gpu_available
+    }
+
+    /// Indexed BVH leaf count when the background build has committed.
+    pub fn bvh_node_count(&self) -> usize {
+        if let Ok(guard) = self.bvh.read() {
+            guard.as_ref().map_or(0, |b| b.len())
+        } else {
+            0
+        }
+    }
+
+    /// Hot presentation stratum resident: CUDA up and BVH index ready.
+    pub fn gpu_hot_resident(&self) -> bool {
+        self.gpu_available && self.bvh_is_ready()
     }
 
     /// Kick off a background BVH build (on-demand after ENGRAM_DEFER_BVH=1).

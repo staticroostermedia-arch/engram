@@ -76,6 +76,8 @@ pub fn commit_minimal_session_end(
     }
 
     let handoff = lock.persist_session_handoff_latest(summary, &key);
+    let trace_concepts = lock.collect_program_trace_concepts_for_handoff(summary, 8);
+    let _ = crate::context_var::refresh_program_traces_var(lock, &trace_concepts);
     lock.mark_ki_rebake_needed();
     lock.invalidate_continuation_bundle_cache();
 
