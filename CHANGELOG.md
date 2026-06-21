@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0-beta.3] - 2026-06-20
+
 ### Added
 
 - **Code atlas continuity v2:** Situated edit memory — agents inherit codebase evolution at the locus without full-repo context. See [docs/CODE_ATLAS_CONTINUITY.md](docs/CODE_ATLAS_CONTINUITY.md).
@@ -29,6 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **`evolution_at_locus` empty loci** on large stores — auto-ingest + bounded spatial resolution.
 - **MCP hangs on `update` / `read_concept`** — eliminated full-store `list()` in NREM hot path and per-relate relation-index flush during bulk ingest.
+- **CI:** Clippy `-D warnings`, `cargo fmt`, parallel-safe coherence env tests.
 
 ## [0.7.0-beta.2] - 2026-06-15
 
