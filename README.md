@@ -71,7 +71,7 @@ Full comparison vs mem0/Letta/chroma: see [docs/GROK_BUILD_MEMORY.md](docs/GROK_
 git clone https://github.com/staticroostermedia-arch/engram.git
 cd engram
 cargo build -p engram-server
-target/debug/engram --version   # 0.7.0-beta.2
+target/debug/engram --version   # 0.7.0-beta.3
 ```
 
 **MCP config** (Grok Build / Cursor — use `scripts/engram-grok`):
@@ -141,14 +141,14 @@ flowchart LR
   H --> W
 ```
 
-## What's new ([Unreleased] — see CHANGELOG)
+## What's new in v0.7.0-beta.3
 
 - **Code atlas continuity v2:** situated edit memory at the locus — atlas v2.1, `evolution_at_locus`, hard wake gate, `post_edit_palette`, update coherence. [CODE_ATLAS_CONTINUITY.md](docs/CODE_ATLAS_CONTINUITY.md)
 - **Large-store perf:** bounded NREM + relation batching — wake and evolution recon in seconds on ~192k blocks.
 - **79 MCP tools** registered; lean default remains **8 essential**.
 - **LEG evolution panel:** `./scripts/leg --live` + `GET /api/code-atlas?evolution=1`.
 
-Prior release **v0.7.0-beta.2:** cold-start onboarding, JIT deformation, LEG Browser beta. Full history: [CHANGELOG.md](CHANGELOG.md).
+Full history: [CHANGELOG.md](CHANGELOG.md).
 
 ## Categorical Linguistic Calculus
 
