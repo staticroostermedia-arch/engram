@@ -345,13 +345,13 @@ impl CpuBackend {
 
 impl VsaBackend for CpuBackend {
     fn fetch(&self, concept: &str) -> Option<Box<[Complex32; 8192]>> {
-        let path = self.manifold_dir.join(format!("{}.leg", concept));
+        let path = crate::storage::resolve_leg_block_path(&self.manifold_dir, concept)?;
         let block = crate::storage::read_block(&path).ok()?;
         Some(Box::new(block.q))
     }
 
     fn fetch_block(&self, concept: &str) -> Option<Leg3Pointer> {
-        let path = self.manifold_dir.join(format!("{}.leg", concept));
+        let path = crate::storage::resolve_leg_block_path(&self.manifold_dir, concept)?;
         let block = crate::storage::read_block(&path).ok()?;
         Some(Leg3Pointer::from_boxed(block))
     }
@@ -369,7 +369,7 @@ impl VsaBackend for CpuBackend {
                 let mut scored: Vec<Memory> = candidates
                     .iter()
                     .filter_map(|concept| {
-                        let path = self.manifold_dir.join(format!("{}.leg", concept));
+                        let path = crate::storage::resolve_leg_block_path(&self.manifold_dir, concept)?;
                         let block = crate::storage::read_block(&path).ok()?;
                         Some(score_block(concept.clone(), query, &block, None))
                     })
@@ -397,7 +397,7 @@ impl VsaBackend for CpuBackend {
             .par_iter()
             .filter_map(|entry| {
                 let path = entry.path();
-                if path.extension().and_then(|e| e.to_str()) != Some("leg") {
+                if !crate::storage::is_leg_block_path(&path) {
                     return None;
                 }
                 let concept = path.file_stem()?.to_str()?.to_string();
@@ -437,7 +437,7 @@ impl VsaBackend for CpuBackend {
                     .flatten()
                     .filter_map(|e| {
                         let p = e.path();
-                        if p.extension().and_then(|x| x.to_str()) != Some("leg") {
+                        if !crate::storage::is_leg_block_path(&p) {
                             return None;
                         }
                         p.file_stem()?.to_str().map(|s| s.to_string())

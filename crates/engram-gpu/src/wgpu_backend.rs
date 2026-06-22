@@ -309,7 +309,7 @@ impl WgpuBackend {
         let mut db = Vec::new();
         for entry in entries.flatten() {
             let path = entry.path();
-            if path.extension().and_then(|e| e.to_str()) != Some("leg") {
+            if !engram_core::storage::is_leg_block_path(&path) {
                 continue;
             }
             let concept = path

@@ -408,7 +408,7 @@ impl MetalBackend {
             .take(MAX_GPU_BATCH)
             .filter_map(|entry| {
                 let path = entry.path();
-                if path.extension().and_then(|e| e.to_str()) != Some("leg") {
+                if !engram_core::storage::is_leg_block_path(&path) {
                     return None;
                 }
                 let concept = path.file_stem()?.to_str()?.to_string();

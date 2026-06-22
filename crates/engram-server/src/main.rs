@@ -353,7 +353,7 @@ fn maybe_defer_bvh_for_large_store(path: &str) {
     let count = std::fs::read_dir(&expanded)
         .map(|rd| {
             rd.filter_map(|e| e.ok())
-                .filter(|e| e.path().extension().and_then(|x| x.to_str()) == Some("leg"))
+                .filter(|e| engram_core::storage::is_leg_block_path(&e.path()))
                 .count()
         })
         .unwrap_or(0);

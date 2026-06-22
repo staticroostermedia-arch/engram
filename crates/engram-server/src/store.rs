@@ -2178,7 +2178,7 @@ impl StoreHandle {
         if let Ok(rd) = std::fs::read_dir(&self.path) {
             for e in rd.flatten() {
                 let path = e.path();
-                if path.extension().and_then(|x| x.to_str()) != Some("leg") {
+                if !engram_core::storage::is_leg_block_path(&path) {
                     continue;
                 }
                 let Ok(meta) = e.metadata() else { continue };
@@ -2339,7 +2339,7 @@ impl StoreHandle {
         std::fs::read_dir(&self.path)
             .map(|rd| {
                 rd.filter_map(|e| e.ok())
-                    .filter(|e| e.path().extension().and_then(|x| x.to_str()) == Some("leg"))
+                    .filter(|e| engram_core::storage::is_leg_block_path(&e.path()))
                     .count()
             })
             .unwrap_or(0)
@@ -2382,7 +2382,7 @@ impl StoreHandle {
         if let Ok(rd) = std::fs::read_dir(&self.path) {
             for e in rd.flatten() {
                 let path = e.path();
-                if path.extension().and_then(|x| x.to_str()) != Some("leg") {
+                if !engram_core::storage::is_leg_block_path(&path) {
                     continue;
                 }
                 let Some(name) = path.file_stem().and_then(|s| s.to_str()) else {

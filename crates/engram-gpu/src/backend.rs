@@ -231,7 +231,7 @@ impl CudaBackend {
         std::fs::read_dir(&self.store_path)
             .map(|rd| {
                 rd.filter_map(|e| e.ok())
-                    .filter(|e| e.path().extension().and_then(|x| x.to_str()) == Some("leg"))
+                    .filter(|e| engram_core::storage::is_leg_block_path(&e.path()))
                     .count()
             })
             .unwrap_or(0)
