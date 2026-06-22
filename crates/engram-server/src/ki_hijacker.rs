@@ -497,7 +497,7 @@ async fn bake_ki(store: &SharedStore, ki_dir: &PathBuf) -> anyhow::Result<()> {
             }
         }
 
-        let total = s.list().len();
+        let total = s.leg_block_count();
         let namespace = s.active_stalk_name();
 
         (

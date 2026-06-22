@@ -5203,10 +5203,9 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
             let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(10) as usize;
 
             let mut lock = store.lock().unwrap();
-            let mut goals: Vec<_> = lock
-                .list()
+            let (goal_concepts, _, _) = lock.list_concepts_filtered(Some("goal:"), 500);
+            let mut goals: Vec<_> = goal_concepts
                 .into_iter()
-                .filter(|c| c.starts_with("goal:"))
                 // Tier 2 broaden (goal_list handler loop): high_priority; goal:* blocks are high-value for self-model and already high_prio'd in sibling handlers
                 .filter_map(|c| lock.fetch_block_high_priority(&c).map(|b| (c, b)))
                 .collect();
