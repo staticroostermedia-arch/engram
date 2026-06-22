@@ -332,7 +332,21 @@ mcp_engram_remember(concept="...", text="...")  # or update if match >0.85
 
 This 8-tool contract and ritual discipline is actively dogfooded for the goal "Make Engram the perfect AI memory substrate for you" (long-running RSI/Ariel task per design:ariel_property_holographic_mind_map_north_star). See the plan (source of truth, with checklist, AC, verification, deviations) at `/home/a/.grok/sessions/%2Fhome%2Fa%2FDocuments%2FEngram/019eb976-8aed-7c43-a3c1-3be06a7ad806/goal/plan.md` on branch `feat/perfect-substrate-ariel-ritual-tracking`.
 
-All changes use dedicated git branch + full Engram working memory process (session_start + ack, context_for_edit before edits, recall(anchors) before derive, quick_trace at forks w/ goal_context + prev, thought_tile_create w/ human_forward leading at key intervals, session_end(prepare_compression), goal_* tracking + relate to north star). Periodic human-facing reports as tiles. Explicit rollback exercised. Trace/tile IDs referenced in git commits for dual (manifold + VC) tracking and safe rollback. See plan for current status.
+All changes use dedicated git branch + full Engram working memory process (session_start + ack, context_for_edit before edits, recall(anchors) before derive, quick_trace at forks w/ goal_context + prev, thought_tile_create w/ human_forward leading at key intervals, session_end(prepare_compression), goal_* tracking + relate to north star). Periodic human-facing reports as tiles. Explicit rollback exercised.
+
+### Git version control discipline
+
+**Canonical rules:** [CONTRIBUTING.md § Commit Message & Versioning Discipline](../CONTRIBUTING.md#commit-message--versioning-discipline).
+
+| Step | Action |
+|------|--------|
+| Before commit | `mcp_engram_quick_trace` at boundary → copy `trace:*` into message |
+| Commit message | Conventional Commits title + body (files touched, why) + `Refs: trace:* goal:*` |
+| Version bump | **Release only** — never on feat/fix PR commits; see `version_git_rollback` in `processes/meta/ai_consciousness_loop.toml` |
+| PR / push notes | Same quality as commits — branch, ACs, file paths, trace refs (no shorthand) |
+| Validate | `scripts/validate-commit-msg.sh` |
+
+Trace/tile IDs in commits enable dual (manifold + VC) tracking and safe rollback. See plan for current status.
 
 First human-facing report tile minted at this interval: tile:research_offload_initial-human-facing-status-report--engram-ritua (with leading human_forward on ritual/git progress and Ariel tracking). Quick trace: trace:1782148473_at-first-key-interval-after-wake--goal-activatio. Commit: ad0858ca.
 

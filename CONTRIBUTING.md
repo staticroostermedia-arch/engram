@@ -10,6 +10,9 @@ We welcome contributions to Engram. Since this is a hardware-native memory engin
 - [ ] No changes to the fixed 256KB `HolographicBlock` layout without a version bump + migration
 - [ ] README / `docs/MCP_TOOLS_REFERENCE.md` updated if you add or rename MCP tools
 - [ ] Use `update` on existing memories — never `forget` + `remember` for the same concept
+- [ ] Every commit follows [Commit Message & Versioning Discipline](#commit-message--versioning-discipline) (conventional title + body + `trace:*` or `goal:*` ref)
+- [ ] `quick_trace` recorded **immediately before** each `git commit`; trace ID appears in the commit message
+- [ ] No `Cargo.toml` / `CHANGELOG.md` version bump on feature/fix PR commits (release-only)
 
 ---
 
@@ -86,6 +89,137 @@ Contributions to the daemon must not block any of these loops. Use `tokio::spawn
 - [ ] README tool count and table updated if new tools were added
 - [ ] FIRST_RUN.md updated if the setup flow changed
 - [ ] No blocking calls in async daemon loops
+- [ ] All commits in the PR satisfy [Commit Message & Versioning Discipline](#commit-message--versioning-discipline)
+- [ ] PR description cites fixes/improvements with file paths, ACs, and trace/goal refs (not shorthand summaries)
+
+---
+
+## Commit Message & Versioning Discipline
+
+**Single source of truth** for git messages and semver on this repo. Agents and humans follow this section; cross-refs in PR template and `docs/AGENT_MEMORY_CONTRACT.md` point here.
+
+### 1. Commit message structure (Conventional Commits v1.0.0)
+
+Every commit **must** use:
+
+```
+<type>[optional scope]: <present-tense lowercase description without period>
+
+<body — what changed, why, impact; cite edited file paths>
+
+Refs: trace:<id> goal:<id>
+```
+
+| Rule | Requirement |
+|------|-------------|
+| **type** | `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`, `perf`, `ci` |
+| **scope** | Optional crate/area: `server`, `gpu`, `harness`, `docs`, `mcp` |
+| **description** | Imperative, present tense, ≤72 chars, no trailing period |
+| **body** | Blank line after title; explain *what*, *why*, *impact*; name touched files (e.g. `injection_priority.rs`, `store.rs`) |
+| **Refs footer** | At least one `trace:*` **or** `goal:*` on its own line (`Refs:` line or footer) |
+
+**Mandatory Engram ritual before commit:**
+
+1. `mcp_engram_quick_trace` at the commit boundary (`decision`, `why`, `goal_context`, chained `prev_trace`).
+2. Copy the returned `trace:*` ID into the commit message `Refs:` line.
+3. Link the active `goal:*` (e.g. `goal:engram_mvp_v1` or task goal).
+
+Validate locally (optional):
+
+```bash
+scripts/validate-commit-msg.sh /path/to/commit-msg-file
+# or: echo "$MSG" | scripts/validate-commit-msg.sh -
+```
+
+### 2. Semantic versioning (release-only bumps)
+
+Current workspace version: `Cargo.toml` `[workspace.package] version` (e.g. `0.7.0-beta.3`).
+
+| Change class | Bump | When |
+|--------------|------|------|
+| Breaking `.leg3` / public API | **MAJOR** | Explicit release after migration plan |
+| Backward-compatible feature | **MINOR** | Release cut only |
+| Bug fix, docs, style, CI | **PATCH** (or beta increment) | Release cut only |
+| Pre-release | `-beta.N` suffix | Between tagged betas |
+
+**Never** bump version on feature-branch commits or ordinary PR merges. Feature/fix work stays under `## [Unreleased]` in `CHANGELOG.md` until a release.
+
+**Release ritual** (see `processes/meta/ai_consciousness_loop.toml` `version_git_rollback` step):
+
+1. Isolated git worktree; pre-bump `quick_trace` + tile of current state + `git rev-parse HEAD`.
+2. Full verify: `cargo test --workspace`, `cargo clippy`, harness gate, `mcp_engram_verify_manifold_integrity`.
+3. Move `CHANGELOG.md` items from `[Unreleased]` → `[X.Y.Z] - YYYY-MM-DD`.
+4. Bump `[workspace.package] version` in root `Cargo.toml`.
+5. Commit + `git tag vX.Y.Z`; tag triggers `.github/workflows/release.yml`.
+6. On failure: worktree reset + `mcp_engram_scar` on the failed change concept.
+
+### 3. PR / handoff summaries (not just git)
+
+Agent chat summaries, PR descriptions, and terminal push notes **must** match commit quality:
+
+- Name branch, ACs passed, files touched, trace/goal refs.
+- **Bad:** "clippy struct refactor", "format fixes" (shorthand with no refs or file context).
+- **Good:** see Examples below.
+
+### Examples
+
+**Bad — agent shorthand (no refs, no file context):**
+
+```
+clippy struct refactor
+format fixes
+```
+
+**Bad — conventional title only (missing trace/goal refs):**
+
+```
+fix(server): bundle injection completeness inputs for clippy CI
+
+Refactor compute_injection_completeness to take InjectionCompletenessInput
+struct — fixes clippy::too_many_arguments blocking build-and-test on GitHub.
+```
+
+*(Actual commits `cb5a7541`, `58283e64` on `feat/perfect-context-injection-nvme-bypass` — titles/bodies OK but refs missing.)*
+
+**Good — full discipline:**
+
+```
+fix(server): bundle injection completeness inputs for clippy CI
+
+Refactor compute_injection_completeness in injection_priority.rs to take
+InjectionCompletenessInput struct; update call site in store.rs (~3162).
+Fixes clippy::too_many_arguments blocking build-and-test on GitHub CI.
+
+Refs: trace:1782162559_use-conventional-commits-v1-0-0---existing-engra
+      goal:commit_title_versioning_process
+```
+
+```
+style: apply cargo fmt for CI format check on branch
+
+Run rustfmt across workspace (injection_priority.rs, store.rs, harness_injection.rs)
+so build-and-test Format check passes after struct refactor.
+
+Refs: trace:1782162559_use-conventional-commits-v1-0-0---existing-engra
+      goal:engram_mvp_v1
+```
+
+**Good — PR terminal step** (after `session_end`):
+
+```
+Branch: feat/perfect-context-injection-nvme-bypass
+Fixes: injection_completeness + nvme_context wake bundle; injection_rank composite;
+       BVH dedup (gpu/bvh_build.rs); goal marker restore (store.rs, mcp.rs)
+ACs: manage-resume + context injection NVMe bypass — all pass
+Traces: trace:1779990956_... goal:manage_resume_019ec286
+```
+
+### Related
+
+- [docs/AGENT_MEMORY_CONTRACT.md](docs/AGENT_MEMORY_CONTRACT.md) — git VC + 8-tool ritual
+- [docs/internal/MAINTAINER_WORKFLOW.md](docs/internal/MAINTAINER_WORKFLOW.md) — maintainer loop
+- [CHANGELOG.md](CHANGELOG.md) — keepachangelog format
+- `scripts/validate-commit-msg.sh` — local message checker
 
 ---
 

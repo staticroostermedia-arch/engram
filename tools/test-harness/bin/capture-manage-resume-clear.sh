@@ -63,6 +63,9 @@ fi
 cat > "$SCRATCH/pr-notes.md" <<'PRNOTES'
 # Manage-resume verification: all ACs pass
 
+> PR notes must follow CONTRIBUTING.md § Commit Message & Versioning Discipline
+> (branch, file paths, ACs, Refs: trace:* goal:* — no shorthand summaries).
+
 **Goal:** `goal:manage_resume_019ec286` (TUI session 019ec286)
 
 ## Protocol answer

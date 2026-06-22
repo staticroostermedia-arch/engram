@@ -8,7 +8,7 @@
 - [ ] **Examples / docs run**: New or changed examples are runnable immediately (`cargo run --example ...` or python); README/docs links updated and consistent with local current state.
 - [ ] **Non-flat / geometric invariants preserved**: Changes respect .leg3 (q/p/CRS/Merkle), VSA (OP_*), spatial AABB, sheaf gluing (from processes/*.toml), CRS/scar/verify gates, continuation bundles, ego.leg3/NREM, etc. No breakage to MCP tools (62 tiered, 8 essential), rituals (wake/working-memory/session-end/code-edit), or subvisor governance.
 - [ ] **GH / popular best practices**: Aligns with plan (hero/comparison in README, matrix CI, templates, metadata keywords like geometric-memory/rituals/mcp/non-flat, visuals, etc.); emulates patterns from mem0/ragflow/memvid/qdrant/chroma etc. (badges, examples, explicit memory model, citations if applicable).
-- [ ] **Atomic commit**: Conventional message referencing plan + traces (e.g. 'docs(readme): add geometric hero + comparison per GITHUB_MVP_PREP_PLAN.md (trace:XXXX)') ; used git-eng MCP where possible for trace.
+- [ ] **Atomic commits**: Every commit satisfies [CONTRIBUTING.md § Commit Message & Versioning Discipline](../CONTRIBUTING.md#commit-message--versioning-discipline) — conventional title + body naming touched files + `Refs: trace:* goal:*` (record `quick_trace` immediately before each commit). **Bad:** shorthand like "clippy struct refactor". **Good:** `fix(server): bundle injection completeness inputs for clippy CI` + body citing `injection_priority.rs`/`store.rs` + `Refs: trace:... goal:...`.
 - [ ] **Post-push validation**: After merge, online README/.github matches; run `mcp_engram_*` verifies; no regression in current build/harness.
 
 **Related**:
