@@ -312,7 +312,7 @@ Third human-facing report tile (state_machine): tile:state_machine_third-human-f
 
 Rollback test correction tile: tile:research_offload_rollback-test-correction-record--mistake-commit- . Quick trace: trace:1782148624_completed-rollback-test--mistake-edit-commit-bc4 . Mistake commit bc48ea84 reset, file/git restored, prior traces recallable. Evidence in scratch/rollback_evidence.log . Criteria re-verified.
 
-FINAL human-facing report tile: tile:knowledge_graph_final-human-facing-report--goal-achieved---enram . Quick trace: trace:1782148643_final-comprehensive-human-facing-report-tile-min . Achievement declared, 5 commits listed (ad0858ca, ea1cb86e, 4c992b7f, 6b01dba2, bc48ea84 in reflog), 4 tiles lineage, rollback safety, no-rebrief (traces recallable), handoff will promote. Commit: 6b01dba2 update. Goal achieved, session_end next.
+FINAL human-facing report tile: tile:knowledge_graph_final-human-facing-report--goal-achieved---enram . Quick trace: trace:1782148643_final-comprehensive-human-facing-report-tile-min . Achievement declared, 5 commits listed (ad0858ca, ea1cb86e, 4c992b7f, 6b01dba2, bc48ea84 in reflog), 4 tiles lineage, rollback safety, no-rebrief (traces recallable), handoff will promote. Commit: b8f5e77b update. Goal achieved, session_end next.
 
 # 3. HANDOFF (1 call)
 mcp_engram_session_end(summary="<decisions, files, next steps>")
