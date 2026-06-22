@@ -106,18 +106,34 @@ pub fn gpu_hot_slot_ready(recall_mode: &str, gpu_hot_resident: bool, leg_block_c
     }
 }
 
+/// Inputs for `compute_injection_completeness` (bundled to satisfy clippy::too_many_arguments).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct InjectionCompletenessInput {
+    pub has_primary: bool,
+    pub has_handoff: bool,
+    pub has_trace_head: bool,
+    pub open_scars: usize,
+    pub hot_tile_count: usize,
+    pub presentation_nodes: usize,
+    pub recall_mode: &'static str,
+    pub gpu_hot_resident: bool,
+    pub leg_block_count: usize,
+}
+
 /// Score whether the agent received the minimum continuity slots on wake.
-pub fn compute_injection_completeness(
-    has_primary: bool,
-    has_handoff: bool,
-    has_trace_head: bool,
-    open_scars: usize,
-    hot_tile_count: usize,
-    presentation_nodes: usize,
-    recall_mode: &str,
-    gpu_hot_resident: bool,
-    leg_block_count: usize,
-) -> InjectionCompleteness {
+pub fn compute_injection_completeness(input: InjectionCompletenessInput) -> InjectionCompleteness {
+    let InjectionCompletenessInput {
+        has_primary,
+        has_handoff,
+        has_trace_head,
+        open_scars,
+        hot_tile_count,
+        presentation_nodes,
+        recall_mode,
+        gpu_hot_resident,
+        leg_block_count,
+    } = input;
+
     let slots: [(&str, bool); 8] = [
         ("primary_goal", has_primary),
         ("session_handoff", has_handoff),
@@ -186,16 +202,44 @@ mod tests {
         assert_eq!(ranked[0].concept, "scar:dead_approach");
     }
 
+    fn completeness_input(
+        has_primary: bool,
+        has_handoff: bool,
+        has_trace_head: bool,
+        open_scars: usize,
+        hot_tile_count: usize,
+        presentation_nodes: usize,
+        recall_mode: &'static str,
+        gpu_hot_resident: bool,
+        leg_block_count: usize,
+    ) -> InjectionCompletenessInput {
+        InjectionCompletenessInput {
+            has_primary,
+            has_handoff,
+            has_trace_head,
+            open_scars,
+            hot_tile_count,
+            presentation_nodes,
+            recall_mode,
+            gpu_hot_resident,
+            leg_block_count,
+        }
+    }
+
     #[test]
     fn completeness_full_when_all_slots_present() {
-        let c = compute_injection_completeness(true, true, true, 0, 3, 5, "full_bvh_gpu", true, 67_000);
+        let c = compute_injection_completeness(completeness_input(
+            true, true, true, 0, 3, 5, "full_bvh_gpu", true, 67_000,
+        ));
         assert!(c.score >= 0.85, "score={}", c.score);
         assert!(c.missing.is_empty() || c.missing == ["open_scars_surfaced"]);
     }
 
     #[test]
     fn completeness_flags_missing_handoff() {
-        let c = compute_injection_completeness(true, false, false, 0, 0, 0, "sampled_bounded", false, 67_000);
+        let c = compute_injection_completeness(completeness_input(
+            true, false, false, 0, 0, 0, "sampled_bounded", false, 67_000,
+        ));
         assert!(c.score < 0.6);
         assert!(c.missing.contains(&"session_handoff"));
     }

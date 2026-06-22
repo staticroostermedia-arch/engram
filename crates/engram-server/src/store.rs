@@ -3145,15 +3145,17 @@ impl StoreHandle {
         let leg_blocks = self.leg_block_count();
         let recall_mode = self.recall_mode();
         let completeness = crate::injection_priority::compute_injection_completeness(
-            primary_goal_name.is_some(),
-            session_handoff_present,
-            trace_head,
-            open_scars,
-            hot_tile_count,
-            presentation_count,
-            recall_mode,
-            self.backend.gpu_hot_resident(),
-            leg_blocks,
+            crate::injection_priority::InjectionCompletenessInput {
+                has_primary: primary_goal_name.is_some(),
+                has_handoff: session_handoff_present,
+                has_trace_head: trace_head,
+                open_scars,
+                hot_tile_count,
+                presentation_nodes: presentation_count,
+                recall_mode,
+                gpu_hot_resident: self.backend.gpu_hot_resident(),
+                leg_block_count: leg_blocks,
+            },
         );
 
         let bundle = serde_json::json!({
