@@ -1,0 +1,36 @@
+# Context Injection + NVMe Bypass — Execution Plan (goal 019ec286)
+
+**Branch:** `feat/perfect-context-injection-nvme-bypass`  
+**Primary goal:** `goal:engram_mvp_v1`  
+**Session plan:** `~/.grok/sessions/%2Fhome%2Fa%2FDocuments%2FEngram/019ec286-85aa-79d1-849b-c4a08298456a/goal/plan.md`
+
+## Objective
+
+Make Engram the best agent memory substrate by ensuring **complete, timely context injection** so NVMe + GPU paths bypass the Von Neumann bottleneck and deliver the right information at the right time.
+
+## Review findings (2026-06-22)
+
+| Area | State | Gap |
+|------|-------|-----|
+| Wake | Slim bundle default | Missing injection_completeness + nvme_context in slim tier |
+| Ranking | CRS-only sort in bundle | No momentum/recency/hot/scar composite rank |
+| NVMe | BVH + LegView on T700 | Readiness must surface `full_bvh_gpu`; Sheaf delegation fixed (d661db54) |
+| Harness | suggested_actions queue | Scars front but no completeness metric |
+| Perf | leg_block_count, sheaf cache | Fixed cd047ba0 |
+
+## Execution plan (built)
+
+1. **`injection_priority.rs`** — pure `prioritize_artifacts` + `compute_injection_completeness`
+2. **`build_continuation_bundle`** — momentum/recency/hot/scar rank; emit `injection_completeness` + `nvme_context`
+3. **`slim_continuation_bundle`** — pass completeness + nvme_context + open_scars_count to wake
+4. **Dogfood** — session_start → ack_wake_queue → traces chained to goal:engram_mvp_v1
+5. **Verify** — harness agent-memory + continuation-bundle suites; readiness `full_bvh_gpu`
+
+## Key traces
+
+- `trace:1782153784_begin-goal-019ec286-execution-on-feat-perfect-co`
+- Prior substrate work: `d661db54`, `cd047ba0`
+
+## Agent ritual
+
+Lean 8-tool loop + `get_continuation_bundle` when slim completeness &lt; 0.85 or `nvme_context.bvh_ready` is false after ~30s.
