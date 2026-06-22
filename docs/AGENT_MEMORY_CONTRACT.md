@@ -304,6 +304,8 @@ This 8-tool contract and ritual discipline is actively dogfooded for the goal "M
 
 All changes use dedicated git branch + full Enram working memory process (session_start + ack, context_for_edit before edits, recall(anchors) before derive, quick_trace at forks w/ goal_context + prev, thought_tile_create w/ human_forward leading at key intervals, session_end(prepare_compression), goal_* tracking + relate to north star). Periodic human-facing reports as tiles. Explicit rollback exercised. Trace/tile IDs referenced in git commits for dual (manifold + VC) tracking and safe rollback. See plan for current status.
 
+First human-facing report tile minted at this interval: tile:research_offload_initial-human-facing-status-report--engram-ritua (with leading human_forward on ritual/git progress and Ariel tracking). Quick trace: trace:1782148473_at-first-key-interval-after-wake--goal-activatio. Commit: ad0858ca.
+
 # 3. HANDOFF (1 call)
 mcp_engram_session_end(summary="<decisions, files, next steps>")
 ```
