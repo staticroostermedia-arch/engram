@@ -181,7 +181,20 @@ struct — fixes clippy::too_many_arguments blocking build-and-test on GitHub.
 
 *(Actual commits `cb5a7541`, `58283e64` on `feat/perfect-context-injection-nvme-bypass` — titles/bodies OK but refs missing.)*
 
-**Good — full discipline:**
+**Good — full discipline (real commit `eb4c247b` on branch):**
+
+```
+docs(contributing): add commit message and versioning discipline
+
+Add CONTRIBUTING.md ## Commit Message & Versioning Discipline as single
+source of truth: Conventional Commits + body + Refs trace/goal; release-only
+semver; good/bad examples from cb5a7541/58283e64 CONTEXT shas.
+
+Refs: trace:1782162619_land-commit-discipline-in-contributing-md---vali
+      goal:commit_title_versioning_process
+```
+
+**Good — simulated fix for CONTEXT clippy case (what cb5a7541 should have been):**
 
 ```
 fix(server): bundle injection completeness inputs for clippy CI
@@ -190,7 +203,7 @@ Refactor compute_injection_completeness in injection_priority.rs to take
 InjectionCompletenessInput struct; update call site in store.rs (~3162).
 Fixes clippy::too_many_arguments blocking build-and-test on GitHub CI.
 
-Refs: trace:1782162559_use-conventional-commits-v1-0-0---existing-engra
+Refs: trace:1782162619_land-commit-discipline-in-contributing-md---vali
       goal:commit_title_versioning_process
 ```
 
