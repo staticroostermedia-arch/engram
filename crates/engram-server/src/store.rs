@@ -2937,25 +2937,37 @@ impl StoreHandle {
             }
         }
 
+        let mut recency_rank: std::collections::HashMap<String, u32> =
+            std::collections::HashMap::new();
+        for (i, (concept, _)) in self.access_index.recent(120).into_iter().enumerate() {
+            recency_rank.entry(concept).or_insert(i as u32);
+        }
+
+        fn entry_rank(
+            e: &BundleEntry,
+            recency_rank: &std::collections::HashMap<String, u32>,
+            handoff_concept: &str,
+        ) -> f32 {
+            let art = crate::injection_priority::InjectionArtifact {
+                concept: e.concept.clone(),
+                crs: e.crs,
+                hot: e.hot,
+                recency_rank: recency_rank.get(&e.concept).copied().unwrap_or(999),
+                momentum_score: if e.source == "momentum_recall" { 0.75 } else { 0.0 },
+                source: e.source.clone(),
+                is_scar: e.concept.starts_with("scar:"),
+                is_handoff: e.concept == handoff_concept
+                    || e.concept.starts_with("compression_handoff_"),
+                is_primary_anchor: e.concept == "primary_goal",
+            };
+            crate::injection_priority::injection_rank_score(&art)
+        }
+
         entries.sort_by(|a, b| {
-            b.crs
-                .partial_cmp(&a.crs)
+            entry_rank(b, &recency_rank, SESSION_HANDOFF_LATEST)
+                .partial_cmp(&entry_rank(a, &recency_rank, SESSION_HANDOFF_LATEST))
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
-
-        if let Some(pos) = entries
-            .iter()
-            .position(|e| e.concept == SESSION_HANDOFF_LATEST)
-        {
-            let entry = entries.remove(pos);
-            entries.insert(0, entry);
-        } else if let Some(pos) = entries
-            .iter()
-            .position(|e| e.concept.starts_with("compression_handoff_"))
-        {
-            let entry = entries.remove(pos);
-            entries.insert(0, entry);
-        }
         entries.truncate(MAX_ARTIFACTS);
 
         let active_tiles: Vec<serde_json::Value> = entries
@@ -3017,6 +3029,34 @@ impl StoreHandle {
             })
             .unwrap_or_default();
 
+        let trace_head = harness
+            .get("trace_chain")
+            .and_then(|tc| tc.get("head"))
+            .and_then(|h| h.as_str())
+            .map(|s| !s.is_empty())
+            .unwrap_or(false);
+        let open_scars = harness
+            .get("open_scars_wake")
+            .and_then(|v| v.as_array())
+            .map(|a| a.len())
+            .unwrap_or(0);
+        let presentation_count = presentation_stratum
+            .get("node_count")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0) as usize;
+        let hot_tile_count = entries.iter().filter(|e| e.hot && e.concept.starts_with("tile:")).count();
+        let completeness = crate::injection_priority::compute_injection_completeness(
+            primary_goal_name.is_some(),
+            session_handoff_present,
+            trace_head,
+            open_scars,
+            hot_tile_count,
+            presentation_count,
+            self.recall_mode(),
+            self.bvh_is_ready(),
+            self.backend.gpu_hot_resident(),
+        );
+
         let bundle = serde_json::json!({
             "primary_goal": primary_goal_name,
             "last_session_end": last_session_end,
@@ -3025,6 +3065,19 @@ impl StoreHandle {
             "active_artifacts": if stratum_artifacts.is_empty() { active_tiles } else { stratum_artifacts },
             "presentation_stratum": presentation_stratum,
             "local_stratum": local_stratum,
+            "injection_completeness": {
+                "score": completeness.score,
+                "slots_filled": completeness.slots_filled,
+                "slots_total": completeness.slots_total,
+                "missing": completeness.missing,
+            },
+            "nvme_context": {
+                "recall_mode": self.recall_mode(),
+                "bvh_ready": self.bvh_is_ready(),
+                "gpu_hot_resident": self.backend.gpu_hot_resident(),
+                "leg_block_count": self.leg_block_count(),
+                "hint": "full_bvh_gpu: O(log N) BVH + LegView mmap hot path — NVMe as context extension",
+            },
             "recall_hint": "Execute suggested_actions in order, then read structured_handoff. local_stratum = sovereign host/project context; presentation_stratum = distilled process/ritual continuation.",
             "harness_injection": harness,
             "cached_at": now,

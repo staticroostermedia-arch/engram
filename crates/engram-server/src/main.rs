@@ -33,6 +33,7 @@ pub mod daemon;
 mod edit_arc_gate;
 mod evolution_at_locus;
 mod harness_injection;
+mod injection_priority;
 pub mod ki_hijacker;
 mod leg_corpus;
 mod linguistic_reference_frame;

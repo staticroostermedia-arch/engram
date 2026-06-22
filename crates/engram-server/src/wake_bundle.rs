@@ -113,6 +113,14 @@ pub fn slim_continuation_bundle(full: &Value) -> Value {
         })
         .unwrap_or_default();
 
+    let injection_completeness = full.get("injection_completeness").cloned();
+    let nvme_context = full.get("nvme_context").cloned();
+    let open_scars_wake = harness
+        .get("open_scars_wake")
+        .and_then(|v| v.as_array())
+        .map(|a| a.len())
+        .unwrap_or(0);
+
     let task_type = harness
         .get("task_type")
         .cloned()
@@ -151,6 +159,9 @@ pub fn slim_continuation_bundle(full: &Value) -> Value {
         "recall_hint": "Slim wake — call mcp_engram_get_continuation_bundle for full JIT framework, verified_processes, and scars.",
         "full_bundle_tool": "mcp_engram_get_continuation_bundle",
         "wake_queue_gate": harness.get("wake_queue_gate"),
+        "injection_completeness": injection_completeness,
+        "nvme_context": nvme_context,
+        "open_scars_count": open_scars_wake,
     })
 }
 
