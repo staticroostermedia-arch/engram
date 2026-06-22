@@ -202,9 +202,17 @@ impl CudaBackend {
     /// Kick off a background BVH build (on-demand after ENGRAM_DEFER_BVH=1).
     /// Returns true if a build thread was spawned. No-op if one is already running.
     pub fn rebuild_bvh_async(&self) -> bool {
+        self.schedule_bvh_reindex("engram-bvh-on-demand", "On-demand")
+    }
+
+    /// After store/forget, reindex once in the background (deduped).
+    fn schedule_bvh_reindex(&self, thread_name: &str, label: &str) -> bool {
+        if std::env::var("ENGRAM_DEFER_BVH").as_deref() == Ok("1") {
+            return false;
+        }
         spawn_bvh_build(
-            "engram-bvh-on-demand",
-            "On-demand",
+            thread_name,
+            label,
             &self.store_path,
             Arc::clone(&self.bvh),
             Arc::clone(&self.bvh_build),
@@ -360,21 +368,10 @@ impl VsaBackend for CudaBackend {
         // Trigger a background BVH rebuild so the new block is indexed.
         // Skip when ENGRAM_DEFER_BVH=1 — each store was spawning a full 181k scan
         // (incremental_spatial × 22 items = 22 parallel rebuilds → 40GB RSS death).
-        if result.is_ok() && std::env::var("ENGRAM_DEFER_BVH").as_deref() != Ok("1") {
-            if let Ok(mut guard) = self.bvh.write() {
-                *guard = None;
-            }
-            let bvh_arc = Arc::clone(&self.bvh);
-            let path_clone = self.store_path.clone();
-            std::thread::Builder::new()
-                .name("engram-bvh-rebuild".to_string())
-                .spawn(move || {
-                    let new_bvh = BvhManifold::build_from_dir(&path_clone);
-                    if let Ok(mut guard) = bvh_arc.write() {
-                        *guard = new_bvh;
-                    }
-                })
-                .ok();
+        if result.is_ok() {
+            // Deduped via bvh_build coordinator — session_start / spatial ingest
+            // can store many blocks; without dedup each store spawned a full scan.
+            self.schedule_bvh_reindex("engram-bvh-rebuild", "Post-store");
         }
         result
     }
@@ -382,9 +379,7 @@ impl VsaBackend for CudaBackend {
     fn forget(&self, concept: &str) -> Result<()> {
         let result = self.cpu.forget(concept);
         if result.is_ok() {
-            if let Ok(mut guard) = self.bvh.write() {
-                *guard = None;
-            }
+            self.schedule_bvh_reindex("engram-bvh-rebuild", "Post-forget");
         }
         result
     }
