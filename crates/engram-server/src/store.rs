@@ -983,6 +983,17 @@ impl Backend {
         }
     }
 
+    fn bvh_build_in_progress(&self) -> bool {
+        match self {
+            #[cfg(engram_backend_cuda)]
+            Backend::Gpu(b) => b.bvh_build_in_progress(),
+            #[cfg(engram_backend_metal)]
+            Backend::Metal(b) => b.bvh_build_in_progress(),
+            Backend::Sheaf(b) => b.bvh_build_in_progress(),
+            _ => false,
+        }
+    }
+
     fn backend_kind(&self) -> &'static str {
         match self {
             #[cfg(engram_backend_cuda)]
@@ -1553,6 +1564,10 @@ impl StoreHandle {
         self.backend.rebuild_bvh_async()
     }
 
+    pub fn bvh_build_in_progress(&self) -> bool {
+        self.backend.bvh_build_in_progress()
+    }
+
     pub fn current_profile_name() -> &'static str {
         crate::profile::current_profile_name()
     }
@@ -1631,6 +1646,7 @@ impl StoreHandle {
             "gpu_accel_available": self.backend.gpu_accel_available(),
             "gpu_hot_resident": self.backend.gpu_hot_resident(),
             "bvh_ready": self.bvh_is_ready(),
+            "bvh_build_in_progress": self.bvh_build_in_progress(),
             "bvh_nodes": self.backend.bvh_node_count(),
             "recall_mode": recall_mode,
             "nvme_direct_io": true,

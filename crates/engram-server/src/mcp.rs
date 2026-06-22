@@ -6584,12 +6584,26 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                         }).to_string()
                     }]
                 })
+            } else if lock.bvh_build_in_progress() {
+                json!({
+                    "content": [{
+                        "type": "text",
+                        "text": serde_json::json!({
+                            "status": "already_building",
+                            "bvh_build_in_progress": true,
+                            "message": "BVH build already in progress. Poll mcp_engram_get_backend_readiness until bvh_ready=true — do not call rebuild_bvh again.",
+                            "recall_mode": lock.recall_mode(),
+                            "leg_block_count": lock.leg_block_count()
+                        }).to_string()
+                    }]
+                })
             } else if lock.rebuild_bvh_async() {
                 json!({
                     "content": [{
                         "type": "text",
                         "text": serde_json::json!({
                             "status": "building",
+                            "bvh_build_in_progress": true,
                             "message": "BVH build started in background. Poll mcp_engram_get_backend_readiness until bvh_ready=true.",
                             "recall_mode": lock.recall_mode(),
                             "leg_block_count": lock.leg_block_count()

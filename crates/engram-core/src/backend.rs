@@ -319,6 +319,11 @@ pub trait VsaBackend: Send + Sync {
     fn rebuild_bvh_async(&self) -> bool {
         false
     }
+
+    /// True when a BVH build thread is in flight. Default: false.
+    fn bvh_build_in_progress(&self) -> bool {
+        false
+    }
 }
 
 // ── CPU Backend (always compiled) ────────────────────────────────────────────
@@ -617,6 +622,10 @@ impl VsaBackend for SheafBackend {
 
     fn rebuild_bvh_async(&self) -> bool {
         self.active_backend().rebuild_bvh_async()
+    }
+
+    fn bvh_build_in_progress(&self) -> bool {
+        self.active_backend().bvh_build_in_progress()
     }
 }
 

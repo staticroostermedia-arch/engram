@@ -30,6 +30,7 @@ use num_complex::Complex32;
 use {
     crate::backend::compute_eviction_score,
     crate::bvh::BvhManifold,
+    crate::bvh_build::{spawn_bvh_build, BvhBuildCoordinator},
     engram_core::backend::CpuBackend,
     engram_core::mmap::LegView,
     engram_core::types::HolographicBlock,
@@ -68,6 +69,7 @@ pub struct MetalBackend {
     cpu: CpuBackend,
     /// BVH index for O(log N) candidate filtering — rebuilt lazily
     bvh: Arc<RwLock<Option<BvhManifold>>>,
+    bvh_build: Arc<BvhBuildCoordinator>,
     /// Metal device handle (Apple Silicon GPU)
     device: Device,
     /// Metal command queue for dispatching compute work
@@ -151,6 +153,7 @@ impl MetalBackend {
             store_path: PathBuf::from(&expanded),
             cpu: CpuBackend::new(&expanded),
             bvh: Arc::new(RwLock::new(None)),
+            bvh_build: BvhBuildCoordinator::new_shared(),
             device,
             command_queue,
             cosine_pipeline,
@@ -192,30 +195,19 @@ impl MetalBackend {
         }
     }
 
+    pub fn bvh_build_in_progress(&self) -> bool {
+        self.bvh_build.is_building()
+    }
+
     /// Kick off a background BVH build (on-demand after ENGRAM_DEFER_BVH=1).
     pub fn rebuild_bvh_async(&self) -> bool {
-        if let Ok(mut guard) = self.bvh.write() {
-            *guard = None;
-        }
-        let bvh_arc = Arc::clone(&self.bvh);
-        let path_clone = self.store_path.clone();
-        std::thread::Builder::new()
-            .name("engram-bvh-on-demand".to_string())
-            .spawn(move || {
-                let t0 = std::time::Instant::now();
-                info!("[BVH] On-demand build started…");
-                let new_bvh = BvhManifold::build_from_dir(&path_clone);
-                if let Ok(mut guard) = bvh_arc.write() {
-                    let n = new_bvh.as_ref().map_or(0, |b| b.len());
-                    *guard = new_bvh;
-                    info!(
-                        "[BVH] ✓ On-demand build complete: {} concepts in {:.1}s",
-                        n,
-                        t0.elapsed().as_secs_f32()
-                    );
-                }
-            })
-            .is_ok()
+        spawn_bvh_build(
+            "engram-bvh-on-demand",
+            "On-demand",
+            &self.store_path,
+            Arc::clone(&self.bvh),
+            Arc::clone(&self.bvh_build),
+        )
     }
 
     // ── Internal: GPU dispatch ────────────────────────────────────────────────
@@ -724,6 +716,10 @@ impl VsaBackend for MetalBackend {
 
     fn rebuild_bvh_async(&self) -> bool {
         MetalBackend::rebuild_bvh_async(self)
+    }
+
+    fn bvh_build_in_progress(&self) -> bool {
+        MetalBackend::bvh_build_in_progress(self)
     }
 }
 

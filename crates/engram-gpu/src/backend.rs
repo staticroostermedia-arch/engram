@@ -5,6 +5,7 @@
 //! `recall()` uses the linear CPU scan.
 
 use crate::bvh::BvhManifold;
+use crate::bvh_build::{spawn_bvh_build, BvhBuildCoordinator};
 use anyhow::Result;
 use engram_core::backend::{CpuBackend, Memory, VsaBackend};
 use engram_core::mmap::LegView;
@@ -50,6 +51,8 @@ pub struct CudaBackend {
     /// BVH index for O(log N) queries (rebuilt after writes)
     /// Arc-wrapped so background rebuild threads can hold a clone without raw pointers.
     bvh: Arc<RwLock<Option<BvhManifold>>>,
+    /// Single-flight guard — background + on-demand builds share one coordinator.
+    bvh_build: Arc<BvhBuildCoordinator>,
     /// Whether a GPU was detected at startup (reserved for future CUDA dispatch)
     #[allow(dead_code)]
     gpu_available: bool,
@@ -124,10 +127,12 @@ impl CudaBackend {
         // Use Arc so the background build thread gets a stable clone — not a raw pointer
         // to a local variable that gets moved when new() returns.
         let bvh: Arc<RwLock<Option<BvhManifold>>> = Arc::new(RwLock::new(None));
+        let bvh_build = BvhBuildCoordinator::new_shared();
         let backend = Self {
             cpu: CpuBackend::new(&path),
             store_path: PathBuf::from(path.clone()),
             bvh: Arc::clone(&bvh),
+            bvh_build: Arc::clone(&bvh_build),
             gpu_available,
             high_priority_cache: RwLock::new(HashMap::new()),
             hot_geo_states: RwLock::new(HashMap::new()),
@@ -138,24 +143,13 @@ impl CudaBackend {
         // Kick off background BVH build so first query is fast — unless deferred
         // (MCP mode on 50k+ manifolds sets ENGRAM_DEFER_BVH=1 to avoid 10–30GB RAM spikes).
         if std::env::var("ENGRAM_DEFER_BVH").as_deref() != Ok("1") {
-            let path_clone = path.clone();
-            std::thread::Builder::new()
-                .name("engram-bvh-build".to_string())
-                .spawn(move || {
-                    let t0 = std::time::Instant::now();
-                    eprintln!("[BVH] Background build started…");
-                    let new_bvh = BvhManifold::build_from_dir(&path_clone);
-                    if let Ok(mut guard) = bvh.write() {
-                        let n = new_bvh.as_ref().map_or(0, |b| b.len());
-                        *guard = new_bvh;
-                        eprintln!(
-                            "[BVH] ✓ Background build complete: {} concepts in {:.1}s",
-                            n,
-                            t0.elapsed().as_secs_f32()
-                        );
-                    }
-                })
-                .ok();
+            spawn_bvh_build(
+                "engram-bvh-build",
+                "Background",
+                path,
+                bvh,
+                bvh_build,
+            );
         } else {
             eprintln!("[BVH] Build deferred (ENGRAM_DEFER_BVH=1) — queries use CPU scan until explicit rebuild");
         }
@@ -200,31 +194,21 @@ impl CudaBackend {
         self.gpu_available && self.bvh_is_ready()
     }
 
+    /// True when a background or on-demand BVH build thread is running.
+    pub fn bvh_build_in_progress(&self) -> bool {
+        self.bvh_build.is_building()
+    }
+
     /// Kick off a background BVH build (on-demand after ENGRAM_DEFER_BVH=1).
-    /// Returns true if a build thread was spawned.
+    /// Returns true if a build thread was spawned. No-op if one is already running.
     pub fn rebuild_bvh_async(&self) -> bool {
-        if let Ok(mut guard) = self.bvh.write() {
-            *guard = None;
-        }
-        let bvh_arc = Arc::clone(&self.bvh);
-        let path_clone = self.store_path.clone();
-        std::thread::Builder::new()
-            .name("engram-bvh-on-demand".to_string())
-            .spawn(move || {
-                let t0 = std::time::Instant::now();
-                eprintln!("[BVH] On-demand build started…");
-                let new_bvh = BvhManifold::build_from_dir(&path_clone);
-                if let Ok(mut guard) = bvh_arc.write() {
-                    let n = new_bvh.as_ref().map_or(0, |b| b.len());
-                    *guard = new_bvh;
-                    eprintln!(
-                        "[BVH] ✓ On-demand build complete: {} concepts in {:.1}s",
-                        n,
-                        t0.elapsed().as_secs_f32()
-                    );
-                }
-            })
-            .is_ok()
+        spawn_bvh_build(
+            "engram-bvh-on-demand",
+            "On-demand",
+            &self.store_path,
+            Arc::clone(&self.bvh),
+            Arc::clone(&self.bvh_build),
+        )
     }
 
     fn leg_block_count(&self) -> usize {
@@ -427,6 +411,10 @@ impl VsaBackend for CudaBackend {
 
     fn rebuild_bvh_async(&self) -> bool {
         CudaBackend::rebuild_bvh_async(self)
+    }
+
+    fn bvh_build_in_progress(&self) -> bool {
+        CudaBackend::bvh_build_in_progress(self)
     }
 }
 
