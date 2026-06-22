@@ -1196,20 +1196,58 @@ pub fn goal_block_text(block: &engram_core::types::HolographicBlock) -> String {
     }
 }
 
-/// Match `status: active` or `**status:** active` (goal_create uses markdown form).
+/// Effective goal status: last canonical `status:` / `**status:**` line wins (append-only updates may leave stale header).
+pub fn goal_current_status(text: &str) -> Option<String> {
+    let mut last: Option<String> = None;
+    for line in text.lines() {
+        let t = line.trim();
+        if let Some(rest) = t.strip_prefix("**status:**") {
+            last = Some(rest.trim().to_lowercase());
+        } else if let Some(rest) = t.strip_prefix("status:") {
+            let v = rest.trim().to_lowercase();
+            if !v.is_empty() && v != "update" {
+                last = Some(v);
+            }
+        }
+    }
+    last
+}
+
+/// Match effective status (not first line only).
 pub fn goal_status_matches(text: &str, filter: &str) -> bool {
     if filter.is_empty() {
         return true;
     }
-    let f = filter.to_lowercase();
-    text.lines().any(|l| {
-        let t = l.trim().to_lowercase();
-        t == format!("status: {}", f) || t == format!("**status:** {}", f)
-    })
+    goal_current_status(text)
+        .map(|s| s == filter.to_lowercase())
+        .unwrap_or(false)
 }
 
 pub fn goal_status_is_active(text: &str) -> bool {
     goal_status_matches(text, "active")
+}
+
+/// Rewrite canonical status line; strip legacy `--- Status Update ---` append blocks from MVP path.
+pub fn rewrite_goal_status(text: &str, new_status: &str) -> String {
+    let base = text.split("\n\n--- Status Update ---").next().unwrap_or(text);
+    let mut rewritten = false;
+    let lines: Vec<String> = base
+        .lines()
+        .map(|line| {
+            let t = line.trim();
+            if !rewritten && (t.starts_with("**status:**") || t.starts_with("status:")) {
+                rewritten = true;
+                if t.starts_with("**status:**") {
+                    format!("**status:** {}", new_status)
+                } else {
+                    format!("status: {}", new_status)
+                }
+            } else {
+                line.to_string()
+            }
+        })
+        .collect();
+    lines.join("\n")
 }
 
 impl StoreHandle {
@@ -6450,6 +6488,24 @@ mod ingest_ast_tests {
         );
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn goal_status_rewrite_updates_effective_status() {
+        let active = "GOAL BLOCK\n\n**goal_statement:** test\n\n**status:** active\n";
+        let completed = rewrite_goal_status(active, "completed");
+        assert!(goal_status_matches(&completed, "completed"));
+        assert!(!goal_status_is_active(&completed));
+        assert_eq!(goal_current_status(&completed).as_deref(), Some("completed"));
+
+        // Legacy append-only path left stale header — rewrite fixes it.
+        let broken = format!(
+            "{}\n\n--- Status Update ---\nstatus: completed\nnote: old mvp\n",
+            active
+        );
+        let fixed = rewrite_goal_status(&broken, "completed");
+        assert!(!goal_status_is_active(&fixed));
+        assert_eq!(goal_current_status(&fixed).as_deref(), Some("completed"));
     }
 
     #[test]

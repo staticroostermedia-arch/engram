@@ -101,10 +101,11 @@ Usage:
   $0 [options] [--suite SUITE]
 
 Options:
-  --suite NAME          health | full-wakeup | transport-lifetime | heavy-light | optix-stress | compression-measurement | lawfulness-metric | continuation-bundle | agent-memory | resume-large | all (default: health)
+  --suite NAME          health | full-wakeup | transport-lifetime | heavy-light | optix-stress | compression-measurement | lawfulness-metric | continuation-bundle | agent-memory | goal-clear | resume-large | all (default: health)
                               resume-large: fresh MCP on live store (~/.engram/stalks) — wait-ready JSON + session_start injection fields + rebuild_bvh poll for full_bvh_gpu (do not run while TUI MCP holds lock)
                               continuation-bundle: goal stack + session_start bundle + compression handoff + MCP store upgrade readiness
                               agent-memory: MVP lean 8-tool loop (session_start → readiness → recall(anchors) → quick_trace → remember → session_end → handoff verify)
+                              goal-clear: set_primary → pre observe (raw JSON) → update_status → demote → post observe (2x session_start)
                               compression-measurement: exercises Context Compression Tracking System v1 (dual-lens before/after + COMPRESS marker minting high-CRS event artifacts bound to codeland + MCP harness)
                               lawfulness-metric: exercises + asserts Wake-up Lawfulness Verification Tracking (metric:wake_up_verification_* + trend update via update-preferred; genesis/spatial/ki freshness; lawful bool + score; auto-relates to handoff:codeland_integration_2026_plan + 1780091465 + May 31 investigation artifacts)
                               (Unified Continuity & Coherence Metrics surface for both lawfulness + compression exercised via these + compression-measurement + full-wakeup; see living config unified section + helper:continuity_coherence_metrics_dashboard_v1)

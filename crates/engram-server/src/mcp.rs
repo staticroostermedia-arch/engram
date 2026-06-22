@@ -4937,19 +4937,18 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
             let mut lock = store.lock().unwrap();
             // Hot path upgrade: goals are high-priority for intentional self-model continuity.
             if let Some(mut block) = lock.fetch_block_high_priority(&goal) {
-                // Simple approach: append status change to payload (real implementation would parse + rewrite structured section)
-                let update_text = format!(
-                    "\n\n--- Status Update ---\nstatus: {}\nnote: {}\ntimestamp: {}\n",
-                    status,
-                    note,
-                    chrono::Utc::now().to_rfc3339()
-                );
-
-                // For MVP, we just append to the existing payload text
-                let mut new_payload = block.payload.to_vec();
-                new_payload.extend_from_slice(update_text.as_bytes());
-                block.payload = [0u8; 122584]; // reset
-                for (i, b) in new_payload.iter().take(122584).enumerate() {
+                let text = crate::store::goal_block_text(&block);
+                let mut new_text = crate::store::rewrite_goal_status(&text, &status);
+                if !note.is_empty() {
+                    new_text.push_str(&format!(
+                        "\n\n**completion_note:** {}\n**status_changed_at:** {}\n",
+                        note,
+                        chrono::Utc::now().to_rfc3339()
+                    ));
+                }
+                engram_core::storage::write_provlog(&mut block, &new_text);
+                block.payload = [0u8; 122584];
+                for (i, b) in new_text.as_bytes().iter().take(122584).enumerate() {
                     block.payload[i] = *b;
                 }
 
@@ -5046,11 +5045,8 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                 }) {
                     output.push_str(&format!("{}\n", line));
                 }
-                if let Some(line) = text
-                    .lines()
-                    .find(|l| l.starts_with("status:") || l.starts_with("**status:**"))
-                {
-                    output.push_str(&format!("{}\n", line));
+                if let Some(st) = crate::store::goal_current_status(&text) {
+                    output.push_str(&format!("**status:** {}\n", st));
                 }
 
                 output.push_str("\nRecent payload context (first 600 chars):\n");
