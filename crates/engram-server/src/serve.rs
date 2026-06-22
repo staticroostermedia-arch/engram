@@ -2774,7 +2774,7 @@ fn build_consciousness_surface_json(store: &SharedStore) -> serde_json::Value {
             "leg_block_count": total_blocks,
             "surface_node_count": nodes.len(),
             "serving_count": serving.len(),
-            "recall_mode": if large { "sampled_bounded" } else { "full" },
+            "recall_mode": lock.recall_mode(),
             "large_manifold": large
         },
         "primary_intent": primary_intent,

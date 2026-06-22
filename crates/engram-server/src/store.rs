@@ -1169,6 +1169,10 @@ pub struct StoreHandle {
 
     /// Guard: auto-spawn at most one on-demand BVH build when memory_mode=deep.
     deep_bvh_spawn_attempted: std::sync::atomic::AtomicBool,
+
+    /// Cached `.leg`/`.leg3` count — invalidated on store/forget; 30s TTL for external writes.
+    leg_block_count_value: std::sync::atomic::AtomicUsize,
+    leg_block_count_cached_at: std::sync::atomic::AtomicU64,
 }
 
 /// Goal block text: provlog first (encode path), payload fallback.
@@ -1403,6 +1407,8 @@ impl StoreHandle {
             continuation_bundle_cached_at: 0,
             continuation_bundle_cache: None,
             deep_bvh_spawn_attempted: std::sync::atomic::AtomicBool::new(false),
+            leg_block_count_value: std::sync::atomic::AtomicUsize::new(0),
+            leg_block_count_cached_at: std::sync::atomic::AtomicU64::new(0),
         }
     }
 
@@ -1520,6 +1526,8 @@ impl StoreHandle {
             continuation_bundle_cached_at: 0,
             continuation_bundle_cache: None,
             deep_bvh_spawn_attempted: std::sync::atomic::AtomicBool::new(false),
+            leg_block_count_value: std::sync::atomic::AtomicUsize::new(0),
+            leg_block_count_cached_at: std::sync::atomic::AtomicU64::new(0),
         }
     }
 
@@ -1616,7 +1624,6 @@ impl StoreHandle {
     }
 
     pub fn backend_readiness(&self) -> serde_json::Value {
-        let bvh_auto_spawned = self.maybe_auto_rebuild_bvh_for_deep_mode();
         serde_json::json!({
             "fully_initialized": self.is_fully_initialized(),
             "backend_kind": self.backend.backend_kind(),
@@ -1630,7 +1637,9 @@ impl StoreHandle {
             "memory_mode": Self::memory_mode(),
             "defer_bvh": std::env::var("ENGRAM_DEFER_BVH").as_deref() == Ok("1"),
             "defer_watch_ingest": std::env::var("ENGRAM_DEFER_WATCH_INGEST").as_deref() == Ok("1"),
-            "bvh_auto_spawned": bvh_auto_spawned,
+            "bvh_auto_spawned": self
+                .deep_bvh_spawn_attempted
+                .load(std::sync::atomic::Ordering::Relaxed),
             "cuda_lean": std::env::var("ENGRAM_CUDA_LEAN").as_deref() != Ok("0"),
             "sheaf_lean": std::env::var("ENGRAM_SHEAF_LEAN").as_deref() == Ok("1"),
             "ki_lean": std::env::var("ENGRAM_KI_LEAN").as_deref() == Ok("1"),
@@ -1650,6 +1659,7 @@ impl StoreHandle {
     /// Hot-swap the fast MCP placeholder with a fully initialized store on the same disk path.
     /// Keeps the outer `Arc<Mutex<StoreHandle>>` alive so MCP stdio and daemons share one handle.
     pub fn upgrade_from(&mut self, full: Self) {
+        self.invalidate_leg_block_count();
         tracing::info!(
             "[MCP-FAST] Upgrading placeholder → full backend at {}",
             full.store_path()
@@ -1905,6 +1915,7 @@ impl StoreHandle {
 
         let r = self.backend.store(concept, block);
         if r.is_ok() {
+            self.invalidate_leg_block_count();
             self.access_index.touch(concept);
             if concept.starts_with("trace:") {
                 self.log_activity(concept, "trace_fork", trace_fork_detail.as_deref());
@@ -2318,7 +2329,11 @@ impl StoreHandle {
                 concept
             ));
         }
-        self.backend.forget(stalk_raw_concept(concept))
+        let r = self.backend.forget(stalk_raw_concept(concept));
+        if r.is_ok() {
+            self.invalidate_leg_block_count();
+        }
+        r
     }
     pub fn list(&self) -> Vec<String> {
         self.backend.list()
@@ -2353,8 +2368,34 @@ impl StoreHandle {
         }
     }
 
-    /// Fast `.leg` count without allocating all concept names (critical for 100k+ stores).
+    /// Invalidate cached block count (store/forget/upgrade paths).
+    pub fn invalidate_leg_block_count(&self) {
+        self.leg_block_count_cached_at
+            .store(0, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// Fast `.leg`/`.leg3` count without allocating concept names.
+    /// Cached 30s; invalidated on local store/forget.
     pub fn leg_block_count(&self) -> usize {
+        const TTL_SECS: u64 = 30;
+        let now = activity_now();
+        let cached_at = self
+            .leg_block_count_cached_at
+            .load(std::sync::atomic::Ordering::Relaxed);
+        if cached_at != 0 && now.saturating_sub(cached_at) < TTL_SECS {
+            return self
+                .leg_block_count_value
+                .load(std::sync::atomic::Ordering::Relaxed);
+        }
+        let count = self.scan_leg_block_count();
+        self.leg_block_count_value
+            .store(count, std::sync::atomic::Ordering::Relaxed);
+        self.leg_block_count_cached_at
+            .store(now, std::sync::atomic::Ordering::Relaxed);
+        count
+    }
+
+    fn scan_leg_block_count(&self) -> usize {
         std::fs::read_dir(&self.path)
             .map(|rd| {
                 rd.filter_map(|e| e.ok())
@@ -3567,6 +3608,7 @@ impl StoreHandle {
 
         let r = self.backend.store(concept, block);
         if r.is_ok() {
+            self.invalidate_leg_block_count();
             self.access_index.touch(concept);
             if concept.starts_with("trace:") {
                 self.log_activity(concept, "trace_fork", trace_fork_detail.as_deref());
@@ -4486,13 +4528,19 @@ impl StoreHandle {
 
         // ── Spatial-first: prefer real AABB AST items extracted by the daemon ──
         if !stem.is_empty() {
-            let all_concepts = self.list();
-            let mut spatial_hits: Vec<(String, f32, f32)> = all_concepts
+            use std::collections::HashSet;
+            let mut candidates = self.spatial_stem_candidates(&stem);
+            if self.leg_block_count() > Self::LARGE_MANIFOLD_THRESHOLD {
+                let mut seen: HashSet<String> = candidates.iter().cloned().collect();
+                for name in self.scan_stem_prefix_leg_files(&stem, 80) {
+                    if seen.insert(name.clone()) {
+                        candidates.push(name);
+                    }
+                }
+            }
+            let mut spatial_hits: Vec<(String, f32, f32)> = candidates
                 .into_iter()
                 .filter_map(|concept| {
-                    if !concept.to_lowercase().starts_with(&stem) {
-                        return None;
-                    }
                     // Prefer high_priority (hot/pinned) but fall back to regular fetch.
                     // Critical for passive/force bootstrap: freshly ingested AST (from watch bind or mcp force)
                     // may not be in the LegView/hot cache yet, but still have valid AABB and must be visible

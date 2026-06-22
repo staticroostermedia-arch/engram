@@ -94,6 +94,55 @@ static MOMENTUM_LRU: std::sync::LazyLock<
     std::sync::Mutex::new(std::collections::VecDeque::with_capacity(24))
 });
 
+/// Skip redundant process sheaf registration when `processes/` tomls are unchanged.
+struct ProcessSheafCache {
+    fingerprint: u64,
+    loaded: bool,
+}
+
+static PROCESS_SHEAF_CACHE: std::sync::LazyLock<std::sync::Mutex<ProcessSheafCache>> =
+    std::sync::LazyLock::new(|| {
+        std::sync::Mutex::new(ProcessSheafCache {
+            fingerprint: 0,
+            loaded: false,
+        })
+    });
+
+const PROCESS_SHEAF_SUBDIRS: &[&str] = &[
+    "ritual",
+    "harness",
+    "operator",
+    "monitor",
+    "process",
+    "linguistic",
+];
+
+fn processes_dir_fingerprint(base: &str) -> u64 {
+    let mut max_mtime: u64 = 0;
+    let mut count: u64 = 0;
+    for sub in PROCESS_SHEAF_SUBDIRS {
+        let dir = format!("{base}/{sub}");
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) != Some("toml") {
+                continue;
+            }
+            count = count.saturating_add(1);
+            if let Ok(meta) = entry.metadata() {
+                if let Ok(mt) = meta.modified() {
+                    if let Ok(d) = mt.duration_since(std::time::UNIX_EPOCH) {
+                        max_mtime = max_mtime.max(d.as_secs());
+                    }
+                }
+            }
+        }
+    }
+    count.wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ max_mtime
+}
+
 /// First non-empty string among `keys` — supports common agent alias parameter names.
 fn args_str<'a>(args: &'a Value, keys: &[&str]) -> Option<&'a str> {
     for key in keys {
@@ -122,20 +171,33 @@ fn load_process_sheaf(store: &SharedStore) -> Result<(), String> {
     // Called at mcp_engram_session_start for dynamic registration at wake-up boundary.
     // NOTE: Fully portable for public clones (no /path/to paths). See processes/, docs/SUBSTRATE_WINS_PLAN.md, AGENT_INTEGRATION_GUIDE.md.
     let t_load = std::time::Instant::now();
-    eprintln!("TIMING[load_process_sheaf]: start (T1 diagnostic for wake hang repro)");
     let base = std::env::var("ENGRAM_PROCESSES_DIR").unwrap_or_else(|_| {
         std::env::current_dir()
             .map(|p| p.join("processes").to_string_lossy().into_owned())
             .unwrap_or_else(|_| "processes".to_string())
     });
-    let subdirs = [
-        "ritual",
-        "harness",
-        "operator",
-        "monitor",
-        "process",
-        "linguistic",
-    ];
+    let fingerprint = processes_dir_fingerprint(&base);
+    if let Ok(cache) = PROCESS_SHEAF_CACHE.lock() {
+        if cache.loaded && cache.fingerprint == fingerprint {
+            // Skip only when this store already has sheaf blocks (fresh test stores must reload).
+            let already_registered = store
+                .lock()
+                .ok()
+                .and_then(|lock| {
+                    lock.fetch_block_high_priority("process:engram.ritual.wake-up")
+                        .map(|_| ())
+                })
+                .is_some();
+            if already_registered {
+                eprintln!(
+                    "TIMING[load_process_sheaf]: skip (processes/ unchanged, fingerprint={fingerprint})"
+                );
+                return Ok(());
+            }
+        }
+    }
+    eprintln!("TIMING[load_process_sheaf]: start (T1 diagnostic for wake hang repro)");
+    let subdirs = PROCESS_SHEAF_SUBDIRS;
     // Phase 2 – Sheaf Gluing & Spacetime Integration (additive only, no core changes to .leg3/VSA/MCP base, reuse h1_handler/OP_IS_SYMBOLIC_OF/OP_GEOMETRIC_PRODUCT patterns per audit; sub-agent handoff; file:130):
     // - Add "linguistic" to walk (subdirs array).
     // - Parse remains general (toml::Value extracts [process]/[category] incl. sheaf_role/h1_handler + [mcp_tools]/[requires]/[produces]/[invariants] + supports new [trace]/[spatial]/[thought-tiles]/[handoff]/[update] sections in linguistic/*.toml).
@@ -159,7 +221,7 @@ fn load_process_sheaf(store: &SharedStore) -> Result<(), String> {
     }
     let mut procs: Vec<ProcData> = vec![];
     let mut registered = 0usize;
-    for sub in &subdirs {
+    for sub in subdirs {
         let dir = format!("{}/{}", base, sub);
         if let Ok(entries) = std::fs::read_dir(&dir) {
             for entry in entries.flatten() {
@@ -315,7 +377,7 @@ fn load_process_sheaf(store: &SharedStore) -> Result<(), String> {
     {
         let t_pre = std::time::Instant::now();
         let mut hlock = store.lock().unwrap();
-        for sub in &subdirs {
+        for sub in subdirs {
             let pkey = format!("process:engram.{}.wake-up", sub);
             let _ = hlock.promote_tile_to_high_priority(&pkey);
         }
@@ -339,6 +401,10 @@ fn load_process_sheaf(store: &SharedStore) -> Result<(), String> {
         "TIMING[load_process_sheaf]: COMPLETE total={:.2}s",
         t_load.elapsed().as_secs_f32()
     );
+    if let Ok(mut cache) = PROCESS_SHEAF_CACHE.lock() {
+        cache.fingerprint = fingerprint;
+        cache.loaded = true;
+    }
     Ok(())
 }
 
