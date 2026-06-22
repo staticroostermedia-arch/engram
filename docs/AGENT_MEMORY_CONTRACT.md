@@ -306,6 +306,8 @@ All changes use dedicated git branch + full Enram working memory process (sessio
 
 First human-facing report tile minted at this interval: tile:research_offload_initial-human-facing-status-report--engram-ritua (with leading human_forward on ritual/git progress and Ariel tracking). Quick trace: trace:1782148473_at-first-key-interval-after-wake--goal-activatio. Commit: ad0858ca.
 
+Second human-facing report tile (knowledge_graph): tile:knowledge_graph_second-human-facing-report--enram-substrate-dogf . Quick trace: trace:1782148529_at-subsequent-phase-boundary--post-first-report- . Additional commit ea1cb86e updating docs with tile refs. Now 2 tiles, 2 commits on feat branch with trace refs. Working toward 3rd tile + rollback test.
+
 # 3. HANDOFF (1 call)
 mcp_engram_session_end(summary="<decisions, files, next steps>")
 ```
