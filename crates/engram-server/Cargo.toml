@@ -11,6 +11,10 @@ repository.workspace = true
 name = "engram"
 path = "src/main.rs"
 
+[[test]]
+name = "store"
+path = "tests/store.rs"
+
 [features]
 default = ["engram-gpu/wgpu-backend"]
 async-io = []                          # declared for ki_hijacker prototype / async read demos (silences unexpected_cfgs for the feature-gated fns)

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Live MCP capture for commit title/versioning process verification (plan step 3)."""
+"""Live MCP capture for commit title/versioning process verification (plan step 3-4)."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import os
 import re
 import sys
 from datetime import datetime, timezone
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple
 
 sys.path.insert(0, os.path.dirname(__file__))
 from mcp_test_client import MCPTestClient  # noqa: E402
@@ -17,6 +17,20 @@ from mcp_test_client import MCPTestClient  # noqa: E402
 GOAL = "goal:commit_title_versioning_process"
 DISCIPLINE = "commit_title_versioning_discipline"
 INTENT = "define commit title versioning process per plan"
+PREV_TRACE = "trace:1782163244_add-capture-commit-process-verify-sh---fix-verif"
+SESSION_END_SUMMARY = (
+    "commit process discipline defined per plan + ACs 1-4 exercised; "
+    "CONTEXT bad-description gap closed; related to git VC sub and engram_mvp_v1"
+)
+
+DOC_EDITS: List[Tuple[str, str, str]] = [
+    ("context_for_edit_contributing", "/home/a/Documents/Engram/CONTRIBUTING.md", "CONTRIBUTING.md:97"),
+    ("context_for_edit_pr_template", "/home/a/Documents/Engram/.github/PULL_REQUEST_TEMPLATE.md", "PULL_REQUEST_TEMPLATE.md:11"),
+    ("context_for_edit_agent_contract", "/home/a/Documents/Engram/docs/AGENT_MEMORY_CONTRACT.md", "AGENT_MEMORY_CONTRACT.md:339"),
+    ("context_for_edit_maintainer", "/home/a/Documents/Engram/docs/internal/MAINTAINER_WORKFLOW.md", "MAINTAINER_WORKFLOW.md:84"),
+    ("context_for_edit_context_injection", "/home/a/Documents/Engram/docs/CONTEXT_INJECTION_NVME_BYPASS.md", "CONTEXT_INJECTION_NVME_BYPASS.md:48"),
+    ("context_for_edit_engram_goal", "/home/a/Documents/Engram/grok-plugin-engram/commands/engram-goal.md", "engram-goal.md:19"),
+]
 
 
 def main() -> int:
@@ -43,6 +57,7 @@ def main() -> int:
     transcript: List[Dict[str, Any]] = []
     assertions: List[str] = []
     failures: List[str] = []
+    prev_trace_id = PREV_TRACE
 
     def snap(label: str, tool: str, tool_args: Dict[str, Any]) -> Dict[str, Any]:
         resp = client.call_tool(tool, tool_args, timeout=120.0)
@@ -68,9 +83,9 @@ def main() -> int:
     try:
         client.wait_for_fully_initialized(max_wait=90.0)
 
-        ss = snap("session_start", "mcp_engram_session_start", {"intent": INTENT})
+        snap("session_start", "mcp_engram_session_start", {"intent": INTENT})
         ack = snap("ack_wake_queue", "mcp_engram_ack_wake_queue", {"executed": True})
-        rec = snap("recall_anchors", "mcp_engram_recall", {
+        snap("recall_anchors", "mcp_engram_recall", {
             "query": "commit title versioning",
             "scope": "anchors",
             "k": 8,
@@ -79,18 +94,47 @@ def main() -> int:
         gl_done = snap("goal_list_completed", "mcp_engram_goal_list", {"status": "completed", "limit": 20})
         gs = snap("goal_status", "mcp_engram_goal_status", {"goal": GOAL})
         rc = snap("read_concept_discipline", "mcp_engram_read_concept", {"concept": DISCIPLINE})
-        cfe = snap("context_for_edit_contributing", "mcp_engram_context_for_edit", {
-            "path": "/home/a/Documents/Engram/CONTRIBUTING.md",
-        })
-        qt = snap("quick_trace_fork", "mcp_engram_quick_trace", {
-            "decision": "Capture commit discipline verification transcript run {}".format(args.run),
-            "why": "Plan step 3 requires raw MCP sequence with context_for_edit + quick_trace + goal_context",
+
+        for label, path, spatial in DOC_EDITS:
+            entry = snap(label, "mcp_engram_context_for_edit", {"path": path})
+            parsed = entry.get("parsed") or {}
+            if parsed.get("file_path") == path or path.split("/")[-1] in entry.get("text", ""):
+                assertions.append(f"{label} OK ({spatial})")
+            else:
+                failures.append(f"{label} failed for {path}")
+
+        qt_pre = snap("quick_trace_pre_edit", "mcp_engram_quick_trace", {
+            "decision": "Verify commit discipline docs landed with full ritual capture",
+            "why": "Plan AC3 requires quick_trace at forks with goal_context + prev + spatial_context",
             "goal_context": GOAL,
+            "prev": prev_trace_id,
+            "spatial_context": "CONTRIBUTING.md:97",
         })
-        snap("verify_manifold", "mcp_engram_verify_manifold_integrity", {
+        m = re.search(r"trace:([^\s\)]+)", qt_pre.get("text", ""))
+        if m:
+            prev_trace_id = f"trace:{m.group(1)}"
+            assertions.append(f"quick_trace_pre chained from {PREV_TRACE}")
+        else:
+            failures.append("quick_trace_pre did not return trace id")
+
+        qt = snap("quick_trace_capture_fork", "mcp_engram_quick_trace", {
+            "decision": f"Commit discipline verification capture run {args.run}",
+            "why": "Plan step 3 raw MCP transcript with chained prev + spatial per edited doc loci",
+            "goal_context": GOAL,
+            "prev": prev_trace_id,
+            "spatial_context": "scripts/validate-commit-msg.sh:1",
+        })
+        verify_entry = snap("verify_manifold", "mcp_engram_verify_manifold_integrity", {
             "min_crs": 0.74,
             "sample_size": 15,
         })
+
+        session_end_entry: Dict[str, Any] = {}
+        if args.run == 2:
+            session_end_entry = snap("session_end", "mcp_engram_session_end", {
+                "summary": SESSION_END_SUMMARY,
+                "prepare_compression": True,
+            })
 
         if ack.get("parsed", {}).get("status") != "acked" and "acked" not in ack.get("text", "").lower():
             failures.append("ack_wake_queue did not ack")
@@ -113,27 +157,28 @@ def main() -> int:
         else:
             assertions.append("read_concept commit_title_versioning_discipline OK")
 
-        if "Commit Message" not in cfe.get("text", "") and cfe.get("parsed") is None:
-            if "file_path" not in str(cfe.get("parsed", {})):
-                pass
-        cfe_parsed = cfe.get("parsed") or {}
-        if cfe_parsed.get("file_path") == "/home/a/Documents/Engram/CONTRIBUTING.md":
-            assertions.append("context_for_edit CONTRIBUTING.md OK")
-        elif "CONTRIBUTING" in cfe.get("text", ""):
-            assertions.append("context_for_edit CONTRIBUTING.md OK (text)")
-
         if "trace:" not in qt.get("text", ""):
-            failures.append("quick_trace did not return trace id")
+            failures.append("quick_trace_capture did not return trace id")
         else:
-            assertions.append("quick_trace returned trace id")
+            assertions.append("quick_trace_capture returned trace id with prev chain")
 
-        verify_text = transcript[-1].get("text", "")
+        if qt_pre.get("args", {}).get("prev") != PREV_TRACE:
+            failures.append("quick_trace_pre missing prev chain param")
+        if qt.get("args", {}).get("spatial_context") != "scripts/validate-commit-msg.sh:1":
+            failures.append("quick_trace_capture missing spatial_context")
+
+        verify_text = verify_entry.get("text", "")
         if "Overall: healthy" not in verify_text:
             failures.append(f"verify_manifold not healthy: {verify_text[:200]}")
         else:
             assertions.append("verify_manifold healthy")
 
-        # Commit msg pattern simulation (plan step 3)
+        if args.run == 2:
+            if SESSION_END_SUMMARY not in session_end_entry.get("args", {}).get("summary", ""):
+                failures.append("session_end summary does not match plan step 4 required text")
+            else:
+                assertions.append("session_end with plan-required summary + prepare_compression")
+
         sim_msg = (
             "fix(server): bundle injection completeness inputs for clippy CI\n\n"
             "Refactor in injection_priority.rs; update store.rs.\n\n"
@@ -149,18 +194,17 @@ def main() -> int:
             "goal": GOAL,
             "discipline": DISCIPLINE,
             "intent": INTENT,
+            "session_end_summary": SESSION_END_SUMMARY if args.run == 2 else None,
+            "doc_edits": [{"label": l, "path": p, "spatial": s} for l, p, s in DOC_EDITS],
             "transcript": transcript,
             "assertions": assertions,
             "failures": failures,
             "simulated_commit_msg": sim_msg,
             "simulated_msg_valid": has_conv and has_ref,
-            "primary_goal": (ss.get("parsed") or {}).get("continuation", {}).get("primary_goal")
-            or (ss.get("parsed") or {}).get("primary_goal"),
         }
         with open(out_path, "w") as f:
             json.dump(result, f, indent=2)
 
-        # Also write combined on run2
         if args.run == 2:
             combined = os.path.join(scratch, "engram-commit-process-verify.json")
             r1_path = os.path.join(scratch, "engram-commit-process-verify-run1.json")
@@ -169,7 +213,7 @@ def main() -> int:
                 runs.append(json.load(open(r1_path)))
             runs.append(result)
             with open(combined, "w") as f:
-                json.dump({"runs": runs, "consistent": len(failures) == 0}, f, indent=2)
+                json.dump({"runs": runs, "consistent": all(len(r.get("failures", [])) == 0 for r in runs)}, f, indent=2)
 
         print(json.dumps({"ok": len(failures) == 0, "out": out_path, "failures": failures}, indent=2))
         return 0 if len(failures) == 0 else 1
