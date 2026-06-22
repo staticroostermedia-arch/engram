@@ -18,7 +18,7 @@ When a goal is **completed** or **demoted**:
 3. `mcp_engram_session_end(summary=..., prepare_compression=true)` — handoff for next wake
 4. **Terminal:** push branch + PR notes (fixes, ACs passed, traces) — e.g. after manage-resume verification on `feat/perfect-context-injection-nvme-bypass`
 
-**TUI `/goal` vs Engram `goal:*`:** Ephemeral TUI session goals clear with `update_goal(completed=true)`. Persistent substrate goals use the MCP steps above. After clear, `session_start` should not surface the completed goal in `primary_goal` or top `suggested_actions`.
+**TUI `/goal` vs Engram `goal:*`:** Ephemeral TUI session goals clear with `update_goal(completed=true)`. Persistent substrate goals use the MCP steps above. `goal_update_status(completed)` auto-restores the `primary_goal` marker to `parent_goal` (no manual `set_primary` required when parent exists). After clear, `session_start` must not surface the completed goal in `continuation.primary_goal` or `suggested_actions`.
 
 All traces and tiles should reference active primary goal when known. Keep serving stack ≤6 — demote stale goals via LEG hygiene or MCP.
 

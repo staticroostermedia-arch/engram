@@ -591,14 +591,21 @@ pub fn build_suggested_actions(
         if let Some(packet) = parse_handoff_packet_json(&text) {
             handoff_packet = Some(packet.clone());
             if let Some(goal) = packet.get("primary_goal").and_then(|v| v.as_str()) {
-                primary_goal = Some(goal.to_string());
-                push_action(
-                    &mut actions,
-                    "mcp_engram_recall",
-                    json!({ "query": goal, "scope": "anchors", "k": 5 }),
-                    "inherit primary goal context",
-                    2,
-                );
+                if store
+                    .fetch_block_high_priority(goal)
+                    .map(|b| crate::store::goal_block_text(&b))
+                    .map(|t| crate::store::goal_status_is_active(&t))
+                    .unwrap_or(false)
+                {
+                    primary_goal = Some(goal.to_string());
+                    push_action(
+                        &mut actions,
+                        "mcp_engram_recall",
+                        json!({ "query": goal, "scope": "anchors", "k": 5 }),
+                        "inherit primary goal context",
+                        2,
+                    );
+                }
             }
             if let Some(files) = packet.get("files_touched").and_then(|v| v.as_array()) {
                 for (i, file) in files.iter().take(5).enumerate() {
@@ -637,19 +644,15 @@ pub fn build_suggested_actions(
                 );
             }
         }
-    } else if let Some(block) = store.fetch_block_high_priority("primary_goal") {
-        let text = storage::read_provlog(&block);
-        if let Some(line) = text.lines().find(|l| l.starts_with("**goal:**")) {
-            let g = line.replace("**goal:**", "").trim().to_string();
-            primary_goal = Some(g.clone());
-            push_action(
-                &mut actions,
-                "mcp_engram_recall",
-                json!({ "query": g, "scope": "anchors", "k": 5 }),
-                "primary goal from marker",
-                2,
-            );
-        }
+    } else if let Some(g) = crate::store::resolve_active_primary_goal(store) {
+        primary_goal = Some(g.clone());
+        push_action(
+            &mut actions,
+            "mcp_engram_recall",
+            json!({ "query": g, "scope": "anchors", "k": 5 }),
+            "primary goal from marker",
+            2,
+        );
     }
 
     // Orchestrator program wake — front execution map + parallel program process.
@@ -1081,14 +1084,7 @@ pub fn build_harness_bundle(store: &mut StoreHandle, session_intent: Option<&str
         .map(|h| walk_trace_chain(store, h, 8))
         .unwrap_or_default();
 
-    let primary_goal = store
-        .fetch_block_high_priority("primary_goal")
-        .and_then(|b| {
-            let text = storage::read_provlog(&b);
-            text.lines()
-                .find(|l| l.starts_with("**goal:**"))
-                .map(|l| l.replace("**goal:**", "").trim().to_string())
-        });
+    let primary_goal = crate::store::resolve_active_primary_goal(store);
 
     let ego_snapshot = build_ego_snapshot(store, primary_goal.as_deref());
     let continuity_playbook = build_continuity_playbook(primary_goal.as_deref());

@@ -4960,6 +4960,7 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
 
                 match lock.store(&goal, block) {
                     Ok(_) => {
+                        lock.invalidate_continuation_bundle_cache();
                         let mut msg = format!("✓ Goal {} status updated to {}", goal, status);
                         if status == "completed" || status == "demoted" {
                             let removed = lock.unrelate("primary_goal", "serves", &goal);
@@ -4968,6 +4969,21 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                                     "\n✓ Removed primary_goal --serves--> {} (use mcp_engram_demote_from_context for full archival trace)",
                                     goal
                                 ));
+                            }
+                            match lock.restore_primary_goal_marker_after_complete(&goal) {
+                                crate::store::PrimaryMarkerRestore::Restored(parent) => {
+                                    msg.push_str(&format!(
+                                        "\n✓ primary_goal marker restored to {} (was {})",
+                                        parent, goal
+                                    ));
+                                }
+                                crate::store::PrimaryMarkerRestore::Cleared => {
+                                    msg.push_str(&format!(
+                                        "\n✓ primary_goal marker cleared (was {})",
+                                        goal
+                                    ));
+                                }
+                                crate::store::PrimaryMarkerRestore::Unchanged => {}
                             }
                         }
                         json!({ "content": [{ "type": "text", "text": msg }] })

@@ -1115,6 +1115,13 @@ pub(crate) fn normalize_spatial_context(raw: &str) -> Result<SpatialContextNorma
 
 // ── StoreHandle ───────────────────────────────────────────────────────────────
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PrimaryMarkerRestore {
+    Unchanged,
+    Restored(String),
+    Cleared,
+}
+
 pub struct StoreHandle {
     backend: Backend,
     path: String,
@@ -1227,7 +1234,51 @@ pub fn goal_status_is_active(text: &str) -> bool {
     goal_status_matches(text, "active")
 }
 
+/// Active primary from marker: unset/inactive/completed goals return None.
+pub fn resolve_active_primary_goal(store: &StoreHandle) -> Option<String> {
+    let marker = store.fetch_block_high_priority("primary_goal")?;
+    let target = primary_goal_marker_target(&marker)?;
+    let gblock = store.fetch_block_high_priority(&target)?;
+    let gtext = goal_block_text(&gblock);
+    if goal_status_is_active(&gtext) {
+        Some(target)
+    } else {
+        None
+    }
+}
+
 /// Rewrite canonical status line; strip legacy `--- Status Update ---` append blocks from MVP path.
+/// Read `**goal:**` from the `primary_goal` marker block (None if unset/empty).
+pub fn primary_goal_marker_target(block: &engram_core::types::HolographicBlock) -> Option<String> {
+    let text = goal_block_text(block);
+    let g = text
+        .lines()
+        .find(|l| l.starts_with("**goal:**"))
+        .map(|l| l.replace("**goal:**", "").trim().to_string())?;
+    if g.is_empty() || g.eq_ignore_ascii_case("unset") {
+        None
+    } else {
+        Some(g)
+    }
+}
+
+/// If the marker points at `completed`, re-point to `parent_goal` or clear to unset.
+pub fn restore_primary_goal_marker_payload(completed: &str, parent: Option<&str>) -> String {
+    match parent.filter(|p| !p.is_empty()) {
+        Some(parent) => format!(
+            "PRIMARY GOAL\n\n**goal:** {}\n**set_at:** {}\n**restored_from:** {}\n",
+            parent,
+            chrono::Utc::now().to_rfc3339(),
+            completed
+        ),
+        None => format!(
+            "PRIMARY GOAL\n\n**goal:** unset\n**set_at:** {}\n**cleared_after:** {}\n",
+            chrono::Utc::now().to_rfc3339(),
+            completed
+        ),
+    }
+}
+
 pub fn rewrite_goal_status(text: &str, new_status: &str) -> String {
     let base = text.split("\n\n--- Status Update ---").next().unwrap_or(text);
     let mut rewritten = false;
@@ -2647,13 +2698,7 @@ impl StoreHandle {
     ) -> serde_json::Value {
         let summary_trunc: String = summary.chars().take(2000).collect();
 
-        let mut primary_goal: Option<String> = None;
-        if let Some(block) = self.fetch_block_high_priority("primary_goal") {
-            let text = engram_core::storage::read_provlog(&block);
-            if let Some(line) = text.lines().find(|l| l.starts_with("**goal:**")) {
-                primary_goal = Some(line.replace("**goal:** ", "").trim().to_string());
-            }
-        }
+        let primary_goal = resolve_active_primary_goal(self);
 
         let mut recent_traces: Vec<serde_json::Value> = Vec::new();
         let mut trace_chain_head: Option<String> = None;
@@ -2840,12 +2885,8 @@ impl StoreHandle {
             }
         };
 
-        let mut primary_goal_name: Option<String> = None;
-        if let Some(block) = self.fetch_block_high_priority("primary_goal") {
-            let text = engram_core::storage::read_provlog(&block);
-            if let Some(line) = text.lines().find(|l| l.starts_with("**goal:**")) {
-                primary_goal_name = Some(line.replace("**goal:** ", "").trim().to_string());
-            }
+        let primary_goal_name = resolve_active_primary_goal(self);
+        if self.fetch_block_high_priority("primary_goal").is_some() {
             push(
                 self,
                 &mut entries,
@@ -4132,6 +4173,42 @@ impl StoreHandle {
         ))
     }
 
+    /// When `primary_goal` marker still points at a completed/demoted goal, restore parent or clear to unset.
+    pub fn restore_primary_goal_marker_after_complete(
+        &mut self,
+        completed: &str,
+    ) -> PrimaryMarkerRestore {
+        let Some(marker) = self.fetch_block_high_priority("primary_goal") else {
+            return PrimaryMarkerRestore::Unchanged;
+        };
+        let Some(current) = primary_goal_marker_target(&marker) else {
+            return PrimaryMarkerRestore::Unchanged;
+        };
+        if current != completed {
+            return PrimaryMarkerRestore::Unchanged;
+        }
+
+        let parent = self.fetch_block_high_priority(completed).and_then(|b| {
+            goal_block_text(&b)
+                .lines()
+                .find(|l| l.starts_with("**parent_goal:**"))
+                .map(|l| l.replace("**parent_goal:**", "").trim().to_string())
+                .filter(|p| !p.is_empty())
+        });
+
+        let payload = restore_primary_goal_marker_payload(completed, parent.as_deref());
+        let mut new_marker = self.encode(&payload);
+        new_marker.zedos_tag = engram_core::types::ZEDOS_OPERATIONAL;
+        new_marker.crs_score = 0.95;
+        let _ = self.store("primary_goal", new_marker);
+        self.invalidate_continuation_bundle_cache();
+        self.mark_ki_rebake_needed();
+        match parent {
+            Some(p) => PrimaryMarkerRestore::Restored(p),
+            None => PrimaryMarkerRestore::Cleared,
+        }
+    }
+
     /// Drop a relation edge from the knowledge-graph sidecar only (block remains in manifold).
     pub fn unrelate(&mut self, concept_a: &str, label: &str, concept_b: &str) -> bool {
         let ok = self.relation_index.remove(concept_a, label, concept_b);
@@ -4225,6 +4302,7 @@ impl StoreHandle {
         let _ = self.relate(&trace_key, concept, "demotes_goal");
         let _ = self.relate(&trace_key, concept, "archived_from_context");
         let removed_serves = self.unrelate("primary_goal", "serves", concept);
+        let _ = self.restore_primary_goal_marker_after_complete(concept);
         let cascaded_demotions = self.demote_condensation_from_serving_stack();
         Ok(ArchiveFromContextResult {
             trace_key,
@@ -6486,6 +6564,92 @@ mod ingest_ast_tests {
             coh >= DEFAULT_COHERENCE_MIN,
             "full_source q/provlog coherence {coh} below min {DEFAULT_COHERENCE_MIN}"
         );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn goal_update_status_flow_restores_marker_like_set_primary() {
+        let dir = test_store_dir("goal_update_flow");
+        let mut store = StoreHandle::new(&dir.to_string_lossy());
+
+        store
+            .remember(
+                "goal:parent_flow",
+                "GOAL BLOCK\n\n**goal_statement:** parent\n\n**status:** active\n",
+            )
+            .unwrap();
+        store
+            .remember(
+                "goal:child_flow",
+                "GOAL BLOCK\n\n**goal_statement:** child\n\n**status:** active\n**parent_goal:** goal:parent_flow\n",
+            )
+            .unwrap();
+        let payload = format!(
+            "PRIMARY GOAL\n\n**goal:** {}\n**set_at:** {}\n",
+            "goal:child_flow",
+            chrono::Utc::now().to_rfc3339()
+        );
+        let mut marker = store.encode(&payload);
+        marker.zedos_tag = engram_core::types::ZEDOS_OPERATIONAL;
+        marker.crs_score = 0.95;
+        store.store("primary_goal", marker).unwrap();
+
+        let mut block = store.fetch_block_high_priority("goal:child_flow").unwrap();
+        let text = goal_block_text(&block);
+        let new_text = rewrite_goal_status(&text, "completed");
+        engram_core::storage::write_provlog(&mut block, &new_text);
+        store.store("goal:child_flow", block).unwrap();
+        store.unrelate("primary_goal", "serves", "goal:child_flow");
+
+        let outcome = store.restore_primary_goal_marker_after_complete("goal:child_flow");
+        assert_eq!(
+            outcome,
+            PrimaryMarkerRestore::Restored("goal:parent_flow".to_string())
+        );
+        assert_eq!(
+            resolve_active_primary_goal(&store).as_deref(),
+            Some("goal:parent_flow")
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn primary_goal_marker_restores_parent_on_complete() {
+        let dir = test_store_dir("primary_restore");
+        let mut store = StoreHandle::new(&dir.to_string_lossy());
+
+        store
+            .remember(
+                "goal:parent_test",
+                "GOAL BLOCK\n\n**goal_statement:** parent\n\n**status:** active\n",
+            )
+            .unwrap();
+        store
+            .remember(
+                "goal:child_test",
+                "GOAL BLOCK\n\n**goal_statement:** child\n\n**status:** active\n**parent_goal:** goal:parent_test\n",
+            )
+            .unwrap();
+        store
+            .remember(
+                "primary_goal",
+                "PRIMARY GOAL\n\n**goal:** goal:child_test\n**set_at:** test\n",
+            )
+            .unwrap();
+
+        let outcome = store.restore_primary_goal_marker_after_complete("goal:child_test");
+        assert_eq!(
+            outcome,
+            PrimaryMarkerRestore::Restored("goal:parent_test".to_string())
+        );
+        let marker = store.fetch_block_high_priority("primary_goal").unwrap();
+        assert_eq!(
+            primary_goal_marker_target(&marker).as_deref(),
+            Some("goal:parent_test")
+        );
+        assert_eq!(resolve_active_primary_goal(&store).as_deref(), Some("goal:parent_test"));
 
         let _ = std::fs::remove_dir_all(&dir);
     }

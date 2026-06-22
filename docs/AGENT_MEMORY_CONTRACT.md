@@ -83,7 +83,7 @@ When verification passes (e.g. injection_completeness + `full_bvh_gpu` at wake),
 
 **Last step (terminal):** push branch + open PR with notes outlining fixes and improvements (AC table, traces, branch name). Local `git log` + `pr-notes.md` in harness scratch is sufficient when network auth unavailable.
 
-Post-clear check: `session_start` + `goal_list(status=active)` + `recall(scope=anchors, query="goal:")` — completed goal absent from `primary_goal`, not top in `suggested_actions`, `status=completed` or `completes_goal` present.
+`goal_update_status(completed)` **auto-restores** the `primary_goal` marker to `parent_goal` (or clears to `unset` if no parent). `demote_from_context` repeats the marker fix if needed. Post-clear check: `recall(scope=anchors, query="goal:")` then `session_start` — completed goal absent from `continuation.primary_goal`, not in `suggested_actions` recall queue, absent from `goal_list(status=active)`, present in `goal_list(status=completed)`.
 
 See [HARNESS_INJECTION.md](HARNESS_INJECTION.md#manage-resume-tui--mcp-restart) and [CONTEXT_INJECTION_NVME_BYPASS.md](CONTEXT_INJECTION_NVME_BYPASS.md).
 

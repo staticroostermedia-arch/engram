@@ -692,10 +692,18 @@ class MCPTestClient:
             raw_transcript.append(entry)
             return entry
 
+        parent_short = f"harness_parent_{ts}"
+        parent_key = f"goal:{parent_short}"
+        snap("goal_create_parent", "mcp_engram_goal_create", {
+            "goal_id": parent_short,
+            "statement": "Harness parent goal for clear-restore test",
+            "priority": "medium",
+        })
         snap("goal_create", "mcp_engram_goal_create", {
             "goal_id": goal_short,
             "statement": "Harness goal-clear protocol test (isolated store)",
             "priority": "high",
+            "parent": parent_key,
         })
         sp = snap("goal_set_primary", "mcp_engram_goal_set_primary", {"goal": goal_key})
         if "serves" not in sp.get("text", ""):
@@ -749,15 +757,46 @@ class MCPTestClient:
         dem_parsed = dem.get("parsed") or {}
         assertions.append(f"demote removed_serves={dem_parsed.get('removed_serves')}")
 
+        snap("recall_goals_post", "mcp_engram_recall", {
+            "query": "goal:",
+            "scope": "anchors",
+            "k": 5,
+        })
+
         gl_post = snap("goal_list_active_post", "mcp_engram_goal_list", {"status": "active", "limit": 40})
         gl_done = snap("goal_list_completed_post", "mcp_engram_goal_list", {"status": "completed", "limit": 40})
-        snap("session_start_post_clear_run1", "mcp_engram_session_start", {
+        ss_post1 = snap("session_start_post_clear_run1", "mcp_engram_session_start", {
             "intent": "goal-clear harness — post-clear run1",
         })
-        snap("session_start_post_clear_run2", "mcp_engram_session_start", {
+        ss_post2 = snap("session_start_post_clear_run2", "mcp_engram_session_start", {
             "intent": "goal-clear harness — post-clear run2",
         })
         gs_post = snap("goal_status_post_clear", "mcp_engram_goal_status", {"goal": goal_key})
+
+        def assert_post_clear(ss_entry: Dict[str, Any], label: str) -> None:
+            data = ss_entry.get("parsed") or {}
+            cont = data.get("continuation") or data
+            primary = cont.get("primary_goal")
+            if primary == goal_key:
+                failures.append(f"{label}: post-clear primary_goal still {goal_key}")
+            else:
+                assertions.append(f"{label}: post-clear primary_goal={primary!r} (not cleared goal)")
+            if primary != parent_key:
+                failures.append(f"{label}: expected primary restored to {parent_key}, got {primary!r}")
+            else:
+                assertions.append(f"{label}: primary restored to parent")
+            surfaced = False
+            for action in cont.get("suggested_actions") or []:
+                args = action.get("args") or {}
+                q = args.get("query") or args.get("concept") or ""
+                if goal_short in str(q) or goal_key in str(q):
+                    surfaced = True
+                    failures.append(f"{label}: suggested_actions still surfaces cleared goal in {args}")
+            if not surfaced:
+                assertions.append(f"{label}: suggested_actions omit cleared goal")
+
+        assert_post_clear(ss_post1, "post_clear_run1")
+        assert_post_clear(ss_post2, "post_clear_run2")
 
         if goal_short in gl_post.get("text", ""):
             failures.append("post-clear goal still in goal_list(active)")
