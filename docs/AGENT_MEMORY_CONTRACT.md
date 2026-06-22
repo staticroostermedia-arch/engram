@@ -296,6 +296,13 @@ mcp_engram_recall(query="<keywords>", scope="anchors")
 # … edit …
 mcp_engram_quick_trace(decision="...", why="...")
 mcp_engram_remember(concept="...", text="...")  # or update if match >0.85
+```
+
+## Active long-running task tracking (Ariel north star substrate perfection)
+
+This 8-tool contract and ritual discipline is actively dogfooded for the goal "Make Engram the perfect AI memory substrate for you" (long-running RSI/Ariel task per design:ariel_property_holographic_mind_map_north_star). See the plan (source of truth, with checklist, AC, verification, deviations) at `/home/a/.grok/sessions/%2Fhome%2Fa%2FDocuments%2FEngram/019eb976-8aed-7c43-a3c1-3be06a7ad806/goal/plan.md` on branch `feat/perfect-substrate-ariel-ritual-tracking`.
+
+All changes use dedicated git branch + full Enram working memory process (session_start + ack, context_for_edit before edits, recall(anchors) before derive, quick_trace at forks w/ goal_context + prev, thought_tile_create w/ human_forward leading at key intervals, session_end(prepare_compression), goal_* tracking + relate to north star). Periodic human-facing reports as tiles. Explicit rollback exercised. Trace/tile IDs referenced in git commits for dual (manifold + VC) tracking and safe rollback. See plan for current status.
 
 # 3. HANDOFF (1 call)
 mcp_engram_session_end(summary="<decisions, files, next steps>")
