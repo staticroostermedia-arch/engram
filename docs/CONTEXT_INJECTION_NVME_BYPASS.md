@@ -44,3 +44,5 @@ Lean 8-tool loop + `get_continuation_bundle` when slim completeness &lt; 0.85 or
 3. Execute `suggested_actions` (composite `injection_rank`) → `ack_wake_queue`.
 4. Poll `get_backend_readiness` until `full_bvh_gpu` on large store (~25–30s) or escalate to full bundle.
 5. Harness sim: `STABLE_BIN=target/debug/engram tools/test-harness/bin/engram-harness.sh --suite agent-memory`.
+6. **Goal complete:** all ACs pass → clear via `goal_update_status(completed)` + `demote_from_context` (Engram) or `update_goal(completed=true)` (TUI `/goal`); then `session_end(prepare_compression=true)`.
+7. **Terminal:** push `feat/perfect-context-injection-nvme-bypass` + PR notes (fixes: injection_completeness, composite `injection_rank`, BVH dedup; improvements: lean resume without re-brief). Goal 019ec286 traces in handoff.

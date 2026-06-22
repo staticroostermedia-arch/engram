@@ -92,8 +92,17 @@ After `session_end` succeeds (or within the same block before end):
 
 ---
 
+## Goal complete before handoff
+
+When the session goal is **done** (all ACs pass, verification green):
+
+1. **Clear the goal** — TUI: `update_goal(completed=true)`; Engram task goal: `goal_update_status(completed)` + `demote_from_context`
+2. **Then** `session_end` as below — handoff should reference completion, not reopen the finished arc
+3. **Terminal (after session_end):** push branch + PR notes outlining fixes and improvements
+
 ## Success Criteria
 
+- [ ] Completed goals cleared (`goal_update_status` + `demote_from_context` or TUI `update_goal`)
 - [ ] `session_end` called with trace-referenced summary
 - [ ] `handoff_packet` returned and understood
 - [ ] `key_traces` and `next_actions` populated for next wake

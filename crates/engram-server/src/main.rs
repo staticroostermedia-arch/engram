@@ -96,6 +96,9 @@ enum Commands {
         /// Max seconds to wait for full store initialization (default 180)
         #[arg(long, default_value_t = 180)]
         timeout: u64,
+        /// Emit readiness JSON to stdout on success (for launch/resume evidence scripts)
+        #[arg(long, default_value_t = false)]
+        json: bool,
     },
 
     /// Run as a REST HTTP server
@@ -165,7 +168,7 @@ fn main() -> anyhow::Result<()> {
         .build()?;
 
     match cli.command {
-        Commands::WaitReady { timeout } => {
+        Commands::WaitReady { timeout, json } => {
             use std::sync::mpsc;
             use std::time::Duration;
 
@@ -195,6 +198,14 @@ fn main() -> anyhow::Result<()> {
                         hot,
                         readiness
                     );
+                    if json {
+                        let payload = serde_json::json!({
+                            "status": "ready",
+                            "hot_concepts": hot,
+                            "readiness": readiness,
+                        });
+                        println!("{}", serde_json::to_string(&payload).unwrap_or_else(|_| "{}".into()));
+                    }
                 }
                 Err(mpsc::RecvTimeoutError::Timeout) => {
                     tracing::error!(

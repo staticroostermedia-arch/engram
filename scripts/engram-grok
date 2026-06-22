@@ -55,6 +55,7 @@ if [[ " $* " == *" mcp "* ]]; then
     "$REAL_ENGRAM" --store "$STORE" wait-ready --timeout 180 || {
         echo "[engram-grok] wait-ready timed out or failed; proceeding with mcp anyway (may still hit early-ready guard)." >&2
     }
+    echo "[engram-grok] Post-restart: first agent call should be mcp_engram_session_start(intent=post-restart verify); check continuation.injection_completeness + nvme_context; poll get_backend_readiness ~30s for full_bvh_gpu on large stores. See docs/AGENT_MEMORY_CONTRACT.md#manage-resume-tui--mcp-restart" >&2
 fi
 
 exec "$REAL_ENGRAM" --store "$STORE" "$@"

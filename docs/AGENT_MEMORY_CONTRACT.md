@@ -71,6 +71,20 @@ After **TUI restart**, **MCP transport death**, or **`cargo build`** on `engram-
 5. If `injection_completeness.missing` contains `nvme_recall_path` or `gpu_hot_resident`, call **`mcp_engram_get_continuation_bundle`** before broad reads.
 6. **Harness sim (no TUI):** `STABLE_BIN=target/debug/engram tools/test-harness/bin/engram-harness.sh --suite agent-memory` — isolated relaunch proves bundle fields on fresh MCP client.
 
+### Goal complete — clear resume injection, then push
+
+When verification passes (e.g. injection_completeness + `full_bvh_gpu` at wake), **yes — clear the completed goal** so it stops surfacing in wake injection:
+
+| Layer | Clear how |
+|-------|-----------|
+| **TUI session goal** (`/goal manage resume`) | `update_goal(completed=true)` — harness clears the active nudge |
+| **Engram task goal** (`goal:*` on serving stack) | `mcp_engram_goal_update_status(status="completed")` then `mcp_engram_demote_from_context` — removes `primary_goal --serves-->` edge + mints `completes_goal` archival trace |
+| **Handoff** | `mcp_engram_session_end(summary=..., prepare_compression=true)` — structured packet for next wake |
+
+**Last step (terminal):** push branch + open PR with notes outlining fixes and improvements (AC table, traces, branch name). Local `git log` + `pr-notes.md` in harness scratch is sufficient when network auth unavailable.
+
+Post-clear check: `session_start` + `goal_list(status=active)` + `recall(scope=anchors, query="goal:")` — completed goal absent from `primary_goal`, not top in `suggested_actions`, `status=completed` or `completes_goal` present.
+
 See [HARNESS_INJECTION.md](HARNESS_INJECTION.md#manage-resume-tui--mcp-restart) and [CONTEXT_INJECTION_NVME_BYPASS.md](CONTEXT_INJECTION_NVME_BYPASS.md).
 
 ---

@@ -101,7 +101,8 @@ Usage:
   $0 [options] [--suite SUITE]
 
 Options:
-  --suite NAME          health | full-wakeup | transport-lifetime | heavy-light | optix-stress | compression-measurement | lawfulness-metric | continuation-bundle | agent-memory | all (default: health)
+  --suite NAME          health | full-wakeup | transport-lifetime | heavy-light | optix-stress | compression-measurement | lawfulness-metric | continuation-bundle | agent-memory | resume-large | all (default: health)
+                              resume-large: fresh MCP on live store (~/.engram/stalks) — wait-ready JSON + session_start injection fields + rebuild_bvh poll for full_bvh_gpu (do not run while TUI MCP holds lock)
                               continuation-bundle: goal stack + session_start bundle + compression handoff + MCP store upgrade readiness
                               agent-memory: MVP lean 8-tool loop (session_start → readiness → recall(anchors) → quick_trace → remember → session_end → handoff verify)
                               compression-measurement: exercises Context Compression Tracking System v1 (dual-lens before/after + COMPRESS marker minting high-CRS event artifacts bound to codeland + MCP harness)
@@ -284,6 +285,25 @@ start_live_observers() {
   echo "   Observers PIDs: $OBSERVER_PIDS (logs in $RUN_LOG_DIR/)"
 }
 
+run_resume_large_suite() {
+  local bin="$1"
+  local live_store="${ENGRAM_STORE:-$HOME/.engram/stalks}"
+  local scratch="${HARNESS_RESUME_SCRATCH:-/tmp/engram-harness-resume-${RUN_ID}}"
+  mkdir -p "$scratch"
+  echo -e "${BOLD}→ resume-large: fresh MCP client on live store${RESET}"
+  echo "   Binary : $bin"
+  echo "   Store  : $live_store (production — requires no other MCP on this store)"
+  echo "   Scratch: $scratch"
+  local rc=0
+  python3 "$HARNESS_ROOT/python/resume_verify.py" \
+    --binary "$bin" \
+    --store "$live_store" \
+    --scratch "$scratch" \
+    --bvh-poll-sec 180 || rc=$?
+  echo "   resume_verify exit: $rc (0=full_bvh_gpu, 2=lock held, 3=timeout)"
+  return $rc
+}
+
 run_single_suite() {
   local bin="$1"
   local suite="$2"
@@ -385,6 +405,12 @@ PY
   echo ""
   echo "Full results in $RESULTS_DIR and $RUN_LOG_DIR"
   exit $(( STABLE_RC || DEV_RC ))
+fi
+
+# resume-large uses production store — skip isolated temp-store path
+if [[ "$SUITE" == "resume-large" ]]; then
+  run_resume_large_suite "$EFFECTIVE_BIN"
+  exit $?
 fi
 
 # Normal single-binary run (stable by default, or repro)

@@ -112,14 +112,14 @@ class MCPTestClient:
         self.binary = binary
         self.store_dir = os.path.abspath(store_dir)
         self.env = os.environ.copy()
-        # Isolated harness stores must not load production sheaf.toml multi-stalk config.
+        if env_overrides:
+            self.env.update(env_overrides)
+        # Isolated harness defaults (skipped when env_overrides supplies live-store resume values).
         self.env.setdefault("ENGRAM_DISABLE_SHEAF", "1")
         self.env.setdefault("ENGRAM_FORCE_CPU_BACKEND", "1")
         self.env.setdefault("ENGRAM_KI_DISABLE", "1")
         self.env.setdefault("ENGRAM_NREM_DISABLE", "1")
         self.env.setdefault("ENGRAM_PROFILE", "agent")
-        if env_overrides:
-            self.env.update(env_overrides)
         self.stderr_log = stderr_log or os.path.join(tempfile.gettempdir(), f"engram-harness-{os.getpid()}.stderr.log")
         self.default_timeout = default_timeout
         self.verbose = verbose

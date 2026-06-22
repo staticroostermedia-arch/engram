@@ -86,6 +86,9 @@ flowchart LR
 
 **Harness without TUI:** `STABLE_BIN=target/debug/engram tools/test-harness/bin/engram-harness.sh --suite agent-memory` — new MCP client per run simulates restart; asserts `injection_completeness.score`, `nvme_context.recall_mode`, `suggested_actions[0].injection_rank`.
 
+| 6 | Goal complete — clear injection | `goal_update_status(completed)` + `demote_from_context` on task goal; TUI `/goal` → `update_goal(completed=true)` |
+| 7 | Terminal — push notes | Commit + PR describing fixes/improvements (traces, ACs, branch); see `{SCRATCH}/pr-notes.md` in harness runs |
+
 ### Wake queue gate (low-friction enforcement)
 
 | `ENGRAM_WAKE_QUEUE_GATE` | Behavior |
