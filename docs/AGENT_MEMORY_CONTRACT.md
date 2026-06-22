@@ -54,9 +54,24 @@
 
 **`session_end(summary, minimal?, prepare_compression?)`** — End-of-block handoff. Use **`minimal=true`** for fast fix loops (thin block + boundary trace + `helper:session_handoff_latest`, no compression ritual). Full path (default) runs compression handoff + rich boundary trace. MCP disconnect without `session_end` auto-emits a thin handoff.
 
-**`get_backend_readiness()`** — Read-only status. Use after wake or when recall quality seems sampled/bounded.
+**`get_backend_readiness()`** — Read-only status. Use after wake or when recall quality seems sampled/bounded. Surfaces `nvme_direct_io`, `nvme_recall_ready`, `recall_mode`, `bvh_ready`, `gpu_hot_resident`, `leg_block_count`.
 
 **`set_memory_mode(mode)`** — `lean` or `deep`. Env default: `ENGRAM_MEMORY_MODE=lean`.
+
+---
+
+## Manage resume (TUI / MCP restart)
+
+After **TUI restart**, **MCP transport death**, or **`cargo build`** on `engram-server`, the live MCP may run a stale binary until restart. Resume without re-briefing:
+
+1. **Restart** Grok TUI (or Cursor MCP) so `target/debug/engram` or `scripts/engram-grok` path is picked up.
+2. **`mcp_engram_session_start(intent="post-restart verify")`** — confirm `continuation.injection_completeness` and `continuation.nvme_context` are present (not null).
+3. **Execute** `continuation.suggested_actions` (check `injection_rank` on each) → **`mcp_engram_ack_wake_queue(executed=true)`**.
+4. **`mcp_engram_get_backend_readiness`** — on large stores (~67k blocks) poll every ~10s for up to 30s until `recall_mode=full_bvh_gpu` and `bvh_ready=true` (or document `sampled_bounded` if BVH deferred).
+5. If `injection_completeness.missing` contains `nvme_recall_path` or `gpu_hot_resident`, call **`mcp_engram_get_continuation_bundle`** before broad reads.
+6. **Harness sim (no TUI):** `STABLE_BIN=target/debug/engram tools/test-harness/bin/engram-harness.sh --suite agent-memory` — isolated relaunch proves bundle fields on fresh MCP client.
+
+See [HARNESS_INJECTION.md](HARNESS_INJECTION.md#manage-resume-tui--mcp-restart) and [CONTEXT_INJECTION_NVME_BYPASS.md](CONTEXT_INJECTION_NVME_BYPASS.md).
 
 ---
 

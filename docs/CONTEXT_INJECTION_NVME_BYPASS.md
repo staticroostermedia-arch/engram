@@ -36,3 +36,11 @@ Make Engram the best agent memory substrate by ensuring **complete, timely conte
 ## Agent ritual
 
 Lean 8-tool loop + `get_continuation_bundle` when slim completeness &lt; 0.85 or `nvme_context.bvh_ready` is false after ~30s.
+
+## Manage resume (post TUI/MCP restart)
+
+1. Restart TUI so MCP loads rebuilt `target/debug/engram`.
+2. `session_start(intent="post-restart verify")` — verify `injection_completeness` + `nvme_context` in slim `continuation`.
+3. Execute `suggested_actions` (composite `injection_rank`) → `ack_wake_queue`.
+4. Poll `get_backend_readiness` until `full_bvh_gpu` on large store (~25–30s) or escalate to full bundle.
+5. Harness sim: `STABLE_BIN=target/debug/engram tools/test-harness/bin/engram-harness.sh --suite agent-memory`.
