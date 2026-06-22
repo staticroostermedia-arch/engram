@@ -1280,7 +1280,10 @@ pub fn restore_primary_goal_marker_payload(completed: &str, parent: Option<&str>
 }
 
 pub fn rewrite_goal_status(text: &str, new_status: &str) -> String {
-    let base = text.split("\n\n--- Status Update ---").next().unwrap_or(text);
+    let base = text
+        .split("\n\n--- Status Update ---")
+        .next()
+        .unwrap_or(text);
     let mut rewritten = false;
     let lines: Vec<String> = base
         .lines()
@@ -3046,7 +3049,11 @@ impl StoreHandle {
                     e.crs,
                     e.hot,
                     &recency_rank,
-                    if e.source == "momentum_recall" { 0.75 } else { 0.0 },
+                    if e.source == "momentum_recall" {
+                        0.75
+                    } else {
+                        0.0
+                    },
                     &e.source,
                     SESSION_HANDOFF_LATEST,
                 )
@@ -3055,7 +3062,12 @@ impl StoreHandle {
         artifacts = crate::injection_priority::prioritize_artifacts(artifacts);
         let rank_by_concept: std::collections::HashMap<String, f32> = artifacts
             .iter()
-            .map(|a| (a.concept.clone(), crate::injection_priority::injection_rank_score(a)))
+            .map(|a| {
+                (
+                    a.concept.clone(),
+                    crate::injection_priority::injection_rank_score(a),
+                )
+            })
             .collect();
         entries.sort_by(|a, b| {
             rank_by_concept
@@ -3141,7 +3153,10 @@ impl StoreHandle {
             .get("node_count")
             .and_then(|v| v.as_u64())
             .unwrap_or(0) as usize;
-        let hot_tile_count = entries.iter().filter(|e| e.hot && e.concept.starts_with("tile:")).count();
+        let hot_tile_count = entries
+            .iter()
+            .filter(|e| e.hot && e.concept.starts_with("tile:"))
+            .count();
         let leg_blocks = self.leg_block_count();
         let recall_mode = self.recall_mode();
         let completeness = crate::injection_priority::compute_injection_completeness(
@@ -6651,7 +6666,10 @@ mod ingest_ast_tests {
             primary_goal_marker_target(&marker).as_deref(),
             Some("goal:parent_test")
         );
-        assert_eq!(resolve_active_primary_goal(&store).as_deref(), Some("goal:parent_test"));
+        assert_eq!(
+            resolve_active_primary_goal(&store).as_deref(),
+            Some("goal:parent_test")
+        );
 
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -6662,7 +6680,10 @@ mod ingest_ast_tests {
         let completed = rewrite_goal_status(active, "completed");
         assert!(goal_status_matches(&completed, "completed"));
         assert!(!goal_status_is_active(&completed));
-        assert_eq!(goal_current_status(&completed).as_deref(), Some("completed"));
+        assert_eq!(
+            goal_current_status(&completed).as_deref(),
+            Some("completed")
+        );
 
         // Legacy append-only path left stale header — rewrite fixes it.
         let broken = format!(
@@ -6697,22 +6718,25 @@ mod ingest_ast_tests {
                 "REASONING TRACE SEGMENT\n\n**decision_point:** test\n\n**justification:** bundle integration test\n",
             )
             .unwrap();
-        store
-            .promote_tile_to_high_priority("primary_goal")
-            .unwrap();
+        store.promote_tile_to_high_priority("primary_goal").unwrap();
         store
             .promote_tile_to_high_priority(crate::harness_injection::SESSION_HANDOFF_LATEST)
             .unwrap();
 
         let bundle = store.build_continuation_bundle(Some("integration test intent"));
-        let inj = bundle.get("injection_completeness").expect("injection_completeness");
+        let inj = bundle
+            .get("injection_completeness")
+            .expect("injection_completeness");
         assert!(inj.get("score").and_then(|v| v.as_f64()).is_some());
         assert!(inj.get("slots_filled").is_some());
         assert!(inj.get("missing").is_some());
 
         let nvme = bundle.get("nvme_context").expect("nvme_context");
         assert!(nvme.get("recall_mode").is_some());
-        assert_eq!(nvme.get("nvme_direct_io").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(
+            nvme.get("nvme_direct_io").and_then(|v| v.as_bool()),
+            Some(true)
+        );
         assert!(nvme.get("nvme_recall_ready").is_some());
 
         let harness = bundle.get("harness_injection").expect("harness_injection");
@@ -6722,7 +6746,10 @@ mod ingest_ast_tests {
             .expect("suggested_actions");
         assert!(!actions.is_empty());
         assert!(
-            actions[0].get("injection_rank").and_then(|v| v.as_f64()).is_some(),
+            actions[0]
+                .get("injection_rank")
+                .and_then(|v| v.as_f64())
+                .is_some(),
             "suggested_actions must carry injection_rank after composite sort"
         );
 

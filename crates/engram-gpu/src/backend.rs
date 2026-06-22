@@ -143,13 +143,7 @@ impl CudaBackend {
         // Kick off background BVH build so first query is fast — unless deferred
         // (MCP mode on 50k+ manifolds sets ENGRAM_DEFER_BVH=1 to avoid 10–30GB RAM spikes).
         if std::env::var("ENGRAM_DEFER_BVH").as_deref() != Ok("1") {
-            spawn_bvh_build(
-                "engram-bvh-build",
-                "Background",
-                path,
-                bvh,
-                bvh_build,
-            );
+            spawn_bvh_build("engram-bvh-build", "Background", path, bvh, bvh_build);
         } else {
             eprintln!("[BVH] Build deferred (ENGRAM_DEFER_BVH=1) — queries use CPU scan until explicit rebuild");
         }

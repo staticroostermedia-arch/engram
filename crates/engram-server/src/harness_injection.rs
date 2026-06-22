@@ -868,10 +868,13 @@ pub fn build_suggested_actions(
 
 /// Re-rank wake queue by composite injection score (CRS + hot + recency + momentum + scar/handoff).
 fn rank_suggested_actions(store: &StoreHandle, actions: &mut [Value]) {
-    let recency_rank =
-        crate::injection_priority::recency_rank_map(&store.access_index.recent(120));
+    let recency_rank = crate::injection_priority::recency_rank_map(&store.access_index.recent(120));
 
-    fn action_rank(store: &StoreHandle, action: &Value, recency_rank: &std::collections::HashMap<String, u32>) -> f32 {
+    fn action_rank(
+        store: &StoreHandle,
+        action: &Value,
+        recency_rank: &std::collections::HashMap<String, u32>,
+    ) -> f32 {
         let concept = action
             .get("args")
             .and_then(|a| a.get("concept"))
@@ -889,7 +892,11 @@ fn rank_suggested_actions(store: &StoreHandle, actions: &mut [Value]) {
             .map(|b| (b.crs_score, true))
             .unwrap_or((0.55, false));
         let reason = action.get("reason").and_then(|r| r.as_str()).unwrap_or("");
-        let momentum = if reason.contains("momentum") { 0.75 } else { 0.0 };
+        let momentum = if reason.contains("momentum") {
+            0.75
+        } else {
+            0.0
+        };
         let source = if action.get("jit").and_then(|v| v.as_bool()).unwrap_or(false) {
             "jit_queue"
         } else {

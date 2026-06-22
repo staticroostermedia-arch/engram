@@ -98,7 +98,11 @@ pub fn nvme_recall_path_ready(recall_mode: &str) -> bool {
 }
 
 /// True when GPU hot residency is satisfied for the current recall mode.
-pub fn gpu_hot_slot_ready(recall_mode: &str, gpu_hot_resident: bool, leg_block_count: usize) -> bool {
+pub fn gpu_hot_slot_ready(
+    recall_mode: &str,
+    gpu_hot_resident: bool,
+    leg_block_count: usize,
+) -> bool {
     match recall_mode {
         "full_bvh_gpu" => gpu_hot_resident,
         "sampled_bounded" if leg_block_count > LARGE_MANIFOLD_THRESHOLD => false,
@@ -229,7 +233,15 @@ mod tests {
     #[test]
     fn completeness_full_when_all_slots_present() {
         let c = compute_injection_completeness(completeness_input(
-            true, true, true, 0, 3, 5, "full_bvh_gpu", true, 67_000,
+            true,
+            true,
+            true,
+            0,
+            3,
+            5,
+            "full_bvh_gpu",
+            true,
+            67_000,
         ));
         assert!(c.score >= 0.85, "score={}", c.score);
         assert!(c.missing.is_empty() || c.missing == ["open_scars_surfaced"]);
@@ -238,7 +250,15 @@ mod tests {
     #[test]
     fn completeness_flags_missing_handoff() {
         let c = compute_injection_completeness(completeness_input(
-            true, false, false, 0, 0, 0, "sampled_bounded", false, 67_000,
+            true,
+            false,
+            false,
+            0,
+            0,
+            0,
+            "sampled_bounded",
+            false,
+            67_000,
         ));
         assert!(c.score < 0.6);
         assert!(c.missing.contains(&"session_handoff"));

@@ -204,7 +204,10 @@ fn main() -> anyhow::Result<()> {
                             "hot_concepts": hot,
                             "readiness": readiness,
                         });
-                        println!("{}", serde_json::to_string(&payload).unwrap_or_else(|_| "{}".into()));
+                        println!(
+                            "{}",
+                            serde_json::to_string(&payload).unwrap_or_else(|_| "{}".into())
+                        );
                     }
                 }
                 Err(mpsc::RecvTimeoutError::Timeout) => {

@@ -399,7 +399,8 @@ impl VsaBackend for CpuBackend {
                 let mut scored: Vec<Memory> = candidates
                     .iter()
                     .filter_map(|concept| {
-                        let path = crate::storage::resolve_leg_block_path(&self.manifold_dir, concept)?;
+                        let path =
+                            crate::storage::resolve_leg_block_path(&self.manifold_dir, concept)?;
                         let block = crate::storage::read_block(&path).ok()?;
                         Some(score_block(concept.clone(), query, &block, None))
                     })
