@@ -408,6 +408,26 @@ impl VsaBackend for CudaBackend {
     fn list(&self) -> Vec<String> {
         self.cpu.list()
     }
+
+    fn bvh_is_ready(&self) -> bool {
+        CudaBackend::bvh_is_ready(self)
+    }
+
+    fn bvh_node_count(&self) -> usize {
+        CudaBackend::bvh_node_count(self)
+    }
+
+    fn gpu_accel_available(&self) -> bool {
+        self.is_gpu_available()
+    }
+
+    fn gpu_hot_resident(&self) -> bool {
+        CudaBackend::gpu_hot_resident(self)
+    }
+
+    fn rebuild_bvh_async(&self) -> bool {
+        CudaBackend::rebuild_bvh_async(self)
+    }
 }
 
 // Experimental low-latency / high-priority methods (outside the VsaBackend trait)

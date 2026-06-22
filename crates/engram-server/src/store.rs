@@ -945,6 +945,7 @@ impl Backend {
             Backend::Gpu(b) => b.bvh_is_ready(),
             #[cfg(engram_backend_metal)]
             Backend::Metal(b) => b.bvh_is_ready(),
+            Backend::Sheaf(b) => b.bvh_is_ready(),
             _ => false,
         }
     }
@@ -953,6 +954,9 @@ impl Backend {
         match self {
             #[cfg(engram_backend_cuda)]
             Backend::Gpu(b) => b.bvh_node_count(),
+            #[cfg(engram_backend_metal)]
+            Backend::Metal(b) => b.bvh_node_count(),
+            Backend::Sheaf(b) => b.bvh_node_count(),
             _ => 0,
         }
     }
@@ -963,6 +967,7 @@ impl Backend {
             Backend::Gpu(b) => b.gpu_hot_resident(),
             #[cfg(engram_backend_metal)]
             Backend::Metal(b) => b.bvh_is_ready(),
+            Backend::Sheaf(b) => b.gpu_hot_resident(),
             _ => false,
         }
     }
@@ -973,6 +978,7 @@ impl Backend {
             Backend::Gpu(b) => b.rebuild_bvh_async(),
             #[cfg(engram_backend_metal)]
             Backend::Metal(b) => b.rebuild_bvh_async(),
+            Backend::Sheaf(b) => b.rebuild_bvh_async(),
             _ => false,
         }
     }
@@ -989,7 +995,19 @@ impl Backend {
                 not(engram_backend_metal)
             ))]
             Backend::Wgpu(_) => "wgpu",
-            Backend::Sheaf(_) => "sheaf",
+            Backend::Sheaf(b) => {
+                if b.gpu_accel_available() {
+                    #[cfg(engram_backend_cuda)]
+                    {
+                        return "cuda";
+                    }
+                    #[cfg(engram_backend_metal)]
+                    {
+                        return "metal";
+                    }
+                }
+                "sheaf"
+            }
             Backend::Single(_) => "cpu",
         }
     }
@@ -1000,6 +1018,7 @@ impl Backend {
             Backend::Gpu(b) => b.is_gpu_available(),
             #[cfg(engram_backend_metal)]
             Backend::Metal(_) => true,
+            Backend::Sheaf(b) => b.gpu_accel_available(),
             _ => false,
         }
     }

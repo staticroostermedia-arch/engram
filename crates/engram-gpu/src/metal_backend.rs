@@ -183,6 +183,15 @@ impl MetalBackend {
         }
     }
 
+    /// Indexed BVH leaf count when the background build has committed.
+    pub fn bvh_node_count(&self) -> usize {
+        if let Ok(guard) = self.bvh.read() {
+            guard.as_ref().map_or(0, |b| b.len())
+        } else {
+            0
+        }
+    }
+
     /// Kick off a background BVH build (on-demand after ENGRAM_DEFER_BVH=1).
     pub fn rebuild_bvh_async(&self) -> bool {
         if let Ok(mut guard) = self.bvh.write() {
@@ -695,6 +704,26 @@ impl VsaBackend for MetalBackend {
 
     fn list(&self) -> Vec<String> {
         self.cpu.list()
+    }
+
+    fn bvh_is_ready(&self) -> bool {
+        MetalBackend::bvh_is_ready(self)
+    }
+
+    fn bvh_node_count(&self) -> usize {
+        MetalBackend::bvh_node_count(self)
+    }
+
+    fn gpu_accel_available(&self) -> bool {
+        true
+    }
+
+    fn gpu_hot_resident(&self) -> bool {
+        self.gpu_accel_available() && self.bvh_is_ready()
+    }
+
+    fn rebuild_bvh_async(&self) -> bool {
+        MetalBackend::rebuild_bvh_async(self)
     }
 }
 

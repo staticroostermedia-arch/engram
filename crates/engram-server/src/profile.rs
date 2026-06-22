@@ -78,7 +78,18 @@ impl EngramProfile {
         Self::set_default("ENGRAM_CUDA_LEAN", "1");
         Self::set_default("ENGRAM_OPTIX_ENABLED", "0");
         Self::set_default("ENGRAM_OPTIX_LEAN", "0");
-        Self::set_default("ENGRAM_DEFER_BVH", "1");
+        // NVMe+GPU rigs: eager BVH (~25s/67k on T700) — recall becomes O(log N) context extension.
+        // CPU-only or explicit override: keep defer default.
+        if nvidia_gpu_available() {
+            if std::env::var("ENGRAM_DEFER_BVH").is_err() {
+                std::env::set_var("ENGRAM_DEFER_BVH", "0");
+                tracing::info!(
+                    "[PROFILE] agent — ENGRAM_DEFER_BVH=0 (GPU detected; background BVH on NVMe)"
+                );
+            }
+        } else {
+            Self::set_default("ENGRAM_DEFER_BVH", "1");
+        }
         Self::set_default("ENGRAM_DEFER_WATCH_INGEST", "1");
         Self::set_default("ENGRAM_ATLAS_STALK_SPLIT", "1");
         Self::set_default("ENGRAM_KI_LEAN", "1");

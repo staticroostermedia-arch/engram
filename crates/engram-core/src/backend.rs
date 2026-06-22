@@ -294,6 +294,31 @@ pub trait VsaBackend: Send + Sync {
 
         self.store(centroid_concept, centroid)
     }
+
+    /// BVH spatial index ready (GPU/accelerated backends). Default: false.
+    fn bvh_is_ready(&self) -> bool {
+        false
+    }
+
+    /// Indexed BVH leaf count when built. Default: 0.
+    fn bvh_node_count(&self) -> usize {
+        0
+    }
+
+    /// Hardware acceleration available for recall kernels. Default: false.
+    fn gpu_accel_available(&self) -> bool {
+        false
+    }
+
+    /// Hot presentation stratum resident (GPU + BVH). Default: false.
+    fn gpu_hot_resident(&self) -> bool {
+        false
+    }
+
+    /// Kick off background BVH build. Returns true if a thread was spawned.
+    fn rebuild_bvh_async(&self) -> bool {
+        false
+    }
 }
 
 // ── CPU Backend (always compiled) ────────────────────────────────────────────
@@ -505,6 +530,12 @@ impl SheafBackend {
     pub fn stalk_names(&self) -> Vec<&str> {
         self.stalks.iter().map(|(n, _)| n.as_str()).collect()
     }
+
+    /// Active stalk backend — writes and BVH/GPU readiness delegate here.
+    pub fn active_backend(&self) -> &dyn VsaBackend {
+        let idx = self.active.load(std::sync::atomic::Ordering::Relaxed);
+        self.stalks[idx].1.as_ref()
+    }
 }
 
 impl VsaBackend for SheafBackend {
@@ -566,6 +597,26 @@ impl VsaBackend for SheafBackend {
                     .map(move |c| format!("{}::{}", name, c))
             })
             .collect()
+    }
+
+    fn bvh_is_ready(&self) -> bool {
+        self.active_backend().bvh_is_ready()
+    }
+
+    fn bvh_node_count(&self) -> usize {
+        self.active_backend().bvh_node_count()
+    }
+
+    fn gpu_accel_available(&self) -> bool {
+        self.active_backend().gpu_accel_available()
+    }
+
+    fn gpu_hot_resident(&self) -> bool {
+        self.active_backend().gpu_hot_resident()
+    }
+
+    fn rebuild_bvh_async(&self) -> bool {
+        self.active_backend().rebuild_bvh_async()
     }
 }
 
