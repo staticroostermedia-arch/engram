@@ -308,6 +308,8 @@ First human-facing report tile minted at this interval: tile:research_offload_in
 
 Second human-facing report tile (knowledge_graph): tile:knowledge_graph_second-human-facing-report--enram-substrate-dogf . Quick trace: trace:1782148529_at-subsequent-phase-boundary--post-first-report- . Additional commit ea1cb86e updating docs with tile refs. Now 2 tiles, 2 commits on feat branch with trace refs. Working toward 3rd tile + rollback test.
 
+Third human-facing report tile (state_machine): tile:state_machine_third-human-facing-report--phase-progress-and-su . Quick trace: trace:1782148559_completed-min-3-human-facing-tiles--research-off . Commit: 4c992b7f . Now 3 tiles, 3 commits. Min per AC3 met. Next: rollback test per AC5 and item 7.
+
 # 3. HANDOFF (1 call)
 mcp_engram_session_end(summary="<decisions, files, next steps>")
 ```
