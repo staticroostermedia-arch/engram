@@ -858,9 +858,67 @@ pub fn build_suggested_actions(
         }
     }
 
-    actions.sort_by_key(|a| a.get("priority").and_then(|p| p.as_u64()).unwrap_or(99));
+    rank_suggested_actions(store, &mut actions);
     actions.truncate(16);
     actions
+}
+
+/// Re-rank wake queue by composite injection score (CRS + hot + recency + momentum + scar/handoff).
+fn rank_suggested_actions(store: &StoreHandle, actions: &mut [Value]) {
+    let recency_rank =
+        crate::injection_priority::recency_rank_map(&store.access_index.recent(120));
+
+    fn action_rank(store: &StoreHandle, action: &Value, recency_rank: &std::collections::HashMap<String, u32>) -> f32 {
+        let concept = action
+            .get("args")
+            .and_then(|a| a.get("concept"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        if concept.is_empty() {
+            let tie = action
+                .get("priority")
+                .and_then(|p| p.as_u64())
+                .unwrap_or(99) as f32;
+            return 0.05 + (1.0 / (1.0 + tie));
+        }
+        let (crs, hot) = store
+            .fetch_block_high_priority(concept)
+            .map(|b| (b.crs_score, true))
+            .unwrap_or((0.55, false));
+        let reason = action.get("reason").and_then(|r| r.as_str()).unwrap_or("");
+        let momentum = if reason.contains("momentum") { 0.75 } else { 0.0 };
+        let source = if action.get("jit").and_then(|v| v.as_bool()).unwrap_or(false) {
+            "jit_queue"
+        } else {
+            "wake_queue"
+        };
+        let art = crate::injection_priority::artifact_for_concept(
+            concept,
+            crs,
+            hot,
+            recency_rank,
+            momentum,
+            source,
+            SESSION_HANDOFF_LATEST,
+        );
+        crate::injection_priority::injection_rank_score(&art)
+    }
+
+    actions.sort_by(|a, b| {
+        action_rank(store, b, &recency_rank)
+            .partial_cmp(&action_rank(store, a, &recency_rank))
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    let ranks: Vec<f32> = actions
+        .iter()
+        .map(|a| action_rank(store, a, &recency_rank))
+        .collect();
+    for (i, action) in actions.iter_mut().enumerate() {
+        if let Some(obj) = action.as_object_mut() {
+            obj.insert("injection_rank".to_string(), json!(ranks[i]));
+            obj.insert("priority".to_string(), json!(i + 1));
+        }
+    }
 }
 
 /// Read canonical ego.leg3 from disk (NREM consolidation output).

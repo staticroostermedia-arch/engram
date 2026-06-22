@@ -35,9 +35,10 @@
 
 **`session_start(intent, include_spatial?)`** — Mandatory first call. Mints `session_start_*` episodic block, loads process sheaf, and returns:
 - **After wake:** execute `suggested_actions`, then **`mcp_engram_ack_wake_queue(executed=true)`** before `context_for_edit` when `ENGRAM_PROFILE=agent` (hard gate default). Empty queue auto-acks at wake.
-- **`continuation` (slim by default, `ENGRAM_WAKE_BUNDLE=slim`)** — `primary_goal`, top 5 `suggested_actions`, `trace_chain_head`, slim `ego_snapshot`, `presentation_stratum` node_count + 5 previews
-- **Full bundle on demand:** `mcp_engram_get_continuation_bundle` (set `ENGRAM_WAKE_BUNDLE=full` to restore legacy inline payload)
-- `backend_readiness` (bvh_ready, recall_mode, leg_block_count)
+- **`continuation` (slim by default, `ENGRAM_WAKE_BUNDLE=slim`)** — `primary_goal`, top 5 `suggested_actions` (composite `injection_rank`: CRS + hot + recency + momentum + scar/handoff), `trace_chain_head`, slim `ego_snapshot`, `presentation_stratum` node_count + 5 previews, **`injection_completeness`** (8-slot score + `missing` list), **`nvme_context`** (`recall_mode`, `bvh_ready`, `gpu_hot_resident`, `nvme_recall_ready`, `large_manifold`)
+- **Injection ritual:** If `injection_completeness.score < 0.85` or `missing` contains `nvme_recall_path` / `gpu_hot_resident`, call `mcp_engram_get_continuation_bundle` and poll `mcp_engram_get_backend_readiness` (~25s on large stores for `full_bvh_gpu`). Do not broad-read until completeness is acceptable or you have escalated to full bundle.
+- **Full bundle on demand:** `mcp_engram_get_continuation_bundle` (set `ENGRAM_WAKE_BUNDLE=full` to restore legacy inline payload with `harness_injection` nested)
+- `readiness` in wake packet (bvh_ready, recall_mode, leg_block_count, gpu_hot_resident)
 - Optional `spatial_delta` when `include_spatial=true` (incremental ingest summary, not full force)
 
 **`context_for_edit(path, line_start?, line_end?)`** — **Code atlas v2.1** pre-edit recon. Returns `spatial_items` (AST + `edit_arc` per locus), `traces_at_locus`, `traces_at_locus_tiers`, `scars_at_locus`, `spatial_siblings`, `edit_arc_debt`, and per-file `post_edit_palette` — **without** `watch_workspace` or full-store scan. Post-edit: `update({concept}__arc)` with delta narrative (use palette args when present); never bury history in source comments. Optional recon: `evolution_at_locus(path, line_start, line_end)`. See [CODE_ATLAS_CONTINUITY.md](CODE_ATLAS_CONTINUITY.md).

@@ -40,7 +40,27 @@ pub fn slim_continuation_bundle(full: &Value) -> Value {
         .and_then(|v| v.as_array())
         .map(|arr| {
             let mut items: Vec<Value> = arr.to_vec();
-            items.sort_by_key(|a| a.get("priority").and_then(|p| p.as_u64()).unwrap_or(99));
+            items.sort_by(|a, b| {
+                let ra = a
+                    .get("injection_rank")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or_else(|| {
+                        a.get("priority")
+                            .and_then(|p| p.as_u64())
+                            .map(|p| 1.0 / (1.0 + p as f64))
+                            .unwrap_or(0.0)
+                    });
+                let rb = b
+                    .get("injection_rank")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or_else(|| {
+                        b.get("priority")
+                            .and_then(|p| p.as_u64())
+                            .map(|p| 1.0 / (1.0 + p as f64))
+                            .unwrap_or(0.0)
+                    });
+                rb.partial_cmp(&ra).unwrap_or(std::cmp::Ordering::Equal)
+            });
             items.truncate(5);
             items
         })

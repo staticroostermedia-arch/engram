@@ -463,9 +463,16 @@ class MCPTestClient:
 
         ss_resp = self.call_tool("mcp_engram_session_start", {"intent": "final bundle probe"}, timeout=120.0)
         ss_text = self._tool_text(ss_resp)
-        if "CONTINUATION BUNDLE" not in ss_text:
-            failures.append("session_start missing CONTINUATION BUNDLE section")
-        if "engram_mvp_v1" not in ss_text:
+        ss_data = self._parse_tool_json(ss_resp) or {}
+        cont = ss_data.get("continuation") or {}
+        slim_ok = cont.get("bundle_tier") == "slim" and cont.get("primary_goal") is not None
+        if "CONTINUATION BUNDLE" not in ss_text and not slim_ok:
+            failures.append(
+                "session_start missing CONTINUATION BUNDLE section and slim continuation absent"
+            )
+        elif slim_ok:
+            assertions.append("session_start slim continuation present")
+        if "engram_mvp_v1" not in ss_text and cont.get("primary_goal") != "goal:engram_mvp_v1":
             failures.append("session_start bundle missing primary goal reference")
 
         cache_resp = self.call_tool("mcp_engram_read_concept", {"concept": "helper:session_hydration_cache"}, timeout=30.0)
@@ -598,16 +605,23 @@ class MCPTestClient:
         inject_data = self._parse_tool_json(inject_resp) or {}
         cont = inject_data.get("continuation") or inject_data
         harness = cont.get("harness_injection") or {}
-        suggested = harness.get("suggested_actions") or []
-        if not harness:
-            failures.append("continuation_bundle.harness_injection missing (substrate wins regression)")
-        elif not suggested:
+        # Slim wake (ENGRAM_WAKE_BUNDLE=slim default) hoists suggested_actions to continuation root.
+        suggested = harness.get("suggested_actions") or cont.get("suggested_actions") or []
+        if not suggested:
             failures.append(
-                "harness_injection.suggested_actions empty after session_end handoff "
-                "(expected prioritized wake queue)"
+                "suggested_actions empty after session_end handoff "
+                "(expected prioritized wake queue in slim or full bundle)"
             )
         else:
-            assertions.append(f"harness_injection.suggested_actions len={len(suggested)}")
+            assertions.append(f"suggested_actions len={len(suggested)}")
+            if suggested[0].get("injection_rank") is not None:
+                assertions.append("suggested_actions[0].injection_rank present (composite rank)")
+        inj = cont.get("injection_completeness") or {}
+        if inj.get("score") is not None:
+            assertions.append(f"injection_completeness.score={inj.get('score')}")
+        nvme = cont.get("nvme_context") or {}
+        if nvme.get("recall_mode") is not None:
+            assertions.append(f"nvme_context.recall_mode={nvme.get('recall_mode')}")
         if harness.get("agent_discipline"):
             assertions.append("harness_injection.agent_discipline present")
 

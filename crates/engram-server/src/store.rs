@@ -1624,6 +1624,7 @@ impl StoreHandle {
     }
 
     pub fn backend_readiness(&self) -> serde_json::Value {
+        let recall_mode = self.recall_mode();
         serde_json::json!({
             "fully_initialized": self.is_fully_initialized(),
             "backend_kind": self.backend.backend_kind(),
@@ -1631,7 +1632,9 @@ impl StoreHandle {
             "gpu_hot_resident": self.backend.gpu_hot_resident(),
             "bvh_ready": self.bvh_is_ready(),
             "bvh_nodes": self.backend.bvh_node_count(),
-            "recall_mode": self.recall_mode(),
+            "recall_mode": recall_mode,
+            "nvme_direct_io": true,
+            "nvme_recall_ready": crate::injection_priority::nvme_recall_path_ready(recall_mode),
             "leg_block_count": self.leg_block_count(),
             "profile": Self::current_profile_name(),
             "memory_mode": Self::memory_mode(),
@@ -2937,35 +2940,34 @@ impl StoreHandle {
             }
         }
 
-        let mut recency_rank: std::collections::HashMap<String, u32> =
-            std::collections::HashMap::new();
-        for (i, (concept, _)) in self.access_index.recent(120).into_iter().enumerate() {
-            recency_rank.entry(concept).or_insert(i as u32);
-        }
+        let recency_rank =
+            crate::injection_priority::recency_rank_map(&self.access_index.recent(120));
 
-        fn entry_rank(
-            e: &BundleEntry,
-            recency_rank: &std::collections::HashMap<String, u32>,
-            handoff_concept: &str,
-        ) -> f32 {
-            let art = crate::injection_priority::InjectionArtifact {
-                concept: e.concept.clone(),
-                crs: e.crs,
-                hot: e.hot,
-                recency_rank: recency_rank.get(&e.concept).copied().unwrap_or(999),
-                momentum_score: if e.source == "momentum_recall" { 0.75 } else { 0.0 },
-                source: e.source.clone(),
-                is_scar: e.concept.starts_with("scar:"),
-                is_handoff: e.concept == handoff_concept
-                    || e.concept.starts_with("compression_handoff_"),
-                is_primary_anchor: e.concept == "primary_goal",
-            };
-            crate::injection_priority::injection_rank_score(&art)
-        }
-
+        let mut artifacts: Vec<crate::injection_priority::InjectionArtifact> = entries
+            .iter()
+            .map(|e| {
+                crate::injection_priority::artifact_for_concept(
+                    &e.concept,
+                    e.crs,
+                    e.hot,
+                    &recency_rank,
+                    if e.source == "momentum_recall" { 0.75 } else { 0.0 },
+                    &e.source,
+                    SESSION_HANDOFF_LATEST,
+                )
+            })
+            .collect();
+        artifacts = crate::injection_priority::prioritize_artifacts(artifacts);
+        let rank_by_concept: std::collections::HashMap<String, f32> = artifacts
+            .iter()
+            .map(|a| (a.concept.clone(), crate::injection_priority::injection_rank_score(a)))
+            .collect();
         entries.sort_by(|a, b| {
-            entry_rank(b, &recency_rank, SESSION_HANDOFF_LATEST)
-                .partial_cmp(&entry_rank(a, &recency_rank, SESSION_HANDOFF_LATEST))
+            rank_by_concept
+                .get(&b.concept)
+                .copied()
+                .unwrap_or(0.0)
+                .partial_cmp(&rank_by_concept.get(&a.concept).copied().unwrap_or(0.0))
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
         entries.truncate(MAX_ARTIFACTS);
@@ -3045,6 +3047,8 @@ impl StoreHandle {
             .and_then(|v| v.as_u64())
             .unwrap_or(0) as usize;
         let hot_tile_count = entries.iter().filter(|e| e.hot && e.concept.starts_with("tile:")).count();
+        let leg_blocks = self.leg_block_count();
+        let recall_mode = self.recall_mode();
         let completeness = crate::injection_priority::compute_injection_completeness(
             primary_goal_name.is_some(),
             session_handoff_present,
@@ -3052,9 +3056,9 @@ impl StoreHandle {
             open_scars,
             hot_tile_count,
             presentation_count,
-            self.recall_mode(),
-            self.bvh_is_ready(),
+            recall_mode,
             self.backend.gpu_hot_resident(),
+            leg_blocks,
         );
 
         let bundle = serde_json::json!({
@@ -3072,11 +3076,14 @@ impl StoreHandle {
                 "missing": completeness.missing,
             },
             "nvme_context": {
-                "recall_mode": self.recall_mode(),
+                "recall_mode": recall_mode,
                 "bvh_ready": self.bvh_is_ready(),
                 "gpu_hot_resident": self.backend.gpu_hot_resident(),
-                "leg_block_count": self.leg_block_count(),
-                "hint": "full_bvh_gpu: O(log N) BVH + LegView mmap hot path — NVMe as context extension",
+                "leg_block_count": leg_blocks,
+                "large_manifold": leg_blocks > Self::LARGE_MANIFOLD_THRESHOLD,
+                "nvme_direct_io": true,
+                "nvme_recall_ready": crate::injection_priority::nvme_recall_path_ready(recall_mode),
+                "hint": "full_bvh_gpu: O(log N) BVH + O_DIRECT .leg mmap — NVMe as context extension; poll get_backend_readiness if injection_completeness.missing contains nvme_recall_path",
             },
             "recall_hint": "Execute suggested_actions in order, then read structured_handoff. local_stratum = sovereign host/project context; presentation_stratum = distilled process/ritual continuation.",
             "harness_injection": harness,
@@ -6424,6 +6431,61 @@ mod ingest_ast_tests {
         assert!(
             coh >= DEFAULT_COHERENCE_MIN,
             "full_source q/provlog coherence {coh} below min {DEFAULT_COHERENCE_MIN}"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn build_continuation_bundle_emits_injection_observables() {
+        let dir = test_store_dir("inj_bundle");
+        let mut store = StoreHandle::new(&dir.to_string_lossy());
+
+        store
+            .remember(
+                "primary_goal",
+                "PRIMARY GOAL\n\n**goal:** goal:engram_mvp_v1\n**set_at:** test",
+            )
+            .unwrap();
+        store
+            .remember(
+                crate::harness_injection::SESSION_HANDOFF_LATEST,
+                "SESSION HANDOFF PACKET v1\n\n{\"decisions\":[\"test\"],\"trace_chain_head\":\"trace:test_head\"}",
+            )
+            .unwrap();
+        store
+            .remember(
+                "trace:test_head",
+                "REASONING TRACE SEGMENT\n\n**decision_point:** test\n\n**justification:** bundle integration test\n",
+            )
+            .unwrap();
+        store
+            .promote_tile_to_high_priority("primary_goal")
+            .unwrap();
+        store
+            .promote_tile_to_high_priority(crate::harness_injection::SESSION_HANDOFF_LATEST)
+            .unwrap();
+
+        let bundle = store.build_continuation_bundle(Some("integration test intent"));
+        let inj = bundle.get("injection_completeness").expect("injection_completeness");
+        assert!(inj.get("score").and_then(|v| v.as_f64()).is_some());
+        assert!(inj.get("slots_filled").is_some());
+        assert!(inj.get("missing").is_some());
+
+        let nvme = bundle.get("nvme_context").expect("nvme_context");
+        assert!(nvme.get("recall_mode").is_some());
+        assert_eq!(nvme.get("nvme_direct_io").and_then(|v| v.as_bool()), Some(true));
+        assert!(nvme.get("nvme_recall_ready").is_some());
+
+        let harness = bundle.get("harness_injection").expect("harness_injection");
+        let actions = harness
+            .get("suggested_actions")
+            .and_then(|v| v.as_array())
+            .expect("suggested_actions");
+        assert!(!actions.is_empty());
+        assert!(
+            actions[0].get("injection_rank").and_then(|v| v.as_f64()).is_some(),
+            "suggested_actions must carry injection_rank after composite sort"
         );
 
         let _ = std::fs::remove_dir_all(&dir);

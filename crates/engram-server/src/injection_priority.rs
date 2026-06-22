@@ -2,6 +2,11 @@
 //!
 //! Keeps NVMe-bypass delivery logic testable without StoreHandle I/O.
 
+use std::collections::HashMap;
+
+/// Block count above which BVH + GPU hot path is expected for full recall.
+pub const LARGE_MANIFOLD_THRESHOLD: usize = 10_000;
+
 /// One artifact candidate for wake/continuation injection.
 #[derive(Debug, Clone, PartialEq)]
 pub struct InjectionArtifact {
@@ -36,8 +41,39 @@ pub fn injection_rank_score(a: &InjectionArtifact) -> f32 {
     (crs_w + hot_w + recency_w + momentum_w + anchor_w).clamp(0.0, 1.5)
 }
 
+/// Build recency rank map from access-index tuples (0 = freshest).
+pub fn recency_rank_map(recent: &[(String, u64)]) -> HashMap<String, u32> {
+    let mut map = HashMap::new();
+    for (i, (concept, _)) in recent.iter().enumerate() {
+        map.entry(concept.clone()).or_insert(i as u32);
+    }
+    map
+}
+
+/// Build an artifact for ranking from concept metadata.
+pub fn artifact_for_concept(
+    concept: &str,
+    crs: f32,
+    hot: bool,
+    recency_rank: &HashMap<String, u32>,
+    momentum_score: f32,
+    source: &str,
+    handoff_concept: &str,
+) -> InjectionArtifact {
+    InjectionArtifact {
+        concept: concept.to_string(),
+        crs,
+        hot,
+        recency_rank: recency_rank.get(concept).copied().unwrap_or(999),
+        momentum_score,
+        source: source.to_string(),
+        is_scar: concept.starts_with("scar:"),
+        is_handoff: concept == handoff_concept || concept.starts_with("compression_handoff_"),
+        is_primary_anchor: concept == "primary_goal",
+    }
+}
+
 /// Sort artifacts by composite injection rank (highest first).
-#[allow(dead_code)] // Public API for harness/tests; store uses `injection_rank_score` inline.
 pub fn prioritize_artifacts(mut artifacts: Vec<InjectionArtifact>) -> Vec<InjectionArtifact> {
     artifacts.sort_by(|a, b| {
         injection_rank_score(b)
@@ -56,6 +92,20 @@ pub struct InjectionCompleteness {
     pub missing: Vec<&'static str>,
 }
 
+/// True when recall is on a BVH-backed NVMe path (not cpu_linear / sampled_bounded warmup).
+pub fn nvme_recall_path_ready(recall_mode: &str) -> bool {
+    matches!(recall_mode, "full_bvh_gpu" | "full_bvh")
+}
+
+/// True when GPU hot residency is satisfied for the current recall mode.
+pub fn gpu_hot_slot_ready(recall_mode: &str, gpu_hot_resident: bool, leg_block_count: usize) -> bool {
+    match recall_mode {
+        "full_bvh_gpu" => gpu_hot_resident,
+        "sampled_bounded" if leg_block_count > LARGE_MANIFOLD_THRESHOLD => false,
+        _ => true, // small store or non-GPU recall — slot N/A, counts filled
+    }
+}
+
 /// Score whether the agent received the minimum continuity slots on wake.
 pub fn compute_injection_completeness(
     has_primary: bool,
@@ -65,8 +115,8 @@ pub fn compute_injection_completeness(
     hot_tile_count: usize,
     presentation_nodes: usize,
     recall_mode: &str,
-    bvh_ready: bool,
     gpu_hot_resident: bool,
+    leg_block_count: usize,
 ) -> InjectionCompleteness {
     let slots: [(&str, bool); 8] = [
         ("primary_goal", has_primary),
@@ -75,11 +125,11 @@ pub fn compute_injection_completeness(
         ("open_scars_surfaced", open_scars > 0 || !has_handoff),
         ("hot_tiles", hot_tile_count > 0),
         ("presentation_stratum", presentation_nodes > 0),
+        ("nvme_recall_path", nvme_recall_path_ready(recall_mode)),
         (
-            "nvme_recall_path",
-            recall_mode == "full_bvh_gpu" || recall_mode == "full_bvh" || bvh_ready,
+            "gpu_hot_resident",
+            gpu_hot_slot_ready(recall_mode, gpu_hot_resident, leg_block_count),
         ),
-        ("gpu_hot_resident", gpu_hot_resident || !bvh_ready),
     ];
 
     let filled = slots.iter().filter(|(_, ok)| *ok).count() as u8;
@@ -138,15 +188,28 @@ mod tests {
 
     #[test]
     fn completeness_full_when_all_slots_present() {
-        let c = compute_injection_completeness(true, true, true, 0, 3, 5, "full_bvh_gpu", true, true);
+        let c = compute_injection_completeness(true, true, true, 0, 3, 5, "full_bvh_gpu", true, 67_000);
         assert!(c.score >= 0.85, "score={}", c.score);
         assert!(c.missing.is_empty() || c.missing == ["open_scars_surfaced"]);
     }
 
     #[test]
     fn completeness_flags_missing_handoff() {
-        let c = compute_injection_completeness(true, false, false, 0, 0, 0, "sampled_bounded", false, false);
+        let c = compute_injection_completeness(true, false, false, 0, 0, 0, "sampled_bounded", false, 67_000);
         assert!(c.score < 0.6);
         assert!(c.missing.contains(&"session_handoff"));
+    }
+
+    #[test]
+    fn gpu_hot_slot_fails_when_large_store_warming() {
+        assert!(!gpu_hot_slot_ready("sampled_bounded", false, 67_000));
+        assert!(!nvme_recall_path_ready("cpu_linear"));
+        assert!(gpu_hot_slot_ready("cpu_linear", false, 100));
+    }
+
+    #[test]
+    fn gpu_hot_slot_requires_resident_on_full_bvh_gpu() {
+        assert!(!gpu_hot_slot_ready("full_bvh_gpu", false, 67_000));
+        assert!(gpu_hot_slot_ready("full_bvh_gpu", true, 67_000));
     }
 }

@@ -20,11 +20,13 @@ Make Engram the best agent memory substrate by ensuring **complete, timely conte
 
 ## Execution plan (built)
 
-1. **`injection_priority.rs`** — pure `prioritize_artifacts` + `compute_injection_completeness`
-2. **`build_continuation_bundle`** — momentum/recency/hot/scar rank; emit `injection_completeness` + `nvme_context`
-3. **`slim_continuation_bundle`** — pass completeness + nvme_context + open_scars_count to wake
-4. **Dogfood** — session_start → ack_wake_queue → traces chained to goal:engram_mvp_v1
-5. **Verify** — harness agent-memory + continuation-bundle suites; readiness `full_bvh_gpu`
+1. **`injection_priority.rs`** — pure `prioritize_artifacts` + `compute_injection_completeness` (strict nvme/gpu slots)
+2. **`build_continuation_bundle`** — composite rank via `prioritize_artifacts`; emit `injection_completeness` + `nvme_context`
+3. **`harness_injection::build_suggested_actions`** — composite `injection_rank` on wake queue (not hardcoded priority)
+4. **`slim_continuation_bundle`** — pass completeness + nvme_context; sort by `injection_rank`
+5. **`backend_readiness`** — surfaces `nvme_direct_io` + `nvme_recall_ready`
+6. **Harness** — agent-memory + continuation-bundle assertions updated for slim wake shape
+7. **Integration test** — `store::build_continuation_bundle_emits_injection_observables`
 
 ## Key traces
 
