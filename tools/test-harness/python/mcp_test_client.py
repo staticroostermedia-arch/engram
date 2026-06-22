@@ -99,6 +99,70 @@ FULL_RITUAL_SEQUENCE = WAKEUP_SEQUENCE + [
 ]
 
 
+def continuation_of(entry: Dict[str, Any]) -> Dict[str, Any]:
+    """Extract continuation dict from a snap entry (session_start response)."""
+    parsed = entry.get("parsed") or {}
+    return parsed.get("continuation") or parsed
+
+
+def assert_post_clear_state(
+    ss_entry: Dict[str, Any],
+    *,
+    cleared_goal: str,
+    cleared_goal_short: str,
+    expected_primary: Optional[str] = None,
+    label: str = "post_clear",
+) -> Tuple[List[str], List[str]]:
+    """Return (failures, assertions) for post-clear injection state."""
+    failures: List[str] = []
+    assertions: List[str] = []
+    cont = continuation_of(ss_entry)
+    primary = cont.get("primary_goal")
+    if primary == cleared_goal:
+        failures.append(f"{label}: post-clear primary_goal still {cleared_goal}")
+    else:
+        assertions.append(f"{label}: post-clear primary_goal={primary!r} (not cleared goal)")
+    if expected_primary is not None:
+        if primary != expected_primary:
+            failures.append(f"{label}: expected primary={expected_primary!r}, got {primary!r}")
+        else:
+            assertions.append(f"{label}: primary restored to {expected_primary}")
+    surfaced = False
+    for action in cont.get("suggested_actions") or []:
+        args = action.get("args") or {}
+        q = args.get("query") or args.get("concept") or args.get("goal") or ""
+        if cleared_goal_short in str(q) or cleared_goal in str(q):
+            surfaced = True
+            failures.append(f"{label}: suggested_actions still surfaces cleared goal in {args}")
+    if not surfaced:
+        assertions.append(f"{label}: suggested_actions omit cleared goal")
+    return failures, assertions
+
+
+def verify_text_healthy(text: str) -> bool:
+    """True when verify_manifold_integrity reports Overall: healthy (or zero issues)."""
+    import re
+
+    t = (text or "").lower()
+    if "overall: healthy" in t:
+        return True
+    m = re.search(r"issues found:\s*(\d+)", t)
+    if m and int(m.group(1)) == 0:
+        return True
+    return False
+
+
+def parse_manifold_flagged_concepts(text: str) -> List[str]:
+    """Extract concept ids from verify_manifold_integrity issue lines."""
+    import re
+
+    concepts: List[str] = []
+    for line in (text or "").splitlines():
+        for m in re.finditer(r"(tile:[\w\-]+|goal:[\w\-]+|concept:[\w\-]+)", line):
+            concepts.append(m.group(1))
+    return list(dict.fromkeys(concepts))
+
+
 class MCPTestClient:
     def __init__(
         self,
@@ -773,30 +837,16 @@ class MCPTestClient:
         })
         gs_post = snap("goal_status_post_clear", "mcp_engram_goal_status", {"goal": goal_key})
 
-        def assert_post_clear(ss_entry: Dict[str, Any], label: str) -> None:
-            data = ss_entry.get("parsed") or {}
-            cont = data.get("continuation") or data
-            primary = cont.get("primary_goal")
-            if primary == goal_key:
-                failures.append(f"{label}: post-clear primary_goal still {goal_key}")
-            else:
-                assertions.append(f"{label}: post-clear primary_goal={primary!r} (not cleared goal)")
-            if primary != parent_key:
-                failures.append(f"{label}: expected primary restored to {parent_key}, got {primary!r}")
-            else:
-                assertions.append(f"{label}: primary restored to parent")
-            surfaced = False
-            for action in cont.get("suggested_actions") or []:
-                args = action.get("args") or {}
-                q = args.get("query") or args.get("concept") or ""
-                if goal_short in str(q) or goal_key in str(q):
-                    surfaced = True
-                    failures.append(f"{label}: suggested_actions still surfaces cleared goal in {args}")
-            if not surfaced:
-                assertions.append(f"{label}: suggested_actions omit cleared goal")
-
-        assert_post_clear(ss_post1, "post_clear_run1")
-        assert_post_clear(ss_post2, "post_clear_run2")
+        for ss_entry, lbl in ((ss_post1, "post_clear_run1"), (ss_post2, "post_clear_run2")):
+            f, a = assert_post_clear_state(
+                ss_entry,
+                cleared_goal=goal_key,
+                cleared_goal_short=goal_short,
+                expected_primary=parent_key,
+                label=lbl,
+            )
+            failures.extend(f)
+            assertions.extend(a)
 
         if goal_short in gl_post.get("text", ""):
             failures.append("post-clear goal still in goal_list(active)")
