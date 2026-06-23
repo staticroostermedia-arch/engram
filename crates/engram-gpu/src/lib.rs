@@ -29,6 +29,7 @@
 
 pub mod backend;
 pub mod bvh;
+pub mod bvh_build;
 pub mod cuda_dispatch;
 pub mod metal_backend;
 #[cfg(engram_backend_cuda)]

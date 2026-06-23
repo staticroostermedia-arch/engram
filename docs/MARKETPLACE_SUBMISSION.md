@@ -2,7 +2,7 @@
 
 **Plugin id:** `engram` (or `engram-geometric` for disambiguation)  
 **Repo subdirectory:** `grok-plugin-engram/` (self-contained plugin bundle with .mcp.json + plugin.json)  
-**Current release:** `v0.7.0-beta.2` — public docs polish, JIT deformation, tool matrix, personal wiki guide, cold-start onboarding.  
+**Current release:** `v0.7.0-beta.3` — code atlas continuity v2, 79 MCP tools, hard wake gate default, large-store perf.  
 **Remote registration:** xai-org/plugin-marketplace (Option A).
 
 ---
@@ -12,8 +12,8 @@
 - [ ] `grok plugin validate grok-plugin-engram/` passes
 - [ ] `./scripts/engram-mcp-health.sh` → OK
 - [ ] `agent-memory` harness green locally and in CI
-- [ ] Git tag pushed: `v0.7.0-beta.2`
-- [ ] Release asset uploaded (`engram-v0.7.0-beta.2-linux-x86_64.tar.gz`) — if using Release workflow
+- [ ] Git tag pushed: `v0.7.0-beta.3`
+- [ ] Release asset uploaded (`engram-v0.7.0-beta.3-linux-x86_64.tar.gz`) — if using Release workflow
 - [ ] Demo doc tested: [examples/marketplace_demo.md](examples/marketplace_demo.md)
 - [ ] GitHub social preview: upload [docs/images/engram-share-x.png](images/engram-share-x.png) (Settings → General → Social preview)
 
@@ -31,11 +31,11 @@ Fork https://github.com/xai-org/plugin-marketplace and add to `.grok-plugin/mark
   "source": {
     "source": "url",
     "url": "https://github.com/staticroostermedia-arch/engram",
-    "sha": "ac176fa7d5aa25c1fe0c992a7903fd84f8fa5688"
+    "sha": "de41275d9bf3dcfaf2cec9f802cf9ee3500c6ee4"
   },
   "homepage": "https://github.com/staticroostermedia-arch/engram",
   "keywords": ["memory", "mcp", "agent", "geometric", "geometric-memory", "session-handoff", "leg-browser"],
-  "version": "0.7.0-beta.2",
+  "version": "0.7.0-beta.3",
   "author": "staticroostermedia-arch"
 }
 ```
@@ -44,8 +44,8 @@ Fork https://github.com/xai-org/plugin-marketplace and add to `.grok-plugin/mark
 
 ```bash
 git fetch --tags origin
-git rev-parse v0.7.0-beta.2^{commit}
-# v0.7.0-beta.2 tag → ac176fa7d5aa25c1fe0c992a7903fd84f8fa5688 (merge PR #35)
+git rev-parse v0.7.0-beta.3^{commit}
+# v0.7.0-beta.3 tag → de41275d9bf3dcfaf2cec9f802cf9ee3500c6ee4 (release after merge PR #36)
 ```
 
 Regenerate index (upstream maintainer or PR author):
@@ -60,10 +60,10 @@ python3 scripts/validate-catalog.py
 ## PR steps
 
 1. Merge doc + release work to `master` on your repo
-2. Tag: `git tag v0.7.0-beta.2 && git push origin v0.7.0-beta.2`
+2. Tag: `git tag v0.7.0-beta.3 && git push origin v0.7.0-beta.3`
 3. Wait for Release workflow + harness green (if enabled)
 4. Fork `xai-org/plugin-marketplace`
-5. Add catalog entry with **pinned SHA** from `git rev-parse v0.7.0-beta.2^{commit}`
+5. Add catalog entry with **pinned SHA** from `git rev-parse v0.7.0-beta.3^{commit}`
 6. Run validators; open PR
 7. In PR description, link:
    - [GROK_BUILD_MEMORY.md](GROK_BUILD_MEMORY.md)

@@ -13,8 +13,12 @@ description: Goal stack — set primary, list status, orient intentional self-mo
 For decomposing work → `mcp_engram_goal_decompose`. For search → `mcp_engram_goal_search`.
 
 When a goal is **completed** or **demoted**:
-1. `mcp_engram_goal_update_status` (auto-removes `primary_goal --serves-->` edge)
-2. `mcp_engram_demote_from_context` for full archival trace + cascade condensation cleanup
+1. `mcp_engram_goal_update_status(goal=..., status="completed", note=...)` — auto-removes `primary_goal --serves-->` edge
+2. `mcp_engram_demote_from_context(concept=...)` — full archival trace + `completes_goal` + cascade condensation cleanup
+3. `mcp_engram_session_end(summary=..., prepare_compression=true)` — handoff for next wake
+4. **Terminal:** push branch + PR notes per [CONTRIBUTING.md § Commit Message & Versioning Discipline](../../CONTRIBUTING.md#commit-message--versioning-discipline) — conventional commit msgs with `Refs: trace:* goal:*` on every commit; PR body cites files, ACs, branch (no shorthand like "format fixes")
+
+**TUI `/goal` vs Engram `goal:*`:** Ephemeral TUI session goals clear with `update_goal(completed=true)`. Persistent substrate goals use the MCP steps above. `goal_update_status(completed)` auto-restores the `primary_goal` marker to `parent_goal` (no manual `set_primary` required when parent exists). After clear, `session_start` must not surface the completed goal in `continuation.primary_goal` or `suggested_actions`.
 
 All traces and tiles should reference active primary goal when known. Keep serving stack ≤6 — demote stale goals via LEG hygiene or MCP.
 

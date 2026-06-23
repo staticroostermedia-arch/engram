@@ -231,7 +231,7 @@ impl BvhIndex {
 
         for entry in std::fs::read_dir(manifold_dir).ok()?.flatten() {
             let path = entry.path();
-            if path.extension().and_then(|e| e.to_str()) != Some("leg") {
+            if !crate::storage::is_leg_block_path(&path) {
                 continue;
             }
             let concept = path.file_stem()?.to_str()?.to_string();

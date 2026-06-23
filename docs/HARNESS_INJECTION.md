@@ -72,6 +72,23 @@ flowchart LR
 
 **Harness rule:** Execute `suggested_actions` before broad `Read`/`Grep` on Engram work.
 
+**Slim wake (default):** `suggested_actions`, `injection_completeness`, and `nvme_context` are hoisted to `continuation` root — not nested under `harness_injection`. Full nested payload: `mcp_engram_get_continuation_bundle`.
+
+### Manage resume (TUI / MCP restart)
+
+| Step | Tool / action | Pass criterion |
+|------|---------------|----------------|
+| 1 | Restart TUI / MCP after substrate build | `mcp_engram_*` tools available |
+| 2 | `session_start(intent="post-restart verify")` | `continuation.injection_completeness.score` present; `continuation.nvme_context.recall_mode` present |
+| 3 | Execute `suggested_actions` → `ack_wake_queue` | `injection_rank` on queue items; gate clears |
+| 4 | Poll `get_backend_readiness` (~30s on large store) | `fully_initialized:true`; target `recall_mode=full_bvh_gpu` when BVH completes |
+| 5 | Escalate if incomplete | `get_continuation_bundle` when `missing` contains `nvme_recall_path` |
+
+**Harness without TUI:** `STABLE_BIN=target/debug/engram tools/test-harness/bin/engram-harness.sh --suite agent-memory` — new MCP client per run simulates restart; asserts `injection_completeness.score`, `nvme_context.recall_mode`, `suggested_actions[0].injection_rank`.
+
+| 6 | Goal complete — clear injection | `goal_update_status(completed)` + `demote_from_context` on task goal; TUI `/goal` → `update_goal(completed=true)` |
+| 7 | Terminal — push notes | Commit + PR describing fixes/improvements (traces, ACs, branch); see `{SCRATCH}/pr-notes.md` in harness runs |
+
 ### Wake queue gate (low-friction enforcement)
 
 | `ENGRAM_WAKE_QUEUE_GATE` | Behavior |

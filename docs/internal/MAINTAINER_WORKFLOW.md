@@ -79,9 +79,20 @@ Clone the repo for tools and protocols. Mind state stays sovereign per machine.
 
 ---
 
+## Git commits and releases
+
+See [CONTRIBUTING.md § Commit Message & Versioning Discipline](../../CONTRIBUTING.md#commit-message--versioning-discipline) (single source of truth).
+
+- Record `mcp_engram_quick_trace` **before** every `git commit`; put `trace:*` and `goal:*` in the message `Refs:` line.
+- Never bump `Cargo.toml` version on feature/fix commits — release-only (worktree + verify + changelog + tag per `version_git_rollback`).
+- Validate: `scripts/validate-commit-msg.sh .git/COMMIT_EDITMSG` (or pipe message on stdin).
+
+---
+
 ## Maintainer checklist
 
 - [ ] Ritual edits land in `docs/skills/` first; update `processes/*.toml` when behavior changes.
+- [ ] Commits follow CONTRIBUTING commit discipline (conventional + body + trace/goal refs).
 - [ ] Lean wake stays one call; no `watch_workspace` in default agent profile.
 - [ ] `ENGRAM_PROFILE=agent` via `scripts/engram-grok` for IDE MCP configs.
 - [ ] Power-tool changes reflected in [docs/TOOL_DECISION_MAP.md](../TOOL_DECISION_MAP.md) and [docs/MCP_TOOLS_REFERENCE.md](../MCP_TOOLS_REFERENCE.md).

@@ -99,6 +99,70 @@ FULL_RITUAL_SEQUENCE = WAKEUP_SEQUENCE + [
 ]
 
 
+def continuation_of(entry: Dict[str, Any]) -> Dict[str, Any]:
+    """Extract continuation dict from a snap entry (session_start response)."""
+    parsed = entry.get("parsed") or {}
+    return parsed.get("continuation") or parsed
+
+
+def assert_post_clear_state(
+    ss_entry: Dict[str, Any],
+    *,
+    cleared_goal: str,
+    cleared_goal_short: str,
+    expected_primary: Optional[str] = None,
+    label: str = "post_clear",
+) -> Tuple[List[str], List[str]]:
+    """Return (failures, assertions) for post-clear injection state."""
+    failures: List[str] = []
+    assertions: List[str] = []
+    cont = continuation_of(ss_entry)
+    primary = cont.get("primary_goal")
+    if primary == cleared_goal:
+        failures.append(f"{label}: post-clear primary_goal still {cleared_goal}")
+    else:
+        assertions.append(f"{label}: post-clear primary_goal={primary!r} (not cleared goal)")
+    if expected_primary is not None:
+        if primary != expected_primary:
+            failures.append(f"{label}: expected primary={expected_primary!r}, got {primary!r}")
+        else:
+            assertions.append(f"{label}: primary restored to {expected_primary}")
+    surfaced = False
+    for action in cont.get("suggested_actions") or []:
+        args = action.get("args") or {}
+        q = args.get("query") or args.get("concept") or args.get("goal") or ""
+        if cleared_goal_short in str(q) or cleared_goal in str(q):
+            surfaced = True
+            failures.append(f"{label}: suggested_actions still surfaces cleared goal in {args}")
+    if not surfaced:
+        assertions.append(f"{label}: suggested_actions omit cleared goal")
+    return failures, assertions
+
+
+def verify_text_healthy(text: str) -> bool:
+    """True when verify_manifold_integrity reports Overall: healthy (or zero issues)."""
+    import re
+
+    t = (text or "").lower()
+    if "overall: healthy" in t:
+        return True
+    m = re.search(r"issues found:\s*(\d+)", t)
+    if m and int(m.group(1)) == 0:
+        return True
+    return False
+
+
+def parse_manifold_flagged_concepts(text: str) -> List[str]:
+    """Extract concept ids from verify_manifold_integrity issue lines."""
+    import re
+
+    concepts: List[str] = []
+    for line in (text or "").splitlines():
+        for m in re.finditer(r"(tile:[\w\-]+|goal:[\w\-]+|concept:[\w\-]+)", line):
+            concepts.append(m.group(1))
+    return list(dict.fromkeys(concepts))
+
+
 class MCPTestClient:
     def __init__(
         self,
@@ -112,14 +176,14 @@ class MCPTestClient:
         self.binary = binary
         self.store_dir = os.path.abspath(store_dir)
         self.env = os.environ.copy()
-        # Isolated harness stores must not load production sheaf.toml multi-stalk config.
+        if env_overrides:
+            self.env.update(env_overrides)
+        # Isolated harness defaults (skipped when env_overrides supplies live-store resume values).
         self.env.setdefault("ENGRAM_DISABLE_SHEAF", "1")
         self.env.setdefault("ENGRAM_FORCE_CPU_BACKEND", "1")
         self.env.setdefault("ENGRAM_KI_DISABLE", "1")
         self.env.setdefault("ENGRAM_NREM_DISABLE", "1")
         self.env.setdefault("ENGRAM_PROFILE", "agent")
-        if env_overrides:
-            self.env.update(env_overrides)
         self.stderr_log = stderr_log or os.path.join(tempfile.gettempdir(), f"engram-harness-{os.getpid()}.stderr.log")
         self.default_timeout = default_timeout
         self.verbose = verbose
@@ -463,9 +527,16 @@ class MCPTestClient:
 
         ss_resp = self.call_tool("mcp_engram_session_start", {"intent": "final bundle probe"}, timeout=120.0)
         ss_text = self._tool_text(ss_resp)
-        if "CONTINUATION BUNDLE" not in ss_text:
-            failures.append("session_start missing CONTINUATION BUNDLE section")
-        if "engram_mvp_v1" not in ss_text:
+        ss_data = self._parse_tool_json(ss_resp) or {}
+        cont = ss_data.get("continuation") or {}
+        slim_ok = cont.get("bundle_tier") == "slim" and cont.get("primary_goal") is not None
+        if "CONTINUATION BUNDLE" not in ss_text and not slim_ok:
+            failures.append(
+                "session_start missing CONTINUATION BUNDLE section and slim continuation absent"
+            )
+        elif slim_ok:
+            assertions.append("session_start slim continuation present")
+        if "engram_mvp_v1" not in ss_text and cont.get("primary_goal") != "goal:engram_mvp_v1":
             failures.append("session_start bundle missing primary goal reference")
 
         cache_resp = self.call_tool("mcp_engram_read_concept", {"concept": "helper:session_hydration_cache"}, timeout=30.0)
@@ -598,16 +669,23 @@ class MCPTestClient:
         inject_data = self._parse_tool_json(inject_resp) or {}
         cont = inject_data.get("continuation") or inject_data
         harness = cont.get("harness_injection") or {}
-        suggested = harness.get("suggested_actions") or []
-        if not harness:
-            failures.append("continuation_bundle.harness_injection missing (substrate wins regression)")
-        elif not suggested:
+        # Slim wake (ENGRAM_WAKE_BUNDLE=slim default) hoists suggested_actions to continuation root.
+        suggested = harness.get("suggested_actions") or cont.get("suggested_actions") or []
+        if not suggested:
             failures.append(
-                "harness_injection.suggested_actions empty after session_end handoff "
-                "(expected prioritized wake queue)"
+                "suggested_actions empty after session_end handoff "
+                "(expected prioritized wake queue in slim or full bundle)"
             )
         else:
-            assertions.append(f"harness_injection.suggested_actions len={len(suggested)}")
+            assertions.append(f"suggested_actions len={len(suggested)}")
+            if suggested[0].get("injection_rank") is not None:
+                assertions.append("suggested_actions[0].injection_rank present (composite rank)")
+        inj = cont.get("injection_completeness") or {}
+        if inj.get("score") is not None:
+            assertions.append(f"injection_completeness.score={inj.get('score')}")
+        nvme = cont.get("nvme_context") or {}
+        if nvme.get("recall_mode") is not None:
+            assertions.append(f"nvme_context.recall_mode={nvme.get('recall_mode')}")
         if harness.get("agent_discipline"):
             assertions.append("harness_injection.agent_discipline present")
 
@@ -651,6 +729,148 @@ class MCPTestClient:
             "memory_mode": memory_mode,
             "harness_concept": harness_concept,
             "sequence": agg,
+            "still_alive": self.is_alive,
+        }
+
+    def run_goal_clear_suite(self) -> Dict[str, Any]:
+        """Goal complete+clear: set_primary (serves) → pre observe → update_status → demote → post observe (2x)."""
+        failures: List[str] = []
+        assertions: List[str] = []
+        raw_transcript: List[Dict[str, Any]] = []
+        ts = int(time.time())
+        goal_key = f"goal:harness_clear_{ts}"
+        goal_short = f"harness_clear_{ts}"
+
+        def snap(label: str, tool: str, tool_args: Dict[str, Any]) -> Dict[str, Any]:
+            resp = self.call_tool(tool, tool_args, timeout=90.0)
+            entry: Dict[str, Any] = {
+                "label": label,
+                "tool": tool,
+                "args": tool_args,
+                "raw": resp,
+                "text": self._tool_text(resp),
+            }
+            parsed = self._parse_tool_json(resp)
+            if parsed:
+                entry["parsed"] = parsed
+            raw_transcript.append(entry)
+            return entry
+
+        parent_short = f"harness_parent_{ts}"
+        parent_key = f"goal:{parent_short}"
+        snap("goal_create_parent", "mcp_engram_goal_create", {
+            "goal_id": parent_short,
+            "statement": "Harness parent goal for clear-restore test",
+            "priority": "medium",
+        })
+        snap("goal_create", "mcp_engram_goal_create", {
+            "goal_id": goal_short,
+            "statement": "Harness goal-clear protocol test (isolated store)",
+            "priority": "high",
+            "parent": parent_key,
+        })
+        sp = snap("goal_set_primary", "mcp_engram_goal_set_primary", {"goal": goal_key})
+        if "serves" not in sp.get("text", ""):
+            failures.append("goal_set_primary did not report serves link")
+        else:
+            assertions.append("goal_set_primary wired primary_goal --serves-->")
+
+        ss_pre = snap("session_start_pre_clear", "mcp_engram_session_start", {
+            "intent": "goal-clear harness — pre-clear observe primary/suggested",
+        })
+        gl_pre = snap("goal_list_active_pre", "mcp_engram_goal_list", {"status": "active", "limit": 40})
+        gs_pre = snap("goal_status_pre", "mcp_engram_goal_status", {"goal": goal_key})
+
+        ss_data = ss_pre.get("parsed") or {}
+        cont = ss_data.get("continuation") or ss_data
+        primary = cont.get("primary_goal", "")
+        if primary != goal_key:
+            failures.append(f"pre-clear primary_goal={primary!r}, expected {goal_key}")
+        else:
+            assertions.append(f"pre-clear primary_goal={goal_key}")
+
+        suggested = cont.get("suggested_actions") or []
+        suggested_tools = [a.get("tool") for a in suggested]
+        assertions.append(f"pre-clear suggested_actions len={len(suggested)}")
+
+        if goal_short not in gl_pre.get("text", ""):
+            failures.append("pre-clear goal_list(active) missing test goal")
+        else:
+            assertions.append("pre-clear goal in goal_list(active)")
+
+        if "active" not in gs_pre.get("text", "").lower():
+            failures.append("pre-clear goal_status not active")
+        else:
+            assertions.append("pre-clear goal_status active")
+
+        snap("goal_update_status", "mcp_engram_goal_update_status", {
+            "goal": goal_key,
+            "status": "completed",
+            "note": "harness goal-clear suite",
+        })
+        gs_mid = snap("goal_status_post_update", "mcp_engram_goal_status", {"goal": goal_key})
+        if "completed" not in gs_mid.get("text", "").lower():
+            failures.append("post goal_update_status: goal_status not completed")
+        else:
+            assertions.append("post goal_update_status status=completed")
+
+        dem = snap("demote_from_context", "mcp_engram_demote_from_context", {
+            "concept": goal_key,
+            "note": "harness archival demote",
+        })
+        dem_parsed = dem.get("parsed") or {}
+        assertions.append(f"demote removed_serves={dem_parsed.get('removed_serves')}")
+
+        snap("recall_goals_post", "mcp_engram_recall", {
+            "query": "goal:",
+            "scope": "anchors",
+            "k": 5,
+        })
+
+        gl_post = snap("goal_list_active_post", "mcp_engram_goal_list", {"status": "active", "limit": 40})
+        gl_done = snap("goal_list_completed_post", "mcp_engram_goal_list", {"status": "completed", "limit": 40})
+        ss_post1 = snap("session_start_post_clear_run1", "mcp_engram_session_start", {
+            "intent": "goal-clear harness — post-clear run1",
+        })
+        ss_post2 = snap("session_start_post_clear_run2", "mcp_engram_session_start", {
+            "intent": "goal-clear harness — post-clear run2",
+        })
+        gs_post = snap("goal_status_post_clear", "mcp_engram_goal_status", {"goal": goal_key})
+
+        for ss_entry, lbl in ((ss_post1, "post_clear_run1"), (ss_post2, "post_clear_run2")):
+            f, a = assert_post_clear_state(
+                ss_entry,
+                cleared_goal=goal_key,
+                cleared_goal_short=goal_short,
+                expected_primary=parent_key,
+                label=lbl,
+            )
+            failures.extend(f)
+            assertions.extend(a)
+
+        if goal_short in gl_post.get("text", ""):
+            failures.append("post-clear goal still in goal_list(active)")
+        else:
+            assertions.append("post-clear goal absent from goal_list(active)")
+
+        if goal_short not in gl_done.get("text", ""):
+            failures.append("post-clear goal not in goal_list(completed)")
+        else:
+            assertions.append("post-clear goal in goal_list(completed)")
+
+        if "completed" not in gs_post.get("text", "").lower():
+            failures.append("post-clear goal_status not completed")
+        else:
+            assertions.append("post-clear goal_status completed")
+
+        passed = len(failures) == 0 and self.is_alive and self.transport_failures == 0
+        return {
+            "label": "goal_clear",
+            "passed": passed,
+            "failures": failures,
+            "assertions": assertions,
+            "goal_key": goal_key,
+            "raw_transcript": raw_transcript,
             "still_alive": self.is_alive,
         }
 
@@ -939,7 +1159,7 @@ def main():
     ap.add_argument("--binary", required=True, help="Path to engram binary (stable or dev)")
     ap.add_argument("--store", required=True, help="Isolated temp store dir (will be created)")
     ap.add_argument("--env", action="append", default=[], help="KEY=VAL env override (repeatable)")
-    ap.add_argument("--suite", default="health", choices=["health", "full-wakeup", "transport-lifetime", "heavy-light", "optix-stress", "compression-measurement", "lawfulness-metric", "continuation-bundle", "agent-memory", "all"])
+    ap.add_argument("--suite", default="health", choices=["health", "full-wakeup", "transport-lifetime", "heavy-light", "optix-stress", "compression-measurement", "lawfulness-metric", "continuation-bundle", "agent-memory", "goal-clear", "all"])
     ap.add_argument("--iterations", type=int, default=12, help="For transport-lifetime")
     ap.add_argument("--timeout", type=float, default=60.0)
     ap.add_argument("--verbose", action="store_true")
@@ -1015,8 +1235,21 @@ def main():
             if not res.get("passed"):
                 client.errors.append("agent-memory assertions failed")
 
+        goal_clear_full_written = False
+        if args.suite in ("goal-clear", "all"):
+            print("=== Running goal_clear_suite (set_primary → clear → post observe 2x) ===")
+            res = client.run_goal_clear_suite()
+            print(json.dumps({k: v for k, v in res.items() if k != "raw_transcript"}, indent=2))
+            if args.json_out:
+                with open(args.json_out, "w") as f:
+                    json.dump(res, f, indent=2)
+                goal_clear_full_written = True
+                print(f"Full goal-clear transcript written to {args.json_out}")
+            if not res.get("passed"):
+                client.errors.append("goal-clear assertions failed")
+
         summary = client.get_summary()
-        if args.json_out:
+        if args.json_out and not goal_clear_full_written:
             with open(args.json_out, "w") as f:
                 json.dump({"ok": True, "summary": summary, "timings": client.timings}, f, indent=2)
             print(f"Results written to {args.json_out}")

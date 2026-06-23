@@ -13,7 +13,29 @@ pub mod provlog_capnp {
 
 use crate::types::{HolographicBlock, BLOCK_SIZE};
 use std::io::{Read, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
+
+/// True for on-disk LEG container files (`.leg` legacy suffix or `.leg3` canonical).
+#[inline]
+pub fn is_leg_block_path(path: &Path) -> bool {
+    matches!(
+        path.extension().and_then(|e| e.to_str()),
+        Some("leg") | Some("leg3")
+    )
+}
+
+/// Resolve a concept to an existing block path (prefers `.leg3`, falls back to `.leg`).
+pub fn resolve_leg_block_path(dir: &Path, concept: &str) -> Option<PathBuf> {
+    let leg3 = dir.join(format!("{concept}.leg3"));
+    if leg3.is_file() {
+        return Some(leg3);
+    }
+    let leg = dir.join(format!("{concept}.leg"));
+    if leg.is_file() {
+        return Some(leg);
+    }
+    None
+}
 
 #[cfg(target_os = "linux")]
 use std::os::unix::fs::OpenOptionsExt;

@@ -12,3 +12,5 @@ Run the Engram **session-end** ritual before the user leaves or context resets:
 3. Tell the user: next session should run `/engram-wake` — `session_start` will inline this handoff.
 
 Do not skip this when meaningful work happened. Flat chat summaries do not replace the geometric handoff packet.
+
+**If the session goal is complete:** clear first (`/engram-goal` → `goal_update_status` + `demote_from_context`, or TUI `update_goal(completed=true)`), then `session_end`. Terminal step: push branch + PR notes (fixes, ACs, traces).

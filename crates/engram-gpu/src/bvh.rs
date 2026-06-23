@@ -230,7 +230,7 @@ impl BvhManifold {
         let approx_count = std::fs::read_dir(dir)
             .ok()?
             .filter_map(|e| e.ok())
-            .filter(|e| e.path().extension().and_then(|x| x.to_str()) == Some("leg"))
+            .filter(|e| engram_core::storage::is_leg_block_path(&e.path()))
             .count();
 
         if approx_count > 100_000 {
@@ -648,7 +648,7 @@ impl BvhManifold {
             .flatten()
             .filter_map(|entry| {
                 let path = entry.path();
-                if path.extension().and_then(|e| e.to_str()) != Some("leg") {
+                if !engram_core::storage::is_leg_block_path(&path) {
                     return None;
                 }
                 let concept = path.file_stem()?.to_str()?.to_string();

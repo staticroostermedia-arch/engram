@@ -294,6 +294,36 @@ pub trait VsaBackend: Send + Sync {
 
         self.store(centroid_concept, centroid)
     }
+
+    /// BVH spatial index ready (GPU/accelerated backends). Default: false.
+    fn bvh_is_ready(&self) -> bool {
+        false
+    }
+
+    /// Indexed BVH leaf count when built. Default: 0.
+    fn bvh_node_count(&self) -> usize {
+        0
+    }
+
+    /// Hardware acceleration available for recall kernels. Default: false.
+    fn gpu_accel_available(&self) -> bool {
+        false
+    }
+
+    /// Hot presentation stratum resident (GPU + BVH). Default: false.
+    fn gpu_hot_resident(&self) -> bool {
+        false
+    }
+
+    /// Kick off background BVH build. Returns true if a thread was spawned.
+    fn rebuild_bvh_async(&self) -> bool {
+        false
+    }
+
+    /// True when a BVH build thread is in flight. Default: false.
+    fn bvh_build_in_progress(&self) -> bool {
+        false
+    }
 }
 
 // ── CPU Backend (always compiled) ────────────────────────────────────────────
@@ -345,13 +375,13 @@ impl CpuBackend {
 
 impl VsaBackend for CpuBackend {
     fn fetch(&self, concept: &str) -> Option<Box<[Complex32; 8192]>> {
-        let path = self.manifold_dir.join(format!("{}.leg", concept));
+        let path = crate::storage::resolve_leg_block_path(&self.manifold_dir, concept)?;
         let block = crate::storage::read_block(&path).ok()?;
         Some(Box::new(block.q))
     }
 
     fn fetch_block(&self, concept: &str) -> Option<Leg3Pointer> {
-        let path = self.manifold_dir.join(format!("{}.leg", concept));
+        let path = crate::storage::resolve_leg_block_path(&self.manifold_dir, concept)?;
         let block = crate::storage::read_block(&path).ok()?;
         Some(Leg3Pointer::from_boxed(block))
     }
@@ -369,7 +399,8 @@ impl VsaBackend for CpuBackend {
                 let mut scored: Vec<Memory> = candidates
                     .iter()
                     .filter_map(|concept| {
-                        let path = self.manifold_dir.join(format!("{}.leg", concept));
+                        let path =
+                            crate::storage::resolve_leg_block_path(&self.manifold_dir, concept)?;
                         let block = crate::storage::read_block(&path).ok()?;
                         Some(score_block(concept.clone(), query, &block, None))
                     })
@@ -397,7 +428,7 @@ impl VsaBackend for CpuBackend {
             .par_iter()
             .filter_map(|entry| {
                 let path = entry.path();
-                if path.extension().and_then(|e| e.to_str()) != Some("leg") {
+                if !crate::storage::is_leg_block_path(&path) {
                     return None;
                 }
                 let concept = path.file_stem()?.to_str()?.to_string();
@@ -437,7 +468,7 @@ impl VsaBackend for CpuBackend {
                     .flatten()
                     .filter_map(|e| {
                         let p = e.path();
-                        if p.extension().and_then(|x| x.to_str()) != Some("leg") {
+                        if !crate::storage::is_leg_block_path(&p) {
                             return None;
                         }
                         p.file_stem()?.to_str().map(|s| s.to_string())
@@ -505,6 +536,12 @@ impl SheafBackend {
     pub fn stalk_names(&self) -> Vec<&str> {
         self.stalks.iter().map(|(n, _)| n.as_str()).collect()
     }
+
+    /// Active stalk backend — writes and BVH/GPU readiness delegate here.
+    pub fn active_backend(&self) -> &dyn VsaBackend {
+        let idx = self.active.load(std::sync::atomic::Ordering::Relaxed);
+        self.stalks[idx].1.as_ref()
+    }
 }
 
 impl VsaBackend for SheafBackend {
@@ -566,6 +603,30 @@ impl VsaBackend for SheafBackend {
                     .map(move |c| format!("{}::{}", name, c))
             })
             .collect()
+    }
+
+    fn bvh_is_ready(&self) -> bool {
+        self.active_backend().bvh_is_ready()
+    }
+
+    fn bvh_node_count(&self) -> usize {
+        self.active_backend().bvh_node_count()
+    }
+
+    fn gpu_accel_available(&self) -> bool {
+        self.active_backend().gpu_accel_available()
+    }
+
+    fn gpu_hot_resident(&self) -> bool {
+        self.active_backend().gpu_hot_resident()
+    }
+
+    fn rebuild_bvh_async(&self) -> bool {
+        self.active_backend().rebuild_bvh_async()
+    }
+
+    fn bvh_build_in_progress(&self) -> bool {
+        self.active_backend().bvh_build_in_progress()
     }
 }
 

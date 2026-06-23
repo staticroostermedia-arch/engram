@@ -945,6 +945,7 @@ impl Backend {
             Backend::Gpu(b) => b.bvh_is_ready(),
             #[cfg(engram_backend_metal)]
             Backend::Metal(b) => b.bvh_is_ready(),
+            Backend::Sheaf(b) => b.bvh_is_ready(),
             _ => false,
         }
     }
@@ -953,6 +954,9 @@ impl Backend {
         match self {
             #[cfg(engram_backend_cuda)]
             Backend::Gpu(b) => b.bvh_node_count(),
+            #[cfg(engram_backend_metal)]
+            Backend::Metal(b) => b.bvh_node_count(),
+            Backend::Sheaf(b) => b.bvh_node_count(),
             _ => 0,
         }
     }
@@ -963,6 +967,7 @@ impl Backend {
             Backend::Gpu(b) => b.gpu_hot_resident(),
             #[cfg(engram_backend_metal)]
             Backend::Metal(b) => b.bvh_is_ready(),
+            Backend::Sheaf(b) => b.gpu_hot_resident(),
             _ => false,
         }
     }
@@ -973,6 +978,18 @@ impl Backend {
             Backend::Gpu(b) => b.rebuild_bvh_async(),
             #[cfg(engram_backend_metal)]
             Backend::Metal(b) => b.rebuild_bvh_async(),
+            Backend::Sheaf(b) => b.rebuild_bvh_async(),
+            _ => false,
+        }
+    }
+
+    fn bvh_build_in_progress(&self) -> bool {
+        match self {
+            #[cfg(engram_backend_cuda)]
+            Backend::Gpu(b) => b.bvh_build_in_progress(),
+            #[cfg(engram_backend_metal)]
+            Backend::Metal(b) => b.bvh_build_in_progress(),
+            Backend::Sheaf(b) => b.bvh_build_in_progress(),
             _ => false,
         }
     }
@@ -989,7 +1006,19 @@ impl Backend {
                 not(engram_backend_metal)
             ))]
             Backend::Wgpu(_) => "wgpu",
-            Backend::Sheaf(_) => "sheaf",
+            Backend::Sheaf(b) => {
+                if b.gpu_accel_available() {
+                    #[cfg(engram_backend_cuda)]
+                    {
+                        return "cuda";
+                    }
+                    #[cfg(engram_backend_metal)]
+                    {
+                        return "metal";
+                    }
+                }
+                "sheaf"
+            }
             Backend::Single(_) => "cpu",
         }
     }
@@ -1000,6 +1029,7 @@ impl Backend {
             Backend::Gpu(b) => b.is_gpu_available(),
             #[cfg(engram_backend_metal)]
             Backend::Metal(_) => true,
+            Backend::Sheaf(b) => b.gpu_accel_available(),
             _ => false,
         }
     }
@@ -1085,6 +1115,13 @@ pub(crate) fn normalize_spatial_context(raw: &str) -> Result<SpatialContextNorma
 
 // ── StoreHandle ───────────────────────────────────────────────────────────────
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PrimaryMarkerRestore {
+    Unchanged,
+    Restored(String),
+    Cleared,
+}
+
 pub struct StoreHandle {
     backend: Backend,
     path: String,
@@ -1150,6 +1187,10 @@ pub struct StoreHandle {
 
     /// Guard: auto-spawn at most one on-demand BVH build when memory_mode=deep.
     deep_bvh_spawn_attempted: std::sync::atomic::AtomicBool,
+
+    /// Cached `.leg`/`.leg3` count — invalidated on store/forget; 30s TTL for external writes.
+    leg_block_count_value: std::sync::atomic::AtomicUsize,
+    leg_block_count_cached_at: std::sync::atomic::AtomicU64,
 }
 
 /// Goal block text: provlog first (encode path), payload fallback.
@@ -1162,20 +1203,105 @@ pub fn goal_block_text(block: &engram_core::types::HolographicBlock) -> String {
     }
 }
 
-/// Match `status: active` or `**status:** active` (goal_create uses markdown form).
+/// Effective goal status: last canonical `status:` / `**status:**` line wins (append-only updates may leave stale header).
+pub fn goal_current_status(text: &str) -> Option<String> {
+    let mut last: Option<String> = None;
+    for line in text.lines() {
+        let t = line.trim();
+        if let Some(rest) = t.strip_prefix("**status:**") {
+            last = Some(rest.trim().to_lowercase());
+        } else if let Some(rest) = t.strip_prefix("status:") {
+            let v = rest.trim().to_lowercase();
+            if !v.is_empty() && v != "update" {
+                last = Some(v);
+            }
+        }
+    }
+    last
+}
+
+/// Match effective status (not first line only).
 pub fn goal_status_matches(text: &str, filter: &str) -> bool {
     if filter.is_empty() {
         return true;
     }
-    let f = filter.to_lowercase();
-    text.lines().any(|l| {
-        let t = l.trim().to_lowercase();
-        t == format!("status: {}", f) || t == format!("**status:** {}", f)
-    })
+    goal_current_status(text)
+        .map(|s| s == filter.to_lowercase())
+        .unwrap_or(false)
 }
 
 pub fn goal_status_is_active(text: &str) -> bool {
     goal_status_matches(text, "active")
+}
+
+/// Active primary from marker: unset/inactive/completed goals return None.
+pub fn resolve_active_primary_goal(store: &StoreHandle) -> Option<String> {
+    let marker = store.fetch_block_high_priority("primary_goal")?;
+    let target = primary_goal_marker_target(&marker)?;
+    let gblock = store.fetch_block_high_priority(&target)?;
+    let gtext = goal_block_text(&gblock);
+    if goal_status_is_active(&gtext) {
+        Some(target)
+    } else {
+        None
+    }
+}
+
+/// Rewrite canonical status line; strip legacy `--- Status Update ---` append blocks from MVP path.
+/// Read `**goal:**` from the `primary_goal` marker block (None if unset/empty).
+pub fn primary_goal_marker_target(block: &engram_core::types::HolographicBlock) -> Option<String> {
+    let text = goal_block_text(block);
+    let g = text
+        .lines()
+        .find(|l| l.starts_with("**goal:**"))
+        .map(|l| l.replace("**goal:**", "").trim().to_string())?;
+    if g.is_empty() || g.eq_ignore_ascii_case("unset") {
+        None
+    } else {
+        Some(g)
+    }
+}
+
+/// If the marker points at `completed`, re-point to `parent_goal` or clear to unset.
+pub fn restore_primary_goal_marker_payload(completed: &str, parent: Option<&str>) -> String {
+    match parent.filter(|p| !p.is_empty()) {
+        Some(parent) => format!(
+            "PRIMARY GOAL\n\n**goal:** {}\n**set_at:** {}\n**restored_from:** {}\n",
+            parent,
+            chrono::Utc::now().to_rfc3339(),
+            completed
+        ),
+        None => format!(
+            "PRIMARY GOAL\n\n**goal:** unset\n**set_at:** {}\n**cleared_after:** {}\n",
+            chrono::Utc::now().to_rfc3339(),
+            completed
+        ),
+    }
+}
+
+pub fn rewrite_goal_status(text: &str, new_status: &str) -> String {
+    let base = text
+        .split("\n\n--- Status Update ---")
+        .next()
+        .unwrap_or(text);
+    let mut rewritten = false;
+    let lines: Vec<String> = base
+        .lines()
+        .map(|line| {
+            let t = line.trim();
+            if !rewritten && (t.starts_with("**status:**") || t.starts_with("status:")) {
+                rewritten = true;
+                if t.starts_with("**status:**") {
+                    format!("**status:** {}", new_status)
+                } else {
+                    format!("status: {}", new_status)
+                }
+            } else {
+                line.to_string()
+            }
+        })
+        .collect();
+    lines.join("\n")
 }
 
 impl StoreHandle {
@@ -1384,6 +1510,8 @@ impl StoreHandle {
             continuation_bundle_cached_at: 0,
             continuation_bundle_cache: None,
             deep_bvh_spawn_attempted: std::sync::atomic::AtomicBool::new(false),
+            leg_block_count_value: std::sync::atomic::AtomicUsize::new(0),
+            leg_block_count_cached_at: std::sync::atomic::AtomicU64::new(0),
         }
     }
 
@@ -1501,6 +1629,8 @@ impl StoreHandle {
             continuation_bundle_cached_at: 0,
             continuation_bundle_cache: None,
             deep_bvh_spawn_attempted: std::sync::atomic::AtomicBool::new(false),
+            leg_block_count_value: std::sync::atomic::AtomicUsize::new(0),
+            leg_block_count_cached_at: std::sync::atomic::AtomicU64::new(0),
         }
     }
 
@@ -1524,6 +1654,10 @@ impl StoreHandle {
     /// Spawn a background BVH build. Use when ENGRAM_DEFER_BVH=1 and full recall is needed.
     pub fn rebuild_bvh_async(&self) -> bool {
         self.backend.rebuild_bvh_async()
+    }
+
+    pub fn bvh_build_in_progress(&self) -> bool {
+        self.backend.bvh_build_in_progress()
     }
 
     pub fn current_profile_name() -> &'static str {
@@ -1597,21 +1731,26 @@ impl StoreHandle {
     }
 
     pub fn backend_readiness(&self) -> serde_json::Value {
-        let bvh_auto_spawned = self.maybe_auto_rebuild_bvh_for_deep_mode();
+        let recall_mode = self.recall_mode();
         serde_json::json!({
             "fully_initialized": self.is_fully_initialized(),
             "backend_kind": self.backend.backend_kind(),
             "gpu_accel_available": self.backend.gpu_accel_available(),
             "gpu_hot_resident": self.backend.gpu_hot_resident(),
             "bvh_ready": self.bvh_is_ready(),
+            "bvh_build_in_progress": self.bvh_build_in_progress(),
             "bvh_nodes": self.backend.bvh_node_count(),
-            "recall_mode": self.recall_mode(),
+            "recall_mode": recall_mode,
+            "nvme_direct_io": true,
+            "nvme_recall_ready": crate::injection_priority::nvme_recall_path_ready(recall_mode),
             "leg_block_count": self.leg_block_count(),
             "profile": Self::current_profile_name(),
             "memory_mode": Self::memory_mode(),
             "defer_bvh": std::env::var("ENGRAM_DEFER_BVH").as_deref() == Ok("1"),
             "defer_watch_ingest": std::env::var("ENGRAM_DEFER_WATCH_INGEST").as_deref() == Ok("1"),
-            "bvh_auto_spawned": bvh_auto_spawned,
+            "bvh_auto_spawned": self
+                .deep_bvh_spawn_attempted
+                .load(std::sync::atomic::Ordering::Relaxed),
             "cuda_lean": std::env::var("ENGRAM_CUDA_LEAN").as_deref() != Ok("0"),
             "sheaf_lean": std::env::var("ENGRAM_SHEAF_LEAN").as_deref() == Ok("1"),
             "ki_lean": std::env::var("ENGRAM_KI_LEAN").as_deref() == Ok("1"),
@@ -1631,6 +1770,7 @@ impl StoreHandle {
     /// Hot-swap the fast MCP placeholder with a fully initialized store on the same disk path.
     /// Keeps the outer `Arc<Mutex<StoreHandle>>` alive so MCP stdio and daemons share one handle.
     pub fn upgrade_from(&mut self, full: Self) {
+        self.invalidate_leg_block_count();
         tracing::info!(
             "[MCP-FAST] Upgrading placeholder → full backend at {}",
             full.store_path()
@@ -1886,6 +2026,7 @@ impl StoreHandle {
 
         let r = self.backend.store(concept, block);
         if r.is_ok() {
+            self.invalidate_leg_block_count();
             self.access_index.touch(concept);
             if concept.starts_with("trace:") {
                 self.log_activity(concept, "trace_fork", trace_fork_detail.as_deref());
@@ -2178,7 +2319,7 @@ impl StoreHandle {
         if let Ok(rd) = std::fs::read_dir(&self.path) {
             for e in rd.flatten() {
                 let path = e.path();
-                if path.extension().and_then(|x| x.to_str()) != Some("leg") {
+                if !engram_core::storage::is_leg_block_path(&path) {
                     continue;
                 }
                 let Ok(meta) = e.metadata() else { continue };
@@ -2299,7 +2440,11 @@ impl StoreHandle {
                 concept
             ));
         }
-        self.backend.forget(stalk_raw_concept(concept))
+        let r = self.backend.forget(stalk_raw_concept(concept));
+        if r.is_ok() {
+            self.invalidate_leg_block_count();
+        }
+        r
     }
     pub fn list(&self) -> Vec<String> {
         self.backend.list()
@@ -2334,12 +2479,38 @@ impl StoreHandle {
         }
     }
 
-    /// Fast `.leg` count without allocating all concept names (critical for 100k+ stores).
+    /// Invalidate cached block count (store/forget/upgrade paths).
+    pub fn invalidate_leg_block_count(&self) {
+        self.leg_block_count_cached_at
+            .store(0, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// Fast `.leg`/`.leg3` count without allocating concept names.
+    /// Cached 30s; invalidated on local store/forget.
     pub fn leg_block_count(&self) -> usize {
+        const TTL_SECS: u64 = 30;
+        let now = activity_now();
+        let cached_at = self
+            .leg_block_count_cached_at
+            .load(std::sync::atomic::Ordering::Relaxed);
+        if cached_at != 0 && now.saturating_sub(cached_at) < TTL_SECS {
+            return self
+                .leg_block_count_value
+                .load(std::sync::atomic::Ordering::Relaxed);
+        }
+        let count = self.scan_leg_block_count();
+        self.leg_block_count_value
+            .store(count, std::sync::atomic::Ordering::Relaxed);
+        self.leg_block_count_cached_at
+            .store(now, std::sync::atomic::Ordering::Relaxed);
+        count
+    }
+
+    fn scan_leg_block_count(&self) -> usize {
         std::fs::read_dir(&self.path)
             .map(|rd| {
                 rd.filter_map(|e| e.ok())
-                    .filter(|e| e.path().extension().and_then(|x| x.to_str()) == Some("leg"))
+                    .filter(|e| engram_core::storage::is_leg_block_path(&e.path()))
                     .count()
             })
             .unwrap_or(0)
@@ -2382,7 +2553,7 @@ impl StoreHandle {
         if let Ok(rd) = std::fs::read_dir(&self.path) {
             for e in rd.flatten() {
                 let path = e.path();
-                if path.extension().and_then(|x| x.to_str()) != Some("leg") {
+                if !engram_core::storage::is_leg_block_path(&path) {
                     continue;
                 }
                 let Some(name) = path.file_stem().and_then(|s| s.to_str()) else {
@@ -2530,13 +2701,7 @@ impl StoreHandle {
     ) -> serde_json::Value {
         let summary_trunc: String = summary.chars().take(2000).collect();
 
-        let mut primary_goal: Option<String> = None;
-        if let Some(block) = self.fetch_block_high_priority("primary_goal") {
-            let text = engram_core::storage::read_provlog(&block);
-            if let Some(line) = text.lines().find(|l| l.starts_with("**goal:**")) {
-                primary_goal = Some(line.replace("**goal:** ", "").trim().to_string());
-            }
-        }
+        let primary_goal = resolve_active_primary_goal(self);
 
         let mut recent_traces: Vec<serde_json::Value> = Vec::new();
         let mut trace_chain_head: Option<String> = None;
@@ -2723,12 +2888,8 @@ impl StoreHandle {
             }
         };
 
-        let mut primary_goal_name: Option<String> = None;
-        if let Some(block) = self.fetch_block_high_priority("primary_goal") {
-            let text = engram_core::storage::read_provlog(&block);
-            if let Some(line) = text.lines().find(|l| l.starts_with("**goal:**")) {
-                primary_goal_name = Some(line.replace("**goal:** ", "").trim().to_string());
-            }
+        let primary_goal_name = resolve_active_primary_goal(self);
+        if self.fetch_block_high_priority("primary_goal").is_some() {
             push(
                 self,
                 &mut entries,
@@ -2877,25 +3038,45 @@ impl StoreHandle {
             }
         }
 
+        let recency_rank =
+            crate::injection_priority::recency_rank_map(&self.access_index.recent(120));
+
+        let mut artifacts: Vec<crate::injection_priority::InjectionArtifact> = entries
+            .iter()
+            .map(|e| {
+                crate::injection_priority::artifact_for_concept(
+                    &e.concept,
+                    e.crs,
+                    e.hot,
+                    &recency_rank,
+                    if e.source == "momentum_recall" {
+                        0.75
+                    } else {
+                        0.0
+                    },
+                    &e.source,
+                    SESSION_HANDOFF_LATEST,
+                )
+            })
+            .collect();
+        artifacts = crate::injection_priority::prioritize_artifacts(artifacts);
+        let rank_by_concept: std::collections::HashMap<String, f32> = artifacts
+            .iter()
+            .map(|a| {
+                (
+                    a.concept.clone(),
+                    crate::injection_priority::injection_rank_score(a),
+                )
+            })
+            .collect();
         entries.sort_by(|a, b| {
-            b.crs
-                .partial_cmp(&a.crs)
+            rank_by_concept
+                .get(&b.concept)
+                .copied()
+                .unwrap_or(0.0)
+                .partial_cmp(&rank_by_concept.get(&a.concept).copied().unwrap_or(0.0))
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
-
-        if let Some(pos) = entries
-            .iter()
-            .position(|e| e.concept == SESSION_HANDOFF_LATEST)
-        {
-            let entry = entries.remove(pos);
-            entries.insert(0, entry);
-        } else if let Some(pos) = entries
-            .iter()
-            .position(|e| e.concept.starts_with("compression_handoff_"))
-        {
-            let entry = entries.remove(pos);
-            entries.insert(0, entry);
-        }
         entries.truncate(MAX_ARTIFACTS);
 
         let active_tiles: Vec<serde_json::Value> = entries
@@ -2957,6 +3138,41 @@ impl StoreHandle {
             })
             .unwrap_or_default();
 
+        let trace_head = harness
+            .get("trace_chain")
+            .and_then(|tc| tc.get("head"))
+            .and_then(|h| h.as_str())
+            .map(|s| !s.is_empty())
+            .unwrap_or(false);
+        let open_scars = harness
+            .get("open_scars_wake")
+            .and_then(|v| v.as_array())
+            .map(|a| a.len())
+            .unwrap_or(0);
+        let presentation_count = presentation_stratum
+            .get("node_count")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0) as usize;
+        let hot_tile_count = entries
+            .iter()
+            .filter(|e| e.hot && e.concept.starts_with("tile:"))
+            .count();
+        let leg_blocks = self.leg_block_count();
+        let recall_mode = self.recall_mode();
+        let completeness = crate::injection_priority::compute_injection_completeness(
+            crate::injection_priority::InjectionCompletenessInput {
+                has_primary: primary_goal_name.is_some(),
+                has_handoff: session_handoff_present,
+                has_trace_head: trace_head,
+                open_scars,
+                hot_tile_count,
+                presentation_nodes: presentation_count,
+                recall_mode,
+                gpu_hot_resident: self.backend.gpu_hot_resident(),
+                leg_block_count: leg_blocks,
+            },
+        );
+
         let bundle = serde_json::json!({
             "primary_goal": primary_goal_name,
             "last_session_end": last_session_end,
@@ -2965,6 +3181,22 @@ impl StoreHandle {
             "active_artifacts": if stratum_artifacts.is_empty() { active_tiles } else { stratum_artifacts },
             "presentation_stratum": presentation_stratum,
             "local_stratum": local_stratum,
+            "injection_completeness": {
+                "score": completeness.score,
+                "slots_filled": completeness.slots_filled,
+                "slots_total": completeness.slots_total,
+                "missing": completeness.missing,
+            },
+            "nvme_context": {
+                "recall_mode": recall_mode,
+                "bvh_ready": self.bvh_is_ready(),
+                "gpu_hot_resident": self.backend.gpu_hot_resident(),
+                "leg_block_count": leg_blocks,
+                "large_manifold": leg_blocks > Self::LARGE_MANIFOLD_THRESHOLD,
+                "nvme_direct_io": true,
+                "nvme_recall_ready": crate::injection_priority::nvme_recall_path_ready(recall_mode),
+                "hint": "full_bvh_gpu: O(log N) BVH + O_DIRECT .leg mmap — NVMe as context extension; poll get_backend_readiness if injection_completeness.missing contains nvme_recall_path",
+            },
             "recall_hint": "Execute suggested_actions in order, then read structured_handoff. local_stratum = sovereign host/project context; presentation_stratum = distilled process/ritual continuation.",
             "harness_injection": harness,
             "cached_at": now,
@@ -3548,6 +3780,7 @@ impl StoreHandle {
 
         let r = self.backend.store(concept, block);
         if r.is_ok() {
+            self.invalidate_leg_block_count();
             self.access_index.touch(concept);
             if concept.starts_with("trace:") {
                 self.log_activity(concept, "trace_fork", trace_fork_detail.as_deref());
@@ -3957,6 +4190,42 @@ impl StoreHandle {
         ))
     }
 
+    /// When `primary_goal` marker still points at a completed/demoted goal, restore parent or clear to unset.
+    pub fn restore_primary_goal_marker_after_complete(
+        &mut self,
+        completed: &str,
+    ) -> PrimaryMarkerRestore {
+        let Some(marker) = self.fetch_block_high_priority("primary_goal") else {
+            return PrimaryMarkerRestore::Unchanged;
+        };
+        let Some(current) = primary_goal_marker_target(&marker) else {
+            return PrimaryMarkerRestore::Unchanged;
+        };
+        if current != completed {
+            return PrimaryMarkerRestore::Unchanged;
+        }
+
+        let parent = self.fetch_block_high_priority(completed).and_then(|b| {
+            goal_block_text(&b)
+                .lines()
+                .find(|l| l.starts_with("**parent_goal:**"))
+                .map(|l| l.replace("**parent_goal:**", "").trim().to_string())
+                .filter(|p| !p.is_empty())
+        });
+
+        let payload = restore_primary_goal_marker_payload(completed, parent.as_deref());
+        let mut new_marker = self.encode(&payload);
+        new_marker.zedos_tag = engram_core::types::ZEDOS_OPERATIONAL;
+        new_marker.crs_score = 0.95;
+        let _ = self.store("primary_goal", new_marker);
+        self.invalidate_continuation_bundle_cache();
+        self.mark_ki_rebake_needed();
+        match parent {
+            Some(p) => PrimaryMarkerRestore::Restored(p),
+            None => PrimaryMarkerRestore::Cleared,
+        }
+    }
+
     /// Drop a relation edge from the knowledge-graph sidecar only (block remains in manifold).
     pub fn unrelate(&mut self, concept_a: &str, label: &str, concept_b: &str) -> bool {
         let ok = self.relation_index.remove(concept_a, label, concept_b);
@@ -4050,6 +4319,7 @@ impl StoreHandle {
         let _ = self.relate(&trace_key, concept, "demotes_goal");
         let _ = self.relate(&trace_key, concept, "archived_from_context");
         let removed_serves = self.unrelate("primary_goal", "serves", concept);
+        let _ = self.restore_primary_goal_marker_after_complete(concept);
         let cascaded_demotions = self.demote_condensation_from_serving_stack();
         Ok(ArchiveFromContextResult {
             trace_key,
@@ -4467,13 +4737,19 @@ impl StoreHandle {
 
         // ── Spatial-first: prefer real AABB AST items extracted by the daemon ──
         if !stem.is_empty() {
-            let all_concepts = self.list();
-            let mut spatial_hits: Vec<(String, f32, f32)> = all_concepts
+            use std::collections::HashSet;
+            let mut candidates = self.spatial_stem_candidates(&stem);
+            if self.leg_block_count() > Self::LARGE_MANIFOLD_THRESHOLD {
+                let mut seen: HashSet<String> = candidates.iter().cloned().collect();
+                for name in self.scan_stem_prefix_leg_files(&stem, 80) {
+                    if seen.insert(name.clone()) {
+                        candidates.push(name);
+                    }
+                }
+            }
+            let mut spatial_hits: Vec<(String, f32, f32)> = candidates
                 .into_iter()
                 .filter_map(|concept| {
-                    if !concept.to_lowercase().starts_with(&stem) {
-                        return None;
-                    }
                     // Prefer high_priority (hot/pinned) but fall back to regular fetch.
                     // Critical for passive/force bootstrap: freshly ingested AST (from watch bind or mcp force)
                     // may not be in the LegView/hot cache yet, but still have valid AABB and must be visible
@@ -6304,6 +6580,177 @@ mod ingest_ast_tests {
         assert!(
             coh >= DEFAULT_COHERENCE_MIN,
             "full_source q/provlog coherence {coh} below min {DEFAULT_COHERENCE_MIN}"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn goal_update_status_flow_restores_marker_like_set_primary() {
+        let dir = test_store_dir("goal_update_flow");
+        let mut store = StoreHandle::new(&dir.to_string_lossy());
+
+        store
+            .remember(
+                "goal:parent_flow",
+                "GOAL BLOCK\n\n**goal_statement:** parent\n\n**status:** active\n",
+            )
+            .unwrap();
+        store
+            .remember(
+                "goal:child_flow",
+                "GOAL BLOCK\n\n**goal_statement:** child\n\n**status:** active\n**parent_goal:** goal:parent_flow\n",
+            )
+            .unwrap();
+        let payload = format!(
+            "PRIMARY GOAL\n\n**goal:** {}\n**set_at:** {}\n",
+            "goal:child_flow",
+            chrono::Utc::now().to_rfc3339()
+        );
+        let mut marker = store.encode(&payload);
+        marker.zedos_tag = engram_core::types::ZEDOS_OPERATIONAL;
+        marker.crs_score = 0.95;
+        store.store("primary_goal", marker).unwrap();
+
+        let mut block = store.fetch_block_high_priority("goal:child_flow").unwrap();
+        let text = goal_block_text(&block);
+        let new_text = rewrite_goal_status(&text, "completed");
+        engram_core::storage::write_provlog(&mut block, &new_text);
+        store.store("goal:child_flow", block).unwrap();
+        store.unrelate("primary_goal", "serves", "goal:child_flow");
+
+        let outcome = store.restore_primary_goal_marker_after_complete("goal:child_flow");
+        assert_eq!(
+            outcome,
+            PrimaryMarkerRestore::Restored("goal:parent_flow".to_string())
+        );
+        assert_eq!(
+            resolve_active_primary_goal(&store).as_deref(),
+            Some("goal:parent_flow")
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn primary_goal_marker_restores_parent_on_complete() {
+        let dir = test_store_dir("primary_restore");
+        let mut store = StoreHandle::new(&dir.to_string_lossy());
+
+        store
+            .remember(
+                "goal:parent_test",
+                "GOAL BLOCK\n\n**goal_statement:** parent\n\n**status:** active\n",
+            )
+            .unwrap();
+        store
+            .remember(
+                "goal:child_test",
+                "GOAL BLOCK\n\n**goal_statement:** child\n\n**status:** active\n**parent_goal:** goal:parent_test\n",
+            )
+            .unwrap();
+        store
+            .remember(
+                "primary_goal",
+                "PRIMARY GOAL\n\n**goal:** goal:child_test\n**set_at:** test\n",
+            )
+            .unwrap();
+
+        let outcome = store.restore_primary_goal_marker_after_complete("goal:child_test");
+        assert_eq!(
+            outcome,
+            PrimaryMarkerRestore::Restored("goal:parent_test".to_string())
+        );
+        let marker = store.fetch_block_high_priority("primary_goal").unwrap();
+        assert_eq!(
+            primary_goal_marker_target(&marker).as_deref(),
+            Some("goal:parent_test")
+        );
+        assert_eq!(
+            resolve_active_primary_goal(&store).as_deref(),
+            Some("goal:parent_test")
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn goal_status_rewrite_updates_effective_status() {
+        let active = "GOAL BLOCK\n\n**goal_statement:** test\n\n**status:** active\n";
+        let completed = rewrite_goal_status(active, "completed");
+        assert!(goal_status_matches(&completed, "completed"));
+        assert!(!goal_status_is_active(&completed));
+        assert_eq!(
+            goal_current_status(&completed).as_deref(),
+            Some("completed")
+        );
+
+        // Legacy append-only path left stale header — rewrite fixes it.
+        let broken = format!(
+            "{}\n\n--- Status Update ---\nstatus: completed\nnote: old mvp\n",
+            active
+        );
+        let fixed = rewrite_goal_status(&broken, "completed");
+        assert!(!goal_status_is_active(&fixed));
+        assert_eq!(goal_current_status(&fixed).as_deref(), Some("completed"));
+    }
+
+    #[test]
+    fn build_continuation_bundle_emits_injection_observables() {
+        let dir = test_store_dir("inj_bundle");
+        let mut store = StoreHandle::new(&dir.to_string_lossy());
+
+        store
+            .remember(
+                "primary_goal",
+                "PRIMARY GOAL\n\n**goal:** goal:engram_mvp_v1\n**set_at:** test",
+            )
+            .unwrap();
+        store
+            .remember(
+                crate::harness_injection::SESSION_HANDOFF_LATEST,
+                "SESSION HANDOFF PACKET v1\n\n{\"decisions\":[\"test\"],\"trace_chain_head\":\"trace:test_head\"}",
+            )
+            .unwrap();
+        store
+            .remember(
+                "trace:test_head",
+                "REASONING TRACE SEGMENT\n\n**decision_point:** test\n\n**justification:** bundle integration test\n",
+            )
+            .unwrap();
+        store.promote_tile_to_high_priority("primary_goal").unwrap();
+        store
+            .promote_tile_to_high_priority(crate::harness_injection::SESSION_HANDOFF_LATEST)
+            .unwrap();
+
+        let bundle = store.build_continuation_bundle(Some("integration test intent"));
+        let inj = bundle
+            .get("injection_completeness")
+            .expect("injection_completeness");
+        assert!(inj.get("score").and_then(|v| v.as_f64()).is_some());
+        assert!(inj.get("slots_filled").is_some());
+        assert!(inj.get("missing").is_some());
+
+        let nvme = bundle.get("nvme_context").expect("nvme_context");
+        assert!(nvme.get("recall_mode").is_some());
+        assert_eq!(
+            nvme.get("nvme_direct_io").and_then(|v| v.as_bool()),
+            Some(true)
+        );
+        assert!(nvme.get("nvme_recall_ready").is_some());
+
+        let harness = bundle.get("harness_injection").expect("harness_injection");
+        let actions = harness
+            .get("suggested_actions")
+            .and_then(|v| v.as_array())
+            .expect("suggested_actions");
+        assert!(!actions.is_empty());
+        assert!(
+            actions[0]
+                .get("injection_rank")
+                .and_then(|v| v.as_f64())
+                .is_some(),
+            "suggested_actions must carry injection_rank after composite sort"
         );
 
         let _ = std::fs::remove_dir_all(&dir);

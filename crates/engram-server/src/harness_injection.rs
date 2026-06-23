@@ -591,14 +591,21 @@ pub fn build_suggested_actions(
         if let Some(packet) = parse_handoff_packet_json(&text) {
             handoff_packet = Some(packet.clone());
             if let Some(goal) = packet.get("primary_goal").and_then(|v| v.as_str()) {
-                primary_goal = Some(goal.to_string());
-                push_action(
-                    &mut actions,
-                    "mcp_engram_recall",
-                    json!({ "query": goal, "scope": "anchors", "k": 5 }),
-                    "inherit primary goal context",
-                    2,
-                );
+                if store
+                    .fetch_block_high_priority(goal)
+                    .map(|b| crate::store::goal_block_text(&b))
+                    .map(|t| crate::store::goal_status_is_active(&t))
+                    .unwrap_or(false)
+                {
+                    primary_goal = Some(goal.to_string());
+                    push_action(
+                        &mut actions,
+                        "mcp_engram_recall",
+                        json!({ "query": goal, "scope": "anchors", "k": 5 }),
+                        "inherit primary goal context",
+                        2,
+                    );
+                }
             }
             if let Some(files) = packet.get("files_touched").and_then(|v| v.as_array()) {
                 for (i, file) in files.iter().take(5).enumerate() {
@@ -637,19 +644,15 @@ pub fn build_suggested_actions(
                 );
             }
         }
-    } else if let Some(block) = store.fetch_block_high_priority("primary_goal") {
-        let text = storage::read_provlog(&block);
-        if let Some(line) = text.lines().find(|l| l.starts_with("**goal:**")) {
-            let g = line.replace("**goal:**", "").trim().to_string();
-            primary_goal = Some(g.clone());
-            push_action(
-                &mut actions,
-                "mcp_engram_recall",
-                json!({ "query": g, "scope": "anchors", "k": 5 }),
-                "primary goal from marker",
-                2,
-            );
-        }
+    } else if let Some(g) = crate::store::resolve_active_primary_goal(store) {
+        primary_goal = Some(g.clone());
+        push_action(
+            &mut actions,
+            "mcp_engram_recall",
+            json!({ "query": g, "scope": "anchors", "k": 5 }),
+            "primary goal from marker",
+            2,
+        );
     }
 
     // Orchestrator program wake — front execution map + parallel program process.
@@ -858,9 +861,74 @@ pub fn build_suggested_actions(
         }
     }
 
-    actions.sort_by_key(|a| a.get("priority").and_then(|p| p.as_u64()).unwrap_or(99));
+    rank_suggested_actions(store, &mut actions);
     actions.truncate(16);
     actions
+}
+
+/// Re-rank wake queue by composite injection score (CRS + hot + recency + momentum + scar/handoff).
+fn rank_suggested_actions(store: &StoreHandle, actions: &mut [Value]) {
+    let recency_rank = crate::injection_priority::recency_rank_map(&store.access_index.recent(120));
+
+    fn action_rank(
+        store: &StoreHandle,
+        action: &Value,
+        recency_rank: &std::collections::HashMap<String, u32>,
+    ) -> f32 {
+        let concept = action
+            .get("args")
+            .and_then(|a| a.get("concept"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        if concept.is_empty() {
+            let tie = action
+                .get("priority")
+                .and_then(|p| p.as_u64())
+                .unwrap_or(99) as f32;
+            return 0.05 + (1.0 / (1.0 + tie));
+        }
+        let (crs, hot) = store
+            .fetch_block_high_priority(concept)
+            .map(|b| (b.crs_score, true))
+            .unwrap_or((0.55, false));
+        let reason = action.get("reason").and_then(|r| r.as_str()).unwrap_or("");
+        let momentum = if reason.contains("momentum") {
+            0.75
+        } else {
+            0.0
+        };
+        let source = if action.get("jit").and_then(|v| v.as_bool()).unwrap_or(false) {
+            "jit_queue"
+        } else {
+            "wake_queue"
+        };
+        let art = crate::injection_priority::artifact_for_concept(
+            concept,
+            crs,
+            hot,
+            recency_rank,
+            momentum,
+            source,
+            SESSION_HANDOFF_LATEST,
+        );
+        crate::injection_priority::injection_rank_score(&art)
+    }
+
+    actions.sort_by(|a, b| {
+        action_rank(store, b, &recency_rank)
+            .partial_cmp(&action_rank(store, a, &recency_rank))
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    let ranks: Vec<f32> = actions
+        .iter()
+        .map(|a| action_rank(store, a, &recency_rank))
+        .collect();
+    for (i, action) in actions.iter_mut().enumerate() {
+        if let Some(obj) = action.as_object_mut() {
+            obj.insert("injection_rank".to_string(), json!(ranks[i]));
+            obj.insert("priority".to_string(), json!(i + 1));
+        }
+    }
 }
 
 /// Read canonical ego.leg3 from disk (NREM consolidation output).
@@ -1023,14 +1091,7 @@ pub fn build_harness_bundle(store: &mut StoreHandle, session_intent: Option<&str
         .map(|h| walk_trace_chain(store, h, 8))
         .unwrap_or_default();
 
-    let primary_goal = store
-        .fetch_block_high_priority("primary_goal")
-        .and_then(|b| {
-            let text = storage::read_provlog(&b);
-            text.lines()
-                .find(|l| l.starts_with("**goal:**"))
-                .map(|l| l.replace("**goal:**", "").trim().to_string())
-        });
+    let primary_goal = crate::store::resolve_active_primary_goal(store);
 
     let ego_snapshot = build_ego_snapshot(store, primary_goal.as_deref());
     let continuity_playbook = build_continuity_playbook(primary_goal.as_deref());
