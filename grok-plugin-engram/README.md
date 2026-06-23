@@ -99,7 +99,7 @@ Run `/engram-wake` first in every session.
 | MCP "not found" | Open a **new Grok session** after install |
 | `grok mcp doctor` fails while TUI open | **Expected** — only one `engram mcp` per store. Run `./scripts/engram-mcp-health.sh` instead |
 | Generic TUI commands like `/goal` not appearing in autocomplete | When the Engram plugin + MCP is active, the session toolset uses Engram's goal system (`/engram-goal` + `mcp_engram_goal_*` tools) for persistent, geometric goals. Generic TUI `/goal` (simple session goals via `update_goal`) may not show because it requires the plain `update_goal` builtin in the toolset. This is expected for Engram users. Use the Engram equivalents for work that should persist in the manifold. Generic TUI builtins should still be available for other features. See coexistence notes below and [docs/PERSONAL_KNOWLEDGE_WIKI.md](../docs/PERSONAL_KNOWLEDGE_WIKI.md). |
-| Lock error on restart | Close Grok session or `pkill -f "engram.*mcp"` then new session |
+| Lock error on restart | `engram-grok` auto-recovers stale `~/.engram/locks/mcp-*.lock` (orphan PID) on next MCP launch — look for **"Recovered orphaned MCP lock"** in stderr. If still stuck: close Grok session or `pkill -f "engram.*mcp"` then new session |
 | Binary missing | Run `scripts/install-engram-plugin.sh` |
 
 ## Coexistence with Generic TUI Features
