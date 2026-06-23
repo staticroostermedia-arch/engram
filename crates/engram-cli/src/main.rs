@@ -215,7 +215,14 @@ fn main() -> anyhow::Result<()> {
                             match backend.remember(&item.concept, source) {
                                 Ok(()) => {
                                     print!("  [ast] {:<45}", item.concept);
-                                    println!("  ← {}", &source.chars().take(60).collect::<String>());
+                                    let preview: String = source
+                                        .lines()
+                                        .next()
+                                        .unwrap_or(source)
+                                        .chars()
+                                        .take(60)
+                                        .collect();
+                                    println!("  ← {preview}");
                                     ast_items_minted += 1;
                                 }
                                 Err(e) => eprintln!("  ✗ {}: {e}", item.concept),
