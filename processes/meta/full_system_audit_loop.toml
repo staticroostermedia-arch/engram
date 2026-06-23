@@ -10,8 +10,8 @@ max_iterations = 1
 composed_from = [
   "self_improvement_loop",
   "manifold-health",
-  "agent:engram.harness.sub-agent-launch",
-  "agent:engram.harness.full-system-audit"
+  "process:engram.harness.sub-agent-launch",
+  "process:engram.harness.full-system-audit"
 ]
 subvisor = "full_system_audit"
 

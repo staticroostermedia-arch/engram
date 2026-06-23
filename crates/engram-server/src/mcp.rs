@@ -8099,6 +8099,8 @@ mod tests {
             "process:engram.monitor.sub-agent",
             "process:engram.harness.sub-agent-launch",
             "process:engram.harness.sub-agent-relay",
+            "process:engram.harness.full-system-audit",
+            "process:engram.monitor.full-system-audit",
         ];
         {
             let lock = store.lock().unwrap();

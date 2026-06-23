@@ -29,7 +29,7 @@ list = [
 list = ["process:engram.ritual.wake-up", "process:engram.process.session-end"]
 
 [produces]
-list = ["trace:*_audit", "tile:*_audit", "tile:*_subsystem-audit"]
+list = ["trace:*audit", "tile:*subsystem-audit*", "tile:*full-system-audit*"]
 
 [invariants]
 list = ["crs_0.74_gate", "process_context_on_traces", "anchors_recall_before_derive"]

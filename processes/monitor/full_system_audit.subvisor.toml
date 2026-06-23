@@ -16,10 +16,10 @@ h1_handler = "OP_IS_SYMBOLIC_OF"
 list = ["mcp_engram_scar", "mcp_engram_verify_manifold_integrity", "mcp_engram_quick_trace"]
 
 [requires]
-list = ["process:engram.monitor.subvisor", "agent:engram.harness.full-system-audit"]
+list = ["process:engram.monitor.subvisor", "process:engram.harness.full-system-audit"]
 
 [produces]
-list = ["trace:*_audit_oversight", "scar:*_audit_scope_violation"]
+list = ["trace:*audit-oversight", "scar:*audit-scope-violation"]
 
 [invariants]
 list = ["read_only_no_edits_during_recon", "crs_0.74_gate", "trace_every_fork"]

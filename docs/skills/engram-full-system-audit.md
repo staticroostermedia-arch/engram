@@ -7,8 +7,8 @@ name: engram-full-system-audit
 **For agents performing systematic Engram substrate audits.**
 
 Declarative process: `processes/meta/full_system_audit_loop.toml`  
-Sheaf harness: `agent:engram.harness.full-system-audit`  
-Subvisor: `agent:engram.monitor.full-system-audit`
+Sheaf harness: `process:engram.harness.full-system-audit` (toml `[process].name` uses `agent:engram.*`; loader registers as `process:engram.*`)  
+Subvisor: `process:engram.monitor.full-system-audit`
 
 > **Contract:** [docs/AGENT_MEMORY_CONTRACT.md](../AGENT_MEMORY_CONTRACT.md) — lean 8-tool default; escalate to verify/relations for synthesis.
 
@@ -47,7 +47,7 @@ Subvisor: `agent:engram.monitor.full-system-audit`
 3. mcp_engram_recall(query="<subsystem> audit", scope="anchors")
 4. mcp_engram_context_for_edit(path="/absolute/path/to/representative/file")
 5. mcp_engram_quick_trace(decision=..., why=..., goal_context="goal:engram_mvp_v1",
-     process_context="agent:engram.harness.full-system-audit", spatial_context="file.rs:line")
+     process_context="process:engram.harness.full-system-audit", spatial_context="file.rs:line")
 6. At phase boundary: mcp_engram_thought_tile_create(tile_type="research_offload", ...)
 7. mcp_engram_session_end(summary=..., prepare_compression=true)  # at block end
 ```
@@ -59,7 +59,7 @@ Subvisor: `agent:engram.monitor.full-system-audit`
 ## Phase Outputs
 
 Each subsystem pass must produce:
-- At least one `trace:*_audit` with `goal_context` + `process_context`
+- At least one `trace:*audit` with `goal_context` + `process_context=process:engram.harness.full-system-audit`
 - One `tile:research_offload_*subsystem-audit*` with `human_forward` leading prose
 - 3–5 categorized improvement opportunities with impact/feasibility
 
