@@ -1,0 +1,38 @@
+# agent:engram.monitor.full-system-audit
+# H¹ subvisor for full_system_audit_loop (meta workflow).
+
+[process]
+name = "agent:engram.monitor.full-system-audit"
+zedos_type = "monitor"
+phase_seed = "0xFULLAUDSUB202606"
+
+[category]
+object = "subvisor"
+morphism = "OP_INVERT"
+sheaf_role = "Monitors full-system audit recon for scope creep, doom loops, and edit attempts during read-only phases."
+h1_handler = "OP_IS_SYMBOLIC_OF"
+
+[mcp_tools]
+list = ["mcp_engram_scar", "mcp_engram_verify_manifold_integrity", "mcp_engram_quick_trace"]
+
+[requires]
+list = ["process:engram.monitor.subvisor", "agent:engram.harness.full-system-audit"]
+
+[produces]
+list = ["trace:*_audit_oversight", "scar:*_audit_scope_violation"]
+
+[invariants]
+list = ["read_only_no_edits_during_recon", "crs_0.74_gate", "trace_every_fork"]
+
+[subvisor]
+name = "full_system_audit"
+description = "H1 subvisor for full_system_audit_loop. Blocks write paths during recon; kills sub-agents on scope creep."
+h1 = "OP_INVERT"
+monitored_tools = ["Write", "StrReplace", "Delete", "exploratory_list_dir"]
+doom_loop_signals = [
+  "same_path_grep_3x_without_trace",
+  "list_dir_outside_scope_manifest",
+  "subagent_exceeds_20_calls"
+]
+kill_conditions = ["edit_attempt_during_recon", "doom_loop_detected", "scope_creep"]
+kill_actions = ["terminate_subagent", "scar", "quick_trace_oversight"]
