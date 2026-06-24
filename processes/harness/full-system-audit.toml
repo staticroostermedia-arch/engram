@@ -1,0 +1,35 @@
+# agent:engram.harness.full-system-audit
+# Sheaf-registered harness for WS-3 process_metrics on audit artifacts.
+
+[process]
+name = "agent:engram.harness.full-system-audit"
+zedos_type = "harness"
+phase_seed = "0xFULLAUDHAR202606"
+
+[category]
+object = "harness"
+morphism = "OP_GEOMETRIC_PRODUCT"
+sheaf_role = "Tracks full-system audit artifact production via realized_by edges on audit traces."
+h1_handler = "OP_IS_SYMBOLIC_OF"
+
+[mcp_tools]
+list = [
+  "mcp_engram_session_start",
+  "mcp_engram_context_for_edit",
+  "mcp_engram_recall",
+  "mcp_engram_quick_trace",
+  "mcp_engram_thought_tile_create",
+  "mcp_engram_verify_manifold_integrity",
+  "mcp_engram_verify_block_lawfulness",
+  "mcp_engram_goal_decompose",
+  "mcp_engram_session_end"
+]
+
+[requires]
+list = ["process:engram.ritual.wake-up", "process:engram.process.session-end"]
+
+[produces]
+list = ["trace:*audit", "tile:*subsystem-audit*", "tile:*full-system-audit*"]
+
+[invariants]
+list = ["crs_0.74_gate", "process_context_on_traces", "anchors_recall_before_derive"]

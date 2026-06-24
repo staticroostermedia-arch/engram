@@ -1,0 +1,50 @@
+# meta/full_system_audit_loop.toml
+# Read-only systematic traversal of all Engram subsystems with persisted findings.
+# Pilot run: canonical instance for future clean audits (see ## Deviations in plan).
+
+[workflow]
+name = "full_system_audit_loop"
+description = "Systematic full-system audit + improvement research. Phased subsystem passes, synthesis, codified process validation, autonomous plan mint. Read-only recon unless codifying the audit process itself."
+primary_goal = "goal:engram_mvp_v1"
+max_iterations = 1
+composed_from = [
+  "self_improvement_loop",
+  "manifold-health",
+  "process:engram.harness.sub-agent-launch",
+  "process:engram.harness.full-system-audit"
+]
+subvisor = "full_system_audit"
+
+[wake]
+ritual = "engram-wake-up"
+tools = ["mcp_engram_session_start", "mcp_engram_recall", "mcp_engram_ack_wake_queue"]
+
+[execute]
+steps = [
+  { name = "scope_manifest", desc = "Declare 9+ subsystem manifest (core, gpu, server, ast, sheaf, linguistic, integrations, scripts, docs). quick_trace with goal_context.", subagent = null },
+  { name = "phased_research", desc = "Per subsystem: context_for_edit on 1-3 representative files, recall(anchors), quick_trace at forks, mint research_offload tile at phase boundary.", subagent = "audit_scout" },
+  { name = "synthesize_findings", desc = "Categorize improvements (ritual, performance, lawfulness, spatial, harness). search_by_relation + verify_* on key artifacts.", subagent = null },
+  { name = "codify_process", desc = "Validate this toml + skill + harness registration load at session_start. process_metrics on audit traces.", subagent = null },
+  { name = "mint_autonomous_plan", desc = "goal_decompose backlog + verified_sequence thought_tile_create with tool hints and falsifiability.", subagent = null },
+  { name = "ritual_hygiene", desc = "Git branch with trace/tile refs, rollback exercise, human_forward report tiles, session_end(prepare_compression).", subagent = null }
+]
+
+[trace]
+at = ["scope", "each subsystem phase", "synthesis fork", "codify", "plan mint", "handoff"]
+tools = ["mcp_engram_quick_trace", "mcp_engram_record_reasoning_trace", "mcp_engram_update", "mcp_engram_relate"]
+
+[spatial]
+on = ["codify edits only"]
+tools = ["mcp_engram_context_for_edit", "mcp_engram_ack_edit_arc"]
+
+[thought-tiles]
+create = { title = "Full System Audit Arc", type = "research_offload", goal_context = "goal:engram_mvp_v1" }
+write_results = true
+
+[handoff]
+ritual = "engram-session-end"
+tools = ["mcp_engram_session_end", "mcp_engram_thought_tile_write_result"]
+prepare_compression = true
+
+[invariants]
+list = ["read_only_recon_unless_codifying", "crs_0.74_gate", "process_context_on_every_trace", "no_annihilation_updates"]
