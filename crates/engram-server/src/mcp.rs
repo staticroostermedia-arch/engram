@@ -5472,6 +5472,10 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
             let mut lock = store.lock().unwrap();
             let (goal_ctx, auto_linked_to_primary, auto_linked_from_recent) =
                 resolve_goal_context_and_link(&mut lock, goal_ctx);
+            let timestamp = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs();
 
             let short = title
                 .chars()
@@ -5545,6 +5549,15 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                     }
                     relate_realized_by(&mut lock, &tile_key, &process_context);
                     let _ = lock.promote_tile_to_high_priority(&tile_key);
+                    let episodic = crate::turn_extract::mint_turn_episodics(
+                        &mut lock,
+                        &tile_key,
+                        &goal_ctx,
+                        &human_forward,
+                        &user_utterance,
+                        &assistant_output,
+                        timestamp,
+                    );
                     if auto_linked_to_primary || !goal_ctx.is_empty() {
                         lock.mark_ki_rebake_needed();
                     }
@@ -5553,13 +5566,19 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                         .and_then(|v| v.as_array())
                         .map(|a| a.len())
                         .unwrap_or(0);
+                    let extract_note = if episodic.is_empty() {
+                        String::new()
+                    } else {
+                        format!("\n  episodic_extracted: {}", episodic.join(", "))
+                    };
                     json!({
                         "content": [{ "type": "text", "text": format!(
-                            "✓ Turn recorded: {} (RPT v3 {})\n  traces_linked: {}\n  activity_window: {:?}",
+                            "✓ Turn recorded: {} (RPT v3 {})\n  traces_linked: {}\n  activity_window: {:?}{}",
                             tile_key,
                             payload.get("tier").and_then(|v| v.as_str()).unwrap_or("lean"),
                             trace_n,
                             payload.get("activity_window"),
+                            extract_note,
                         ) }]
                     })
                 }

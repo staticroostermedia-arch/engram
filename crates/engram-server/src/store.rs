@@ -1763,7 +1763,30 @@ impl StoreHandle {
             "gpu_hot_device": std::env::var("ENGRAM_GPU_HOT_DEVICE").unwrap_or_else(|_| "0".into()),
             "gpu_compute_device": std::env::var("ENGRAM_GPU_COMPUTE_DEVICE").unwrap_or_else(|_| "1".into()),
             "presentation_cache_hit_rate": crate::cockpit_cache::presentation_cache_hit_rate(),
+            "cufile_hot_requested": std::env::var("ENGRAM_CUFILE_HOT").as_deref() == Ok("1"),
+            "cufile_hot_ready": self.backend_cufile_hot_ready(),
+            "cufile_driver_detected": self.backend_cufile_driver_detected(),
         })
+    }
+
+    fn backend_cufile_hot_ready(&self) -> bool {
+        #[cfg(engram_backend_cuda)]
+        {
+            if let Backend::Gpu(b) = &self.backend {
+                return b.cufile_hot_ready();
+            }
+        }
+        false
+    }
+
+    fn backend_cufile_driver_detected(&self) -> bool {
+        #[cfg(engram_backend_cuda)]
+        {
+            if let Backend::Gpu(b) = &self.backend {
+                return b.cufile_driver_detected();
+            }
+        }
+        false
     }
 
     /// Called by the background initialization thread once everything is ready.

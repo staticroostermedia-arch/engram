@@ -51,6 +51,7 @@ mod serve;
 mod session_lifecycle;
 mod store;
 mod tile_draft;
+mod turn_extract;
 mod wake_bundle;
 mod wake_queue_gate;
 pub mod watchdog;

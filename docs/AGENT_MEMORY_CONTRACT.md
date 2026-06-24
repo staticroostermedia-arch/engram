@@ -54,7 +54,9 @@
 
 **`session_end(summary, minimal?, prepare_compression?)`** — End-of-block handoff. Use **`minimal=true`** for fast fix loops (thin block + boundary trace + `helper:session_handoff_latest`, no compression ritual). Full path (default) runs compression handoff + rich boundary trace. MCP disconnect without `session_end` auto-emits a thin handoff.
 
-**`get_backend_readiness()`** — Read-only status. Use after wake or when recall quality seems sampled/bounded. Surfaces `nvme_direct_io`, `nvme_recall_ready`, `recall_mode`, `bvh_ready`, `gpu_hot_resident`, `leg_block_count`.
+**`get_backend_readiness()`** — Read-only status. Use after wake or when recall quality seems sampled/bounded. Surfaces `nvme_direct_io`, `nvme_recall_ready`, `recall_mode`, `bvh_ready`, `gpu_hot_resident`, `cufile_hot_ready`, `leg_block_count`.
+
+**`turn_record`** (power / end-of-turn) — RPT v3 tile + auto episodic extract (`ENGRAM_TURN_EXTRACT=1`) wires `summarizes`/`documents` edges into the navigation graph.
 
 **`set_memory_mode(mode)`** — `lean` or `deep`. Env default: `ENGRAM_MEMORY_MODE=lean`.
 

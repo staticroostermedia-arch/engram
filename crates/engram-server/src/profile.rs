@@ -87,13 +87,24 @@ impl EngramProfile {
                     "[PROFILE] agent — ENGRAM_DEFER_BVH=0 (GPU detected; background BVH on NVMe)"
                 );
             }
+            Self::set_default("ENGRAM_CUFILE_HOT", "1");
         } else {
             Self::set_default("ENGRAM_DEFER_BVH", "1");
         }
         Self::set_default("ENGRAM_DEFER_WATCH_INGEST", "1");
         Self::set_default("ENGRAM_ATLAS_STALK_SPLIT", "1");
         Self::set_default("ENGRAM_KI_LEAN", "1");
-        Self::set_default("ENGRAM_NREM_DISABLE", "1");
+        Self::set_default("ENGRAM_TURN_EXTRACT", "1");
+        Self::set_default("ENGRAM_NREM_LEAN", "1");
+        if std::env::var("ENGRAM_NREM_DISABLE").is_err() {
+            if std::env::var("ENGRAM_NREM_LEAN").as_deref() == Ok("1") {
+                std::env::set_var("ENGRAM_NREM_DISABLE", "0");
+                tracing::info!("[PROFILE] agent — ENGRAM_NREM_DISABLE=0 (lean NREM every 120m)");
+            } else {
+                Self::set_default("ENGRAM_NREM_DISABLE", "1");
+            }
+        }
+        Self::set_default("ENGRAM_NREM_INTERVAL_MINUTES", "120");
         Self::set_default("ENGRAM_KI_TICK_SECS", "300");
         Self::set_default("ENGRAM_RELATIONAL_RECALL", "1");
         Self::set_default("ENGRAM_LEAN_RECALL_POOL", "4000");
@@ -216,5 +227,19 @@ mod tests {
         EngramProfile::Agent.apply();
         assert_eq!(std::env::var("ENGRAM_RELATIONAL_RECALL").unwrap(), "1");
         std::env::remove_var("ENGRAM_RELATIONAL_RECALL");
+    }
+
+    #[test]
+    fn agent_profile_enables_nrem_lean_when_unset() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        std::env::remove_var("ENGRAM_NREM_DISABLE");
+        std::env::remove_var("ENGRAM_NREM_LEAN");
+        EngramProfile::Agent.apply();
+        assert_eq!(std::env::var("ENGRAM_NREM_LEAN").unwrap(), "1");
+        assert_eq!(std::env::var("ENGRAM_NREM_DISABLE").unwrap(), "0");
+        assert_eq!(std::env::var("ENGRAM_TURN_EXTRACT").unwrap(), "1");
+        std::env::remove_var("ENGRAM_NREM_DISABLE");
+        std::env::remove_var("ENGRAM_NREM_LEAN");
+        std::env::remove_var("ENGRAM_TURN_EXTRACT");
     }
 }

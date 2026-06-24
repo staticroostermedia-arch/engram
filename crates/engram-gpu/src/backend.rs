@@ -183,9 +183,25 @@ impl CudaBackend {
         }
     }
 
-    /// Hot presentation stratum resident: CUDA up and BVH index ready.
+    /// Hot presentation stratum resident: CUDA + BVH; when cuFile hot requested, driver or GPU staging active.
     pub fn gpu_hot_resident(&self) -> bool {
-        self.gpu_available && self.bvh_is_ready()
+        if !self.gpu_available || !self.bvh_is_ready() {
+            return false;
+        }
+        if crate::cufile::cufile_hot_requested() {
+            crate::cufile::cufile_hot_active()
+        } else {
+            true
+        }
+    }
+
+    /// cuFile / GDS hot-path readiness for readiness JSON.
+    pub fn cufile_hot_ready(&self) -> bool {
+        crate::cufile::cufile_hot_active()
+    }
+
+    pub fn cufile_driver_detected(&self) -> bool {
+        crate::cufile::cufile_driver_detected()
     }
 
     /// True when a background or on-demand BVH build thread is running.
@@ -625,8 +641,13 @@ impl CudaBackend {
         };
 
         let gpu_ptr = crate::cuda_dispatch::upload_hot_q_to_device(&q).unwrap_or(0);
+        let cu_handle = if crate::cufile::cufile_driver_detected() {
+            1
+        } else {
+            0
+        };
         let buffer = DeviceResidentBuffer {
-            cu_file_handle: 0,
+            cu_file_handle: cu_handle,
             gpu_ptr,
             size: _size,
             concept: concept.to_string(),

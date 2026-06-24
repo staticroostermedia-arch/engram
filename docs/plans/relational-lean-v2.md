@@ -28,15 +28,17 @@
 - [x] Update `AGENT_MEMORY_CONTRACT.md`, `engram-wake-up.md`, `TOOL_DECISION_MAP.md`
 - [x] MCP `recall` meta includes `recall_path`
 
-## Phase 4 — cuFile milestone (P2 — stub documented)
+## Phase 4 — cuFile milestone (P2)
 
-- [ ] `ENGRAM_CUFILE_HOT=1` detection gate in `device_residency` (requires cuFile driver)
-- [x] Document cuFile as discovery-path accelerator in plan + readiness hint
+- [x] `crates/engram-gpu/src/cufile.rs` — driver detection + `ENGRAM_CUFILE_HOT=1` gate
+- [x] `backend_readiness` emits `cufile_hot_ready`, `cufile_driver_detected`
+- [x] Agent profile sets `ENGRAM_CUFILE_HOT=1` on NVIDIA rigs
 
-## Phase 5 — Auto-extraction sidecar (P3 — follow-up goal)
+## Phase 5 — Auto-extraction sidecar (P3)
 
-- [ ] `mcp_engram_turn_record` hook or daemon mirror → episodic mint + proposed edges
-- [ ] Re-enable lightweight NREM in agent profile (`ENGRAM_NREM_DISABLE=0` opt-in)
+- [x] `turn_extract.rs` — heuristic episodic mint on `turn_record` + graph edges
+- [x] `ENGRAM_TURN_EXTRACT=1` agent default
+- [x] NREM lean: `ENGRAM_NREM_LEAN=1` → `NREM_DISABLE=0`, interval 120m
 
 ## Verification
 
