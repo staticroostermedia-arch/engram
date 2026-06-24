@@ -1,0 +1,56 @@
+# agent:engram.ritual.working-memory
+# Declarative Code Edit Ritual + working-memory discipline (docs/skills/engram-working-memory.md)
+
+[process]
+name = "agent:engram.ritual.working-memory"
+zedos_type = "ZEDOS_PRAXIS"
+phase_seed = "working-memory-v1"
+
+[category]
+object = "working_memory"
+morphism = "OP_GEOMETRIC_PRODUCT"
+sheaf_role = "Recall-before-derive + context_for_edit pre/post + quick_trace at forks (Code Edit Ritual v1)"
+restriction_maps = ["manifold_integrity >= 0.74", "wake_queue_acked_before_edits"]
+gluing = "OP_ADD"
+natural_transformation = "@0.5"
+h1_handler = "OP_IS_SYMBOLIC_OF"
+
+[mcp_tools]
+list = [
+  "mcp_engram_session_start",
+  "mcp_engram_ack_wake_queue",
+  "mcp_engram_context_for_edit",
+  "mcp_engram_recall",
+  "mcp_engram_quick_trace",
+  "mcp_engram_record_reasoning_trace",
+  "mcp_engram_update",
+  "mcp_engram_remember",
+  "mcp_engram_scar",
+  "mcp_engram_relate",
+  "mcp_engram_session_end",
+]
+
+[requires]
+list = [
+  "process:engram.ritual.wake-up",
+  "manifold_integrity >= 0.74",
+]
+
+[produces]
+list = ["working-memory_locked", "trace:*_edit", "scar:*_friction"]
+
+[invariants]
+list = [
+  "recall_before_derive",
+  "context_for_edit_before_edit",
+  "no_annihilation_updates",
+  "crs_0.74_gate",
+  "queue_before_edits",
+]
+
+[timeout_ms]
+value = 120000
+
+[notes]
+# Lean default: context_for_edit replaces watch_workspace + context_for_file at wake.
+# force_spatial_ingest only for bootstrap/recovery (deep mode or passive daemon down).

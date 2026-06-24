@@ -211,11 +211,18 @@ fn main() -> anyhow::Result<()> {
                         }
                     } else {
                         for item in &items {
-                            let label = item.embed_label();
-                            match backend.remember(&item.concept, &label) {
+                            let source = &item.full_source;
+                            match backend.remember(&item.concept, source) {
                                 Ok(()) => {
                                     print!("  [ast] {:<45}", item.concept);
-                                    println!("  ← {}", &label.chars().take(60).collect::<String>());
+                                    let preview: String = source
+                                        .lines()
+                                        .next()
+                                        .unwrap_or(source)
+                                        .chars()
+                                        .take(60)
+                                        .collect();
+                                    println!("  ← {preview}");
                                     ast_items_minted += 1;
                                 }
                                 Err(e) => eprintln!("  ✗ {}: {e}", item.concept),

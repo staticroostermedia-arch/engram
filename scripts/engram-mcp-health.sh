@@ -5,6 +5,11 @@
 # already holds the exclusive flock. This script:
 #   1. Reports healthy if a live engram mcp is already running for the store
 #   2. Otherwise probes initialize on an isolated temp store (no lock collision)
+#
+# Orphan recovery: scripts/engram-grok (and grok-plugin-engram/bin/engram-grok) auto-remove
+# stale ~/.engram/locks/mcp-*.lock files when the recorded PID is dead (before mcp launch).
+# If TUI shows "Tool not found" after restart, run: pkill -f "engram.*mcp" OR restart TUI
+# (engram-grok will print "Recovered orphaned MCP lock..." when it clears a stale lock).
 
 set -euo pipefail
 

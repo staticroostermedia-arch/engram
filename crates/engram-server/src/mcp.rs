@@ -115,6 +115,7 @@ const PROCESS_SHEAF_SUBDIRS: &[&str] = &[
     "monitor",
     "process",
     "linguistic",
+    "meta",
 ];
 
 fn processes_dir_fingerprint(base: &str) -> u64 {
@@ -8101,6 +8102,8 @@ mod tests {
             "process:engram.harness.sub-agent-relay",
             "process:engram.harness.full-system-audit",
             "process:engram.monitor.full-system-audit",
+            "process:engram.meta.agent-evolution",
+            "process:engram.ritual.working-memory",
         ];
         {
             let lock = store.lock().unwrap();

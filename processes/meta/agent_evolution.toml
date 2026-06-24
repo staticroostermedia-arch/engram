@@ -74,10 +74,10 @@ read_fields = ["suggested_actions", "presentation_stratum", "trace_chain", "trus
 
 [execute]
 steps = [
-  { name = "execute_wake_queue", desc = "Run suggested_actions in priority order: handoff → goal recall → context_for_edit on files_touched → trace head → trusted tiles.", subagent = null },
-  { name = "read_ego_evolution", desc = "Read ego_snapshot (drift_velocity, nrem_step, top_goal_serving). Interpret as collective agent identity shift since last NREM.", subagent = null },
-  { name = "situated_edit", desc = "context_for_edit per file; read traces_at_locus + edit_arc + scars; quick_trace at forks with spatial_context.", subagent = null },
-  { name = "arc_compression", desc = "update(__arc) post-edit; thought_tile_create when condensation_hints fire (≥6 traces without tile).", subagent = null },
+  { name = "execute_wake_queue", desc = "Run suggested_actions in priority order: handoff → goal recall → context_for_edit on files_touched → trace head → trusted tiles." },
+  { name = "read_ego_evolution", desc = "Read ego_snapshot (drift_velocity, nrem_step, top_goal_serving). Interpret as collective agent identity shift since last NREM." },
+  { name = "situated_edit", desc = "context_for_edit per file; read traces_at_locus + edit_arc + scars; quick_trace at forks with spatial_context." },
+  { name = "arc_compression", desc = "update(__arc) post-edit; thought_tile_create when condensation_hints fire (≥6 traces without tile)." },
   { name = "self_improve", desc = "Optional: invoke self_improvement_loop steps when design/process friction detected.", subagent = "improvement_auditor", process_ref = "processes/meta/self_improvement_loop.toml" },
   { name = "memory_hygiene", desc = "Optional: invoke memory_consolidation_loop when sprawl/scar rate high.", subagent = "memory_auditor", process_ref = "processes/meta/memory_consolidation_loop.toml" },
 ]

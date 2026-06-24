@@ -48,7 +48,29 @@ fi
 #
 # We use the new `wait-ready` subcommand (implemented in main.rs) which
 # polls backend_readiness until fully_initialized or a healthy hot set exists.
+recover_orphan_mcp_locks() {
+    local lock_dir="${HOME}/.engram/locks"
+    [[ -d "$lock_dir" ]] || return 0
+    local lockfile pid holder_alive store_hint
+    for lockfile in "$lock_dir"/mcp-*.lock; do
+        [[ -f "$lockfile" ]] || continue
+        pid=$(head -n1 "$lockfile" 2>/dev/null | tr -d '[:space:]')
+        holder_alive=false
+        if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+            if pgrep -f "engram.*mcp" 2>/dev/null | grep -qx "$pid"; then
+                holder_alive=true
+            fi
+        fi
+        if [[ "$holder_alive" != true ]]; then
+            store_hint=$(basename "$lockfile" .lock)
+            rm -f "$lockfile"
+            echo "[engram-grok] Recovered orphaned MCP lock for store ${store_hint} (stale pid ${pid:-unknown}, no live holder). TUI/Grok reconnect should now succeed." >&2
+        fi
+    done
+}
+
 if [[ " $* " == *" mcp "* ]]; then
+    recover_orphan_mcp_locks
     # TUI-specific mode: block until ready, with generous timeout for large
     # manifolds or first cold boot with OptiX/BVH.
     echo "[engram-grok] Waiting for Engram geometric readiness before MCP handshake (TUI seamless path)..." >&2
