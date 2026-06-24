@@ -377,7 +377,7 @@ pub fn spawn(store: SharedStore) -> Arc<DaemonControl> {
                                             for item in items {
                                                 // Shadow anchor on fresh encode path (daemon-only enrichment)
                                                 let existing = lock.fetch_block(&item.concept);
-                                                let mut block = lock.encode(&item.embed_label());
+                                                let mut block = lock.encode(&item.full_source);
                                                 if let Some(ref old) = existing {
                                                     block.p = old.p;
                                                     block.superposition_count = old.superposition_count;

@@ -3,16 +3,19 @@
 # Run: Use in TUI (Grok Build) or via MCP client (python examples/mcp_client.py adapted, or direct use_tool after search_tool).
 # Follows engram-working-memory discipline + Code Edit Ritual v1 (pre/post for any change).
 
-## Steps (follow Code Edit Ritual + working-memory)
+## Steps (lean 8-tool + Code Edit Ritual)
 
-1. Pre: mcp_engram_watch_workspace ("/path/to/your/engram"), mcp_engram_context_for_file("/path/to/target"), mcp_engram_record_reasoning_trace (decision_point, justification, spatial_context, goal_context, prev_trace).  # replace with your clone root; see spatial_geosphere_demo.py for pattern
-2. Action (edit via search_replace/write, or test/verify).
-3. Post: re-context_for_file + recall, delta trace (chained prev), mcp_engram_remember_solution or scar on friction, relate to goal/plan, promote_hot if high value.
+1. Wake: `mcp_engram_session_start(intent=...)` then `mcp_engram_ack_wake_queue(executed=true)` (hard gate).
+2. Pre-edit: `mcp_engram_context_for_edit("/absolute/path/to/target")` — replaces watch_workspace at wake; optional `mcp_engram_recall(scope="anchors")` before derive.
+3. Trace: `mcp_engram_quick_trace` or `mcp_engram_record_reasoning_trace` (decision_point, justification, spatial_context, goal_context, prev_trace).
+4. Action (edit via search_replace/write, or test/verify).
+5. Post: re-`context_for_edit` + delta trace (chained prev), `mcp_engram_remember_solution` or `scar` on friction, relate to goal/plan.
+6. Recovery only: `mcp_engram_force_spatial_ingest` when passive daemon ingest is down (not a wake step).
 
 ## Example Trace (A/D/R via record_reasoning_trace or quick_trace)
 - decision: Add/improve ritual_verify example per plan.
-- why: Fulfill examples/ 3+ runnable + docs polish for representation of rituals (scar/verify/trace). Addresses sparse examples gap from popular recon.
-- spatial: context_for_file + force_spatial_ingest on examples/plan/README (145 AST from rs files); bootstrap_in_progress noted.
+- why: Fulfill examples/ runnable + docs polish for rituals (scar/verify/trace). Addresses sparse examples gap from popular recon.
+- spatial: context_for_edit on examples/plan/README (lean path; force_spatial_ingest only if bootstrap needed).
 - goal: goal:your_project_goal
 - prev: (chain from your prior trace, e.g. trace:your_previous_trace_id)
 
