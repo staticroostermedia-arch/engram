@@ -95,6 +95,7 @@ impl EngramProfile {
         Self::set_default("ENGRAM_KI_LEAN", "1");
         Self::set_default("ENGRAM_NREM_DISABLE", "1");
         Self::set_default("ENGRAM_KI_TICK_SECS", "300");
+        Self::set_default("ENGRAM_RELATIONAL_RECALL", "1");
         Self::set_default("ENGRAM_LEAN_RECALL_POOL", "4000");
         Self::set_default("ENGRAM_LEAN_ANCHOR_POOL", "800");
         // soft = warn on context_for_edit until ack; hard = 403 block; off = disabled
@@ -206,5 +207,14 @@ mod tests {
         EngramProfile::Agent.apply();
         assert_eq!(std::env::var("ENGRAM_UPDATE_COHERENCE").unwrap(), "warn");
         std::env::remove_var("ENGRAM_UPDATE_COHERENCE");
+    }
+
+    #[test]
+    fn agent_profile_enables_relational_recall_by_default() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        std::env::remove_var("ENGRAM_RELATIONAL_RECALL");
+        EngramProfile::Agent.apply();
+        assert_eq!(std::env::var("ENGRAM_RELATIONAL_RECALL").unwrap(), "1");
+        std::env::remove_var("ENGRAM_RELATIONAL_RECALL");
     }
 }

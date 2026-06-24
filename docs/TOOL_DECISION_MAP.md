@@ -177,7 +177,8 @@ Always **`recall(scope=anchors)` first**. Escalate only when anchors do not answ
 
 | Situation | Tool | Why not just `recall`? |
 |-----------|------|------------------------|
-| Active goal / last decision | `recall(scope=anchors)` | Cheapest; anchor-biased |
+| Active goal / last decision | `read_concept` on wake artifacts → `search_by_relation` | Graph walk — O(edges), not scan |
+| Intent match within graph | `recall(scope=anchors)` | Relation-first pool + geometric score (`recall_path: relational`) |
 | Preview truncated | `read_concept` | Full untruncated block body |
 | What's *trending* in this arc? | `query_with_momentum` | q+p blend — direction, not keyword |
 | What's *geometrically similar*? | `query_pure` | K-NN on phase vectors |

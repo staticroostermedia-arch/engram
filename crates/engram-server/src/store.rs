@@ -1191,6 +1191,9 @@ pub struct StoreHandle {
     /// Cached `.leg`/`.leg3` count — invalidated on store/forget; 30s TTL for external writes.
     leg_block_count_value: std::sync::atomic::AtomicUsize,
     leg_block_count_cached_at: std::sync::atomic::AtomicU64,
+
+    /// Last `recall_scoped` path for MCP observability (relational | sampled_warmup | bvh_discovery | bvh_full).
+    last_recall_path: String,
 }
 
 /// Goal block text: provlog first (encode path), payload fallback.
@@ -1512,6 +1515,7 @@ impl StoreHandle {
             deep_bvh_spawn_attempted: std::sync::atomic::AtomicBool::new(false),
             leg_block_count_value: std::sync::atomic::AtomicUsize::new(0),
             leg_block_count_cached_at: std::sync::atomic::AtomicU64::new(0),
+            last_recall_path: String::new(),
         }
     }
 
@@ -1631,6 +1635,7 @@ impl StoreHandle {
             deep_bvh_spawn_attempted: std::sync::atomic::AtomicBool::new(false),
             leg_block_count_value: std::sync::atomic::AtomicUsize::new(0),
             leg_block_count_cached_at: std::sync::atomic::AtomicU64::new(0),
+            last_recall_path: String::new(),
         }
     }
 
@@ -2048,6 +2053,66 @@ impl StoreHandle {
         self.recall_scoped(query, k, None).0
     }
 
+    pub fn last_recall_path(&self) -> &str {
+        if self.last_recall_path.is_empty() {
+            "unknown"
+        } else {
+            &self.last_recall_path
+        }
+    }
+
+    pub fn set_recall_path(&mut self, path: &str) {
+        self.last_recall_path = path.to_string();
+    }
+
+    /// Relation-first lean recall (default on agent profile via ENGRAM_RELATIONAL_RECALL).
+    pub fn relational_recall_enabled() -> bool {
+        match std::env::var("ENGRAM_RELATIONAL_RECALL")
+            .unwrap_or_else(|_| "1".to_string())
+            .to_ascii_lowercase()
+            .as_str()
+        {
+            "0" | "false" | "off" => false,
+            _ => true,
+        }
+    }
+
+    fn recall_sampled_warmup_needed(&self) -> bool {
+        self.leg_block_count() > Self::LARGE_MANIFOLD_THRESHOLD && !self.bvh_is_ready()
+    }
+
+    /// Auto-link writes into the navigation graph (primary goal breadcrumb).
+    pub fn auto_relate_after_write(&mut self, concept: &str) -> Vec<String> {
+        let mut wired = Vec::new();
+        if concept == "primary_goal" || concept.starts_with("helper:") {
+            return wired;
+        }
+        if let Some(goal) = resolve_active_primary_goal(self) {
+            if concept != goal {
+                let label = if concept.starts_with("trace:") {
+                    "serves"
+                } else {
+                    "documents"
+                };
+                if self.relate(&goal, concept, label).is_ok() {
+                    wired.push(format!("{goal} --{label}--> {concept}"));
+                    self.mark_ki_rebake_needed();
+                }
+            }
+        }
+        wired
+    }
+
+    /// Most recent trace:* from access recency (trace chain auto-link).
+    pub fn latest_trace_head(&self) -> Option<String> {
+        for (concept, _) in self.access_index.recent(48) {
+            if concept.starts_with("trace:") {
+                return Some(concept);
+            }
+        }
+        None
+    }
+
     /// Anchor-first tiered recall (Agent Memory MVP A3).
     /// `scope`: `anchors` | `hot` | `all` | `None` (lean → anchors, deep → all).
     /// Returns `(memories, effective_scope)`.
@@ -2068,8 +2133,37 @@ impl StoreHandle {
         };
 
         let mut results = match effective_scope {
-            "anchors" => self.recall_sampled_tiered(&effective_q, k * 2, "anchors"),
+            "anchors" => {
+                if Self::relational_recall_enabled() {
+                    if self.recall_sampled_warmup_needed() {
+                        self.set_recall_path("sampled_warmup");
+                        self.recall_sampled_tiered(&effective_q, k * 2, "anchors")
+                    } else {
+                        let budget = crate::presentation_stratum::presentation_budget().max(k * 4);
+                        let candidates =
+                            crate::presentation_stratum::navigable_concept_names(self, budget);
+                        if !candidates.is_empty() {
+                            self.set_recall_path("relational");
+                            self.score_recall_candidates(&candidates, &effective_q, k * 2, true)
+                        } else if self.bvh_is_ready() {
+                            self.set_recall_path("bvh_discovery");
+                            let mut raw = self.backend.query(&effective_q, k * 4);
+                            raw.retain(|m| crate::presentation_stratum::is_surface_eligible(&m.concept));
+                            Self::apply_anchor_boost(&mut raw);
+                            raw.truncate(k * 2);
+                            raw
+                        } else {
+                            self.set_recall_path("sampled_warmup");
+                            self.recall_sampled_tiered(&effective_q, k * 2, "anchors")
+                        }
+                    }
+                } else {
+                    self.set_recall_path("sampled_legacy");
+                    self.recall_sampled_tiered(&effective_q, k * 2, "anchors")
+                }
+            }
             "hot" => {
+                self.set_recall_path("hot_overview");
                 let candidates = self.sample_concepts_for_overview(4000);
                 self.score_recall_candidates(&candidates, &effective_q, k * 2, true)
             }
@@ -2078,8 +2172,10 @@ impl StoreHandle {
                 let use_sampled =
                     self.leg_block_count() > Self::LARGE_MANIFOLD_THRESHOLD && !self.bvh_is_ready();
                 let mut raw = if use_sampled {
+                    self.set_recall_path("sampled_warmup");
                     self.recall_sampled_tiered(&effective_q, k * 2, "all")
                 } else {
+                    self.set_recall_path("bvh_full");
                     self.backend.query(&effective_q, k * 2)
                 };
                 Self::apply_anchor_boost(&mut raw);
@@ -6753,6 +6849,45 @@ mod ingest_ast_tests {
             "suggested_actions must carry injection_rank after composite sort"
         );
 
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn relational_recall_enabled_defaults_on() {
+        std::env::remove_var("ENGRAM_RELATIONAL_RECALL");
+        assert!(StoreHandle::relational_recall_enabled());
+        std::env::set_var("ENGRAM_RELATIONAL_RECALL", "0");
+        assert!(!StoreHandle::relational_recall_enabled());
+        std::env::remove_var("ENGRAM_RELATIONAL_RECALL");
+    }
+
+    #[test]
+    fn auto_relate_after_write_links_primary_goal() {
+        let dir = test_store_dir("auto_relate");
+        let mut store = StoreHandle::new(&dir.to_string_lossy());
+        store
+            .remember(
+                "primary_goal",
+                "PRIMARY GOAL\n\n**goal:** goal:test_auto_relate\n**set_at:** test",
+            )
+            .unwrap();
+        store
+            .remember(
+                "goal:test_auto_relate",
+                "GOAL\n\n**status:** active\n**statement:** auto-relate test\n",
+            )
+            .unwrap();
+        store
+            .remember("design:test_block", "design: test relational breadcrumb")
+            .unwrap();
+        let wired = store.auto_relate_after_write("design:test_block");
+        assert!(
+            wired.iter().any(|w| w.contains("documents")),
+            "expected documents edge: {:?}",
+            wired
+        );
+        let edges = store.search_relations("goal:test_auto_relate", Some("documents"), "from");
+        assert!(edges.iter().any(|(_, c)| c == "design:test_block"));
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -167,12 +167,14 @@ fn lineage_for(store: &StoreHandle, concept: &str) -> Value {
     })
 }
 
-/// Rank and select the presentation stratum — shared by wake bundle, harness, LEG surface.
-pub fn build_presentation_stratum(
+/// Graph-walk candidate gather — primary_goal, handoff, serves, hot/recent/process.
+/// `use_intent_recall`: when false, skips nested `recall_scoped` (used by relation-first recall).
+pub fn gather_surface_ranked(
     store: &mut StoreHandle,
     budget: usize,
     intent: Option<&str>,
-) -> Value {
+    use_intent_recall: bool,
+) -> Vec<Candidate> {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
@@ -230,6 +232,55 @@ pub fn build_presentation_stratum(
                     "served",
                 );
             }
+        }
+        for (_label, other) in store.search_relations(goal, Some("serves"), "from") {
+            if is_surface_eligible(&other) {
+                if let Some(b) = store.fetch_block_high_priority(&other) {
+                    push_candidate(
+                        &mut candidates,
+                        &other,
+                        0.64,
+                        b.crs_score,
+                        store.is_hot(&other),
+                        "goal_served_by",
+                        "served",
+                    );
+                }
+            }
+        }
+    }
+
+    // Trace breadcrumb: one hop along prev_in_trace from the most recent trace head.
+    for (concept, _) in store.access_index.recent(40) {
+        if concept.starts_with("trace:") {
+            push_candidate(
+                &mut candidates,
+                &concept,
+                0.68,
+                store
+                    .fetch_block_high_priority(&concept)
+                    .map(|b| b.crs_score)
+                    .unwrap_or(0.74),
+                store.is_hot(&concept),
+                "trace_head",
+                "warm",
+            );
+            for (_label, prev) in store.search_relations(&concept, Some("prev_in_trace"), "to") {
+                if is_surface_eligible(&prev) {
+                    if let Some(b) = store.fetch_block_high_priority(&prev) {
+                        push_candidate(
+                            &mut candidates,
+                            &prev,
+                            0.60,
+                            b.crs_score,
+                            store.is_hot(&prev),
+                            "trace_prev",
+                            "warm",
+                        );
+                    }
+                }
+            }
+            break;
         }
     }
 
@@ -292,22 +343,24 @@ pub fn build_presentation_stratum(
         }
     }
 
-    if let Some(intent_text) = intent.filter(|s| !s.is_empty()) {
-        for mem in store
-            .recall_scoped(intent_text, 6, Some("anchors"))
-            .0
-            .iter()
-        {
-            if is_surface_eligible(&mem.concept) {
-                push_candidate(
-                    &mut candidates,
-                    &mem.concept,
-                    0.52,
-                    mem.crs,
-                    store.is_hot(&mem.concept),
-                    "intent_recall",
-                    "warm",
-                );
+    if use_intent_recall {
+        if let Some(intent_text) = intent.filter(|s| !s.is_empty()) {
+            for mem in store
+                .recall_scoped(intent_text, 6, Some("anchors"))
+                .0
+                .iter()
+            {
+                if is_surface_eligible(&mem.concept) {
+                    push_candidate(
+                        &mut candidates,
+                        &mem.concept,
+                        0.52,
+                        mem.crs,
+                        store.is_hot(&mem.concept),
+                        "intent_recall",
+                        "warm",
+                    );
+                }
             }
         }
     }
@@ -324,7 +377,24 @@ pub fn build_presentation_stratum(
             })
     });
     ranked.truncate(budget);
+    ranked
+}
 
+/// Concept names from the relation-first navigation pool (same graph walk as presentation stratum).
+pub fn navigable_concept_names(store: &mut StoreHandle, budget: usize) -> Vec<String> {
+    gather_surface_ranked(store, budget, None, false)
+        .into_iter()
+        .map(|c| c.concept)
+        .collect()
+}
+
+/// Rank and select the presentation stratum — shared by wake bundle, harness, LEG surface.
+pub fn build_presentation_stratum(
+    store: &mut StoreHandle,
+    budget: usize,
+    intent: Option<&str>,
+) -> Value {
+    let ranked = gather_surface_ranked(store, budget, intent, true);
     let selected: HashSet<String> = ranked.iter().map(|c| c.concept.clone()).collect();
 
     let mut nodes: Vec<Value> = Vec::new();
@@ -377,7 +447,7 @@ pub fn build_presentation_stratum(
     }
 
     let mut edges: Vec<Value> = Vec::new();
-    if primary_goal.is_some() {
+    if selected.contains("primary_goal") {
         for c in selected.iter().filter(|id| *id != "primary_goal") {
             if store
                 .search_relations("primary_goal", Some("serves"), "to")
@@ -416,6 +486,7 @@ pub fn build_presentation_stratum(
     }
 
     let memory_mode = std::env::var("ENGRAM_MEMORY_MODE").unwrap_or_else(|_| "lean".to_string());
+    let primary_goal = crate::store::resolve_active_primary_goal(store);
 
     json!({
         "version": "v1",
