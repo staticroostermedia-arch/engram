@@ -2224,38 +2224,16 @@ fn resolve_goal_context_and_link(
     lock: &mut crate::store::StoreHandle,
     mut goal_ctx: String,
 ) -> (String, bool, bool) {
-    let mut auto_linked_to_primary = false;
-    let mut auto_linked_from_recent = false;
-
-    if goal_ctx.is_empty() {
-        // Hot path upgrade (7-fronts execution): use high_priority for primary_goal
-        if let Some(primary) = lock.fetch_block_high_priority("primary_goal") {
-            let ptext = crate::store::goal_block_text(&primary);
-            if let Some(line) = ptext.lines().find(|l| l.starts_with("**goal:**")) {
-                goal_ctx = line.replace("**goal:** ", "").trim().to_string();
-                auto_linked_to_primary = true;
-            }
-        }
+    if !goal_ctx.is_empty() {
+        return (goal_ctx, false, false);
     }
-
-    if goal_ctx.is_empty() {
-        let recent = lock.recent(8);
-        for (concept, _ts) in recent {
-            if concept.starts_with("goal:") {
-                // Hot path upgrade: high_priority for active goals (Item 2 / Phase 2 continuity)
-                if let Some(gblock) = lock.fetch_block_high_priority(&concept) {
-                    let gtext = crate::store::goal_block_text(&gblock);
-                    if crate::store::goal_status_is_active(&gtext) {
-                        goal_ctx = concept;
-                        auto_linked_from_recent = true;
-                        break;
-                    }
-                }
-            }
-        }
+    if let Some(primary) = crate::store::resolve_active_primary_goal(lock) {
+        return (primary, true, false);
     }
-
-    (goal_ctx, auto_linked_to_primary, auto_linked_from_recent)
+    if let Some(recent) = crate::store::resolve_active_or_recent_goal(lock) {
+        return (recent, false, true);
+    }
+    (goal_ctx, false, false)
 }
 
 fn log_mcp_probe(store: &SharedStore, tool: &str, detail: &str) {
