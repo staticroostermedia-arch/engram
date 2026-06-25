@@ -11,14 +11,10 @@ static CUFILE_PROBE_DONE: AtomicBool = AtomicBool::new(false);
 
 /// User/env requests cuFile hot path (`ENGRAM_CUFILE_HOT=1`).
 pub fn cufile_hot_requested() -> bool {
-    match std::env::var("ENGRAM_CUFILE_HOT")
+    let v = std::env::var("ENGRAM_CUFILE_HOT")
         .unwrap_or_else(|_| "0".to_string())
-        .to_ascii_lowercase()
-        .as_str()
-    {
-        "1" | "true" | "on" => true,
-        _ => false,
-    }
+        .to_ascii_lowercase();
+    matches!(v.as_str(), "1" | "true" | "on")
 }
 
 fn probe_cufile_driver() -> bool {

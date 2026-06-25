@@ -49,7 +49,7 @@ pub fn presentation_budget() -> usize {
 }
 
 #[derive(Clone)]
-struct Candidate {
+pub(crate) struct Candidate {
     concept: String,
     score: f32,
     crs: f32,

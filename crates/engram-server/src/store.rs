@@ -2090,14 +2090,10 @@ impl StoreHandle {
 
     /// Relation-first lean recall (default on agent profile via ENGRAM_RELATIONAL_RECALL).
     pub fn relational_recall_enabled() -> bool {
-        match std::env::var("ENGRAM_RELATIONAL_RECALL")
+        let v = std::env::var("ENGRAM_RELATIONAL_RECALL")
             .unwrap_or_else(|_| "1".to_string())
-            .to_ascii_lowercase()
-            .as_str()
-        {
-            "0" | "false" | "off" => false,
-            _ => true,
-        }
+            .to_ascii_lowercase();
+        !matches!(v.as_str(), "0" | "false" | "off")
     }
 
     fn recall_sampled_warmup_needed(&self) -> bool {
@@ -2128,12 +2124,11 @@ impl StoreHandle {
 
     /// Most recent trace:* from access recency (trace chain auto-link).
     pub fn latest_trace_head(&self) -> Option<String> {
-        for (concept, _) in self.access_index.recent(48) {
-            if concept.starts_with("trace:") {
-                return Some(concept);
-            }
-        }
-        None
+        self.access_index
+            .recent(48)
+            .into_iter()
+            .find(|(concept, _)| concept.starts_with("trace:"))
+            .map(|(concept, _)| concept)
     }
 
     /// Anchor-first tiered recall (Agent Memory MVP A3).

@@ -51,14 +51,10 @@ pub fn extract_fact_lines(
 }
 
 pub fn turn_extract_enabled() -> bool {
-    match std::env::var("ENGRAM_TURN_EXTRACT")
+    let v = std::env::var("ENGRAM_TURN_EXTRACT")
         .unwrap_or_else(|_| "1".to_string())
-        .to_ascii_lowercase()
-        .as_str()
-    {
-        "0" | "false" | "off" => false,
-        _ => true,
-    }
+        .to_ascii_lowercase();
+    !matches!(v.as_str(), "0" | "false" | "off")
 }
 
 /// Mint episodic blocks and wire relations into the navigation graph.
