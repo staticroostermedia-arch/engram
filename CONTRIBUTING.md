@@ -133,7 +133,7 @@ scripts/validate-commit-msg.sh /path/to/commit-msg-file
 
 ### 2. Semantic versioning (release-only bumps)
 
-Current workspace version: `Cargo.toml` `[workspace.package] version` (e.g. `0.7.0-beta.3`).
+Current workspace version: `Cargo.toml` `[workspace.package] version` (e.g. `0.7.0-beta.4`).
 
 | Change class | Bump | When |
 |--------------|------|------|

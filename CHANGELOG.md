@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0-beta.4] - 2026-06-25
+
+### Added
+
+- **Relational lean v2 (PR #42):** Graph-walk default recall path; write breadcrumbs (`auto_relate_after_write`); `cufile` hot-path gate; turn-extract sidecar wiring.
+- **Lean gaps closure (PR #43):** `HttpLlmExtractor` for `turn_record` when `ENGRAM_TURN_LLM_EXTRACT=1` + reachable `ENGRAM_LLM_URL` (heuristic fallback preserved; `**extraction:** llm` marker in episodic blocks).
+- **`resolve_active_or_recent_goal`:** Shared resolver — `remember` / `turn_record` auto-relate via `recent_fallback` when `primary_goal` is unset after goal completion.
+- **cuFile DMA path:** `cufile_direct_read_to_device` (O_DIRECT + `cuFileRead` to GPU); `cufile_transfer_path` in `get_backend_readiness`; honest `unavailable` fallback when `nvidia_fs` kernel module absent.
+
+### Changed
+
+- **Agent profile:** `ENGRAM_CUFILE_HOT=1` on NVIDIA rigs (DMA when driver present; H2D memcpy fallback otherwise).
+
+### Fixed
+
+- **cuFile tests:** O_DIRECT fd lifecycle; parallel-test env serialization for `ENGRAM_CUFILE_HOT`.
+- **Lean gaps MCP verification:** 32MB-stack test harness; post-clear auto-relate test ordering.
+
 ## [0.7.0-beta.3] - 2026-06-20
 
 ### Added

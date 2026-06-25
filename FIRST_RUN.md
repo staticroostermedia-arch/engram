@@ -32,7 +32,7 @@ cd engram
 cargo build -p engram-server
 
 target/debug/engram --version
-# engram 0.7.0-beta.3
+# engram 0.7.0-beta.4
 ```
 
 ---
