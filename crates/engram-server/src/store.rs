@@ -1250,12 +1250,15 @@ pub fn resolve_active_primary_goal(store: &StoreHandle) -> Option<String> {
     }
 }
 
+/// Recency window for post-clear `recent_fallback` auto-relate (busy sessions mint many episodics).
+pub const RECENT_GOAL_FALLBACK_WINDOW: usize = 32;
+
 /// Primary goal when active; else most recent active `goal:*` from access recency.
 pub fn resolve_active_or_recent_goal(store: &StoreHandle) -> Option<String> {
     if let Some(goal) = resolve_active_primary_goal(store) {
         return Some(goal);
     }
-    for (concept, _) in store.access_index.recent(8) {
+    for (concept, _) in store.access_index.recent(RECENT_GOAL_FALLBACK_WINDOW) {
         if !concept.starts_with("goal:") {
             continue;
         }
@@ -1796,8 +1799,13 @@ impl StoreHandle {
             if let Backend::Gpu(b) = &self.backend {
                 return b.cufile_hot_ready();
             }
+            // Sheaf+cuda path: Gpu backend variant absent but cuFile probe is global.
+            engram_gpu::cufile::cufile_hot_active()
         }
-        false
+        #[cfg(not(engram_backend_cuda))]
+        {
+            false
+        }
     }
 
     fn backend_cufile_driver_detected(&self) -> bool {
@@ -1806,8 +1814,12 @@ impl StoreHandle {
             if let Backend::Gpu(b) = &self.backend {
                 return b.cufile_driver_detected();
             }
+            engram_gpu::cufile::cufile_driver_detected()
         }
-        false
+        #[cfg(not(engram_backend_cuda))]
+        {
+            false
+        }
     }
 
     fn backend_cufile_transfer_path(&self) -> &'static str {
@@ -1816,8 +1828,12 @@ impl StoreHandle {
             if let Backend::Gpu(b) = &self.backend {
                 return b.cufile_transfer_path();
             }
+            engram_gpu::cufile::cufile_transfer_path()
         }
-        "unavailable"
+        #[cfg(not(engram_backend_cuda))]
+        {
+            "unavailable"
+        }
     }
 
     /// Called by the background initialization thread once everything is ready.
@@ -6957,6 +6973,30 @@ mod ingest_ast_tests {
         assert!(r.get("cufile_transfer_path").is_some());
         assert!(r.get("cufile_hot_requested").is_some());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn backend_readiness_cufile_probe_on_sheaf_cuda_store() {
+        let dir = test_store_dir("cufile_sheaf_probe");
+        let store = StoreHandle::new(&dir.to_string_lossy());
+        let r = store.backend_readiness();
+        assert!(r.get("cufile_driver_detected").is_some());
+        #[cfg(engram_backend_cuda)]
+        if std::path::Path::new("/usr/local/cuda/gds/cufile.json").exists()
+            || std::path::Path::new("/etc/cufile.json").exists()
+        {
+            assert_eq!(
+                r.get("cufile_driver_detected").and_then(|v| v.as_bool()),
+                Some(true),
+                "Sheaf+cuda store must use global cuFile probe when GDS artifacts present"
+            );
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn recent_goal_fallback_window_is_wide_enough_for_busy_sessions() {
+        assert!(RECENT_GOAL_FALLBACK_WINDOW >= 32);
     }
 
     #[test]

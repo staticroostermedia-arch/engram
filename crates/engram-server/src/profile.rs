@@ -95,6 +95,9 @@ impl EngramProfile {
         Self::set_default("ENGRAM_ATLAS_STALK_SPLIT", "1");
         Self::set_default("ENGRAM_KI_LEAN", "1");
         Self::set_default("ENGRAM_TURN_EXTRACT", "1");
+        Self::set_default("ENGRAM_TURN_LLM_EXTRACT", "1");
+        Self::set_default("ENGRAM_SCOUT_LLM_URL", "http://localhost:11434");
+        Self::set_default("ENGRAM_LLM_URL", "http://localhost:11434");
         Self::set_default("ENGRAM_NREM_LEAN", "1");
         if std::env::var("ENGRAM_NREM_DISABLE").is_err() {
             if std::env::var("ENGRAM_NREM_LEAN").as_deref() == Ok("1") {

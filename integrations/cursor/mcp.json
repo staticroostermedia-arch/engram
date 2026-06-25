@@ -5,7 +5,9 @@
       "args": ["mcp"],
       "env": {
         "ENGRAM_STORE": "~/.engram/stalks/",
-        "ENGRAM_PROFILE": "agent"
+        "ENGRAM_PROFILE": "agent",
+        "ENGRAM_LLM_URL": "http://localhost:11434",
+        "ENGRAM_TURN_LLM_EXTRACT": "1"
       },
       "disabled": false
     }

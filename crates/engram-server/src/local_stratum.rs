@@ -124,8 +124,12 @@ fn host_profile_text(store: &StoreHandle) -> String {
 fn host_mcp_text() -> String {
     let store = effective_store_path();
     let profile = std::env::var("ENGRAM_PROFILE").unwrap_or_else(|_| "agent".to_string());
+    let llm_url = std::env::var("ENGRAM_LLM_URL")
+        .or_else(|_| std::env::var("ENGRAM_SCOUT_LLM_URL"))
+        .unwrap_or_else(|_| "(unset)".to_string());
+    let turn_llm = std::env::var("ENGRAM_TURN_LLM_EXTRACT").unwrap_or_else(|_| "0".to_string());
     format!(
-        "# Local MCP Wiring\n\n**sovereignty:** local_only\n**export_policy:** deny\n\n**engram_profile:** {profile}\n**engram_store:** {store}\n**wake_bundle:** {}\n**local_stratum:** enabled={}\n",
+        "# Local MCP Wiring\n\n**sovereignty:** local_only\n**export_policy:** deny\n\n**engram_profile:** {profile}\n**engram_store:** {store}\n**wake_bundle:** {}\n**local_stratum:** enabled={}\n**ENGRAM_LLM_URL:** {llm_url}\n**ENGRAM_TURN_LLM_EXTRACT:** {turn_llm}\n",
         std::env::var("ENGRAM_WAKE_BUNDLE").unwrap_or_else(|_| "slim".to_string()),
         enabled()
     )
