@@ -2984,7 +2984,12 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                     let (results, effective_scope) =
                         s.recall_scoped(&query, k * 3, scope.as_deref());
                     let recall_path = s.last_recall_path().to_string();
-                    (results, effective_scope.to_string(), recall_mode, recall_path)
+                    (
+                        results,
+                        effective_scope.to_string(),
+                        recall_mode,
+                        recall_path,
+                    )
                 }
             };
 

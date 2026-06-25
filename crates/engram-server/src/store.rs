@@ -2166,7 +2166,9 @@ impl StoreHandle {
                         } else if self.bvh_is_ready() {
                             self.set_recall_path("bvh_discovery");
                             let mut raw = self.backend.query(&effective_q, k * 4);
-                            raw.retain(|m| crate::presentation_stratum::is_surface_eligible(&m.concept));
+                            raw.retain(|m| {
+                                crate::presentation_stratum::is_surface_eligible(&m.concept)
+                            });
                             Self::apply_anchor_boost(&mut raw);
                             raw.truncate(k * 2);
                             raw
