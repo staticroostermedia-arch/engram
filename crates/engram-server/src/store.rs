@@ -1250,6 +1250,26 @@ pub fn resolve_active_primary_goal(store: &StoreHandle) -> Option<String> {
     }
 }
 
+/// Primary goal when active; else most recent active `goal:*` from access recency.
+pub fn resolve_active_or_recent_goal(store: &StoreHandle) -> Option<String> {
+    if let Some(goal) = resolve_active_primary_goal(store) {
+        return Some(goal);
+    }
+    for (concept, _) in store.access_index.recent(8) {
+        if !concept.starts_with("goal:") {
+            continue;
+        }
+        let Some(gblock) = store.fetch_block_high_priority(&concept) else {
+            continue;
+        };
+        let gtext = goal_block_text(&gblock);
+        if goal_status_is_active(&gtext) {
+            return Some(concept);
+        }
+    }
+    None
+}
+
 /// Rewrite canonical status line; strip legacy `--- Status Update ---` append blocks from MVP path.
 /// Read `**goal:**` from the `primary_goal` marker block (None if unset/empty).
 pub fn primary_goal_marker_target(block: &engram_core::types::HolographicBlock) -> Option<String> {
@@ -1766,6 +1786,7 @@ impl StoreHandle {
             "cufile_hot_requested": std::env::var("ENGRAM_CUFILE_HOT").as_deref() == Ok("1"),
             "cufile_hot_ready": self.backend_cufile_hot_ready(),
             "cufile_driver_detected": self.backend_cufile_driver_detected(),
+            "cufile_transfer_path": self.backend_cufile_transfer_path(),
         })
     }
 
@@ -1787,6 +1808,16 @@ impl StoreHandle {
             }
         }
         false
+    }
+
+    fn backend_cufile_transfer_path(&self) -> &'static str {
+        #[cfg(engram_backend_cuda)]
+        {
+            if let Backend::Gpu(b) = &self.backend {
+                return b.cufile_transfer_path();
+            }
+        }
+        "unavailable"
     }
 
     /// Called by the background initialization thread once everything is ready.
@@ -2100,24 +2131,31 @@ impl StoreHandle {
         self.leg_block_count() > Self::LARGE_MANIFOLD_THRESHOLD && !self.bvh_is_ready()
     }
 
-    /// Auto-link writes into the navigation graph (primary goal breadcrumb).
+    /// Auto-link writes into the navigation graph (goal breadcrumb; recent fallback when primary unset).
     pub fn auto_relate_after_write(&mut self, concept: &str) -> Vec<String> {
         let mut wired = Vec::new();
         if concept == "primary_goal" || concept.starts_with("helper:") {
             return wired;
         }
-        if let Some(goal) = resolve_active_primary_goal(self) {
-            if concept != goal {
-                let label = if concept.starts_with("trace:") {
-                    "serves"
-                } else {
-                    "documents"
-                };
-                if self.relate(&goal, concept, label).is_ok() {
-                    wired.push(format!("{goal} --{label}--> {concept}"));
-                    self.mark_ki_rebake_needed();
-                }
-            }
+        let Some(goal) = resolve_active_or_recent_goal(self) else {
+            return wired;
+        };
+        if concept == goal {
+            return wired;
+        }
+        let label = if concept.starts_with("trace:") {
+            "serves"
+        } else {
+            "documents"
+        };
+        let via = if resolve_active_primary_goal(self).is_some() {
+            "primary"
+        } else {
+            "recent_fallback"
+        };
+        if self.relate(&goal, concept, label).is_ok() {
+            wired.push(format!("{goal} --{label}--> {concept} (via {via})"));
+            self.mark_ki_rebake_needed();
         }
         wired
     }
@@ -6908,6 +6946,51 @@ mod ingest_ast_tests {
         );
         let edges = store.search_relations("goal:test_auto_relate", Some("documents"), "from");
         assert!(edges.iter().any(|(_, c)| c == "design:test_block"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn backend_readiness_includes_cufile_transfer_path() {
+        let dir = test_store_dir("cufile_readiness");
+        let store = StoreHandle::new(&dir.to_string_lossy());
+        let r = store.backend_readiness();
+        assert!(r.get("cufile_transfer_path").is_some());
+        assert!(r.get("cufile_hot_requested").is_some());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn auto_relate_after_write_recent_fallback_when_primary_unset() {
+        let dir = test_store_dir("auto_relate_post_clear");
+        let mut store = StoreHandle::new(&dir.to_string_lossy());
+        store
+            .remember(
+                "primary_goal",
+                "PRIMARY GOAL\n\n**goal:** unset\n**set_at:** test\n**cleared_after:** goal:relational_lean_v2\n",
+            )
+            .unwrap();
+        store
+            .remember(
+                "goal:recent_active_fallback",
+                "GOAL\n\n**status:** active\n**statement:** post-clear fallback\n",
+            )
+            .unwrap();
+        store.access_index.touch("goal:recent_active_fallback");
+        store
+            .remember(
+                "design:post_clear_block",
+                "design: breadcrumb after goal complete",
+            )
+            .unwrap();
+        let wired = store.auto_relate_after_write("design:post_clear_block");
+        assert!(
+            wired.iter().any(|w| w.contains("recent_fallback")),
+            "expected recent_fallback via: {:?}",
+            wired
+        );
+        let edges =
+            store.search_relations("goal:recent_active_fallback", Some("documents"), "from");
+        assert!(edges.iter().any(|(_, c)| c == "design:post_clear_block"));
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

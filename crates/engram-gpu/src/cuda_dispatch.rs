@@ -315,30 +315,59 @@ pub fn gpu_cosine_batch(
     None
 }
 
-/// Stage hot block q-vector to GPU (lean device residency — host copy today, cuFile later).
+/// Allocate device buffer of `bytes` (cudaMalloc).
 #[cfg(all(engram_backend_cuda, feature = "device_residency"))]
-pub fn upload_hot_q_to_device(q: &[Complex32; 8192]) -> Option<u64> {
-    if !ensure_cuda_runtime() {
+pub fn alloc_device_buffer(bytes: usize) -> Option<u64> {
+    if !ensure_cuda_runtime() || bytes == 0 {
         return None;
     }
-    let flat: Vec<CudaComplex> = q.iter().map(|c| CudaComplex { x: c.re, y: c.im }).collect();
-    let bytes = flat.len() * std::mem::size_of::<CudaComplex>();
     unsafe {
         let mut ptr: *mut std::ffi::c_void = std::ptr::null_mut();
         if cudaMalloc(&mut ptr, bytes) != 0 || ptr.is_null() {
             return None;
         }
-        if cudaMemcpy(
-            ptr,
+        Some(ptr as u64)
+    }
+}
+
+#[cfg(any(not(engram_backend_cuda), not(feature = "device_residency")))]
+pub fn alloc_device_buffer(_bytes: usize) -> Option<u64> {
+    None
+}
+
+/// H2D copy q-vector into an existing device pointer.
+#[cfg(all(engram_backend_cuda, feature = "device_residency"))]
+pub fn upload_q_to_device_ptr(q: &[Complex32; 8192], gpu_ptr: u64) -> bool {
+    if !ensure_cuda_runtime() || gpu_ptr == 0 {
+        return false;
+    }
+    let flat: Vec<CudaComplex> = q.iter().map(|c| CudaComplex { x: c.re, y: c.im }).collect();
+    let bytes = flat.len() * std::mem::size_of::<CudaComplex>();
+    unsafe {
+        cudaMemcpy(
+            gpu_ptr as *mut std::ffi::c_void,
             flat.as_ptr() as *const _,
             bytes,
             CUDA_MEMCPY_HOST_TO_DEVICE,
-        ) != 0
-        {
-            let _ = cudaFree(ptr);
-            return None;
-        }
-        Some(ptr as u64)
+        ) == 0
+    }
+}
+
+#[cfg(any(not(engram_backend_cuda), not(feature = "device_residency")))]
+pub fn upload_q_to_device_ptr(_q: &[Complex32; 8192], _gpu_ptr: u64) -> bool {
+    false
+}
+
+/// Stage hot block q-vector to GPU (H2D memcpy path).
+#[cfg(all(engram_backend_cuda, feature = "device_residency"))]
+pub fn upload_hot_q_to_device(q: &[Complex32; 8192]) -> Option<u64> {
+    let ptr = alloc_device_buffer(8192 * std::mem::size_of::<CudaComplex>())?;
+    if upload_q_to_device_ptr(q, ptr) {
+        crate::cufile::cufile_note_h2d_fallback();
+        Some(ptr)
+    } else {
+        free_device_ptr(ptr);
+        None
     }
 }
 

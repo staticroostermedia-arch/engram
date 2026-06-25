@@ -204,6 +204,10 @@ impl CudaBackend {
         crate::cufile::cufile_driver_detected()
     }
 
+    pub fn cufile_transfer_path(&self) -> &'static str {
+        crate::cufile::cufile_transfer_path()
+    }
+
     /// True when a background or on-demand BVH build thread is running.
     pub fn bvh_build_in_progress(&self) -> bool {
         self.bvh_build.is_building()
@@ -640,12 +644,37 @@ impl CudaBackend {
             return false;
         };
 
-        let gpu_ptr = crate::cuda_dispatch::upload_hot_q_to_device(&q).unwrap_or(0);
-        let cu_handle = if crate::cufile::cufile_driver_detected() {
-            1
-        } else {
-            0
-        };
+        let leg_path = self.store_path.join(format!("{}.leg", concept));
+        let q_bytes = crate::cufile::Q_VECTOR_BYTES;
+        let mut gpu_ptr = 0u64;
+        let mut cu_handle = 0u64;
+
+        if crate::cufile::cufile_hot_active() {
+            if let Some(ptr) = crate::cuda_dispatch::alloc_device_buffer(q_bytes) {
+                if crate::cufile::cufile_direct_read_to_device(&leg_path, 0, q_bytes, ptr) {
+                    gpu_ptr = ptr;
+                    cu_handle = 1;
+                    tracing::info!(
+                        "[device-residency] cuFile DMA staged q for {} (ptr={:#x})",
+                        concept,
+                        ptr
+                    );
+                } else {
+                    crate::cuda_dispatch::free_device_ptr(ptr);
+                }
+            }
+        }
+
+        if gpu_ptr == 0 {
+            if let Some(ptr) = crate::cuda_dispatch::upload_hot_q_to_device(&q) {
+                gpu_ptr = ptr;
+                cu_handle = if crate::cufile::cufile_driver_detected() {
+                    2
+                } else {
+                    0
+                };
+            }
+        }
         let buffer = DeviceResidentBuffer {
             cu_file_handle: cu_handle,
             gpu_ptr,
