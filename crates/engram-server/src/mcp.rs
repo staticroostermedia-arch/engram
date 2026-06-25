@@ -8366,9 +8366,9 @@ mod tests {
         use super::*;
         use crate::store::{goal_block_text, open_store, SharedStore};
         use std::io::{Read, Write};
-        use std::sync::Arc;
         use std::net::TcpListener;
         use std::path::PathBuf;
+        use std::sync::Arc;
         use std::time::{SystemTime, UNIX_EPOCH};
 
         const SCRATCH: &str = "/tmp/grok-goal-06e08d787ea9/implementer";
@@ -8498,7 +8498,10 @@ mod tests {
                 "turn_extract_llm.txt",
                 "=== mcp_engram_turn_record LLM extract (run 1) ===",
             );
-            append_evidence("turn_extract_llm.txt", &format!("ENGRAM_LLM_URL={base_url}"));
+            append_evidence(
+                "turn_extract_llm.txt",
+                &format!("ENGRAM_LLM_URL={base_url}"),
+            );
             append_evidence("turn_extract_llm.txt", &format!("request_args={turn_args}"));
 
             let resp = handle_tool_on_big_stack("mcp_engram_turn_record", &turn_args, &store);
@@ -8627,11 +8630,7 @@ mod tests {
 
             let relations = {
                 let lock = store.lock().unwrap();
-                lock.search_relations(
-                    "goal:lean_gaps_recent_fallback",
-                    Some("documents"),
-                    "from",
-                )
+                lock.search_relations("goal:lean_gaps_recent_fallback", Some("documents"), "from")
             };
             append_evidence(
                 "auto_relate_post_clear.txt",
@@ -8656,11 +8655,7 @@ mod tests {
             );
             let relations_run2 = {
                 let lock = store.lock().unwrap();
-                lock.search_relations(
-                    "goal:lean_gaps_recent_fallback",
-                    Some("documents"),
-                    "from",
-                )
+                lock.search_relations("goal:lean_gaps_recent_fallback", Some("documents"), "from")
             };
             append_evidence(
                 "auto_relate_post_clear.txt",
@@ -8708,7 +8703,10 @@ mod tests {
                 &store,
             );
             let readiness_json = mcp_text(&resp);
-            append_evidence("cufile_dma.txt", &format!("readiness_json={readiness_json}"));
+            append_evidence(
+                "cufile_dma.txt",
+                &format!("readiness_json={readiness_json}"),
+            );
 
             let parsed: serde_json::Value =
                 serde_json::from_str(&readiness_json).expect("readiness is JSON");

@@ -668,7 +668,11 @@ impl CudaBackend {
         if gpu_ptr == 0 {
             if let Some(ptr) = crate::cuda_dispatch::upload_hot_q_to_device(&q) {
                 gpu_ptr = ptr;
-                cu_handle = if crate::cufile::cufile_driver_detected() { 2 } else { 0 };
+                cu_handle = if crate::cufile::cufile_driver_detected() {
+                    2
+                } else {
+                    0
+                };
             }
         }
         let buffer = DeviceResidentBuffer {

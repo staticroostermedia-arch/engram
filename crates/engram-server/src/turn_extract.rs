@@ -269,12 +269,7 @@ mod tests {
     }
 
     impl FactExtractor for MockLlmExtractor {
-        fn extract(
-            &self,
-            _hf: &str,
-            _user: &str,
-            _out: &str,
-        ) -> Option<Vec<String>> {
+        fn extract(&self, _hf: &str, _user: &str, _out: &str) -> Option<Vec<String>> {
             if self.facts.is_empty() {
                 None
             } else {
@@ -395,15 +390,15 @@ mod tests {
             Some(&mock),
         );
         assert_eq!(minted.len(), 2);
-        let block = store.fetch_block_high_priority(&minted[0]).expect("episodic block");
+        let block = store
+            .fetch_block_high_priority(&minted[0])
+            .expect("episodic block");
         let text = crate::store::goal_block_text(&block);
         assert!(text.contains("**extraction:** llm"));
         assert!(text.contains("Relational recall"));
         assert!(!text.contains("raw bullet"));
         let edges = store.search_relations("goal:turn_extract_goal", Some("documents"), "from");
-        assert!(edges
-            .iter()
-            .any(|(_, c)| c.as_str() == minted[0].as_str()));
+        assert!(edges.iter().any(|(_, c)| c.as_str() == minted[0].as_str()));
         std::env::remove_var("ENGRAM_TURN_EXTRACT");
         std::env::remove_var("ENGRAM_TURN_LLM_EXTRACT");
         let _ = std::fs::remove_dir_all(&dir);

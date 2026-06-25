@@ -103,11 +103,9 @@ mod ffi {
 
     type CuFileDriverOpenFn = unsafe extern "C" fn() -> i32;
     type CuFileDriverCloseFn = unsafe extern "C" fn() -> i32;
-    type CuFileHandleRegisterFn =
-        unsafe extern "C" fn(*mut u64, *const CuFileDescr) -> i32;
+    type CuFileHandleRegisterFn = unsafe extern "C" fn(*mut u64, *const CuFileDescr) -> i32;
     type CuFileHandleDeregisterFn = unsafe extern "C" fn(u64) -> i32;
-    type CuFileReadFn =
-        unsafe extern "C" fn(u64, *mut c_void, usize, i64, usize) -> isize;
+    type CuFileReadFn = unsafe extern "C" fn(u64, *mut c_void, usize, i64, usize) -> isize;
     type CuFileBufRegisterFn = unsafe extern "C" fn(*mut c_void, usize, i32) -> i32;
     type CuFileBufDeregisterFn = unsafe extern "C" fn(*mut c_void) -> i32;
 
@@ -144,41 +142,39 @@ mod ffi {
     static API: OnceLock<Option<CuFileApi>> = OnceLock::new();
 
     fn load_api() -> Option<&'static CuFileApi> {
-        API.get_or_init(|| {
-            unsafe {
-                let lib = libc::dlopen(
-                    c"libcufile.so.0".as_ptr(),
-                    libc::RTLD_NOW | libc::RTLD_LOCAL,
-                );
-                if lib.is_null() {
-                    return None;
-                }
-                let sym = |name: &[u8]| -> Option<*mut c_void> {
-                    let ptr = libc::dlsym(lib, name.as_ptr() as *const _);
-                    if ptr.is_null() {
-                        None
-                    } else {
-                        Some(ptr)
-                    }
-                };
-                let driver_open = sym(b"cuFileDriverOpen\0")?;
-                let driver_close = sym(b"cuFileDriverClose\0")?;
-                let handle_register = sym(b"cuFileHandleRegister\0")?;
-                let handle_deregister = sym(b"cuFileHandleDeregister\0")?;
-                let read = sym(b"cuFileRead\0")?;
-                let buf_register = sym(b"cuFileBufRegister\0")?;
-                let buf_deregister = sym(b"cuFileBufDeregister\0")?;
-                Some(CuFileApi {
-                    _lib: lib,
-                    driver_open: std::mem::transmute(driver_open),
-                    driver_close: std::mem::transmute(driver_close),
-                    handle_register: std::mem::transmute(handle_register),
-                    handle_deregister: std::mem::transmute(handle_deregister),
-                    read: std::mem::transmute(read),
-                    buf_register: std::mem::transmute(buf_register),
-                    buf_deregister: std::mem::transmute(buf_deregister),
-                })
+        API.get_or_init(|| unsafe {
+            let lib = libc::dlopen(
+                c"libcufile.so.0".as_ptr(),
+                libc::RTLD_NOW | libc::RTLD_LOCAL,
+            );
+            if lib.is_null() {
+                return None;
             }
+            let sym = |name: &[u8]| -> Option<*mut c_void> {
+                let ptr = libc::dlsym(lib, name.as_ptr() as *const _);
+                if ptr.is_null() {
+                    None
+                } else {
+                    Some(ptr)
+                }
+            };
+            let driver_open = sym(b"cuFileDriverOpen\0")?;
+            let driver_close = sym(b"cuFileDriverClose\0")?;
+            let handle_register = sym(b"cuFileHandleRegister\0")?;
+            let handle_deregister = sym(b"cuFileHandleDeregister\0")?;
+            let read = sym(b"cuFileRead\0")?;
+            let buf_register = sym(b"cuFileBufRegister\0")?;
+            let buf_deregister = sym(b"cuFileBufDeregister\0")?;
+            Some(CuFileApi {
+                _lib: lib,
+                driver_open: std::mem::transmute(driver_open),
+                driver_close: std::mem::transmute(driver_close),
+                handle_register: std::mem::transmute(handle_register),
+                handle_deregister: std::mem::transmute(handle_deregister),
+                read: std::mem::transmute(read),
+                buf_register: std::mem::transmute(buf_register),
+                buf_deregister: std::mem::transmute(buf_deregister),
+            })
         })
         .as_ref()
     }
@@ -328,9 +324,19 @@ pub fn cufile_note_h2d_fallback() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{Mutex, MutexGuard, OnceLock};
+
+    /// Serializes env/global cuFile probe state across parallel `cargo test` threads.
+    fn cufile_test_lock() -> MutexGuard<'static, ()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+    }
 
     #[test]
     fn cufile_hot_requested_opt_in() {
+        let _guard = cufile_test_lock();
         std::env::remove_var("ENGRAM_CUFILE_HOT");
         assert!(!cufile_hot_requested());
         std::env::set_var("ENGRAM_CUFILE_HOT", "1");
@@ -340,6 +346,7 @@ mod tests {
 
     #[test]
     fn cufile_transfer_path_labels() {
+        let _guard = cufile_test_lock();
         set_transfer_mode(MODE_CUFILE_DMA);
         assert_eq!(cufile_transfer_path(), "cufile_dma");
         set_transfer_mode(MODE_H2D_MEMCPY);
@@ -353,6 +360,7 @@ mod tests {
 
     #[test]
     fn cufile_init_idempotent() {
+        let _guard = cufile_test_lock();
         let _ = cufile_init();
         let second = cufile_init();
         assert_eq!(second, CUFILE_INIT_OK.load(Ordering::Relaxed));
@@ -371,6 +379,7 @@ mod tests {
         use engram_core::types::{HolographicBlock, BLOCK_SIZE};
         use std::time::{SystemTime, UNIX_EPOCH};
 
+        let _guard = cufile_test_lock();
         std::env::set_var("ENGRAM_CUFILE_HOT", "1");
         let ts = SystemTime::now()
             .duration_since(UNIX_EPOCH)

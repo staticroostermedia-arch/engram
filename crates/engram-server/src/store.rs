@@ -6977,7 +6977,10 @@ mod ingest_ast_tests {
             .unwrap();
         store.access_index.touch("goal:recent_active_fallback");
         store
-            .remember("design:post_clear_block", "design: breadcrumb after goal complete")
+            .remember(
+                "design:post_clear_block",
+                "design: breadcrumb after goal complete",
+            )
             .unwrap();
         let wired = store.auto_relate_after_write("design:post_clear_block");
         assert!(
