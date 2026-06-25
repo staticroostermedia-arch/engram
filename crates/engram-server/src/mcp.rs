@@ -8361,4 +8361,409 @@ mod tests {
         }
         let _ = std::fs::remove_dir_all(&tmp);
     }
+
+    mod lean_gaps_verification {
+        use super::*;
+        use crate::store::{goal_block_text, open_store, SharedStore};
+        use std::io::{Read, Write};
+        use std::sync::Arc;
+        use std::net::TcpListener;
+        use std::path::PathBuf;
+        use std::time::{SystemTime, UNIX_EPOCH};
+
+        const SCRATCH: &str = "/tmp/grok-goal-06e08d787ea9/implementer";
+
+        fn scratch_path(name: &str) -> PathBuf {
+            PathBuf::from(SCRATCH).join(name)
+        }
+
+        fn append_evidence(file: &str, section: &str) {
+            let path = scratch_path(file);
+            let mut prior = std::fs::read_to_string(&path).unwrap_or_default();
+            prior.push_str(section);
+            prior.push('\n');
+            std::fs::create_dir_all(SCRATCH).ok();
+            std::fs::write(&path, prior).expect("write evidence");
+        }
+
+        fn mcp_text(resp: &serde_json::Value) -> String {
+            resp["content"]
+                .as_array()
+                .and_then(|a| a.first())
+                .and_then(|c| c.get("text"))
+                .and_then(|t| t.as_str())
+                .unwrap_or("")
+                .to_string()
+        }
+
+        fn unique_tmp(suffix: &str) -> String {
+            let nanos = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos();
+            format!(
+                "/tmp/engram-lean-gaps-{}-{}-{}",
+                std::process::id(),
+                nanos,
+                suffix
+            )
+        }
+
+        fn prep_store(tmp: &str) -> SharedStore {
+            let store = open_store(tmp);
+            store.lock().unwrap().mark_fully_initialized();
+            store
+        }
+
+        /// handle_tool_call stacks deeply; run on a larger stack in unit-test threads.
+        fn handle_tool_on_big_stack(
+            name: &str,
+            args: &serde_json::Value,
+            store: &SharedStore,
+        ) -> serde_json::Value {
+            let name = name.to_string();
+            let args = args.clone();
+            let store = Arc::clone(store);
+            std::thread::Builder::new()
+                .stack_size(32 * 1024 * 1024)
+                .spawn(move || handle_tool_call(&name, &args, &store))
+                .expect("spawn big-stack MCP thread")
+                .join()
+                .expect("join big-stack MCP thread")
+        }
+
+        fn spawn_mock_llm_server(facts: &str) -> (String, std::thread::JoinHandle<()>) {
+            let listener = TcpListener::bind("127.0.0.1:0").expect("bind mock llm");
+            let addr = listener.local_addr().unwrap();
+            let facts_json = facts.replace('\n', "\\n");
+            let handle = std::thread::spawn(move || {
+                for _ in 0..2 {
+                    if let Ok((mut stream, _)) = listener.accept() {
+                        let mut buf = vec![0u8; 1 << 16];
+                        let _ = stream.read(&mut buf);
+                        let body = format!(
+                            r#"{{"choices":[{{"message":{{"content":"{facts_json}"}}}}]}}"#
+                        );
+                        let resp = format!(
+                            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                            body.len(),
+                            body
+                        );
+                        let _ = stream.write_all(resp.as_bytes());
+                    }
+                }
+            });
+            (format!("http://{}", addr), handle)
+        }
+
+        fn setup_post_clear_goals(store: &SharedStore) {
+            let mut lock = store.lock().unwrap();
+            lock.remember(
+                "primary_goal",
+                "PRIMARY GOAL\n\n**goal:** goal:lean_gaps_temp_primary\n**set_at:** test\n",
+            )
+            .unwrap();
+            lock.remember(
+                "goal:lean_gaps_temp_primary",
+                "GOAL\n\n**status:** active\n**goal_statement:** temp primary for post-clear test\n",
+            )
+            .unwrap();
+            lock.remember(
+                "goal:lean_gaps_recent_fallback",
+                "GOAL\n\n**status:** active\n**goal_statement:** recent fallback target\n",
+            )
+            .unwrap();
+            lock.access_index.touch("goal:lean_gaps_recent_fallback");
+        }
+
+        #[test]
+        fn verify_turn_record_llm_mcp_entrypoint() {
+            let tmp = unique_tmp("turn-llm");
+            let store = prep_store(&tmp);
+
+            let llm_facts = "Relational recall now walks the presentation stratum graph before geometric search\nAuto-relate falls back to recent active goals when primary is unset";
+            let (base_url, mock_handle) = spawn_mock_llm_server(llm_facts);
+            std::env::set_var("ENGRAM_LLM_URL", &base_url);
+            std::env::set_var("ENGRAM_TURN_EXTRACT", "1");
+            std::env::set_var("ENGRAM_TURN_LLM_EXTRACT", "1");
+
+            let turn_args = serde_json::json!({
+                "human_forward": "Closed lean gaps with LLM turn extract on real MCP path",
+                "user_utterance": "implement Mem0-style single-pass extraction for turn_record",
+                "assistant_output": "- Shipped HttpLlmExtractor branch\n- Heuristic fallback preserved",
+                "goal_context": "goal:lean_gaps_recent_fallback"
+            });
+
+            append_evidence(
+                "turn_extract_llm.txt",
+                "=== mcp_engram_turn_record LLM extract (run 1) ===",
+            );
+            append_evidence("turn_extract_llm.txt", &format!("ENGRAM_LLM_URL={base_url}"));
+            append_evidence("turn_extract_llm.txt", &format!("request_args={turn_args}"));
+
+            let resp = handle_tool_on_big_stack("mcp_engram_turn_record", &turn_args, &store);
+            let text = mcp_text(&resp);
+            append_evidence("turn_extract_llm.txt", &format!("response={text}"));
+            assert!(
+                text.contains("Turn recorded") || text.contains("episodic_extracted"),
+                "turn_record MCP entry failed: {text}"
+            );
+
+            let episodic_concepts: Vec<String> = {
+                let lock = store.lock().unwrap();
+                lock.access_index
+                    .recent(32)
+                    .into_iter()
+                    .map(|(c, _)| c)
+                    .filter(|c| c.starts_with("episodic:turn_"))
+                    .collect()
+            };
+            assert!(
+                !episodic_concepts.is_empty(),
+                "expected episodic:turn_* minted via real turn_record path"
+            );
+
+            let mut block_bodies = String::new();
+            {
+                let lock = store.lock().unwrap();
+                for concept in &episodic_concepts {
+                    let block = lock
+                        .fetch_block_high_priority(concept)
+                        .expect("episodic block readable");
+                    let body = goal_block_text(&block);
+                    block_bodies.push_str(&format!("\n--- {concept} ---\n{body}\n"));
+                    assert!(
+                        body.contains("**extraction:** llm"),
+                        "expected LLM extract marker: {body}"
+                    );
+                    assert!(
+                        body.contains("Relational recall") || body.contains("Auto-relate"),
+                        "LLM normalized fact missing: {body}"
+                    );
+                }
+            }
+            append_evidence(
+                "turn_extract_llm.txt",
+                &format!("LLM-extracted normalized statements in minted blocks:{block_bodies}"),
+            );
+
+            let resp2 = handle_tool_on_big_stack("mcp_engram_turn_record", &turn_args, &store);
+            append_evidence(
+                "turn_extract_llm.txt",
+                &format!("=== run 2 response ===\n{}", mcp_text(&resp2)),
+            );
+            assert!(!mcp_text(&resp2).is_empty());
+
+            let _ = mock_handle.join();
+            let _ = std::fs::remove_dir_all(&tmp);
+            std::env::remove_var("ENGRAM_LLM_URL");
+            std::env::remove_var("ENGRAM_TURN_EXTRACT");
+            std::env::remove_var("ENGRAM_TURN_LLM_EXTRACT");
+        }
+
+        #[test]
+        fn verify_auto_relate_post_clear_mcp_entrypoint() {
+            let tmp = unique_tmp("auto-relate");
+            let store = prep_store(&tmp);
+            setup_post_clear_goals(&store);
+
+            append_evidence(
+                "auto_relate_post_clear.txt",
+                "=== post-clear auto-relate MCP sequence (run 1) ===",
+            );
+
+            let complete_resp = handle_tool_on_big_stack(
+                "mcp_engram_goal_update_status",
+                &serde_json::json!({
+                    "goal": "goal:lean_gaps_temp_primary",
+                    "status": "completed",
+                    "note": "verification temp goal complete"
+                }),
+                &store,
+            );
+            let complete_text = mcp_text(&complete_resp);
+            append_evidence(
+                "auto_relate_post_clear.txt",
+                &format!("goal_update_status response={complete_text}"),
+            );
+            assert!(complete_text.contains("cleared") || complete_text.contains("unset"));
+
+            let primary_after = {
+                let lock = store.lock().unwrap();
+                lock.fetch_block_high_priority("primary_goal")
+                    .map(|b| goal_block_text(&b))
+                    .unwrap_or_default()
+            };
+            append_evidence(
+                "auto_relate_post_clear.txt",
+                &format!("primary_goal marker after complete:\n{primary_after}"),
+            );
+            assert!(primary_after.contains("unset"));
+
+            let probe_concept = format!(
+                "design:post_clear_mcp_probe_{}",
+                SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos()
+            );
+            let remember_resp = handle_tool_on_big_stack(
+                "mcp_engram_remember",
+                &serde_json::json!({
+                    "concept": probe_concept,
+                    "text": "post-clear auto-relate breadcrumb via mcp_engram_remember"
+                }),
+                &store,
+            );
+            let remember_text = mcp_text(&remember_resp);
+            append_evidence(
+                "auto_relate_post_clear.txt",
+                &format!("mcp_engram_remember response={remember_text}"),
+            );
+            assert!(
+                remember_text.contains("recent_fallback") || remember_text.contains("documents"),
+                "remember must auto-relate: {remember_text}"
+            );
+
+            let relations = {
+                let lock = store.lock().unwrap();
+                lock.search_relations(
+                    "goal:lean_gaps_recent_fallback",
+                    Some("documents"),
+                    "from",
+                )
+            };
+            append_evidence(
+                "auto_relate_post_clear.txt",
+                &format!(
+                    "search_by_relation documents from goal:lean_gaps_recent_fallback: {relations:?}"
+                ),
+            );
+            assert!(relations.iter().any(|(_, c)| c == &probe_concept));
+
+            let probe_concept_run2 = format!("{probe_concept}_run2");
+            let remember_resp2 = handle_tool_on_big_stack(
+                "mcp_engram_remember",
+                &serde_json::json!({
+                    "concept": probe_concept_run2,
+                    "text": "second post-clear remember for consistency"
+                }),
+                &store,
+            );
+            append_evidence(
+                "auto_relate_post_clear.txt",
+                &format!("=== run 2 remember ===\n{}", mcp_text(&remember_resp2)),
+            );
+            let relations_run2 = {
+                let lock = store.lock().unwrap();
+                lock.search_relations(
+                    "goal:lean_gaps_recent_fallback",
+                    Some("documents"),
+                    "from",
+                )
+            };
+            append_evidence(
+                "auto_relate_post_clear.txt",
+                &format!("run2 relations: {relations_run2:?}"),
+            );
+            assert!(
+                mcp_text(&remember_resp2).contains("Stored memory"),
+                "run2 remember failed: {}",
+                mcp_text(&remember_resp2)
+            );
+            assert!(
+                relations_run2.iter().any(|(_, c)| c == &probe_concept_run2),
+                "run2 must have documents edge: {:?}",
+                relations_run2
+            );
+
+            let turn_resp = handle_tool_on_big_stack(
+                "mcp_engram_turn_record",
+                &serde_json::json!({
+                    "human_forward": "post-clear turn_record auto-relate probe",
+                    "user_utterance": "remember after goal complete",
+                    "assistant_output": "auto-relate uses recent_fallback when primary unset"
+                }),
+                &store,
+            );
+            append_evidence(
+                "auto_relate_post_clear.txt",
+                &format!("mcp_engram_turn_record response={}", mcp_text(&turn_resp)),
+            );
+
+            let _ = std::fs::remove_dir_all(&tmp);
+        }
+
+        #[test]
+        fn verify_backend_readiness_cufile_transfer_path() {
+            std::env::set_var("ENGRAM_CUFILE_HOT", "1");
+            let tmp = unique_tmp("readiness");
+            let store = prep_store(&tmp);
+
+            append_evidence("cufile_dma.txt", "=== mcp_engram_get_backend_readiness ===");
+
+            let resp = handle_tool_on_big_stack(
+                "mcp_engram_get_backend_readiness",
+                &serde_json::json!({}),
+                &store,
+            );
+            let readiness_json = mcp_text(&resp);
+            append_evidence("cufile_dma.txt", &format!("readiness_json={readiness_json}"));
+
+            let parsed: serde_json::Value =
+                serde_json::from_str(&readiness_json).expect("readiness is JSON");
+            assert!(parsed.get("cufile_transfer_path").is_some());
+            assert!(parsed.get("cufile_hot_ready").is_some());
+            assert!(parsed.get("cufile_driver_detected").is_some());
+            append_evidence(
+                "cufile_dma.txt",
+                &format!(
+                    "cufile_transfer_path={}",
+                    parsed["cufile_transfer_path"].as_str().unwrap_or("?")
+                ),
+            );
+
+            let resp2 = handle_tool_on_big_stack(
+                "mcp_engram_get_backend_readiness",
+                &serde_json::json!({}),
+                &store,
+            );
+            append_evidence(
+                "cufile_dma.txt",
+                &format!("=== run 2 readiness ===\n{}", mcp_text(&resp2)),
+            );
+
+            #[cfg(all(engram_backend_cuda, feature = "cuda"))]
+            {
+                use engram_core::backend::VsaBackend;
+                use engram_gpu::backend::CudaBackend;
+
+                append_evidence(
+                    "cufile_dma.txt",
+                    "=== promote_hot + register_hot_item DMA branch ===",
+                );
+                let backend = CudaBackend::new(&tmp);
+                let concept = "design:cufile_promote_probe";
+                backend
+                    .remember(concept, "cuFile DMA promote probe block for hot residency")
+                    .expect("remember for promote");
+                let promoted = backend.promote_to_high_priority(concept, None);
+                assert!(promoted.is_some(), "promote_to_high_priority must succeed");
+                let fetched = backend.fetch_block_high_priority(concept);
+                assert!(fetched.is_some(), "fetch_block_high_priority after promote");
+                let transfer = engram_gpu::cufile::cufile_transfer_path();
+                append_evidence(
+                    "cufile_dma.txt",
+                    &format!(
+                        "promote_hot exercised; cufile_transfer_path={transfer}; dma_attempted={}; dma_success={}",
+                        engram_gpu::cufile::cufile_last_dma_attempted(),
+                        engram_gpu::cufile::cufile_last_dma_success()
+                    ),
+                );
+            }
+
+            let _ = std::fs::remove_dir_all(&tmp);
+            std::env::remove_var("ENGRAM_CUFILE_HOT");
+        }
+    }
 }

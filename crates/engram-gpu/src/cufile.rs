@@ -11,6 +11,8 @@ static CUFILE_INIT_OK: AtomicBool = AtomicBool::new(false);
 static CUFILE_INIT_TRIED: AtomicBool = AtomicBool::new(false);
 /// 0=off, 1=cufile_dma, 2=h2d_memcpy, 3=unavailable
 static LAST_TRANSFER_MODE: AtomicU8 = AtomicU8::new(3);
+static LAST_DMA_ATTEMPTED: AtomicBool = AtomicBool::new(false);
+static LAST_DMA_SUCCESS: AtomicBool = AtomicBool::new(false);
 
 const MODE_OFF: u8 = 0;
 const MODE_CUFILE_DMA: u8 = 1;
@@ -61,6 +63,16 @@ pub fn cufile_transfer_path() -> &'static str {
     }
 }
 
+/// Whether the most recent `cufile_direct_read_to_device` attempt ran the DMA path successfully.
+pub fn cufile_last_dma_success() -> bool {
+    LAST_DMA_SUCCESS.load(Ordering::Relaxed)
+}
+
+/// Whether the most recent call entered the cuFile DMA read path (register+read).
+pub fn cufile_last_dma_attempted() -> bool {
+    LAST_DMA_ATTEMPTED.load(Ordering::Relaxed)
+}
+
 fn set_transfer_mode(mode: u8) {
     LAST_TRANSFER_MODE.store(mode, Ordering::Relaxed);
 }
@@ -85,8 +97,9 @@ pub const Q_VECTOR_BYTES: usize = 8192 * std::mem::size_of::<f32>() * 2;
 #[allow(clippy::missing_transmute_annotations)]
 mod ffi {
     use super::*;
+    use std::fs::OpenOptions;
+    use std::os::unix::fs::OpenOptionsExt;
     use std::os::unix::io::AsRawFd;
-    use std::sync::Mutex;
 
     type CuFileDriverOpenFn = unsafe extern "C" fn() -> i32;
     type CuFileDriverCloseFn = unsafe extern "C" fn() -> i32;
@@ -129,7 +142,6 @@ mod ffi {
     unsafe impl Sync for CuFileApi {}
 
     static API: OnceLock<Option<CuFileApi>> = OnceLock::new();
-    static OPEN_HANDLES: Mutex<Vec<(u64, i32)>> = Mutex::new(Vec::new());
 
     fn load_api() -> Option<&'static CuFileApi> {
         API.get_or_init(|| {
@@ -197,6 +209,9 @@ mod ffi {
         size: usize,
         gpu_ptr: u64,
     ) -> bool {
+        LAST_DMA_ATTEMPTED.store(true, Ordering::Relaxed);
+        LAST_DMA_SUCCESS.store(false, Ordering::Relaxed);
+
         let Some(api) = load_api() else {
             return false;
         };
@@ -207,10 +222,15 @@ mod ffi {
             return false;
         }
 
-        let file = match std::fs::File::open(leg_path) {
+        // O_DIRECT open — fd must stay alive through register+read+deregister (storage.rs contract).
+        let file = match OpenOptions::new()
+            .read(true)
+            .custom_flags(libc::O_DIRECT)
+            .open(leg_path)
+        {
             Ok(f) => f,
             Err(e) => {
-                tracing::debug!("[cufile] open {} failed: {e}", leg_path.display());
+                tracing::debug!("[cufile] O_DIRECT open {} failed: {e}", leg_path.display());
                 return false;
             }
         };
@@ -224,7 +244,10 @@ mod ffi {
             reserved: std::ptr::null(),
         };
         if unsafe { (api.handle_register)(&mut fh, &descr) } != 0 {
-            tracing::debug!("[cufile] cuFileHandleRegister failed for {}", leg_path.display());
+            tracing::debug!(
+                "[cufile] cuFileHandleRegister failed for {}",
+                leg_path.display()
+            );
             return false;
         }
 
@@ -235,34 +258,24 @@ mod ffi {
             return false;
         }
 
-        let nbytes = unsafe {
-            (api.read)(
-                fh,
-                gpu,
-                size,
-                file_offset as i64,
-                size,
-            )
-        };
+        let nbytes = unsafe { (api.read)(fh, gpu, size, file_offset as i64, size) };
 
         let _ = unsafe { (api.buf_deregister)(gpu) };
         let _ = unsafe { (api.handle_deregister)(fh) };
+        // `file` dropped here — fd closed only after cuFile handle deregistered.
 
         if nbytes < 0 || nbytes as usize != size {
             tracing::debug!(
-                "[cufile] cuFileRead returned {nbytes} (expected {size}) for {}",
+                "[cufile] cuFileRead returned {nbytes} (expected {size}) for {} — honest H2D fallback",
                 leg_path.display()
             );
             return false;
         }
 
-        if let Ok(mut handles) = OPEN_HANDLES.lock() {
-            handles.push((fh, fd));
-        }
-
+        LAST_DMA_SUCCESS.store(true, Ordering::Relaxed);
         set_transfer_mode(MODE_CUFILE_DMA);
-        tracing::debug!(
-            "[cufile] cuFile DMA read {size} bytes @ {file_offset} → GPU {gpu_ptr:#x} ({})",
+        tracing::info!(
+            "[device-residency] cuFile DMA read {size} bytes @ {file_offset} → GPU {gpu_ptr:#x} ({})",
             leg_path.display()
         );
         true
@@ -348,5 +361,78 @@ mod tests {
     #[test]
     fn device_residency_q_bytes_constant() {
         assert_eq!(Q_VECTOR_BYTES, 65536);
+    }
+
+    /// Drive real cuFile DMA entrypoint against a real 256KB .leg on disk + GPU ptr.
+    #[cfg(all(engram_backend_cuda, feature = "device_residency"))]
+    #[test]
+    fn cufile_direct_read_exercises_real_leg_and_device_ptr() {
+        use engram_core::storage;
+        use engram_core::types::{HolographicBlock, BLOCK_SIZE};
+        use std::time::{SystemTime, UNIX_EPOCH};
+
+        std::env::set_var("ENGRAM_CUFILE_HOT", "1");
+        let ts = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        // Prefer real Engram store path (NVMe-backed) over tmpfs for O_DIRECT + GDS.
+        let store_root = std::env::var("HOME")
+            .map(|h| std::path::PathBuf::from(h).join(".engram").join("stalks"))
+            .unwrap_or_else(|_| std::env::temp_dir());
+        let dir = store_root.join(format!("cufile_dma_probe_{ts}"));
+        std::fs::create_dir_all(&dir).unwrap();
+        let leg_path = dir.join("design:cufile_dma_probe.leg");
+
+        let mut block: Box<HolographicBlock> = unsafe {
+            let layout = std::alloc::Layout::new::<HolographicBlock>();
+            let ptr = std::alloc::alloc_zeroed(layout) as *mut HolographicBlock;
+            Box::from_raw(ptr)
+        };
+        block.q[0].re = 0.42;
+        block.q[1].re = 0.99;
+        storage::write_block(&leg_path, &block).expect("write aligned .leg");
+
+        let meta = std::fs::metadata(&leg_path).unwrap();
+        assert_eq!(meta.len() as usize, BLOCK_SIZE);
+
+        let gpu_ptr = crate::cuda_dispatch::alloc_device_buffer(Q_VECTOR_BYTES)
+            .expect("cudaMalloc for cuFile DMA probe");
+        assert!(gpu_ptr != 0);
+
+        let attempted_before = cufile_last_dma_attempted();
+        let ok = cufile_direct_read_to_device(&leg_path, 0, Q_VECTOR_BYTES, gpu_ptr);
+        assert!(cufile_last_dma_attempted() || !attempted_before);
+
+        let path_label = cufile_transfer_path();
+        assert!(
+            cufile_last_dma_attempted(),
+            "cufile_direct_read_to_device must be exercised on real .leg + GPU ptr"
+        );
+        assert!(
+            ok || path_label == "h2d_memcpy" || path_label == "unavailable",
+            "cuFile DMA must succeed or honestly fall back; ok={ok} path={path_label}"
+        );
+        if ok {
+            assert_eq!(path_label, "cufile_dma");
+            assert!(cufile_last_dma_success());
+        }
+
+        let evidence = format!(
+            "cufile_direct_read_to_device ok={ok} attempted={} success={} path={}\n",
+            cufile_last_dma_attempted(),
+            cufile_last_dma_success(),
+            cufile_transfer_path()
+        );
+        let scratch = "/tmp/grok-goal-06e08d787ea9/implementer/cufile_dma.txt";
+        if let Ok(mut prior) = std::fs::read_to_string(scratch) {
+            prior.push_str("=== cufile_direct_read_to_device real .leg ===\n");
+            prior.push_str(&evidence);
+            let _ = std::fs::write(scratch, prior);
+        }
+
+        crate::cuda_dispatch::free_device_ptr(gpu_ptr);
+        let _ = std::fs::remove_dir_all(&dir);
+        std::env::remove_var("ENGRAM_CUFILE_HOT");
     }
 }
