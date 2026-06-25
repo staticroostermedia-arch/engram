@@ -71,7 +71,7 @@ Full comparison vs mem0/Letta/chroma: see [docs/GROK_BUILD_MEMORY.md](docs/GROK_
 git clone https://github.com/staticroostermedia-arch/engram.git
 cd engram
 cargo build -p engram-server
-target/debug/engram --version   # 0.7.0-beta.3
+target/debug/engram --version   # 0.7.0-beta.4
 ```
 
 **MCP config** (Grok Build / Cursor — use `scripts/engram-grok`):

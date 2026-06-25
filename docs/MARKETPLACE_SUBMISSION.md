@@ -2,7 +2,7 @@
 
 **Plugin id:** `engram` (or `engram-geometric` for disambiguation)  
 **Repo subdirectory:** `grok-plugin-engram/` (self-contained plugin bundle with .mcp.json + plugin.json)  
-**Current release:** `v0.7.0-beta.3` — code atlas continuity v2, 79 MCP tools, hard wake gate default, large-store perf.  
+**Current release:** `v0.7.0-beta.4` — relational lean v2, lean gaps closure (LLM turn extract, post-clear auto-relate, cuFile DMA path), 79 MCP tools.  
 **Remote registration:** xai-org/plugin-marketplace (Option A).
 
 ---
