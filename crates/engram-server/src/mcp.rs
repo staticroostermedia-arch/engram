@@ -3637,7 +3637,7 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                 session_block.zedos_tag = engram_core::types::ZEDOS_EPISODIC;
                 session_block.crs_score = 1.0;
                 let _ = lock.store(&key, session_block);
-                lock.invalidate_continuation_bundle_cache();
+                // Reuse continuation bundle TTL cache (120s) — busting every wake costs seconds on 70k stores.
                 lock.mark_ki_rebake_needed();
                 key
             };
