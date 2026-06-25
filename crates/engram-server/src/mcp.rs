@@ -2910,11 +2910,17 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
             };
             match s.remember(&concept, &text) {
                 Ok(_) => {
+                    let wired = s.auto_relate_after_write(&concept);
                     info!("remembered: {concept}");
+                    let relate_note = if wired.is_empty() {
+                        String::new()
+                    } else {
+                        format!("\n  auto-relate: {}", wired.join("; "))
+                    };
                     json!({
                         "content": [{
                             "type": "text",
-                            "text": format!("✓ Stored memory: '{concept}' ({} chars)", text.len())
+                            "text": format!("✓ Stored memory: '{concept}' ({} chars){relate_note}", text.len())
                         }]
                     })
                 }
@@ -2955,7 +2961,7 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                 });
             }
 
-            let (mut results, effective_scope, recall_mode) = {
+            let (mut results, effective_scope, recall_mode, recall_path) = {
                 let mut s = match store.lock() {
                     Ok(l) => l,
                     Err(p) => {
@@ -2971,11 +2977,19 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                     let mut block = s.encode(&query);
                     engram_core::ops::apply_temporal_phase(&mut block.q, age_days);
                     let results = s.query(&block.q, k * 3);
-                    (results, "all".to_string(), recall_mode)
+                    s.set_recall_path("bvh_temporal");
+                    let recall_path = s.last_recall_path().to_string();
+                    (results, "all".to_string(), recall_mode, recall_path)
                 } else {
                     let (results, effective_scope) =
                         s.recall_scoped(&query, k * 3, scope.as_deref());
-                    (results, effective_scope.to_string(), recall_mode)
+                    let recall_path = s.last_recall_path().to_string();
+                    (
+                        results,
+                        effective_scope.to_string(),
+                        recall_mode,
+                        recall_path,
+                    )
                 }
             };
 
@@ -2987,13 +3001,13 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
 
             let memory_mode = crate::store::StoreHandle::memory_mode();
             let meta = format!(
-                "[recall_mode: {} | scope: {} | memory_mode: {}]",
-                recall_mode, effective_scope, memory_mode
+                "[recall_path: {} | recall_mode: {} | scope: {} | memory_mode: {}]",
+                recall_path, recall_mode, effective_scope, memory_mode
             );
 
             if results.is_empty() {
                 let lean_hint = if memory_mode == "lean" {
-                    "\n\nHint: lean mode defaults to scope=anchors. Try scope=all or mcp_engram_set_memory_mode(mode=\"deep\") for full-manifold search."
+                    "\n\nHint: lean anchors use relation-first navigation (presentation stratum). Try mcp_engram_read_concept on wake artifacts, mcp_engram_search_by_relation(seed), or scope=all / deep mode for BVH discovery."
                 } else {
                     ""
                 };
@@ -4584,7 +4598,7 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                 .unwrap_or("")
                 .trim()
                 .to_string();
-            let prev = args
+            let mut prev = args
                 .get("prev")
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
@@ -4637,6 +4651,12 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                 .to_string();
 
             let mut lock = store.lock().unwrap();
+
+            if prev.is_empty() {
+                if let Some(head) = lock.latest_trace_head() {
+                    prev = head;
+                }
+            }
 
             let (goal_ctx, auto_linked_to_primary, auto_linked_from_recent) =
                 resolve_goal_context_and_link(&mut lock, goal_ctx);
@@ -5457,6 +5477,10 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
             let mut lock = store.lock().unwrap();
             let (goal_ctx, auto_linked_to_primary, auto_linked_from_recent) =
                 resolve_goal_context_and_link(&mut lock, goal_ctx);
+            let timestamp = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs();
 
             let short = title
                 .chars()
@@ -5530,6 +5554,15 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                     }
                     relate_realized_by(&mut lock, &tile_key, &process_context);
                     let _ = lock.promote_tile_to_high_priority(&tile_key);
+                    let episodic = crate::turn_extract::mint_turn_episodics(
+                        &mut lock,
+                        &tile_key,
+                        &goal_ctx,
+                        &human_forward,
+                        &user_utterance,
+                        &assistant_output,
+                        timestamp,
+                    );
                     if auto_linked_to_primary || !goal_ctx.is_empty() {
                         lock.mark_ki_rebake_needed();
                     }
@@ -5538,13 +5571,19 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                         .and_then(|v| v.as_array())
                         .map(|a| a.len())
                         .unwrap_or(0);
+                    let extract_note = if episodic.is_empty() {
+                        String::new()
+                    } else {
+                        format!("\n  episodic_extracted: {}", episodic.join(", "))
+                    };
                     json!({
                         "content": [{ "type": "text", "text": format!(
-                            "✓ Turn recorded: {} (RPT v3 {})\n  traces_linked: {}\n  activity_window: {:?}",
+                            "✓ Turn recorded: {} (RPT v3 {})\n  traces_linked: {}\n  activity_window: {:?}{}",
                             tile_key,
                             payload.get("tier").and_then(|v| v.as_str()).unwrap_or("lean"),
                             trace_n,
                             payload.get("activity_window"),
+                            extract_note,
                         ) }]
                     })
                 }

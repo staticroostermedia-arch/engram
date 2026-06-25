@@ -46,7 +46,7 @@ mcp_engram_session_start(
 ### After the response
 
 1. Read `continuation.primary_goal` and `continuation.structured_handoff` (or `read_concept` on `helper:session_handoff_latest`).
-2. For full text on any artifact: `mcp_engram_recall(query="<concept keywords>", scope="anchors")`.
+2. **Relation-first read:** execute `suggested_actions` (`read_concept` on handoff/tiles) → `search_by_relation(primary_goal, label="serves")` to drill. Use `recall(scope=anchors)` only for intent match within the graph pool (check `recall_path: relational` in meta).
 3. State continuation explicitly: *"I am the direct geometric continuation of prior work on X; last session ended with Y."*
 4. Activate [engram-working-memory.md](engram-working-memory.md) discipline.
 

@@ -43,18 +43,20 @@
 
 **`context_for_edit(path, line_start?, line_end?)`** — **Code atlas v2.1** pre-edit recon. Returns `spatial_items` (AST + `edit_arc` per locus), `traces_at_locus`, `traces_at_locus_tiers`, `scars_at_locus`, `spatial_siblings`, `edit_arc_debt`, and per-file `post_edit_palette` — **without** `watch_workspace` or full-store scan. Post-edit: `update({concept}__arc)` with delta narrative (use palette args when present); never bury history in source comments. Optional recon: `evolution_at_locus(path, line_start, line_end)`. See [CODE_ATLAS_CONTINUITY.md](CODE_ATLAS_CONTINUITY.md).
 
-**`recall(query, k?, scope?)`** — Lexical similarity search. `scope` tiers results:
-- `anchors` (default in lean) — `goal:`, `trace:`, `ritual:`, `helper:`, `praxis:` before episodic noise
-- `spatial` — file/AABB-linked blocks
-- `all` — full manifold search (deep mode default)
+**`recall(query, k?, scope?)`** — Relation-first in lean (`ENGRAM_RELATIONAL_RECALL=1`, agent default). `scope=anchors` walks the presentation-stratum graph (primary_goal → serves → handoff → trace breadcrumbs → hot/recent), then scores geometrically **within that pool only** — not a full-manifold scan. MCP meta includes `recall_path`: `relational` | `sampled_warmup` (BVH building) | `bvh_discovery` (thin graph). Escalate:
+- `read_concept` on wake `suggested_actions` artifacts (preferred over recall when you have a seed)
+- `search_by_relation(seed, label, k)` to drill the graph
+- `scope=all` / deep mode — BVH full-manifold discovery
 
-**`quick_trace(decision, why, …)`** — Same quality as `record_reasoning_trace` with fewer fields. Produces chained `trace:*` blocks the next wake surfaces first.
+**`quick_trace(decision, why, …)`** — Same quality as `record_reasoning_trace` with fewer fields. Auto-chains `prev_in_trace` from latest trace head when `prev` omitted; auto-links `serves` to primary goal.
 
-**`remember(concept, text)`** — New concept only. Always `recall` first; if score > 0.85 on an existing concept, use `update` instead (Layer 1 — see [write path](TOOL_DECISION_MAP.md#write-path-non-negotiable)).
+**`remember(concept, text)`** — New concept only. Always `recall` first; if score > 0.85 on an existing concept, use `update` instead. Auto-relate: `primary_goal --documents--> concept` (traces use `serves`).
 
 **`session_end(summary, minimal?, prepare_compression?)`** — End-of-block handoff. Use **`minimal=true`** for fast fix loops (thin block + boundary trace + `helper:session_handoff_latest`, no compression ritual). Full path (default) runs compression handoff + rich boundary trace. MCP disconnect without `session_end` auto-emits a thin handoff.
 
-**`get_backend_readiness()`** — Read-only status. Use after wake or when recall quality seems sampled/bounded. Surfaces `nvme_direct_io`, `nvme_recall_ready`, `recall_mode`, `bvh_ready`, `gpu_hot_resident`, `leg_block_count`.
+**`get_backend_readiness()`** — Read-only status. Use after wake or when recall quality seems sampled/bounded. Surfaces `nvme_direct_io`, `nvme_recall_ready`, `recall_mode`, `bvh_ready`, `gpu_hot_resident`, `cufile_hot_ready`, `leg_block_count`.
+
+**`turn_record`** (power / end-of-turn) — RPT v3 tile + auto episodic extract (`ENGRAM_TURN_EXTRACT=1`) wires `summarizes`/`documents` edges into the navigation graph.
 
 **`set_memory_mode(mode)`** — `lean` or `deep`. Env default: `ENGRAM_MEMORY_MODE=lean`.
 
