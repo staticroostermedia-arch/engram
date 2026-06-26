@@ -113,6 +113,8 @@ impl EngramProfile {
         Self::set_default("ENGRAM_LEAN_RECALL_POOL", "4000");
         Self::set_default("ENGRAM_LEAN_ANCHOR_POOL", "800");
         // soft = warn on context_for_edit until ack; hard = 403 block; off = disabled
+        Self::set_default("ENGRAM_GOAL_AUTOPAUSE", "1");
+        Self::set_default("ENGRAM_GOAL_STALE_HOURS", "72");
         Self::set_default("ENGRAM_WAKE_QUEUE_GATE", "hard");
         // soft = warn on repeat context_for_edit until __arc update; hard = 403 block; off = disabled
         Self::set_default("ENGRAM_EDIT_ARC_GATE", "soft");

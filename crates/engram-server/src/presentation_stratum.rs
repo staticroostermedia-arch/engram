@@ -29,6 +29,8 @@ pub fn is_surface_eligible(c: &str) -> bool {
         || c.starts_with("local:")
         || c.starts_with("host:")
         || c.starts_with("env:")
+        || c.starts_with("tensor:")
+        || c.starts_with("design:")
 }
 
 /// Dynamic K from memory mode / env override.
@@ -50,7 +52,7 @@ pub fn presentation_budget() -> usize {
 
 #[derive(Clone)]
 pub(crate) struct Candidate {
-    concept: String,
+    pub(crate) concept: String,
     score: f32,
     crs: f32,
     hot: bool,
