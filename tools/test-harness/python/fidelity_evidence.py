@@ -116,6 +116,7 @@ def _parse_composite_lineage(responses: Dict[str, Any]) -> Dict[str, Any]:
     safe = responses.get("safe_edit_and_verify") or {}
     if safe:
         lin = safe.get("lineage") or {}
+        tp = safe.get("tensor_pattern") or {}
         out["safe_edit_and_verify"] = {
             "trace_id": safe.get("trace_id"),
             "arc_concept": safe.get("arc_concept"),
@@ -124,18 +125,23 @@ def _parse_composite_lineage(responses: Dict[str, Any]) -> Dict[str, Any]:
             "lineage_merkle_ok": lin.get("merkle_ok"),
             "lineage_merkle_trace_sig": lin.get("merkle_trace_sig"),
             "lineage_merkle_arc_sig": lin.get("merkle_arc_sig"),
-            "tensor_pattern": safe.get("tensor_pattern"),
+            "tensor_pattern": tp,
+            "tensor_bonds_created": tp.get("bonds_created", tp.get("bonds", 0)),
             "full_response": safe,
         }
     arc_up = responses.get("update_with_tensor_bond_arc") or {}
     if arc_up:
         lin = arc_up.get("lineage") or {}
+        tp = arc_up.get("tensor_pattern") or {}
         out["update_with_tensor_bond_arc"] = {
             "concept": arc_up.get("concept"),
+            "ok": arc_up.get("ok"),
+            "recall_match": arc_up.get("recall_match"),
             "crs_after": arc_up.get("crs_after"),
             "crs_gate_ok": arc_up.get("crs_gate_ok"),
             "lineage_merkle_arc_sig": lin.get("merkle_arc_sig"),
-            "tensor_pattern": arc_up.get("tensor_pattern"),
+            "tensor_pattern": tp,
+            "tensor_bonds_created": tp.get("bonds", 0),
             "full_response": arc_up,
         }
     misuse = responses.get("misuse_self_correction") or {}

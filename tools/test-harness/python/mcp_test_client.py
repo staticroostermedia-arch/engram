@@ -764,7 +764,7 @@ class MCPTestClient:
                 failures.append(f"{label}: tool={tool} err={err} data_keys={list((data or {}).keys())}")
                 return data
             if post_check is not None:
-                ok, detail = post_check(data)
+                ok, detail = post_check(data, resp)
                 if ok:
                     steps_ok += 1
                     assertions.append(f"{label}: ok")
@@ -802,18 +802,11 @@ class MCPTestClient:
             "ack_wake_queue",
         )
 
-        def prev_trace_post_check(_data: Optional[Dict[str, Any]]) -> Tuple[bool, str]:
+        def prev_trace_post_check(
+            _data: Optional[Dict[str, Any]], resp: Dict[str, Any]
+        ) -> Tuple[bool, str]:
             nonlocal prev_trace_id
-            prev_resp = self.call_tool(
-                "mcp_engram_quick_trace",
-                {
-                    "decision": "Harness prev trace for safe_edit chain",
-                    "why": "Exercise prev_in_trace lineage before composite edit",
-                    "goal_context": "goal:agent_tool_fidelity_v1",
-                },
-                timeout=90.0,
-            )
-            prev_text = self._tool_text(prev_resp)
+            prev_text = self._tool_text(resp)
             if "trace:" not in prev_text:
                 return False, "prev_trace_mint: quick_trace failed"
             m = re.search(r"trace:[^\s\)]+", prev_text)
@@ -822,13 +815,16 @@ class MCPTestClient:
             prev_trace_id = m.group(0).rstrip(")")
             return True, f"prev_trace_mint: ok ({prev_trace_id})"
 
-        steps_total += 1
-        ok, detail = prev_trace_post_check(None)
-        if ok:
-            steps_ok += 1
-            assertions.append(detail)
-        else:
-            failures.append(detail)
+        step(
+            "mcp_engram_quick_trace",
+            {
+                "decision": "Harness prev trace for safe_edit chain",
+                "why": "Exercise prev_in_trace lineage before composite edit",
+                "goal_context": "goal:agent_tool_fidelity_v1",
+            },
+            "prev_trace_mint",
+            post_check=prev_trace_post_check,
+        )
 
         step(
             "mcp_engram_remember",
@@ -855,9 +851,13 @@ class MCPTestClient:
         if prev_trace_id:
             safe_args["prev_trace"] = prev_trace_id
 
-        def safe_edit_post_check(data: Optional[Dict[str, Any]]) -> Tuple[bool, str]:
+        def safe_edit_post_check(
+            data: Optional[Dict[str, Any]], _resp: Dict[str, Any]
+        ) -> Tuple[bool, str]:
             if not data:
                 return False, "safe_edit returned no data"
+            if data.get("ok") is not True:
+                return False, f"safe_edit ok=false: {data}"
             tid = data.get("trace_id")
             if not tid:
                 return False, "safe_edit missing trace_id"
@@ -868,13 +868,21 @@ class MCPTestClient:
                 return False, f"prev_in_trace chain failed with prev={prev_trace_id}: {lineage}"
             if data.get("arc_update_error"):
                 return False, f"arc_update_error: {data.get('arc_update_error')}"
-            parts = [f"lineage trace_id={tid}", "lineage.merkle_ok=true"]
+            tp = data.get("tensor_pattern")
+            if not tp or not isinstance(tp, dict):
+                return False, f"safe_edit tensor_pattern missing: {tp!r}"
+            bonds = tp.get("bonds_created", tp.get("bonds", 0))
+            if not (bonds and int(bonds) > 0):
+                return False, f"safe_edit tensor bond not created: {tp}"
+            parts = [
+                f"lineage trace_id={tid}",
+                "lineage.merkle_ok=true",
+                f"tensor_pattern bonds={bonds}",
+            ]
             if prev_trace_id:
                 parts.append("prev_in_trace chain verified")
             if data.get("arc_updated") is True:
                 parts.append("arc_updated=true")
-            if data.get("tensor_pattern"):
-                parts.append("tensor_pattern recorded")
             return True, "; ".join(parts)
 
         safe_data = step(
@@ -886,25 +894,41 @@ class MCPTestClient:
         if safe_data:
             composite_responses["safe_edit_and_verify"] = safe_data
 
-        def update_arc_post_check(data: Optional[Dict[str, Any]]) -> Tuple[bool, str]:
+        def update_arc_post_check(
+            data: Optional[Dict[str, Any]], _resp: Dict[str, Any]
+        ) -> Tuple[bool, str]:
             if not data:
                 return False, "update_with_tensor_bond returned no data"
+            if data.get("ok") is not True:
+                return False, (
+                    f"update ok=false recall_match={data.get('recall_match')} "
+                    f"top_score={data.get('recall_top_score')}: {data}"
+                )
+            if data.get("recall_match") is not True:
+                return False, f"recall_match false: top={data.get('recall_top')} score={data.get('recall_top_score')}"
             if data.get("crs_gate_ok") is not True:
                 return False, f"crs_gate failed: after={data.get('crs_after')}"
             lin = data.get("lineage") or {}
             arc_merkle = lin.get("merkle_arc_sig") or lin.get("merkle_ok")
             if not arc_merkle:
                 return False, f"update arc merkle missing: {lin}"
-            if not data.get("tensor_pattern"):
+            tp = data.get("tensor_pattern")
+            if not tp or not isinstance(tp, dict):
                 return False, "update tensor_pattern missing"
-            return True, f"crs_after={data.get('crs_after')} (>=0.74); update arc merkle={arc_merkle}"
+            bonds = tp.get("bonds", 0)
+            if not bonds or int(bonds) <= 0:
+                return False, f"update tensor bond not created: {tp}"
+            return True, (
+                f"crs_after={data.get('crs_after')} (>=0.74); "
+                f"recall_match=true; update arc merkle={arc_merkle}; tensor bonds={bonds}"
+            )
 
         update_data = step(
             "mcp_engram_update_with_tensor_bond",
             {
                 "concept": arc_concept,
                 "new_text": "delta: harness __arc updated via tensor bond composite with recall guard.",
-                "recall_query": "harness edit fidelity arc",
+                "recall_query": harness_concept,
                 "bond_label": "edit_fidelity",
             },
             "update_with_tensor_bond_arc",
@@ -927,7 +951,9 @@ class MCPTestClient:
         if ack_data and ack_data.get("lineage_check"):
             assertions.append("ack lineage_check field present")
 
-        def misuse_post_check(data: Optional[Dict[str, Any]]) -> Tuple[bool, str]:
+        def misuse_post_check(
+            data: Optional[Dict[str, Any]], _resp: Dict[str, Any]
+        ) -> Tuple[bool, str]:
             if not data:
                 return False, "misuse returned no data"
             if data.get("recall_match") is not False:
@@ -941,6 +967,10 @@ class MCPTestClient:
             fp_concept = str(fp.get("concept", ""))
             if fp.get("kind") != "failure" and "edit_pattern_failure" not in fp_concept:
                 return False, f"misuse: expected failure_pattern kind=failure, got {fp}"
+            if data.get("ok") is True:
+                return False, "misuse: expected ok=false on recall mismatch"
+            if data.get("tensor_pattern"):
+                return False, f"misuse: success tensor_pattern should be absent, got {data.get('tensor_pattern')}"
             return True, f"misuse scar_key={scar}; failure_pattern ({fp_concept or fp.get('kind')})"
 
         misuse_data = step(
@@ -967,7 +997,9 @@ class MCPTestClient:
             assertions.append("spatial_status: n/a on fresh isolated store (non-fatal)")
 
         # Semantic steps (tools/list registration) — post_check on palette
-        def palette_post_check(data: Optional[Dict[str, Any]]) -> Tuple[bool, str]:
+        def palette_post_check(
+            data: Optional[Dict[str, Any]], _resp: Dict[str, Any]
+        ) -> Tuple[bool, str]:
             if not data:
                 return False, "context_for_edit returned no data"
             hi = data.get("harness_injection") or {}

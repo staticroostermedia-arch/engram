@@ -231,12 +231,23 @@ pub fn tensor_pattern_for_edit(
         trace_id.unwrap_or("(none)")
     );
 
+    if store.fetch_block(locus).is_none() {
+        store
+            .remember(locus, &format!("edit_fidelity locus stub: {locus}"))
+            .map_err(|e| anyhow::anyhow!("locus remember failed: {e}"))?;
+    }
+
     let mut bonds = vec![BondSpec {
         from: concept.clone(),
         to: locus.to_string(),
         label: "edit_fidelity".to_string(),
     }];
     if let Some(tid) = trace_id {
+        if store.fetch_block(tid).is_none() {
+            store
+                .remember(tid, &format!("edit_fidelity trace stub: {tid}"))
+                .map_err(|e| anyhow::anyhow!("trace stub remember failed: {e}"))?;
+        }
         bonds.push(BondSpec {
             from: concept.clone(),
             to: tid.to_string(),
@@ -311,6 +322,58 @@ pub fn first_ast_from_context(payload: &Value) -> Option<String> {
         })
 }
 
+fn ast_rank(concept: &str) -> u8 {
+    if concept.contains("__fn__") {
+        0
+    } else if concept.contains("__mod__") {
+        1
+    } else if concept.contains("__struct__") {
+        2
+    } else if concept.contains("__enum__") {
+        4
+    } else {
+        3
+    }
+}
+
+/// Primary file locus for arc delta — prefer stem-matched fn/mod over first enum in spatial_items.
+pub fn primary_ast_from_context(path: &str, payload: &Value) -> Option<String> {
+    let stem = payload
+        .get("stem")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .or_else(|| {
+            std::path::Path::new(path)
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .map(str::to_string)
+        })?;
+
+    let prefix = format!("{stem}__");
+    let mut candidates: Vec<String> = payload
+        .get("spatial_items")
+        .and_then(|v| v.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| {
+                    item.get("concept")
+                        .and_then(|c| c.as_str())
+                        .filter(|c| !c.is_empty() && !c.ends_with("__arc") && c.starts_with(&prefix))
+                        .map(str::to_string)
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    if candidates.is_empty() {
+        return first_ast_from_context(payload);
+    }
+    candidates.sort_by_key(|c| ast_rank(c));
+    candidates.into_iter().next()
+}
+
 /// Composite safe edit: context → trace → optional arc update → verify → lineage → tensor pattern.
 pub fn run_safe_edit_and_verify(
     store: &mut StoreHandle,
@@ -345,7 +408,7 @@ pub fn run_safe_edit_and_verify(
         }
     };
 
-    let ast_concept = first_ast_from_context(&context);
+    let ast_concept = primary_ast_from_context(path, &context);
     let mut arc_concept = ast_concept
         .as_ref()
         .map(|a| StoreHandle::arc_concept_name(a));
@@ -403,8 +466,25 @@ pub fn run_safe_edit_and_verify(
     } else {
         "safe_edit_and_verify partial — check lineage/arc issues"
     };
-    let tensor_pattern =
-        tensor_pattern_for_edit(store, success, path, trace_id.as_deref(), pattern_note).ok();
+    let pattern_locus = arc_concept
+        .as_deref()
+        .or(ast_concept.as_deref())
+        .unwrap_or(path);
+    let tensor_pattern = match tensor_pattern_for_edit(
+        store,
+        success,
+        pattern_locus,
+        trace_id.as_deref(),
+        pattern_note,
+    ) {
+        Ok(v) => Some(v),
+        Err(e) => Some(json!({
+            "kind": if success { "success" } else { "failure" },
+            "concept": format!("tensor:edit_pattern_{}_{}", if success { "success" } else { "failure" }, slugify(pattern_locus, 24)),
+            "error": e.to_string(),
+            "bonds_created": 0,
+        })),
+    };
 
     let reflection =
         build_reflection_loop_actions(trace_id.as_deref(), arc_concept.as_deref(), Some(path));
@@ -450,18 +530,41 @@ pub fn run_update_with_tensor_bond(
     let mut failure_pattern: Option<Value> = None;
 
     if let Some(q) = recall_query {
-        if !q.trim().is_empty() {
-            let (hits, _) = store.recall_scoped(q, 5, Some("anchors"));
-            if let Some(top) = hits.first() {
-                top_score = top.score;
-                top_concept = Some(top.concept.clone());
-                let name_match = top.concept == concept
-                    || top.concept.contains(concept)
-                    || concept.contains(top.concept.as_str());
-                recall_match = name_match || top.score >= match_threshold;
-            } else {
-                // Query provided but no hits — treat as mismatch (do not auto-pass because block exists)
-                recall_match = false;
+        let q_trim = q.trim();
+        if !q_trim.is_empty() {
+            recall_match = false;
+            if q_trim == concept {
+                recall_match = true;
+            } else if let Some(arc_base) = concept.strip_suffix("__arc") {
+                if q_trim == arc_base || q_trim == concept {
+                    recall_match = true;
+                }
+            }
+            if !recall_match {
+                let (hits, _) = store.recall_scoped(q, 5, Some("anchors"));
+                if let Some(top) = hits.first() {
+                    top_score = top.score;
+                    top_concept = Some(top.concept.clone());
+                    let name_match = top.concept == concept
+                        || top.concept.contains(concept)
+                        || concept.contains(top.concept.as_str());
+                    let arc_pair_match = concept
+                        .ends_with("__arc")
+                        .then(|| {
+                            concept.strip_suffix("__arc").map(|base| {
+                                top.concept == base
+                                    || base.starts_with(top.concept.as_str())
+                                    || top.concept.starts_with(base)
+                            })
+                        })
+                        .flatten()
+                        .unwrap_or(false);
+                    recall_match =
+                        name_match || arc_pair_match || top.score >= match_threshold;
+                } else {
+                    // Query provided but no hits — treat as mismatch (do not auto-pass because block exists)
+                    recall_match = false;
+                }
             }
         }
     }
@@ -546,28 +649,32 @@ pub fn run_update_with_tensor_bond(
     } else {
         bond_label
     };
-    let pattern_concept = format!(
-        "tensor:update_pattern_{}_{}",
-        slugify(concept, 24),
-        timestamp_slug()
-    );
-    let pattern_text = format!(
-        "verified_memory_update\nconcept: {concept}\nrecall_match: {recall_match}\ntop_score: {top_score:.3}\ndelta_len: {}",
-        new_text.len()
-    );
-    let bonds = vec![
-        BondSpec {
-            from: pattern_concept.clone(),
-            to: concept.to_string(),
-            label: bond_lbl.to_string(),
-        },
-        BondSpec {
-            from: pattern_concept.clone(),
-            to: concept.to_string(),
-            label: "updated_via".to_string(),
-        },
-    ];
-    let tensor_result = tensor_upsert(store, &pattern_concept, &pattern_text, &bonds, true);
+    let tensor_result = if recall_match && crs_gate_ok {
+        let pattern_concept = format!(
+            "tensor:update_pattern_{}_{}",
+            slugify(concept, 24),
+            timestamp_slug()
+        );
+        let pattern_text = format!(
+            "verified_memory_update\nconcept: {concept}\nrecall_match: {recall_match}\ntop_score: {top_score:.3}\ndelta_len: {}",
+            new_text.len()
+        );
+        let bonds = vec![
+            BondSpec {
+                from: pattern_concept.clone(),
+                to: concept.to_string(),
+                label: bond_lbl.to_string(),
+            },
+            BondSpec {
+                from: pattern_concept.clone(),
+                to: concept.to_string(),
+                label: "updated_via".to_string(),
+            },
+        ];
+        tensor_upsert(store, &pattern_concept, &pattern_text, &bonds, true).ok()
+    } else {
+        None
+    };
 
     let lineage = verify_edit_lineage(store, None, Some(concept), None, MIN_CRS);
 
@@ -584,9 +691,10 @@ pub fn run_update_with_tensor_bond(
         "crs_gate_ok": crs_gate_ok,
         "scar_key": scar_key,
         "failure_pattern": failure_pattern,
-        "tensor_pattern": tensor_result.ok().map(|r| json!({
+        "tensor_pattern": tensor_result.map(|r| json!({
             "concept": r.concept,
             "bonds": r.bonds_created.len(),
+            "stored": r.stored,
         })),
         "lineage": lineage.to_json(),
         "reflection_suggested": build_reflection_loop_actions(None, Some(concept), None),
@@ -650,9 +758,7 @@ mod tests {
     fn tensor_pattern_for_edit_bonds() {
         let mut store = test_store();
         let locus = "store__fn__harness_test";
-        store
-            .remember(locus, "harness locus stub")
-            .expect("remember locus");
+        seed_grounded_block(&mut store, locus, "harness locus stub");
         let tid = mint_quick_trace(&mut store, "d", "w", None, None, None).unwrap();
         let p =
             tensor_pattern_for_edit(&mut store, true, locus, Some(&tid), "ok").expect("pattern");
@@ -661,6 +767,51 @@ mod tests {
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .contains("edit_pattern_success"));
+    }
+
+    #[test]
+    fn primary_ast_prefers_fn_over_enum() {
+        let payload = json!({
+            "stem": "profile",
+            "spatial_items": [
+                {"concept": "profile__enum__engramprofile"},
+                {"concept": "profile__fn__main"},
+            ]
+        });
+        let ast = primary_ast_from_context("/tmp/profile.rs", &payload).unwrap();
+        assert!(ast.contains("__fn__"), "got {ast}");
+    }
+
+    fn seed_grounded_block(store: &mut StoreHandle, concept: &str, text: &str) {
+        store.remember(concept, text).expect("remember");
+        if let Some(mut block) = store.fetch_block(concept) {
+            block.crs_score = 0.85;
+            store.store(concept, block).expect("store crs bump");
+        }
+    }
+
+    #[test]
+    fn arc_pair_recall_match() {
+        let mut store = test_store();
+        let base = "harness:edit_fidelity_test";
+        let arc = format!("{base}__arc");
+        seed_grounded_block(&mut store, base, "harness base");
+        seed_grounded_block(&mut store, &arc, "harness arc");
+        let out = run_update_with_tensor_bond(
+            &mut store,
+            &arc,
+            "delta: arc update",
+            Some(base),
+            "edit_fidelity",
+            false,
+            0.85,
+        );
+        assert_eq!(
+            out.get("recall_match"),
+            Some(&json!(true)),
+            "recall_match failed: {out}"
+        );
+        assert_eq!(out.get("ok"), Some(&json!(true)), "ok failed: {out}");
     }
 
     #[test]

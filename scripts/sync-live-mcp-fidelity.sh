@@ -28,18 +28,47 @@ export ENGRAM_BINARY="$BINARY"
 mkdir -p "$HOME/.local/bin"
 ln -sf "$BINARY" "$HOME/.local/bin/engram"
 
+probe_composite_count() {
+  local store="$1"
+  local tmp
+  tmp=$(mktemp)
+  INIT='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"sync-probe","version":"1"}}}'
+  LIST='{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}'
+  printf '%s\n%s\n' "$INIT" "$LIST" | timeout 15 "$BINARY" --store "$store" mcp 2>/dev/null | tail -1 >"$tmp"
+  python3 - "$tmp" <<'PY'
+import json, sys
+line = open(sys.argv[1]).read().strip()
+data = json.loads(line) if line else {}
+names = {t.get("name") for t in data.get("result", {}).get("tools", [])}
+need = {"mcp_engram_safe_edit_and_verify", "mcp_engram_update_with_tensor_bond"}
+print(len(names), int(need.issubset(names)))
+PY
+  rm -f "$tmp"
+}
+
 LIVE_PID=""
 if pgrep -f "engram.*mcp" >/dev/null 2>&1; then
   LIVE_PID=$(pgrep -f "engram.*mcp" | head -1)
   BIN_MTIME=$(stat -c %Y "$BINARY" 2>/dev/null || echo 0)
   PROC_START=$(stat -c %Y "/proc/$LIVE_PID" 2>/dev/null || echo 0)
+  NEED_RESTART=0
   if [[ "$BIN_MTIME" -gt "$PROC_START" ]] || [[ "${FORCE_MCP_RESTART:-0}" == "1" ]]; then
-    echo "==> Stopping stale engram MCP (pid=$LIVE_PID) — binary newer than process"
+    NEED_RESTART=1
+  else
+    read -r TOOL_COUNT HAS_COMPOSITES < <(probe_composite_count "$(mktemp -d /tmp/engram-probe-XXXXXX)")
+    rm -rf /tmp/engram-probe-* 2>/dev/null || true
+    if [[ "$HAS_COMPOSITES" != "1" ]] || [[ "${TOOL_COUNT:-0}" -lt 83 ]]; then
+      NEED_RESTART=1
+      echo "==> Live MCP probe: tool_count=${TOOL_COUNT:-0} composites_missing — restart required"
+    fi
+  fi
+  if [[ "$NEED_RESTART" == "1" ]]; then
+    echo "==> Stopping stale engram MCP (pid=$LIVE_PID)"
     pkill -f "engram.*mcp" 2>/dev/null || true
     sleep 1
     LIVE_PID=""
   else
-    echo "==> Live MCP running (pid=$LIVE_PID) — binary not newer; use FORCE_MCP_RESTART=1 to recycle"
+    echo "==> Live MCP running (pid=$LIVE_PID) with composites present"
   fi
 fi
 
