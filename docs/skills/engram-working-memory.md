@@ -17,9 +17,13 @@ Every work block becomes an evolution of your self-model.
 1. **Anchor-First**: `mcp_engram_recall(query="...", scope="anchors")` — goals/traces/rituals before episodic noise (lean default).
 2. **Edit-Scoped Spatial**: `mcp_engram_safe_edit_and_verify` (**preferred**) or `mcp_engram_context_for_edit(path)` — replaces `watch_workspace` + `context_for_file` + `recall_in_file` pre-edit sequence in lean mode.
 
-   Few-shot `safe_edit_and_verify`: `{"path":"/home/user/Engram/crates/engram-server/src/mcp.rs","decision":"Add composite handler","why":"Agent tool fidelity","arc_delta":"delta: shipped safe path"}`
+   Few-shot `safe_edit_and_verify` (1): `{"path":"/home/user/Engram/crates/engram-server/src/mcp.rs","decision":"Add safe_edit composite tool","why":"Agent tool fidelity goal — one-shot verified edit path","arc_delta":"delta: registered mcp_engram_safe_edit_and_verify handler","goal_context":"goal:agent_tool_fidelity_v1"}`
 
-   Few-shot `context_for_edit`: `{"path":"/home/user/Engram/crates/engram-server/src/store.rs","auto_ingest":true}`
+   Few-shot `safe_edit_and_verify` (2): `{"path":"/home/user/Engram/docs/AGENT_MEMORY_CONTRACT.md","decision":"Refresh 8-tool examples","why":"Mirror hardened few-shots in docs","run_verify":true}`
+
+   Few-shot `context_for_edit` (1): `{"path":"/home/user/Engram/crates/engram-server/src/store.rs","auto_ingest":true}`
+
+   Few-shot `context_for_edit` (2): `{"path":"/home/user/Engram/crates/engram-server/src/mcp.rs","line_start":6200,"line_end":6350}`
 3. **Sheaf/Relational** (deep mode): `mcp_engram_search_by_relation(seed, "both")` + `visualize` for architecture.
 4. **Momentum** (deep / entry only): `mcp_engram_query_with_momentum` when cheaper tools are insufficient.
 
@@ -30,7 +34,13 @@ Every work block becomes an evolution of your self-model.
 1. **Recall Before Derive**: At least one `recall(scope="anchors")` or `context_for_edit` before heavy reasoning or raw file reads.
 2. **Update Is The Only Legal Mutation**: `recall` first. Strong match (>0.85) → `mcp_engram_update_with_tensor_bond` (preferred) or `mcp_engram_update`. No match → `remember`. Never forget+remember (destroys p-tensor history).
 
-   Few-shot `update_with_tensor_bond`: `{"concept":"store__fn__update__arc","new_text":"delta: append narrative","recall_query":"store update","bond_label":"edit_fidelity"}`
+   Few-shot `update_with_tensor_bond` (1): `{"concept":"mcp__fn__dispatch__arc","new_text":"delta: wired safe_edit handler","recall_query":"mcp dispatch edit arc","bond_label":"edit_fidelity"}`
+
+   Few-shot `update_with_tensor_bond` (2): `{"concept":"design:agent_tool_fidelity_v1","new_text":"Phase 1: composite tools shipped","recall_query":"agent tool fidelity","scar_on_mismatch":true}`
+
+   Few-shot `remember` (1): `{"concept":"harness:agent_tool_fidelity_v1","text":"Deterministic suite for edit/update tool fidelity >=95%."}`
+
+   Few-shot `remember` (2): `{"concept":"user__prefers_absolute_paths","text":"Always pass absolute paths to context_for_edit and safe_edit_and_verify."}`
 3. **Scar Is Repulsion**: `mcp_engram_scar(concept, magnitude)` for ruled-out approaches. Active geometric force.
 4. **Write Hygiene**: Every strong write/relation becomes terminal state for future wake-ups.
 5. **Reasoning Trace Capture**: Significant decisions/forks → `mcp_engram_quick_trace` (lean) or `record_reasoning_trace` (deep/high-stakes). Chain via `prev`.

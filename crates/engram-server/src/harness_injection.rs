@@ -264,9 +264,10 @@ pub fn build_jit_deformation_framework(task_type: &str, primary_goal: Option<&st
             {
                 "phase": "situated_recon",
                 "when": "before first edit on a file",
-                "mandatory": ["mcp_engram_context_for_edit"],
-                "jit_palette": ["mcp_engram_recall_in_file", "mcp_engram_read_concept"],
-                "construct": "path=absolute file; read traces_at_locus + open_scars + edit_arc from atlas"
+                "mandatory": ["mcp_engram_safe_edit_and_verify"],
+                "jit_palette": ["mcp_engram_context_for_edit", "mcp_engram_recall_in_file", "mcp_engram_read_concept"],
+                "construct": "path=absolute file; prefer safe_edit_and_verify composite; read traces_at_locus + open_scars + edit_arc from atlas",
+                "process_ref": "process:engram.ritual.safe-code-edit"
             },
             {
                 "phase": "fork",

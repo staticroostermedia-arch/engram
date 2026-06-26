@@ -33,6 +33,7 @@ pub mod daemon;
 mod edit_arc_gate;
 mod edit_fidelity;
 mod evolution_at_locus;
+mod fidelity_few_shots;
 mod goal_hygiene;
 mod harness_injection;
 mod injection_priority;

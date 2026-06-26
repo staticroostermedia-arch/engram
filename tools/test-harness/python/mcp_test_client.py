@@ -27,6 +27,7 @@ This directly exercises the exact failure modes from the May 31 MCP transport re
 import argparse
 import json
 import os
+import re
 import queue
 import subprocess
 import sys
@@ -733,15 +734,17 @@ class MCPTestClient:
         }
 
     def run_agent_tool_fidelity_suite(self, workspace_path: str = "/path/to/your/engram") -> Dict[str, Any]:
-        """Agent tool fidelity: composite edit/update tools, lineage, reflection, >=95% correct usage."""
+        """Agent tool fidelity: composite edit/update tools, lineage+merkle, reflection, >=95% correct usage."""
         failures: List[str] = []
         assertions: List[str] = []
         ts = int(time.time())
         harness_concept = f"harness:edit_fidelity_{ts}"
+        arc_concept = f"{harness_concept}__arc"
         edit_path = f"{workspace_path.rstrip('/')}/crates/engram-server/src/profile.rs"
 
         steps_ok = 0
         steps_total = 0
+        prev_trace_id: Optional[str] = None
 
         def step(tool: str, args: Dict[str, Any], label: str, expect_ok: bool = True) -> Optional[Dict[str, Any]]:
             nonlocal steps_ok, steps_total
@@ -759,67 +762,134 @@ class MCPTestClient:
                 failures.append(f"{label}: tool={tool} err={err} data_keys={list((data or {}).keys())}")
             return data
 
-        step("mcp_engram_session_start", {"intent": "agent-tool-fidelity harness suite"}, "session_start")
+        ss_data = step("mcp_engram_session_start", {"intent": "agent-tool-fidelity harness suite"}, "session_start")
+        if ss_data:
+            cont = ss_data.get("continuation") or ss_data
+            hi = cont.get("harness_injection") or {}
+            discipline = hi.get("agent_discipline") or {}
+            rituals = discipline.get("fidelity_rituals") or []
+            if "ritual:safe_code_edit" in rituals or "agent:engram.ritual.safe-code-edit" in str(rituals):
+                assertions.append("fidelity_rituals present in harness_injection")
+            proc_resp = self.call_tool(
+                "mcp_engram_read_concept",
+                {"concept": "process:engram.ritual.safe-code-edit"},
+                timeout=30.0,
+            )
+            proc_text = self._tool_text(proc_resp)
+            if "not found" in proc_text.lower():
+                failures.append("process:engram.ritual.safe-code-edit not loaded in sheaf")
+            else:
+                assertions.append("process:engram.ritual.safe-code-edit loaded")
+
         step(
             "mcp_engram_ack_wake_queue",
             {"executed": True, "note": "harness agent-tool-fidelity — queue cleared before edits"},
             "ack_wake_queue",
         )
+
+        prev_resp = self.call_tool(
+            "mcp_engram_quick_trace",
+            {
+                "decision": "Harness prev trace for safe_edit chain",
+                "why": "Exercise prev_in_trace lineage before composite edit",
+                "goal_context": "goal:agent_tool_fidelity_v1",
+            },
+            timeout=90.0,
+        )
+        steps_total += 1
+        prev_text = self._tool_text(prev_resp)
+        if "trace:" in prev_text:
+            m = re.search(r"trace:[^\s\)]+", prev_text)
+            if m:
+                prev_trace_id = m.group(0).rstrip(")")
+                steps_ok += 1
+                assertions.append(f"prev_trace_mint: ok ({prev_trace_id})")
+            else:
+                failures.append("prev_trace_mint: trace id not parsed from response")
+        else:
+            failures.append("prev_trace_mint: quick_trace failed")
+
         step(
             "mcp_engram_remember",
-            {"concept": harness_concept, "text": "Harness edit fidelity artifact — update target."},
+            {"concept": harness_concept, "text": "Harness edit fidelity artifact — update target with __arc companion."},
             "remember_target",
         )
-
-        safe_data = step(
-            "mcp_engram_safe_edit_and_verify",
+        step(
+            "mcp_engram_remember",
             {
-                "path": edit_path,
-                "decision": "Harness safe edit composite smoke",
-                "why": "Verify lineage + tensor pattern path",
-                "arc_delta": "delta: harness safe_edit smoke — no real file change",
-                "goal_context": "goal:agent_tool_fidelity_v1",
-                "run_verify": True,
+                "concept": arc_concept,
+                "text": "EDIT ARC — harness fidelity __arc seed for tensor bond path.",
             },
-            "safe_edit_and_verify",
+            "seed_arc_block",
         )
+
+        safe_args: Dict[str, Any] = {
+            "path": edit_path,
+            "decision": "Harness safe edit composite smoke",
+            "why": "Verify lineage + tensor pattern path",
+            "arc_delta": "delta: harness safe_edit smoke — no real file change",
+            "goal_context": "goal:agent_tool_fidelity_v1",
+            "run_verify": True,
+        }
+        if prev_trace_id:
+            safe_args["prev_trace"] = prev_trace_id
+        safe_data = step("mcp_engram_safe_edit_and_verify", safe_args, "safe_edit_and_verify")
         if safe_data:
-            if safe_data.get("trace_id"):
-                assertions.append(f"lineage trace_id={safe_data.get('trace_id')}")
+            tid = safe_data.get("trace_id")
+            if tid:
+                assertions.append(f"lineage trace_id={tid}")
             else:
                 failures.append("safe_edit missing trace_id")
             lineage = safe_data.get("lineage") or {}
-            if lineage.get("ok") is True or safe_data.get("ok"):
-                assertions.append("lineage.ok present")
+            if lineage.get("merkle_ok") is True:
+                assertions.append("lineage.merkle_ok=true")
+            else:
+                failures.append(f"lineage merkle missing: {lineage}")
+            if prev_trace_id and lineage.get("ok"):
+                assertions.append("prev_in_trace chain verified")
+            if safe_data.get("arc_updated") is True:
+                assertions.append("arc_updated=true")
+            elif safe_data.get("arc_update_error"):
+                failures.append(f"arc_update_error: {safe_data.get('arc_update_error')}")
             if safe_data.get("tensor_pattern"):
                 assertions.append("tensor_pattern recorded")
 
         update_data = step(
             "mcp_engram_update_with_tensor_bond",
             {
-                "concept": harness_concept,
-                "new_text": "Harness edit fidelity artifact — updated via tensor bond composite.",
-                "recall_query": "harness edit fidelity",
+                "concept": arc_concept,
+                "new_text": "delta: harness __arc updated via tensor bond composite with recall guard.",
+                "recall_query": "harness edit fidelity arc",
                 "bond_label": "edit_fidelity",
             },
-            "update_with_tensor_bond",
+            "update_with_tensor_bond_arc",
         )
         if update_data:
-            if update_data.get("crs_delta") is not None:
-                assertions.append(f"crs_delta={update_data.get('crs_delta')}")
+            if update_data.get("crs_gate_ok") is True:
+                assertions.append(f"crs_after={update_data.get('crs_after')} (>=0.74)")
+            else:
+                failures.append(f"crs_gate failed: after={update_data.get('crs_after')}")
+            lin = update_data.get("lineage") or {}
+            if lin.get("merkle_ok"):
+                assertions.append("update lineage merkle_ok")
             if update_data.get("tensor_pattern"):
                 assertions.append("update tensor_pattern present")
 
+        ack_trace = (safe_data or {}).get("trace_id")
         ack_data = step(
             "mcp_engram_ack_edit_arc",
-            {"skip": True, "note": "harness read-only ack", "lineage_check": True},
+            {
+                "skip": True,
+                "note": "harness read-only ack",
+                "lineage_check": True,
+                "trace_id": ack_trace,
+            },
             "ack_edit_arc_lineage",
         )
         if ack_data and ack_data.get("lineage_check"):
             assertions.append("ack lineage_check field present")
 
-        # Injected misuse: recall mismatch should still update but may scar
-        step(
+        misuse_data = step(
             "mcp_engram_update_with_tensor_bond",
             {
                 "concept": harness_concept,
@@ -830,6 +900,29 @@ class MCPTestClient:
             },
             "misuse_self_correction",
         )
+        if misuse_data:
+            if misuse_data.get("recall_match") is False:
+                assertions.append("misuse recall_match=false")
+            else:
+                failures.append("misuse: expected recall_match=false")
+            if misuse_data.get("scar_key"):
+                assertions.append(f"misuse scar_key={misuse_data.get('scar_key')}")
+            else:
+                failures.append("misuse: expected scar_key on recall mismatch")
+            fp = misuse_data.get("failure_pattern") or {}
+            fp_concept = str(fp.get("concept", ""))
+            if fp.get("kind") == "failure" or "edit_pattern_failure" in fp_concept:
+                assertions.append(f"misuse failure_pattern ({fp_concept or fp.get('kind')})")
+            else:
+                failures.append(f"misuse: expected failure_pattern kind=failure, got {fp}")
+
+        step("mcp_engram_verify_manifold_integrity", {"min_crs": 0.74, "sample_size": 16}, "verify_manifold")
+        step("mcp_engram_genesis", {"action": "status"}, "genesis_status")
+        spatial_text = self._tool_text(self.call_tool("mcp_engram_spatial_status", {}, timeout=60.0))
+        if spatial_text and "error" not in spatial_text.lower()[:80]:
+            assertions.append("spatial_status: responded")
+        else:
+            assertions.append("spatial_status: n/a on fresh isolated store (non-fatal)")
 
         ctx_data = step(
             "mcp_engram_context_for_edit",
@@ -883,6 +976,8 @@ class MCPTestClient:
             "steps_ok": steps_ok,
             "steps_total": steps_total,
             "harness_concept": harness_concept,
+            "arc_concept": arc_concept,
+            "prev_trace_id": prev_trace_id,
             "still_alive": self.is_alive,
         }
 

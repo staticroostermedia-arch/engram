@@ -384,6 +384,8 @@ fn load_process_sheaf(store: &SharedStore) -> Result<(), String> {
         }
         let _ = hlock.promote_tile_to_high_priority("process:engram.ritual.wake-up");
         let _ = hlock.promote_tile_to_high_priority("process:engram.ritual.nrem-consolidation");
+        let _ = hlock.promote_tile_to_high_priority("process:engram.ritual.safe-code-edit");
+        let _ = hlock.promote_tile_to_high_priority("process:engram.ritual.verified-memory-update");
         let _ = hlock
             .promote_tile_to_high_priority("process:engram.ritual.local-context-working-memory");
         let _ = hlock.promote_tile_to_high_priority("process:engram.monitor.subvisor");
@@ -628,7 +630,7 @@ fn tool_list() -> Value {
             },
             {
                 "name": "mcp_engram_remember",
-                "description": "Encode NEW facts only — persistent HolographicBlock (.leg3). Recall first; if match>0.85 use mcp_engram_update instead. CRS tiers: 1.0=pinned | >=0.74=grounded | <0.50=verify first. FEW-SHOT EXAMPLES: (1) New harness concept: {\"concept\":\"harness:agent_tool_fidelity_v1\",\"text\":\"Deterministic suite for edit/update tool fidelity >=95%.\"} (2) User preference: {\"concept\":\"user__prefers_absolute_paths\",\"text\":\"Always pass absolute paths to context_for_edit and safe_edit_and_verify.\"}",
+                "description": crate::fidelity_few_shots::remember_description(),
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -785,7 +787,7 @@ fn tool_list() -> Value {
             },
             {
                 "name": "mcp_engram_ack_edit_arc",
-                "description": "Acknowledge or skip pending edit-arc debt — unblocks repeat context_for_edit on the same path when ENGRAM_EDIT_ARC_GATE=hard. Prefer mcp_engram_update on *__arc after edits; use skip=true with an honest note only for read-only passes. FEW-SHOT EXAMPLES: (1) Post-edit arc update done elsewhere: {\"concepts\":[\"store__fn__context_for_edit\"],\"skip\":false,\"note\":\"updated __arc via mcp_engram_update\"} (2) Read-only recon: {\"skip\":true,\"note\":\"read-only context_for_edit — no substantive edits\"}",
+                "description": crate::fidelity_few_shots::ack_edit_arc_description(),
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -815,7 +817,7 @@ fn tool_list() -> Value {
             },
             {
                 "name": "mcp_engram_safe_edit_and_verify",
-                "description": "SAFE composite for code edits: context_for_edit + quick_trace + optional __arc update + verify_manifold + lineage check + tensor edit_pattern bond. Prefer this over ad-hoc context_for_edit when changing crates/, docs/, or processes/. Returns trace_id, arc_concept, crs_delta, reflection_suggested. FEW-SHOT EXAMPLES: (1) Pre+post edit with arc delta: {\"path\":\"/home/user/Engram/crates/engram-server/src/mcp.rs\",\"decision\":\"Add safe_edit composite tool\",\"why\":\"Agent tool fidelity goal — one-shot verified edit path\",\"arc_delta\":\"delta: registered mcp_engram_safe_edit_and_verify handler\",\"goal_context\":\"goal:agent_tool_fidelity_v1\"} (2) Intent-only trace before external editor edit: {\"path\":\"/home/user/Engram/docs/AGENT_MEMORY_CONTRACT.md\",\"decision\":\"Refresh 8-tool examples\",\"why\":\"Mirror hardened few-shots in docs\",\"run_verify\":true}",
+                "description": crate::fidelity_few_shots::safe_edit_description(),
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -853,7 +855,7 @@ fn tool_list() -> Value {
             },
             {
                 "name": "mcp_engram_update_with_tensor_bond",
-                "description": "SAFE composite for memory updates: recall-first + mcp_engram_update + tensor bond (edit_fidelity) + optional scar on mismatch. NEVER use forget+remember to mutate. Returns crs_delta, tensor_pattern, lineage. FEW-SHOT EXAMPLES: (1) Append arc delta after edit: {\"concept\":\"mcp__fn__dispatch__arc\",\"new_text\":\"delta: wired safe_edit handler\",\"recall_query\":\"mcp dispatch edit arc\",\"bond_label\":\"edit_fidelity\"} (2) Update design block with recall guard: {\"concept\":\"design:agent_tool_fidelity_v1\",\"new_text\":\"Phase 1: composite tools shipped\",\"recall_query\":\"agent tool fidelity\",\"scar_on_mismatch\":true}",
+                "description": crate::fidelity_few_shots::update_bond_description(),
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -1081,7 +1083,7 @@ fn tool_list() -> Value {
             },
             {
                 "name": "mcp_engram_quick_trace",
-                "description": "Low-friction trace capture → structured trace:* block with prev_in_trace chain. Use at every fork; chain prev from trace_chain.head. Post-edit: run reflection loop or mcp_engram_safe_edit_and_verify. FEW-SHOT EXAMPLES: (1) Edit fork: {\"decision\":\"Implement edit_fidelity module\",\"why\":\"Composite tools need testable helpers\",\"spatial_context\":\"crates/engram-server/src/edit_fidelity.rs:1\",\"goal_context\":\"goal:agent_tool_fidelity_v1\"} (2) Post-edit delta: {\"decision\":\"Hardened MCP descriptions with few-shots\",\"why\":\"Agents need copy-pasteable JSON\",\"prev\":\"trace:1780000000_prior-step\"}",
+                "description": crate::fidelity_few_shots::quick_trace_description(),
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -1654,7 +1656,7 @@ fn tool_list() -> Value {
             },
             {
                 "name": "mcp_engram_context_for_edit",
-                "description": "Code atlas v2 — pre-edit situated memory. Returns JSON: spatial_items (tree-sitter AABB + edit_arc per locus), traces_at_locus, scars_at_locus, harness_injection.post_edit_palette. Requires wake queue ack when ENGRAM_WAKE_QUEUE_GATE=hard. Prefer mcp_engram_safe_edit_and_verify for substantive edits. FEW-SHOT EXAMPLES: (1) Standard pre-edit: {\"path\":\"/home/user/Engram/crates/engram-server/src/store.rs\",\"auto_ingest\":true} (2) Line-bounded locus: {\"path\":\"/home/user/Engram/crates/engram-server/src/mcp.rs\",\"line_start\":6200,\"line_end\":6350}",
+                "description": crate::fidelity_few_shots::context_for_edit_description(),
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -1727,7 +1729,7 @@ fn tool_list() -> Value {
             },
             {
                 "name": "mcp_engram_remember_solution",
-                "description": "Crystallized error→solution pair (ZEDOS_PRAXIS, CRS=1.0). Use after verified fixes, not for routine deltas (use update). FEW-SHOT EXAMPLES: (1) Build fix: {\"error_pattern\":\"cargo test mcp mutex poison\",\"solution\":\"Use mcp_test_guard() serializing MCP tests\"} (2) Ritual fix: {\"error_pattern\":\"repeated context_for_edit blocked\",\"solution\":\"mcp_engram_update on __arc or mcp_engram_ack_edit_arc before re-read\",\"process_context\":\"process:engram.ritual.working-memory\"}",
+                "description": crate::fidelity_few_shots::remember_solution_description(),
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -1787,7 +1789,7 @@ fn tool_list() -> Value {
             },
             {
                 "name": "mcp_engram_update",
-                "description": "CRITICAL: Use whenever you change an existing memory. NEVER forget+remember — destroys history. Superposes q + p-momentum + ProvLog splice. Prefer mcp_engram_update_with_tensor_bond for agent edits (recall-first + lineage bond). FEW-SHOT EXAMPLES: (1) Post-edit arc delta: {\"concept\":\"store__fn__update__arc\",\"new_text\":\"delta: added verify_edit_lineage helper\"} (2) Design evolution: {\"concept\":\"design:agent_tool_fidelity_v1\",\"new_text\":\"Shipped composite safe_edit_and_verify\",\"provlog_mode\":\"append\"}",
+                "description": crate::fidelity_few_shots::update_description(),
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -3715,24 +3717,22 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                         .collect()
                 });
             let concept_refs = concepts.as_deref();
-            let mut payload = crate::edit_arc_gate::ack_edit_arc(concept_refs, skip, note);
-            if lineage_check {
-                if let Ok(lock) = store.lock() {
-                    let arc = concept_refs
-                        .and_then(|c| c.first())
-                        .map(|a| crate::store::StoreHandle::arc_concept_name(a));
-                    let lineage = crate::edit_fidelity::verify_edit_lineage(
-                        &lock,
-                        trace_id,
-                        arc.as_deref(),
-                        None,
-                        0.74,
-                    );
-                    if let Some(obj) = payload.as_object_mut() {
-                        obj.insert("lineage_check".to_string(), lineage.to_json());
-                    }
+            let payload = match store.lock() {
+                Ok(lock) => crate::edit_arc_gate::ack_edit_arc_with_lineage(
+                    &lock,
+                    concept_refs,
+                    skip,
+                    note,
+                    lineage_check,
+                    trace_id,
+                ),
+                Err(p) => {
+                    return json!({
+                        "content": [{ "type": "text", "text": format!("Error: store mutex poisoned: {}", p) }],
+                        "isError": true
+                    });
                 }
-            }
+            };
             if let Ok(mut lock) = store.lock() {
                 let detail = note.unwrap_or(if skip {
                     "arc debt skipped"

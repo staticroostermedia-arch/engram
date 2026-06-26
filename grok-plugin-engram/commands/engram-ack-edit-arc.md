@@ -5,13 +5,13 @@ description: Clear edit-arc debt on read-only repeat context_for_edit — prefer
 
 When `edit_arc_debt` is pending and you need **read-only** recon on the same file (no substantive edits):
 
-Few-shot (read-only): `{"skip":true,"note":"read-only recon — no source changes"}`
+Few-shot (1): `{"skip":true,"note":"read-only context_for_edit — no substantive edits"}`
 
-Few-shot (post-update ack + lineage): `{"concepts":["store__fn__context_for_edit"],"skip":false,"note":"updated __arc via mcp_engram_update","lineage_check":true,"trace_id":"trace:..."}`
+Few-shot (2): `{"concepts":["store__fn__context_for_edit"],"skip":false,"note":"updated __arc via mcp_engram_update","lineage_check":true,"trace_id":"trace:..."}`
 
 **When to call:** Repeat `context_for_edit` on a path you already edited this session, but you are only reading context — not writing new arc narrative.
 
-**Preferred after real edits:** `mcp_engram_update` on `{concept}__arc` using args from `post_edit_palette` — do not skip the arc update when you changed source.
+**Preferred after real edits:** `mcp_engram_update_with_tensor_bond` on `{concept}__arc` using args from `post_edit_palette` — do not skip the arc update when you changed source.
 
 **Gate modes** (`ENGRAM_EDIT_ARC_GATE`):
 - `soft` (**default** with `ENGRAM_PROFILE=agent`) — warns until arc cleared or acked

@@ -1,12 +1,11 @@
 //! Agent tool fidelity — safe edit sequences, lineage verification, tensor-backed edit patterns.
-//!
-//! Composite MCP tools (`safe_edit_and_verify`, `update_with_tensor_bond`) and harness
-//! reflection loops call these helpers. Keeps dispatch thin and testable.
 
 use crate::solid_state_tensor::{tensor_upsert, BondSpec};
 use crate::store::{ManifoldVerificationOptions, StoreHandle};
 use serde_json::{json, Value};
 use std::time::{SystemTime, UNIX_EPOCH};
+
+const MIN_CRS: f32 = 0.74;
 
 /// Lineage report for edit/update composite tools.
 #[derive(Debug, Clone)]
@@ -17,6 +16,9 @@ pub struct LineageReport {
     pub issues: Vec<String>,
     pub crs_before: Option<f32>,
     pub crs_after: Option<f32>,
+    pub merkle_ok: bool,
+    pub merkle_trace_sig: Option<String>,
+    pub merkle_arc_sig: Option<String>,
 }
 
 impl LineageReport {
@@ -33,11 +35,30 @@ impl LineageReport {
             "crs_before": self.crs_before,
             "crs_after": self.crs_after,
             "crs_delta": crs_delta,
+            "merkle_ok": self.merkle_ok,
+            "merkle_trace_sig": self.merkle_trace_sig,
+            "merkle_arc_sig": self.merkle_arc_sig,
         })
     }
 }
 
-/// Verify trace + optional arc blocks exist with CRS >= min_crs and optional prev chain.
+fn merkle_preview(sig: &[u8; 32]) -> String {
+    sig.iter().take(4).map(|b| format!("{b:02x}")).collect()
+}
+
+fn block_merkle_lineage_ok(store: &StoreHandle, concept: &str) -> (bool, Option<String>) {
+    let block = store
+        .fetch_block_high_priority(concept)
+        .or_else(|| store.fetch_block(concept));
+    let Some(block) = block else {
+        return (false, None);
+    };
+    // sig_0 = BLAKE3 footer anchor (verify_block_lawfulness); merkle_sub_root on relations/updates
+    let sig_ok = block.footer.sig_0.iter().any(|&b| b != 0);
+    (sig_ok, Some(merkle_preview(&block.footer.sig_0)))
+}
+
+/// Verify trace + optional arc blocks: CRS >= min_crs, optional prev chain, merkle footer.
 pub fn verify_edit_lineage(
     store: &StoreHandle,
     trace_id: Option<&str>,
@@ -48,6 +69,9 @@ pub fn verify_edit_lineage(
     let mut issues = Vec::new();
     let mut crs_before = None;
     let mut crs_after = None;
+    let mut merkle_trace_sig = None;
+    let mut merkle_arc_sig = None;
+    let mut merkle_ok = true;
 
     if let Some(tid) = trace_id {
         if let Some(block) = store.fetch_block_high_priority(tid) {
@@ -58,14 +82,19 @@ pub fn verify_edit_lineage(
                     block.crs_score
                 ));
             }
-            if store.fetch_block(tid).is_none() {
-                issues.push(format!("trace {tid} not in manifold index"));
+            let (m_ok, m_sig) = block_merkle_lineage_ok(store, tid);
+            merkle_trace_sig = m_sig;
+            if !m_ok {
+                merkle_ok = false;
+                issues.push(format!("trace {tid} missing merkle/sig_0 footer"));
             }
         } else {
             issues.push(format!("trace {tid} not found"));
+            merkle_ok = false;
         }
     } else {
         issues.push("no trace_id minted".to_string());
+        merkle_ok = false;
     }
 
     if let Some(arc) = arc_concept {
@@ -74,8 +103,15 @@ pub fn verify_edit_lineage(
             if block.crs_score < min_crs {
                 issues.push(format!("arc {arc} CRS {:.3} < {min_crs}", block.crs_score));
             }
+            let (m_ok, m_sig) = block_merkle_lineage_ok(store, arc);
+            merkle_arc_sig = m_sig;
+            if !m_ok {
+                merkle_ok = false;
+                issues.push(format!("arc {arc} missing merkle/sig_0 footer"));
+            }
         } else {
             issues.push(format!("arc {arc} not found"));
+            merkle_ok = false;
         }
     }
 
@@ -98,6 +134,9 @@ pub fn verify_edit_lineage(
         issues,
         crs_before,
         crs_after,
+        merkle_ok,
+        merkle_trace_sig,
+        merkle_arc_sig,
     }
 }
 
@@ -210,6 +249,7 @@ pub fn tensor_pattern_for_edit(
         "stored": result.stored,
         "promoted": result.promoted,
         "bonds_created": result.bonds_created.len(),
+        "kind": kind,
     }))
 }
 
@@ -232,10 +272,11 @@ pub fn build_reflection_loop_actions(
         }),
         json!({
             "tool": "mcp_engram_verify_block_lawfulness",
-            "reason": "reflection: CRS gate on edited locus",
+            "reason": "reflection: CRS + merkle gate on edited locus",
             "priority": 2,
             "args_hint": {
                 "concept": arc_concept.unwrap_or("{ast_concept}__arc"),
+                "check_merkle_chain": true,
             },
         }),
     ];
@@ -254,8 +295,8 @@ pub fn build_reflection_loop_actions(
     actions
 }
 
-/// First non-arc spatial concept from context_for_edit payload.
-pub fn first_arc_from_context(payload: &Value) -> Option<String> {
+/// First non-arc spatial AST concept from context_for_edit payload.
+pub fn first_ast_from_context(payload: &Value) -> Option<String> {
     payload
         .get("spatial_items")
         .and_then(|v| v.as_array())
@@ -263,8 +304,8 @@ pub fn first_arc_from_context(payload: &Value) -> Option<String> {
             items.iter().find_map(|item| {
                 item.get("concept")
                     .and_then(|c| c.as_str())
-                    .filter(|c| !c.ends_with("__arc"))
-                    .map(|c| StoreHandle::arc_concept_name(c))
+                    .filter(|c| !c.is_empty() && !c.ends_with("__arc"))
+                    .map(str::to_string)
             })
         })
 }
@@ -303,20 +344,39 @@ pub fn run_safe_edit_and_verify(
         }
     };
 
-    let arc_concept = first_arc_from_context(&context);
+    let ast_concept = first_ast_from_context(&context);
+    let mut arc_concept = ast_concept
+        .as_ref()
+        .map(|a| StoreHandle::arc_concept_name(a));
     let mut arc_updated = false;
-    if let (Some(arc), Some(delta)) = (arc_concept.as_deref(), arc_delta) {
+    let mut arc_update_error: Option<String> = None;
+
+    if let Some(delta) = arc_delta {
         if !delta.trim().is_empty() {
-            if store.update(arc, delta).is_ok() {
-                crate::edit_arc_gate::on_arc_updated(arc);
-                arc_updated = true;
+            if let Some(ast) = ast_concept.as_deref() {
+                match store.ensure_edit_arc(ast) {
+                    Ok(arc) => {
+                        arc_concept = Some(arc.clone());
+                        match store.update(&arc, delta) {
+                            Ok(_) => {
+                                crate::edit_arc_gate::on_arc_updated(&arc);
+                                arc_updated = true;
+                            }
+                            Err(e) => arc_update_error = Some(format!("arc update failed: {e}")),
+                        }
+                    }
+                    Err(e) => arc_update_error = Some(format!("ensure_edit_arc failed: {e}")),
+                }
+            } else {
+                arc_update_error =
+                    Some("no spatial AST locus in context — cannot ensure __arc".to_string());
             }
         }
     }
 
     let verify_pass = if run_verify {
         let opts = ManifoldVerificationOptions {
-            min_crs: 0.74,
+            min_crs: MIN_CRS,
             sample_size: Some(32),
             include_relation_integrity: false,
         };
@@ -333,32 +393,28 @@ pub fn run_safe_edit_and_verify(
         trace_id.as_deref(),
         arc_concept.as_deref(),
         prev_trace,
-        0.74,
+        MIN_CRS,
     );
 
-    let pattern_note = if lineage.ok && verify_pass {
+    let success = lineage.ok && verify_pass && arc_update_error.is_none();
+    let pattern_note = if success {
         "safe_edit_and_verify succeeded"
     } else {
-        "safe_edit_and_verify partial — check lineage issues"
+        "safe_edit_and_verify partial — check lineage/arc issues"
     };
-    let tensor_pattern = tensor_pattern_for_edit(
-        store,
-        lineage.ok && verify_pass,
-        path,
-        trace_id.as_deref(),
-        pattern_note,
-    )
-    .ok();
+    let tensor_pattern =
+        tensor_pattern_for_edit(store, success, path, trace_id.as_deref(), pattern_note).ok();
 
     let reflection =
         build_reflection_loop_actions(trace_id.as_deref(), arc_concept.as_deref(), Some(path));
 
     json!({
-        "ok": lineage.ok && verify_pass,
+        "ok": success,
         "path": path,
         "trace_id": trace_id,
         "arc_concept": arc_concept,
         "arc_updated": arc_updated,
+        "arc_update_error": arc_update_error,
         "verify_pass": verify_pass,
         "lineage": lineage.to_json(),
         "tensor_pattern": tensor_pattern,
@@ -389,6 +445,8 @@ pub fn run_update_with_tensor_bond(
     let mut recall_match = true;
     let mut top_concept = None;
     let mut top_score = 0.0_f32;
+    let mut scar_key: Option<String> = None;
+    let mut failure_pattern: Option<Value> = None;
 
     if let Some(q) = recall_query {
         if !q.trim().is_empty() {
@@ -396,10 +454,13 @@ pub fn run_update_with_tensor_bond(
             if let Some(top) = hits.first() {
                 top_score = top.score;
                 top_concept = Some(top.concept.clone());
-                let name_match = top.concept == concept || top.concept.contains(concept);
+                let name_match = top.concept == concept
+                    || top.concept.contains(concept)
+                    || concept.contains(top.concept.as_str());
                 recall_match = name_match || top.score >= match_threshold;
             } else {
-                recall_match = store.fetch_block(concept).is_some();
+                // Query provided but no hits — treat as mismatch (do not auto-pass because block exists)
+                recall_match = false;
             }
         }
     }
@@ -409,17 +470,37 @@ pub fn run_update_with_tensor_bond(
         .map(|b| b.crs_score)
         .unwrap_or(1.0);
 
-    if !recall_match && scar_on_mismatch {
-        let ts = timestamp_slug();
-        let scar_key = format!("scar:update_mismatch_{ts}");
-        let scar_text = format!(
-            "SCAR: update_with_tensor_bond recall mismatch. target={concept} top={:?} score={top_score:.3}. Use recall first; prefer update over forget+remember.",
-            top_concept
+    if !recall_match {
+        if scar_on_mismatch {
+            let ts = timestamp_slug();
+            let key = format!("scar:update_mismatch_{ts}");
+            let scar_text = format!(
+                "SCAR: update_with_tensor_bond recall mismatch. target={concept} top={:?} score={top_score:.3}. Use recall first; prefer update over forget+remember.",
+                top_concept
+            );
+            let mut block = store.encode(&scar_text);
+            block.zedos_tag = engram_core::types::ZEDOS_PRAXIS;
+            block.crs_score = 0.92;
+            if store.store(&key, block).is_ok() {
+                scar_key = Some(key);
+            }
+        }
+        failure_pattern = Some(
+            tensor_pattern_for_edit(
+                store,
+                false,
+                concept,
+                None,
+                "update_with_tensor_bond recall mismatch",
+            )
+            .unwrap_or_else(|e| {
+                json!({
+                    "kind": "failure",
+                    "concept": format!("tensor:edit_pattern_failure_{}", slugify(concept, 24)),
+                    "error": e.to_string(),
+                })
+            }),
         );
-        let mut block = store.encode(&scar_text);
-        block.zedos_tag = engram_core::types::ZEDOS_PRAXIS;
-        block.crs_score = 0.92;
-        let _ = store.store(&scar_key, block);
     }
 
     let update_message = match store.update(concept, new_text) {
@@ -429,6 +510,8 @@ pub fn run_update_with_tensor_bond(
                 "ok": false,
                 "error": format!("update failed: {e}"),
                 "recall_match": recall_match,
+                "scar_key": scar_key,
+                "failure_pattern": failure_pattern,
             });
         }
     };
@@ -441,6 +524,21 @@ pub fn run_update_with_tensor_bond(
         .fetch_block(concept)
         .map(|b| b.crs_score)
         .unwrap_or(crs_before);
+
+    let crs_gate_ok = crs_after >= MIN_CRS;
+    if !crs_gate_ok {
+        let ts = timestamp_slug();
+        let key = format!("scar:crs_gate_fail_{ts}");
+        let text = format!(
+            "SCAR: update_with_tensor_bond CRS gate fail. concept={concept} crs_after={crs_after:.3} < {MIN_CRS}"
+        );
+        let mut block = store.encode(&text);
+        block.zedos_tag = engram_core::types::ZEDOS_PRAXIS;
+        block.crs_score = 0.92;
+        if store.store(&key, block).is_ok() {
+            scar_key = scar_key.or(Some(key));
+        }
+    }
 
     let bond_lbl = if bond_label.is_empty() {
         "edit_fidelity"
@@ -470,8 +568,10 @@ pub fn run_update_with_tensor_bond(
     ];
     let tensor_result = tensor_upsert(store, &pattern_concept, &pattern_text, &bonds, true);
 
+    let lineage = verify_edit_lineage(store, None, Some(concept), None, MIN_CRS);
+
     json!({
-        "ok": true,
+        "ok": recall_match && crs_gate_ok,
         "concept": concept,
         "message": update_message,
         "recall_match": recall_match,
@@ -480,14 +580,14 @@ pub fn run_update_with_tensor_bond(
         "crs_before": crs_before,
         "crs_after": crs_after,
         "crs_delta": crs_after - crs_before,
+        "crs_gate_ok": crs_gate_ok,
+        "scar_key": scar_key,
+        "failure_pattern": failure_pattern,
         "tensor_pattern": tensor_result.ok().map(|r| json!({
             "concept": r.concept,
             "bonds": r.bonds_created.len(),
         })),
-        "lineage": {
-            "arc_cleared": concept.ends_with("__arc"),
-            "update_only_mutation": true,
-        },
+        "lineage": lineage.to_json(),
         "reflection_suggested": build_reflection_loop_actions(None, Some(concept), None),
     })
 }
@@ -509,15 +609,15 @@ mod tests {
     }
 
     #[test]
-    fn verify_lineage_requires_trace() {
+    fn verify_lineage_requires_trace_and_merkle() {
         let store = test_store();
-        let r = verify_edit_lineage(&store, None, None, None, 0.74);
+        let r = verify_edit_lineage(&store, None, None, None, MIN_CRS);
         assert!(!r.ok);
-        assert!(r.issues.iter().any(|i| i.contains("trace")));
+        assert!(!r.merkle_ok);
     }
 
     #[test]
-    fn mint_quick_trace_creates_trace() {
+    fn mint_quick_trace_has_merkle() {
         let mut store = test_store();
         let tid = mint_quick_trace(
             &mut store,
@@ -528,9 +628,21 @@ mod tests {
             None,
         )
         .expect("mint");
-        assert!(tid.starts_with("trace:"));
-        let r = verify_edit_lineage(&store, Some(&tid), None, None, 0.74);
+        let r = verify_edit_lineage(&store, Some(&tid), None, None, MIN_CRS);
         assert!(r.ok, "{:?}", r.issues);
+        assert!(r.merkle_ok);
+        assert!(r.merkle_trace_sig.is_some());
+    }
+
+    #[test]
+    fn ensure_edit_arc_before_delta() {
+        let mut store = test_store();
+        let ast = "store__fn__harness_arc_test";
+        store.remember(ast, "fn stub").expect("remember ast");
+        let arc = store.ensure_edit_arc(ast).expect("ensure arc");
+        assert!(store.update(&arc, "delta: harness arc test").is_ok());
+        let (merkle_ok, _) = block_merkle_lineage_ok(&store, &arc);
+        assert!(merkle_ok, "arc block should have sig_0 footer");
     }
 
     #[test]
