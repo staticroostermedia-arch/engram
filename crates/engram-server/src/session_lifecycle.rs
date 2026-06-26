@@ -75,6 +75,9 @@ pub fn commit_minimal_session_end(
         }
     }
 
+    let goal_hygiene = crate::goal_hygiene::run_session_end_hygiene(lock);
+    let tensor_consolidation = crate::solid_state_tensor::run_solid_tensor_consolidation(lock);
+
     let handoff = lock.persist_session_handoff_latest(summary, &key);
     let trace_concepts = lock.collect_program_trace_concepts_for_handoff(summary, 8);
     let program_traces_var = crate::context_var::refresh_program_traces_var(lock, &trace_concepts)
@@ -96,6 +99,8 @@ pub fn commit_minimal_session_end(
         "session_end_key": key,
         "boundary_trace": boundary_trace_key,
         "handoff": handoff,
+        "goal_hygiene": goal_hygiene.to_json(),
+        "tensor_consolidation": tensor_consolidation.to_json(),
         "program_traces_var": program_traces_var,
         "message": format!("✓ Minimal session_end committed: {}", key),
         "next_wake_hint": "mcp_engram_session_start(intent=...) → read helper:session_handoff_latest → mcp_engram_get_continuation_bundle if deep context needed"

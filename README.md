@@ -55,6 +55,7 @@ Engram is particularly well-suited for:
 | | Flat vector / markdown | Engram |
 |--|------------------------|--------|
 | Storage | append-log / chunks | Structured blocks with integrity checks (details: [GEOMETRIC_MEMORY](docs/GEOMETRIC_MEMORY.md)) |
+| Context scale | bounded context window | **Solid-State Tensor** — NVMe-backed q/p entries + bonds; subgraph recall via MCP |
 | Wake | cold start every time | `session_start` restores goals, last session, suggested next steps |
 | Integrity | none | `verify_*`, scars, lawfulness gates (CRS ≥ 0.74) |
 | Code context | RAG chunks | `context_for_edit` — file-scoped memory before you edit |
@@ -132,6 +133,20 @@ Full guide: [docs/LEG_BROWSER.md](docs/LEG_BROWSER.md). Safe serve restart (does
 
 Fixed **256KB HolographicBlocks** (.leg3): 8192D phase (q), momentum (p), CRS lawfulness, BLAKE3 Merkle, spatial AABB. **VSA calculus** + **sheaf gluing** via `processes/*.toml` (rituals, harness, monitor). **NREM / ego.leg3** for long-horizon continuity. Details: [docs/GEOMETRIC_MEMORY.md](docs/GEOMETRIC_MEMORY.md), [docs/RITUALS.md](docs/RITUALS.md), [docs/HARNESS_INJECTION.md](docs/HARNESS_INJECTION.md).
 
+### Solid-State Tensor — NVMe as context extension
+
+On fast NVMe (e.g. Samsung T700) with **cuFile/GPUDirect** and **`full_bvh_gpu`** recall, the cold manifold on disk acts as a **cryptographically verified extension of the agent context window** — not a separate vector DB you query occasionally.
+
+Each concept is a persistent **tensor entry**: unit-hypersphere **q**, momentum **p**, dynamic **bonds** (relation blocks + Merkle lineage), CRS ≥ 0.74. The lean path surfaces only the relevant subgraph:
+
+```
+tensor_upsert → relate/bonds → promote_hot → tensor_recall (q preview + edges + lineage)
+```
+
+**MCP tools:** `mcp_engram_tensor_upsert`, `mcp_engram_tensor_recall` (plus lean default `recall`, `query_with_momentum` when trending matters). Poll `mcp_engram_get_backend_readiness` until `nvme_recall_ready: true` on large stores. Ritual: `processes/ritual/solid-tensor-consolidation.toml` (p-drift OP_ADD at `session_end`).
+
+Demo: `cargo test -p engram-server solid_state_tensor_verification_harness` or [examples/tensor_demo.py](examples/tensor_demo.py).
+
 **Linguistic calculus** (words + numbers in the same sheaf): [docs/CATEGORICAL_LINGUISTIC_CALCULUS.md](docs/CATEGORICAL_LINGUISTIC_CALCULUS.md).
 
 ```mermaid
@@ -141,11 +156,13 @@ flowchart LR
   H --> W
 ```
 
-## What's new in v0.7.0-beta.3
+## What's new (v0.7.0-beta.4+)
 
+- **Solid-State Tensor MVP:** NVMe-backed geometric memory as context extension — `tensor_upsert` / `tensor_recall`, bond subgraph delivery, momentum consolidation ritual, hermetic verification harness.
+- **Goal hygiene:** 72h stale autopause + `session_end` audit (active goal stack stays bounded).
 - **Code atlas continuity v2:** situated edit memory at the locus — atlas v2.1, `evolution_at_locus`, hard wake gate, `post_edit_palette`, update coherence. [CODE_ATLAS_CONTINUITY.md](docs/CODE_ATLAS_CONTINUITY.md)
-- **Large-store perf:** bounded NREM + relation batching — wake and evolution recon in seconds on ~192k blocks.
-- **79 MCP tools** registered; lean default remains **8 essential**.
+- **Large-store perf:** relational lean v2, cuFile DMA readiness, bounded NREM + relation batching — wake on ~192k blocks in seconds when BVH is warm.
+- **81 MCP tools** registered (`tensor_*` + existing surface); lean default remains **8 essential**.
 - **LEG evolution panel:** `./scripts/leg --live` + `GET /api/code-atlas?evolution=1`.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
@@ -184,6 +201,7 @@ All operations return CRS (Coherence-Reliability Score) and can be verified with
 |------|----------------|
 | [examples/hello-engram-agent.py](examples/hello-engram-agent.py) | Minimal MCP loop |
 | [examples/mcp_client.py](examples/mcp_client.py) | Session + recall + relate + verify |
+| [examples/tensor_demo.py](examples/tensor_demo.py) | Solid-State Tensor MCP sequence |
 | [examples/ritual_verify.md](examples/ritual_verify.md) | Code Edit Ritual walkthrough |
 | [docs/examples/marketplace_demo.md](docs/examples/marketplace_demo.md) | Grok plugin demo |
 

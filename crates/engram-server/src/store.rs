@@ -220,6 +220,21 @@ impl AccessIndex {
         self.map.get(concept).copied()
     }
 
+    /// All indexed concepts whose name starts with `prefix` (for goal hygiene on large manifolds).
+    pub fn keys_with_prefix(&self, prefix: &str) -> Vec<String> {
+        self.map
+            .keys()
+            .filter(|k| k.starts_with(prefix))
+            .cloned()
+            .collect()
+    }
+
+    #[cfg(test)]
+    pub fn set_last_accessed_for_test(&mut self, concept: &str, ts: u64) {
+        self.map.insert(concept.to_string(), ts);
+        self.dirty = true;
+    }
+
     /// Return the N most recently accessed concepts, sorted newest first.
     pub fn recent(&self, n: usize) -> Vec<(String, u64)> {
         let mut entries: Vec<(String, u64)> =
@@ -253,6 +268,23 @@ impl AccessIndex {
                 tracing::debug!("AccessIndex flushed: {} entries", self.map.len());
             }
         }
+    }
+}
+
+/// Resolve where `access_index.bin` and `relation_index.json` live for a store path.
+/// Production stalks under `~/.engram/` share the global index; isolated paths get per-store indexes.
+fn index_root_for_store(store_path: &std::path::Path) -> PathBuf {
+    let default_engram = PathBuf::from(shellexpand::tilde("~/.engram").into_owned());
+    let store = store_path
+        .canonicalize()
+        .unwrap_or_else(|_| store_path.to_path_buf());
+    let engram = default_engram
+        .canonicalize()
+        .unwrap_or(default_engram);
+    if store.starts_with(&engram) {
+        engram
+    } else {
+        store_path.to_path_buf()
     }
 }
 
@@ -1116,6 +1148,13 @@ pub(crate) fn normalize_spatial_context(raw: &str) -> Result<SpatialContextNorma
 // ── StoreHandle ───────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Result of `apply_goal_status_change` (shared by MCP + goal_hygiene autopause).
+pub struct GoalStatusChangeResult {
+    pub removed_serves: bool,
+    pub primary_restore: PrimaryMarkerRestore,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PrimaryMarkerRestore {
     Unchanged,
     Restored(String),
@@ -1383,8 +1422,9 @@ impl StoreHandle {
 
         let engram_root = PathBuf::from(shellexpand::tilde("~/.engram").into_owned());
         let sheaf_config_path = engram_root.join("sheaf.toml");
-        let access_index = AccessIndex::load(&engram_root);
-        let relation_index = RelationIndex::load(&engram_root);
+        let index_root = index_root_for_store(std::path::Path::new(&expanded));
+        let access_index = AccessIndex::load(&index_root);
+        let relation_index = RelationIndex::load(&index_root);
 
         let disable_sheaf = std::env::var("ENGRAM_DISABLE_SHEAF").is_ok();
         let _sheaf_lean = std::env::var("ENGRAM_SHEAF_LEAN").as_deref() == Ok("1");
@@ -1631,10 +1671,10 @@ impl StoreHandle {
         let expanded = shellexpand::tilde(path).into_owned();
         std::fs::create_dir_all(&expanded).ok();
 
-        let engram_root = PathBuf::from(shellexpand::tilde("~/.engram").into_owned());
+        let index_root = index_root_for_store(std::path::Path::new(&expanded));
         // Load only the lightweight indexes; skip GPU backends and big matrices.
-        let access_index = AccessIndex::load(&engram_root);
-        let relation_index = RelationIndex::load(&engram_root);
+        let access_index = AccessIndex::load(&index_root);
+        let relation_index = RelationIndex::load(&index_root);
 
         Self {
             backend: Backend::Single(CpuBackend::new(&expanded)),
@@ -2791,6 +2831,37 @@ impl StoreHandle {
     /// Bounded concept listing. With `prefix`, gathers from hot_set, access recency,
     /// and relation index before a full backend scan. Without prefix, returns at most
     /// `limit` concepts and sets `truncated` when the manifold is larger.
+    /// Collect `goal:*` concept names without a full-manifold `list()` scan when large.
+    pub fn list_goal_concepts(&self) -> Vec<String> {
+        use std::collections::HashSet;
+        let mut seen = HashSet::new();
+        let mut out = Vec::new();
+        let mut push = |c: String| {
+            if c.starts_with("goal:") && seen.insert(c.clone()) {
+                out.push(c);
+            }
+        };
+        for c in self.access_index.keys_with_prefix("goal:") {
+            push(c);
+        }
+        for e in &self.relation_index.entries {
+            push(e.from.clone());
+            push(e.to.clone());
+        }
+        if let Ok(set) = self.hot_set.read() {
+            for c in set.iter() {
+                push(c.clone());
+            }
+        }
+        if self.leg_block_count() <= Self::LARGE_MANIFOLD_THRESHOLD {
+            for c in self.backend.list() {
+                push(c);
+            }
+        }
+        out.sort();
+        out
+    }
+
     pub fn list_concepts_filtered(
         &self,
         prefix: Option<&str>,
@@ -4358,6 +4429,48 @@ impl StoreHandle {
             "✓ Relation stored: {} →[{}]→ {} as '{}'",
             concept_a, label, concept_b, rel_key
         ))
+    }
+
+    /// Update goal status block + serving-stack hygiene (MCP `goal_update_status` + autopause).
+    pub fn apply_goal_status_change(
+        &mut self,
+        goal: &str,
+        status: &str,
+        note: &str,
+    ) -> anyhow::Result<GoalStatusChangeResult> {
+        let mut block = self
+            .fetch_block_high_priority(goal)
+            .ok_or_else(|| anyhow::anyhow!("Goal not found: {}", goal))?;
+        let text = goal_block_text(&block);
+        let mut new_text = rewrite_goal_status(&text, status);
+        if !note.is_empty() {
+            new_text.push_str(&format!(
+                "\n\n**completion_note:** {}\n**status_changed_at:** {}\n",
+                note,
+                chrono::Utc::now().to_rfc3339()
+            ));
+        }
+        engram_core::storage::write_provlog(&mut block, &new_text);
+        block.payload = [0u8; 122584];
+        for (i, b) in new_text.as_bytes().iter().take(122584).enumerate() {
+            block.payload[i] = *b;
+        }
+        if status == "completed" || status == "demoted" {
+            block.crs_score = 0.85;
+        }
+        self.store(goal, block)?;
+        self.invalidate_continuation_bundle_cache();
+
+        let mut removed_serves = false;
+        let mut primary_restore = PrimaryMarkerRestore::Unchanged;
+        if status == "completed" || status == "demoted" {
+            removed_serves = self.unrelate("primary_goal", "serves", goal);
+            primary_restore = self.restore_primary_goal_marker_after_complete(goal);
+        }
+        Ok(GoalStatusChangeResult {
+            removed_serves,
+            primary_restore,
+        })
     }
 
     /// When `primary_goal` marker still points at a completed/demoted goal, restore parent or clear to unset.

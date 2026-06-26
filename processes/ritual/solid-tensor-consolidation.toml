@@ -1,0 +1,54 @@
+# agent:engram.ritual.solid-tensor-consolidation
+
+[process]
+name = "agent:engram.ritual.solid-tensor-consolidation"
+zedos_type = "ritual"
+phase_seed = "0xSST202606SEED..."
+
+[category]
+object = "solid_state_tensor"
+morphism = "OP_ADD"
+sheaf_role = "Momentum-weighted consolidation of high-drift tensor entries (p-tensor) into presentation stratum"
+h1_handler = "OP_INVERT"
+
+[mcp_tools]
+list = [
+    "mcp_engram_tensor_recall",
+    "mcp_engram_tensor_upsert",
+    "mcp_engram_promote_hot",
+    "mcp_engram_quick_trace",
+]
+
+[requires]
+list = ["ritual:wake_up_anchor", "primary_goal"]
+
+[produces]
+list = [
+    "tensor:*",
+    "trace:*_solid_tensor_consolidation",
+    "presentation_stratum",
+]
+
+[invariants]
+list = [
+    "leg3_binary_vector_isomorphism",
+    "unit_hypersphere",
+    "p_momentum_preserved_on_update",
+    "crs_0.74_gate",
+    "allowed_transforms_only",
+    "merkle_lineage",
+]
+
+[tensor]
+entry_prefix = "tensor:"
+stale_p_drift_threshold = 0.15
+consolidation_morphism = "OP_ADD"
+promote_on_upsert = true
+
+[timeout_ms]
+value = 45000
+
+[notes]
+# Solid-State Tensor MVP ritual: lightly LogoPhysics-style self-org via momentum-driven
+# OP_ADD consolidation on tensor: entries with elevated p-drift. Complements relational lean v2
+# + presentation stratum + cuFile hot path. Loaded at session_start with other process sheaf tomls.

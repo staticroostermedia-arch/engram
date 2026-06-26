@@ -1137,6 +1137,67 @@ fn tool_list() -> Value {
                 }
             },
             {
+                "name": "mcp_engram_tensor_recall",
+                "description": "Solid-State Tensor MVP: lean subgraph + VSA q/p vector delivery for LLM context extension. Combines semantic recall, 1-hop bond neighbors (ZEDOS_RELATION / relation_index), and optional presentation stratum bias. Returns structured JSON: entries (q_preview, norm, crs, bonds, lineage) + edges. Lean default — no full manifold scan.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "Natural language intent to surface relevant tensor entries"
+                        },
+                        "k": {
+                            "type": "integer",
+                            "description": "Max seed hits (default 5, max 20)"
+                        },
+                        "include_presentation": {
+                            "type": "boolean",
+                            "description": "Bias with presentation stratum tensor/design hits (default true)"
+                        },
+                        "scope": {
+                            "type": "string",
+                            "description": "Recall scope: anchors | hot | all (default follows ENGRAM_MEMORY_MODE)"
+                        }
+                    },
+                    "required": ["query"]
+                }
+            },
+            {
+                "name": "mcp_engram_tensor_upsert",
+                "description": "Solid-State Tensor MVP: create/update a persistent geometric entry (8192D unit q + momentum p in .leg3) and optional dynamic bonds via OP_BIND ZEDOS_RELATION edges. Wires remember/update + relate + auto-relate to primary + optional promote_hot. Concept names without ':' prefix get tensor: namespace.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "concept": {
+                            "type": "string",
+                            "description": "Concept name (e.g. tensor:my_entry or bare name)"
+                        },
+                        "text": {
+                            "type": "string",
+                            "description": "Self-contained text encoded into geometric block"
+                        },
+                        "bonds": {
+                            "type": "array",
+                            "description": "Optional bond list [{from, to, label}]",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "from": { "type": "string" },
+                                    "to": { "type": "string" },
+                                    "label": { "type": "string" }
+                                },
+                                "required": ["from", "to", "label"]
+                            }
+                        },
+                        "promote": {
+                            "type": "boolean",
+                            "description": "Hot-promote entry after write (default true)"
+                        }
+                    },
+                    "required": ["concept", "text"]
+                }
+            },
+            {
                 "name": "mcp_engram_thought_tile_draft_from_chain",
                 "description": "WS-2: Build verified_sequence_v0 draft payload from trace chain without minting a tile. Use when condensation_hint fires or before thought_tile_create.",
                 "inputSchema": {
@@ -4227,6 +4288,31 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                         }
                     }
 
+                    let goal_hygiene = crate::goal_hygiene::run_session_end_hygiene(&mut lock);
+                    let tensor_consolidation =
+                        crate::solid_state_tensor::run_solid_tensor_consolidation(&mut lock);
+                    if !tensor_consolidation.consolidated.is_empty() {
+                        response.push_str(&format!(
+                            "\n  → Solid-state tensor consolidation: {} entry/entries OP_ADD (p_drift≥{:.2})",
+                            tensor_consolidation.consolidated.len(),
+                            crate::solid_state_tensor::STALE_P_DRIFT_THRESHOLD
+                        ));
+                    }
+                    if goal_hygiene.active_count > crate::goal_hygiene::ACTIVE_GOAL_WARN_THRESHOLD {
+                        response.push_str(&format!(
+                            "\n  → Goal hygiene: {} active goals (threshold {}) — complete or demote stale arcs",
+                            goal_hygiene.active_count,
+                            crate::goal_hygiene::ACTIVE_GOAL_WARN_THRESHOLD
+                        ));
+                    }
+                    if !goal_hygiene.autopaused.is_empty() {
+                        response.push_str(&format!(
+                            "\n  → Goal autopause: demoted {} stale active goal(s) (>{})",
+                            goal_hygiene.autopaused.len(),
+                            goal_hygiene.stale_threshold_hours
+                        ));
+                    }
+
                     let handoff_packet = lock.persist_session_handoff_latest(&summary, &key);
                     let trace_concepts =
                         lock.collect_program_trace_concepts_for_handoff(&summary, 8);
@@ -4272,6 +4358,8 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                         "next_wake_hint": next_wake_hint,
                         "compression_manifest": compression_manifest,
                         "program_traces_var": program_traces_var,
+                        "goal_hygiene": goal_hygiene.to_json(),
+                        "tensor_consolidation": tensor_consolidation.to_json(),
                     });
                     let response_text =
                         serde_json::to_string_pretty(&response_json).unwrap_or(response);
@@ -4934,65 +5022,37 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
             }
 
             let mut lock = store.lock().unwrap();
-            // Hot path upgrade: goals are high-priority for intentional self-model continuity.
-            if let Some(mut block) = lock.fetch_block_high_priority(&goal) {
-                let text = crate::store::goal_block_text(&block);
-                let mut new_text = crate::store::rewrite_goal_status(&text, &status);
-                if !note.is_empty() {
-                    new_text.push_str(&format!(
-                        "\n\n**completion_note:** {}\n**status_changed_at:** {}\n",
-                        note,
-                        chrono::Utc::now().to_rfc3339()
-                    ));
-                }
-                engram_core::storage::write_provlog(&mut block, &new_text);
-                block.payload = [0u8; 122584];
-                for (i, b) in new_text.as_bytes().iter().take(122584).enumerate() {
-                    block.payload[i] = *b;
-                }
-
-                block.crs_score = if status == "completed" || status == "demoted" {
-                    0.85
-                } else {
-                    block.crs_score
-                };
-
-                match lock.store(&goal, block) {
-                    Ok(_) => {
-                        lock.invalidate_continuation_bundle_cache();
-                        let mut msg = format!("✓ Goal {} status updated to {}", goal, status);
-                        if status == "completed" || status == "demoted" {
-                            let removed = lock.unrelate("primary_goal", "serves", &goal);
-                            if removed {
+            match lock.apply_goal_status_change(&goal, &status, &note) {
+                Ok(result) => {
+                    let mut msg = format!("✓ Goal {} status updated to {}", goal, status);
+                    if status == "completed" || status == "demoted" {
+                        if result.removed_serves {
+                            msg.push_str(&format!(
+                                "\n✓ Removed primary_goal --serves--> {} (use mcp_engram_demote_from_context for full archival trace)",
+                                goal
+                            ));
+                        }
+                        match result.primary_restore {
+                            crate::store::PrimaryMarkerRestore::Restored(parent) => {
                                 msg.push_str(&format!(
-                                    "\n✓ Removed primary_goal --serves--> {} (use mcp_engram_demote_from_context for full archival trace)",
+                                    "\n✓ primary_goal marker restored to {} (was {})",
+                                    parent, goal
+                                ));
+                            }
+                            crate::store::PrimaryMarkerRestore::Cleared => {
+                                msg.push_str(&format!(
+                                    "\n✓ primary_goal marker cleared (was {})",
                                     goal
                                 ));
                             }
-                            match lock.restore_primary_goal_marker_after_complete(&goal) {
-                                crate::store::PrimaryMarkerRestore::Restored(parent) => {
-                                    msg.push_str(&format!(
-                                        "\n✓ primary_goal marker restored to {} (was {})",
-                                        parent, goal
-                                    ));
-                                }
-                                crate::store::PrimaryMarkerRestore::Cleared => {
-                                    msg.push_str(&format!(
-                                        "\n✓ primary_goal marker cleared (was {})",
-                                        goal
-                                    ));
-                                }
-                                crate::store::PrimaryMarkerRestore::Unchanged => {}
-                            }
+                            crate::store::PrimaryMarkerRestore::Unchanged => {}
                         }
-                        json!({ "content": [{ "type": "text", "text": msg }] })
                     }
-                    Err(e) => {
-                        json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true })
-                    }
+                    json!({ "content": [{ "type": "text", "text": msg }] })
                 }
-            } else {
-                json!({ "content": [{ "type": "text", "text": format!("Goal not found: {}", goal) }], "isError": true })
+                Err(e) => {
+                    json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true })
+                }
             }
         }
         "mcp_engram_demote_from_context" => {
@@ -6003,6 +6063,92 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
             }
         }
 
+        "mcp_engram_tensor_recall" => {
+            let query = args["query"].as_str().unwrap_or("").trim().to_string();
+            if query.is_empty() {
+                return json!({
+                    "content": [{ "type": "text", "text": "Error: query required." }],
+                    "isError": true
+                });
+            }
+            let k = args["k"].as_u64().unwrap_or(5).min(20) as usize;
+            let include_presentation = args
+                .get("include_presentation")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(true);
+            let mut lock = match store.lock() {
+                Ok(l) => l,
+                Err(p) => {
+                    return json!({
+                        "content": [{ "type": "text", "text": format!("Error: store mutex poisoned: {}", p) }],
+                        "isError": true
+                    });
+                }
+            };
+            let result = crate::solid_state_tensor::tensor_subgraph_recall(
+                &mut lock,
+                &query,
+                k,
+                include_presentation,
+            );
+            let payload = crate::solid_state_tensor::tensor_subgraph_to_json(&result);
+            let text = serde_json::to_string_pretty(&payload).unwrap_or_else(|_| "{}".to_string());
+            json!({ "content": [{ "type": "text", "text": text }] })
+        }
+        "mcp_engram_tensor_upsert" => {
+            let concept = args["concept"].as_str().unwrap_or("").trim().to_string();
+            let text = args["text"].as_str().unwrap_or("").trim().to_string();
+            if concept.is_empty() || text.is_empty() {
+                return json!({
+                    "content": [{ "type": "text", "text": "Error: concept and text required." }],
+                    "isError": true
+                });
+            }
+            let promote = args.get("promote").and_then(|v| v.as_bool()).unwrap_or(true);
+            let mut bonds = Vec::new();
+            if let Some(arr) = args.get("bonds").and_then(|v| v.as_array()) {
+                for item in arr {
+                    bonds.push(crate::solid_state_tensor::BondSpec {
+                        from: item
+                            .get("from")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string(),
+                        to: item
+                            .get("to")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string(),
+                        label: item
+                            .get("label")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string(),
+                    });
+                }
+            }
+            let mut lock = match store.lock() {
+                Ok(l) => l,
+                Err(p) => {
+                    return json!({
+                        "content": [{ "type": "text", "text": format!("Error: store mutex poisoned: {}", p) }],
+                        "isError": true
+                    });
+                }
+            };
+            match crate::solid_state_tensor::tensor_upsert(&mut lock, &concept, &text, &bonds, promote)
+            {
+                Ok(result) => {
+                    let text = serde_json::to_string_pretty(&result)
+                        .unwrap_or_else(|_| "{}".to_string());
+                    json!({ "content": [{ "type": "text", "text": text }] })
+                }
+                Err(e) => json!({
+                    "content": [{ "type": "text", "text": format!("Error: {}", e) }],
+                    "isError": true
+                }),
+            }
+        }
         "mcp_engram_relate" => {
             let concept_a = args_str(args, &["concept_a", "from", "source"])
                 .unwrap_or("")

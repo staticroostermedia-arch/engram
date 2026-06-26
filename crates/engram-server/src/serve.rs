@@ -2843,15 +2843,18 @@ async fn get_hygiene(State(store): State<SharedStore>) -> impl IntoResponse {
     }
 
     for goal in &active_goals {
-        let last = lock.access_index.last_accessed(goal).unwrap_or(0);
-        if now.saturating_sub(last) > 72 * 3600 {
+        let Some(block) = lock.fetch_block_high_priority(goal) else {
+            continue;
+        };
+        if crate::goal_hygiene::is_goal_stale(&lock, goal, &block, now) {
+            let hours = crate::goal_hygiene::stale_threshold_secs() / 3600;
             issues.push(serde_json::json!({
                 "severity": "info",
                 "code": "stale_goal",
-                "message": format!("Goal served but not accessed in 72h+: {}", goal),
+                "message": format!("Goal served but not accessed in {}h+: {}", hours, goal),
                 "concepts": [goal],
-                "agent_action": "goal update with status:demoted and demotion trace",
-                "fix_tool": "mcp_engram_demote_from_context"
+                "agent_action": "Autopause at session_end or goal_update_status(demoted)",
+                "fix_tool": "mcp_engram_goal_update_status"
             }));
         }
         let completes = lock.search_relations(goal, Some("completes_goal"), "to");
