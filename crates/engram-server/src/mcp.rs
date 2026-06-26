@@ -1138,25 +1138,29 @@ fn tool_list() -> Value {
             },
             {
                 "name": "mcp_engram_tensor_recall",
-                "description": "Solid-State Tensor MVP: lean subgraph + VSA q/p vector delivery for LLM context extension. Combines semantic recall, 1-hop bond neighbors (ZEDOS_RELATION / relation_index), and optional presentation stratum bias. Returns structured JSON: entries (q_preview, norm, crs, bonds, lineage) + edges. Lean default — no full manifold scan.",
+                "description": "Solid-State Tensor — addressable working memory for agents. Pin mode: query contains tensor:/design: name → direct fetch (bypasses relational path). Semantic mode: BVH over tensor:/design: only when nvme_recall_ready (poll get_backend_readiness). Optional seed_concept forces a named entry. Caps: 12 entries / 32 edges (truncated flag when exceeded). 1-hop bond expansion is tensor:/design: only.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
                         "query": {
                             "type": "string",
-                            "description": "Natural language intent to surface relevant tensor entries"
+                            "description": "Pin: tensor:my_entry or design:foo. Semantic: natural language (requires nvme_recall_ready)."
                         },
                         "k": {
                             "type": "integer",
-                            "description": "Max seed hits (default 5, max 20)"
+                            "description": "Max semantic seed hits (default 5, max 20)"
                         },
                         "include_presentation": {
                             "type": "boolean",
-                            "description": "Bias with presentation stratum tensor/design hits (default true)"
+                            "description": "Deprecated — presentation stratum not used on tensor path (ignored)"
                         },
                         "scope": {
                             "type": "string",
-                            "description": "Recall scope: anchors | hot | all (default follows ENGRAM_MEMORY_MODE)"
+                            "description": "Deprecated — tensor recall uses dedicated pin/semantic paths"
+                        },
+                        "seed_concept": {
+                            "type": "string",
+                            "description": "Optional tensor:/design: concept to force-include (post-upsert pin)"
                         }
                     },
                     "required": ["query"]
@@ -6075,7 +6079,12 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
             let include_presentation = args
                 .get("include_presentation")
                 .and_then(|v| v.as_bool())
-                .unwrap_or(true);
+                .unwrap_or(false);
+            let seed_concept = args
+                .get("seed_concept")
+                .and_then(|v| v.as_str())
+                .map(str::trim)
+                .filter(|s| !s.is_empty());
             let mut lock = match store.lock() {
                 Ok(l) => l,
                 Err(p) => {
@@ -6090,6 +6099,7 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                 &query,
                 k,
                 include_presentation,
+                seed_concept,
             );
             let payload = crate::solid_state_tensor::tensor_subgraph_to_json(&result);
             let text = serde_json::to_string_pretty(&payload).unwrap_or_else(|_| "{}".to_string());

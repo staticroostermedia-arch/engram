@@ -3,7 +3,6 @@
 //! Projects existing `.leg3` HolographicBlocks (8192D unit q + momentum p) and relation
 //! sidecar edges into a structured tensor view for LLM context extension via MCP.
 
-use crate::presentation_stratum::{gather_surface_ranked, is_surface_eligible};
 use crate::store::StoreHandle;
 use engram_core::types::ZEDOS_RELATION;
 use engram_core::Complex32;
@@ -13,6 +12,10 @@ use std::collections::HashSet;
 
 /// Prefix for tensor entries created via `tensor_upsert` when concept has no namespace.
 pub const TENSOR_ENTRY_PREFIX: &str = "tensor:";
+
+/// Hard caps for agent-facing tensor subgraph delivery.
+pub const MAX_TENSOR_ENTRIES: usize = 12;
+pub const MAX_TENSOR_EDGES: usize = 32;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct TensorQSummary {
@@ -60,6 +63,8 @@ pub struct TensorSubgraphResult {
     pub query: String,
     pub recall_path: String,
     pub recall_mode: String,
+    pub nvme_recall_ready: bool,
+    pub truncated: bool,
     pub entries: Vec<TensorEntry>,
     pub edges: Vec<TensorBond>,
     pub presentation_hits: Vec<String>,
@@ -252,75 +257,167 @@ pub fn project_tensor_entry(store: &StoreHandle, concept: &str) -> Option<Tensor
     })
 }
 
-/// Lean subgraph recall: semantic hits + 1-hop bond neighbors + presentation stratum bias.
+/// Extract a tensor/design concept name from a pin-style query (direct fetch, no relational path).
+pub fn extract_tensor_pin(query: &str) -> Option<String> {
+    let q = query.trim();
+    if q.is_empty() {
+        return None;
+    }
+    let first = q
+        .split_whitespace()
+        .next()
+        .unwrap_or(q)
+        .trim_matches(|c: char| !c.is_alphanumeric() && c != ':' && c != '_' && c != '-');
+    if is_tensor_eligible(first) {
+        return Some(first.to_string());
+    }
+    for token in q.split(|c: char| c.is_whitespace() || c == ',' || c == ';') {
+        let t = token.trim().trim_matches(|c: char| {
+            !c.is_alphanumeric() && c != ':' && c != '_' && c != '-'
+        });
+        if is_tensor_eligible(t) {
+            return Some(t.to_string());
+        }
+    }
+    None
+}
+
+fn tensor_provlog_pin_candidates(store: &StoreHandle, query: &str, limit: usize) -> Vec<String> {
+    let needle = query.trim().to_ascii_lowercase();
+    if needle.len() < 10 {
+        return Vec::new();
+    }
+    let mut hits = Vec::new();
+    for concept in store.list() {
+        if !is_tensor_eligible(&concept) {
+            continue;
+        }
+        let Some(block) = store.fetch_block(&concept) else {
+            continue;
+        };
+        let text = engram_core::storage::read_provlog(&block).to_ascii_lowercase();
+        if text.contains(&needle) {
+            hits.push(concept);
+            if hits.len() >= limit {
+                break;
+            }
+        }
+    }
+    hits
+}
+
+fn push_tensor_entry(
+    store: &StoreHandle,
+    concept: &str,
+    seen: &mut HashSet<String>,
+    entries: &mut Vec<TensorEntry>,
+    edges: &mut Vec<TensorBond>,
+) {
+    if !is_tensor_eligible(concept) || !seen.insert(concept.to_string()) {
+        return;
+    }
+    if let Some(entry) = project_tensor_entry(store, concept) {
+        for b in &entry.bonds {
+            edges.push(b.clone());
+        }
+        entries.push(entry);
+    }
+}
+
+fn enforce_tensor_bounds(entries: &mut Vec<TensorEntry>, edges: &mut Vec<TensorBond>) -> bool {
+    let mut truncated = false;
+    if entries.len() > MAX_TENSOR_ENTRIES {
+        entries.truncate(MAX_TENSOR_ENTRIES);
+        truncated = true;
+    }
+
+    // Rebuild edges from kept entries; drop any bond whose endpoint was capped out.
+    let kept: HashSet<String> = entries.iter().map(|e| e.concept.clone()).collect();
+    let mut reconciled = Vec::new();
+    for entry in entries.iter() {
+        for b in &entry.bonds {
+            if kept.contains(&b.from) && kept.contains(&b.to) {
+                reconciled.push(b.clone());
+            }
+        }
+    }
+    *edges = reconciled;
+
+    if edges.len() > MAX_TENSOR_EDGES {
+        edges.truncate(MAX_TENSOR_EDGES);
+        truncated = true;
+    }
+    truncated
+}
+
+/// Tensor-first subgraph recall: pin/seed direct fetch, semantic BVH only when NVMe-ready.
 pub fn tensor_subgraph_recall(
     store: &mut StoreHandle,
     query: &str,
     k: usize,
-    include_presentation: bool,
+    _include_presentation: bool,
+    seed_concept: Option<&str>,
 ) -> TensorSubgraphResult {
     let k = k.clamp(1, 20);
     let recall_mode = store.recall_mode().to_string();
-    let (memories, _scope) = store.recall_scoped(query, k, None);
-    let recall_path = store.last_recall_path().to_string();
+    let nvme_ready = crate::injection_priority::nvme_recall_path_ready(&recall_mode);
 
     let mut seen = HashSet::new();
     let mut entries = Vec::new();
     let mut edges = Vec::new();
+    let mut recall_path = String::from("tensor_pin");
 
-    for m in &memories {
-        if !seen.insert(m.concept.clone()) {
-            continue;
-        }
-        if let Some(entry) = project_tensor_entry(store, &m.concept) {
-            for b in &entry.bonds {
-                edges.push(b.clone());
-            }
-            entries.push(entry);
+    if let Some(seed) = seed_concept.map(normalize_concept_name) {
+        if is_tensor_eligible(&seed) {
+            push_tensor_entry(store, &seed, &mut seen, &mut entries, &mut edges);
+            recall_path = "tensor_seed_concept".to_string();
         }
     }
 
-    // Expand 1-hop neighbors along bonds for top hits
+    let name_pin = extract_tensor_pin(query);
+    if let Some(pin) = &name_pin {
+        push_tensor_entry(store, pin, &mut seen, &mut entries, &mut edges);
+        recall_path = "tensor_pin".to_string();
+    } else if !nvme_ready && name_pin.is_none() && seed_concept.is_none() {
+        for concept in tensor_provlog_pin_candidates(store, query, k) {
+            push_tensor_entry(store, &concept, &mut seen, &mut entries, &mut edges);
+            recall_path = "tensor_text_pin".to_string();
+        }
+    }
+
+    if nvme_ready && name_pin.is_none() && seed_concept.is_none() && entries.is_empty() {
+        store.set_recall_path("tensor_bvh_semantic");
+        recall_path = "tensor_bvh_semantic".to_string();
+        let (memories, _) = store.recall_scoped(query, k, Some("all"));
+        for m in memories {
+            if !is_tensor_eligible(&m.concept) {
+                continue;
+            }
+            push_tensor_entry(store, &m.concept, &mut seen, &mut entries, &mut edges);
+        }
+    }
+
     let seeds: Vec<String> = entries.iter().map(|e| e.concept.clone()).collect();
     for seed in seeds {
         for (_label, other) in store.search_relations(&seed, None, "both") {
-            if !is_tensor_eligible(&other) && !is_surface_eligible(&other) {
+            if !is_tensor_eligible(&other) {
                 continue;
             }
-            if !seen.insert(other.clone()) {
-                continue;
-            }
-            if let Some(entry) = project_tensor_entry(store, &other) {
-                for b in &entry.bonds {
-                    edges.push(b.clone());
-                }
-                entries.push(entry);
-            }
+            push_tensor_entry(store, &other, &mut seen, &mut entries, &mut edges);
         }
     }
 
-    let presentation_hits = if include_presentation {
-        gather_surface_ranked(store, 16, Some(query), true)
-            .into_iter()
-            .filter(|c| {
-                c.concept.starts_with(TENSOR_ENTRY_PREFIX)
-                    || c.concept.starts_with("design:")
-                    || c.concept.contains(query)
-            })
-            .take(8)
-            .map(|c| c.concept)
-            .collect()
-    } else {
-        Vec::new()
-    };
+    let truncated = enforce_tensor_bounds(&mut entries, &mut edges);
 
     TensorSubgraphResult {
         query: query.to_string(),
         recall_path,
         recall_mode,
+        nvme_recall_ready: nvme_ready,
+        truncated,
         entries,
         edges,
-        presentation_hits,
+        presentation_hits: Vec::new(),
     }
 }
 
@@ -395,6 +492,8 @@ pub fn tensor_subgraph_to_json(result: &TensorSubgraphResult) -> Value {
         "query": result.query,
         "recall_path": result.recall_path,
         "recall_mode": result.recall_mode,
+        "nvme_recall_ready": result.nvme_recall_ready,
+        "truncated": result.truncated,
         "entry_count": result.entries.len(),
         "edge_count": result.edges.len(),
         "presentation_hits": result.presentation_hits,
@@ -571,7 +670,8 @@ pub(crate) mod sst_evidence_harness {
             json!({
                 "query": "tensor sst_alpha geometric memory",
                 "k": 8,
-                "include_presentation": false
+                "include_presentation": false,
+                "seed_concept": "tensor:sst_alpha"
             }),
             store,
         );
@@ -657,15 +757,17 @@ pub(crate) mod sst_evidence_harness {
             let mut lock = store.lock().unwrap();
             let sg = tensor_subgraph_recall(
                 &mut lock,
-                "solid-state tensor NVMe context",
+                "tensor:solid_state_query_seed",
                 5,
                 false,
+                None,
             );
             let sg2 = tensor_subgraph_recall(
                 &mut lock,
-                "solid-state tensor NVMe context",
+                "tensor:solid_state_query_seed",
                 5,
                 false,
+                None,
             );
             (sg, sg2)
         };
@@ -818,7 +920,7 @@ mod tests {
     use super::*;
     use super::sst_evidence_harness;
 
-    const SCRATCH_DEFAULT: &str = "/tmp/grok-goal-ba89031bf0b1/implementer";
+    const SCRATCH_DEFAULT: &str = "/tmp/grok-goal-a664843bfc49/implementer";
 
     fn test_dir(name: &str) -> std::path::PathBuf {
         let dir = std::env::temp_dir().join(format!(
@@ -946,9 +1048,10 @@ mod tests {
 
         let subgraph = tensor_subgraph_recall(
             &mut store,
-            "solid-state tensor NVMe context",
+            "tensor:solid_state_query_seed",
             5,
             false,
+            None,
         );
 
         assert!(!subgraph.entries.is_empty());
@@ -964,17 +1067,20 @@ mod tests {
             "bond edges required"
         );
         assert!(
-            subgraph.entries.len() <= 6,
-            "1-hop expansion must stay small (got {} entries)",
+            subgraph.entries.len() <= MAX_TENSOR_ENTRIES,
+            "1-hop expansion must stay bounded (got {} entries)",
             subgraph.entries.len()
         );
+        assert!(subgraph.presentation_hits.is_empty());
+        assert!(subgraph.entries.iter().all(|e| is_tensor_eligible(&e.concept)));
 
         // Consistency: second run same query
         let subgraph2 = tensor_subgraph_recall(
             &mut store,
-            "solid-state tensor NVMe context",
+            "tensor:solid_state_query_seed",
             5,
             false,
+            None,
         );
         assert_eq!(subgraph.entries.len(), subgraph2.entries.len());
     }
@@ -998,5 +1104,398 @@ mod tests {
         assert_eq!(report.scanned, 1);
         assert_eq!(report.consolidated.len(), 1);
         assert_eq!(report.promoted.len(), 1);
+    }
+
+    #[test]
+    fn tensor_gap_closure_agent_recall() {
+        use crate::mcp::handle_tool_call;
+        use crate::store::{open_store, SharedStore};
+        use std::sync::Arc;
+
+        let scratch = scratch_dir();
+        let source_excerpt = concat!(
+            "tensor_subgraph_recall(store, query, k, _include_presentation, seed_concept)\n",
+            "MAX_TENSOR_ENTRIES=12 MAX_TENSOR_EDGES=32\n",
+            "extract_tensor_pin -> direct project_tensor_entry\n",
+            "1-hop expansion: is_tensor_eligible only (tensor:/design:)\n",
+            "semantic BVH gated on nvme_recall_path_ready(recall_mode)\n",
+            "text_pin only when !nvme_ready\n",
+            "presentation_hits always []\n",
+            "mcp seed_concept param wired in handler + schema\n",
+        );
+        write_evidence_file(&scratch, "tensor_gap_source.txt", source_excerpt);
+
+        fn mcp_json(name: &str, args: Value, store: &SharedStore) -> Value {
+            let name = name.to_string();
+            let store = Arc::clone(store);
+            std::thread::Builder::new()
+                .stack_size(32 * 1024 * 1024)
+                .spawn(move || handle_tool_call(&name, &args, &store))
+                .expect("spawn mcp thread")
+                .join()
+                .expect("join mcp thread")
+        }
+
+        fn mcp_text(resp: &Value) -> String {
+            resp["content"]
+                .as_array()
+                .and_then(|a| a.first())
+                .and_then(|c| c.get("text"))
+                .and_then(|t| t.as_str())
+                .unwrap_or("")
+                .to_string()
+        }
+
+        let mut roundtrip_log = String::new();
+        let mut bounds_log = String::new();
+        let mut readiness_log = String::new();
+        let mut mcp_log = String::new();
+
+        for run in 1..=2 {
+            let (_dir, mut store) = hermetic_store(&format!("gap_closure_{run}"));
+            let smoke_text =
+                "addressable working memory roundtrip for tensor:tui_restart_smoke agents";
+            let bonds = vec![BondSpec {
+                from: "tensor:tui_restart_smoke".to_string(),
+                to: "tensor:roundtrip_partner".to_string(),
+                label: "binds".to_string(),
+            }];
+            tensor_upsert(
+                &mut store,
+                "tensor:tui_restart_smoke",
+                smoke_text,
+                &bonds,
+                false,
+            )
+            .expect("smoke upsert");
+
+            let pin = tensor_subgraph_recall(
+                &mut store,
+                "tensor:tui_restart_smoke",
+                5,
+                false,
+                None,
+            );
+            assert!(
+                pin.entries.iter().any(|e| e.concept == "tensor:tui_restart_smoke"),
+                "pin roundtrip missing smoke entry run{run}"
+            );
+            let smoke_entry = pin
+                .entries
+                .iter()
+                .find(|e| e.concept == "tensor:tui_restart_smoke")
+                .expect("smoke entry");
+            assert_eq!(smoke_entry.q.q_preview.len(), 8);
+            assert!(smoke_entry.q.unit_sphere_ok);
+            assert!(smoke_entry.crs >= 0.74);
+            assert!(!smoke_entry.bonds.is_empty());
+
+            let phrase = tensor_subgraph_recall(
+                &mut store,
+                "addressable working memory roundtrip",
+                5,
+                false,
+                None,
+            );
+            assert!(
+                phrase
+                    .entries
+                    .iter()
+                    .any(|e| e.concept == "tensor:tui_restart_smoke"),
+                "text pin phrase recall failed run{run}"
+            );
+            assert_eq!(phrase.recall_path, "tensor_text_pin");
+
+            let seeded = tensor_subgraph_recall(
+                &mut store,
+                "unrelated semantic noise",
+                5,
+                false,
+                Some("tensor:tui_restart_smoke"),
+            );
+            assert!(
+                seeded
+                    .entries
+                    .iter()
+                    .any(|e| e.concept == "tensor:tui_restart_smoke"),
+                "seed_concept failed run{run}"
+            );
+            assert_eq!(seeded.recall_path, "tensor_seed_concept");
+
+            roundtrip_log.push_str(&format!("=== run{run} pin ===\n"));
+            roundtrip_log.push_str(&serde_json::to_string_pretty(&tensor_subgraph_to_json(&pin)).unwrap());
+            roundtrip_log.push('\n');
+            roundtrip_log.push_str(&format!("=== run{run} phrase ===\n"));
+            roundtrip_log
+                .push_str(&serde_json::to_string_pretty(&tensor_subgraph_to_json(&phrase)).unwrap());
+            roundtrip_log.push('\n');
+
+            // Deterministic overflow: hub + 15 spokes via seed + 1-hop = 16 entries (>12 cap).
+            for i in 0..15 {
+                let concept = format!("tensor:bound_spoke_{i:02}");
+                tensor_upsert(
+                    &mut store,
+                    &concept,
+                    &format!("Spoke {i} for deterministic bounds test."),
+                    &[],
+                    false,
+                )
+                .unwrap();
+            }
+            tensor_upsert(
+                &mut store,
+                "tensor:bound_hub",
+                "Hub tensor with spokes for bounds test.",
+                &(0..15)
+                    .map(|i| BondSpec {
+                        from: "tensor:bound_hub".to_string(),
+                        to: format!("tensor:bound_spoke_{i:02}"),
+                        label: "links".to_string(),
+                    })
+                    .collect::<Vec<_>>(),
+                false,
+            )
+            .unwrap();
+
+            let broad = tensor_subgraph_recall(
+                &mut store,
+                "unrelated bounds probe",
+                20,
+                false,
+                Some("tensor:bound_hub"),
+            );
+            assert_eq!(
+                broad.entries.len(),
+                MAX_TENSOR_ENTRIES,
+                "hub+15 spokes must cap at {MAX_TENSOR_ENTRIES} run{run}"
+            );
+            assert!(broad.edges.len() <= MAX_TENSOR_EDGES);
+            assert!(broad.truncated, "hub+15 spokes must truncate run{run}");
+            assert!(broad.presentation_hits.is_empty());
+            assert!(broad
+                .entries
+                .iter()
+                .all(|e| is_tensor_eligible(&e.concept)));
+            let kept: HashSet<String> = broad.entries.iter().map(|e| e.concept.clone()).collect();
+            assert!(
+                broad.edges.iter().all(|b| kept.contains(&b.from) && kept.contains(&b.to)),
+                "edges must not reference dropped entries run{run}"
+            );
+
+            bounds_log.push_str(&format!("=== run{run} bounds ===\n"));
+            bounds_log
+                .push_str(&serde_json::to_string_pretty(&tensor_subgraph_to_json(&broad)).unwrap());
+            bounds_log.push('\n');
+
+            let nvme_ready = crate::injection_priority::nvme_recall_path_ready(store.recall_mode());
+            assert!(!nvme_ready, "hermetic store should be cpu_linear run{run}");
+            let semantic_empty = tensor_subgraph_recall(
+                &mut store,
+                "unrelated broad manifold search without pin",
+                8,
+                false,
+                None,
+            );
+            assert!(
+                semantic_empty.entries.is_empty(),
+                "semantic path must not run when !nvme_ready run{run}"
+            );
+            let pin_only = tensor_subgraph_recall(
+                &mut store,
+                "tensor:tui_restart_smoke",
+                5,
+                false,
+                None,
+            );
+            assert!(!pin_only.entries.is_empty());
+
+            readiness_log.push_str(&format!(
+                "=== run{run} ===\nrecall_mode={}\nnvme_recall_ready={}\nsemantic_empty_entries={}\npin_entries={}\n",
+                store.recall_mode(),
+                nvme_ready,
+                semantic_empty.entries.len(),
+                pin_only.entries.len()
+            ));
+        }
+
+        configure_hermetic_env();
+        let mcp_dir = test_dir("gap_mcp");
+        let shared: SharedStore = open_store(&mcp_dir.to_string_lossy());
+        {
+            let mut lock = shared.lock().unwrap();
+            lock.ego_q = None;
+            lock.mark_fully_initialized();
+        }
+
+        for run in 1..=2 {
+            let upsert_resp = mcp_json(
+                "mcp_engram_tensor_upsert",
+                json!({
+                    "concept": "tensor:tui_restart_smoke",
+                    "text": "addressable working memory roundtrip MCP path",
+                    "promote": false,
+                    "bonds": [
+                        { "from": "tensor:tui_restart_smoke", "to": "tensor:mcp_partner", "label": "binds" }
+                    ]
+                }),
+                &shared,
+            );
+            mcp_log.push_str(&format!("=== run{run} upsert ===\n"));
+            mcp_log.push_str(&mcp_text(&upsert_resp));
+            mcp_log.push('\n');
+            assert!(!upsert_resp.get("isError").and_then(|v| v.as_bool()).unwrap_or(false));
+
+            for (label, query, seed) in [
+                ("exact", "tensor:tui_restart_smoke", None),
+                (
+                    "phrase",
+                    "addressable working memory roundtrip MCP",
+                    None,
+                ),
+                ("seed", "noise", Some("tensor:tui_restart_smoke")),
+            ] {
+                let mut args = json!({ "query": query, "k": 8, "include_presentation": false });
+                if let Some(s) = seed {
+                    args["seed_concept"] = json!(s);
+                }
+                let recall_resp = mcp_json("mcp_engram_tensor_recall", args, &shared);
+                mcp_log.push_str(&format!("=== run{run} recall {label} ===\n"));
+                let text = mcp_text(&recall_resp);
+                mcp_log.push_str(&text);
+                mcp_log.push('\n');
+                assert!(!recall_resp.get("isError").and_then(|v| v.as_bool()).unwrap_or(false));
+                let payload: Value = serde_json::from_str(&text).expect("recall json");
+                assert!(payload.get("truncated").is_some());
+                assert!(payload["entry_count"].as_u64().unwrap_or(99) <= MAX_TENSOR_ENTRIES as u64);
+                assert!(
+                    payload["entries"]
+                        .as_array()
+                        .map(|a| a.iter().any(|e| {
+                            e.get("concept")
+                                .and_then(|c| c.as_str())
+                                == Some("tensor:tui_restart_smoke")
+                        }))
+                        .unwrap_or(false),
+                    "MCP {label} missing smoke entry run{run}"
+                );
+            }
+
+            let readiness_resp = mcp_json("mcp_engram_get_backend_readiness", json!({}), &shared);
+            mcp_log.push_str(&format!("=== run{run} readiness ===\n"));
+            mcp_log.push_str(&mcp_text(&readiness_resp));
+            mcp_log.push('\n');
+            let readiness: Value =
+                serde_json::from_str(&mcp_text(&readiness_resp)).unwrap_or(json!({}));
+            assert!(readiness.get("nvme_recall_ready").is_some());
+        }
+
+        let list_resp = crate::mcp::dispatch_jsonrpc(
+            r#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#,
+            &shared,
+        )
+        .expect("tools/list response");
+        let tools = list_resp
+            .get("result")
+            .and_then(|r| r.get("tools"))
+            .and_then(|t| t.as_array())
+            .expect("tools array");
+        let tensor_tool = tools
+            .iter()
+            .find(|t| {
+                t.get("name")
+                    .and_then(|n| n.as_str())
+                    == Some("mcp_engram_tensor_recall")
+            })
+            .expect("mcp_engram_tensor_recall in tool_list");
+        let schema_evidence = serde_json::to_string_pretty(tensor_tool).expect("tool json");
+        assert!(
+            schema_evidence.contains("seed_concept"),
+            "tool_list schema must include seed_concept"
+        );
+        assert!(
+            schema_evidence.contains("nvme_recall_ready") || schema_evidence.contains("12 entries"),
+            "tool_list description must document gate/caps"
+        );
+
+        write_evidence_file(&scratch, "tensor_roundtrip_evidence.txt", &roundtrip_log);
+        write_evidence_file(&scratch, "tensor_bounds_evidence.txt", &bounds_log);
+        write_evidence_file(&scratch, "tensor_readiness_gate.txt", &readiness_log);
+        write_evidence_file(&scratch, "tensor_mcp_gap_closure.txt", &mcp_log);
+        write_evidence_file(&scratch, "tensor_schema_evidence.txt", &schema_evidence);
+    }
+
+    #[test]
+    fn enforce_tensor_bounds_drops_dangling_edges() {
+        let entry_a = TensorEntry {
+            concept: "tensor:kept_a".to_string(),
+            crs: 0.9,
+            hot: false,
+            q: TensorQSummary {
+                norm: 1.0,
+                unit_sphere_ok: true,
+                crs: 0.9,
+                zedos_tag: 0,
+                q_preview: vec![0.0; 8],
+                p_drift: 0.0,
+            },
+            bonds: vec![TensorBond {
+                from: "tensor:kept_a".to_string(),
+                label: "links".to_string(),
+                to: "tensor:dropped".to_string(),
+                direction: "out".to_string(),
+                rel_block: None,
+                merkle_sub_nonzero: false,
+                allowed_transforms: String::new(),
+            }],
+            lineage: TensorLineage {
+                merkle_sub_nonzero: false,
+                served_by_goals: vec![],
+                prev_traces: vec![],
+            },
+            text_preview: String::new(),
+        };
+        let entry_b = TensorEntry {
+            concept: "tensor:kept_b".to_string(),
+            crs: 0.9,
+            hot: false,
+            q: TensorQSummary {
+                norm: 1.0,
+                unit_sphere_ok: true,
+                crs: 0.9,
+                zedos_tag: 0,
+                q_preview: vec![0.0; 8],
+                p_drift: 0.0,
+            },
+            bonds: vec![],
+            lineage: TensorLineage {
+                merkle_sub_nonzero: false,
+                served_by_goals: vec![],
+                prev_traces: vec![],
+            },
+            text_preview: String::new(),
+        };
+        let mut entries = vec![entry_a, entry_b];
+        let mut edges = vec![TensorBond {
+            from: "tensor:bound_hub".to_string(),
+            label: "links".to_string(),
+            to: "tensor:dropped".to_string(),
+            direction: "out".to_string(),
+            rel_block: None,
+            merkle_sub_nonzero: false,
+            allowed_transforms: String::new(),
+        }];
+        let truncated = enforce_tensor_bounds(&mut entries, &mut edges);
+        assert!(!truncated, "two entries should not truncate");
+        assert!(
+            edges
+                .iter()
+                .all(|b| entries.iter().any(|e| e.concept == b.from)
+                    && entries.iter().any(|e| e.concept == b.to)),
+            "edges must only reference kept entries"
+        );
+        assert!(
+            !edges.iter().any(|b| b.from == "tensor:bound_hub" || b.to == "tensor:dropped"),
+            "dangling hub/dropped edges must be removed"
+        );
     }
 }
