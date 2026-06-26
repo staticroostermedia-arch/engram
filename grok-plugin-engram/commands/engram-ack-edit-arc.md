@@ -5,15 +5,9 @@ description: Clear edit-arc debt on read-only repeat context_for_edit — prefer
 
 When `edit_arc_debt` is pending and you need **read-only** recon on the same file (no substantive edits):
 
-```
-mcp_engram_ack_edit_arc(skip=true, note="read-only recon — no source changes")
-```
+Few-shot (read-only): `{"skip":true,"note":"read-only recon — no source changes"}`
 
-Or clear specific concepts:
-
-```
-mcp_engram_ack_edit_arc(concepts=["store__fn__context_for_edit"], skip=true, note="read-only pass")
-```
+Few-shot (post-update ack + lineage): `{"concepts":["store__fn__context_for_edit"],"skip":false,"note":"updated __arc via mcp_engram_update","lineage_check":true,"trace_id":"trace:..."}`
 
 **When to call:** Repeat `context_for_edit` on a path you already edited this session, but you are only reading context — not writing new arc narrative.
 

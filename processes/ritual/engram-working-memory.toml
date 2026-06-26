@@ -19,12 +19,15 @@ h1_handler = "OP_IS_SYMBOLIC_OF"
 list = [
   "mcp_engram_session_start",
   "mcp_engram_ack_wake_queue",
+  "mcp_engram_safe_edit_and_verify",
   "mcp_engram_context_for_edit",
   "mcp_engram_recall",
   "mcp_engram_quick_trace",
   "mcp_engram_record_reasoning_trace",
+  "mcp_engram_update_with_tensor_bond",
   "mcp_engram_update",
   "mcp_engram_remember",
+  "mcp_engram_ack_edit_arc",
   "mcp_engram_scar",
   "mcp_engram_relate",
   "mcp_engram_session_end",
@@ -46,6 +49,14 @@ list = [
   "no_annihilation_updates",
   "crs_0.74_gate",
   "queue_before_edits",
+  "lineage_preserved",
+  "prefer_safe_composites",
+]
+
+[composed_rituals]
+list = [
+  "agent:engram.ritual.safe-code-edit",
+  "agent:engram.ritual.verified-memory-update",
 ]
 
 [timeout_ms]

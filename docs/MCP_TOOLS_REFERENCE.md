@@ -1,6 +1,6 @@
 # MCP Tools Reference
 
-Engram exposes **79 MCP tools** (75 `mcp_engram_*` + 4 linguistic). Most agents should use **8** — see [`AGENT_MEMORY_CONTRACT.md`](AGENT_MEMORY_CONTRACT.md).
+Engram exposes **81 MCP tools** (77 `mcp_engram_*` + 4 linguistic). Most agents should use **8** — see [`AGENT_MEMORY_CONTRACT.md`](AGENT_MEMORY_CONTRACT.md). For edit/update fidelity, prefer **safe composites** (Tier 2): `mcp_engram_safe_edit_and_verify`, `mcp_engram_update_with_tensor_bond`.
 
 **Decision map (all 79):** [`TOOL_DECISION_MAP.md`](TOOL_DECISION_MAP.md) — when to escalate to `update`, `query_with_momentum`, `search_by_relation`, goals, tiles, linguistic tools. **JIT deformation:** [`DEFORMATION_PLAYBOOKS.md`](DEFORMATION_PLAYBOOKS.md).
 
@@ -42,7 +42,12 @@ With `ENGRAM_PROFILE=agent`, wake gate defaults to **hard** — `ack_wake_queue`
 
 ### Harness gates (agent profile)
 - `ack_wake_queue` — after executing wake `suggested_actions`; unblocks `context_for_edit` in hard mode
-- `ack_edit_arc` — clear edit-arc debt on read-only repeat passes; prefer `update` on `__arc` after edits
+- `ack_edit_arc` — clear edit-arc debt on read-only repeat passes; prefer `update` on `__arc` after edits (`lineage_check?`, `trace_id?`)
+
+### Agent tool fidelity (safe composites — prefer for agents)
+- `safe_edit_and_verify` — context_for_edit + quick_trace + optional `__arc` + verify + lineage + `tensor:edit_pattern_*`. Ritual: `processes/ritual/safe-code-edit.toml`
+- `update_with_tensor_bond` — recall-first + update + tensor bond + optional scar on mismatch. Ritual: `processes/ritual/verified-memory-update.toml`
+- Harness gate: `--suite agent-tool-fidelity` (≥95% correct usage). See [`HARNESS_INJECTION.md`](HARNESS_INJECTION.md).
 
 ### Code atlas (situated edit memory)
 - `evolution_at_locus` — bounded loci + arc segments + trace chain at a file window (`auto_ingest` default true)

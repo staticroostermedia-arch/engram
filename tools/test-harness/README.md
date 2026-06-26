@@ -145,6 +145,7 @@ Run this harness as a gate before swapping any dev binary into daily use, before
 ## Extending / Custom Suites
 
 - Add new sequences in `python/mcp_test_client.py` (the `WAKEUP_SEQUENCE`, `FULL_RITUAL_SEQUENCE`, and the `run_*` methods). The `record_and_assert_wake_up_verification_metric` + lawfulness-metric suite now exercises the first-class `metric:wake_up_verification_*` + `metric:wake_up_lawfulness_trend` (update-preferred) per engram-wake-up Phase 1.5. Compression + unified Continuity & Coherence Metrics (both systems + helper:continuity_coherence_metrics_dashboard_v1) exercised in compression-measurement + full-wakeup (binds to codeland 1780091465 + living config unified section).
+- **Agent tool fidelity:** `STABLE_BIN=target/debug/engram tools/test-harness/bin/engram-harness.sh --suite agent-tool-fidelity --workspace /path/to/Engram` — asserts `fidelity_rate >= 0.95`, composite tool registration, lineage fields, and `post_edit_palette` safe path.
 - Add new `--suite` branches in `bin/engram-harness.sh`.
 - The client already classifies tools and records every step with timings — new suites automatically benefit from all the death detection and observer plumbing.
 

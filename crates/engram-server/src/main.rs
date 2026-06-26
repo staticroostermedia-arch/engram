@@ -31,6 +31,7 @@ mod coherence;
 mod context_var;
 pub mod daemon;
 mod edit_arc_gate;
+mod edit_fidelity;
 mod evolution_at_locus;
 mod goal_hygiene;
 mod harness_injection;

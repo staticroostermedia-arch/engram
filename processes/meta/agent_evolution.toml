@@ -20,10 +20,13 @@ h1_handler = "OP_IS_SYMBOLIC_OF"
 list = [
   "mcp_engram_session_start",
   "mcp_engram_ack_wake_queue",
+  "mcp_engram_safe_edit_and_verify",
   "mcp_engram_context_for_edit",
   "mcp_engram_recall",
   "mcp_engram_quick_trace",
+  "mcp_engram_update_with_tensor_bond",
   "mcp_engram_update",
+  "mcp_engram_ack_edit_arc",
   "mcp_engram_session_end",
   "mcp_engram_thought_tile_create",
   "mcp_engram_scar",
@@ -76,8 +79,9 @@ read_fields = ["suggested_actions", "presentation_stratum", "trace_chain", "trus
 steps = [
   { name = "execute_wake_queue", desc = "Run suggested_actions in priority order: handoff → goal recall → context_for_edit on files_touched → trace head → trusted tiles." },
   { name = "read_ego_evolution", desc = "Read ego_snapshot (drift_velocity, nrem_step, top_goal_serving). Interpret as collective agent identity shift since last NREM." },
-  { name = "situated_edit", desc = "context_for_edit per file; read traces_at_locus + edit_arc + scars; quick_trace at forks with spatial_context." },
-  { name = "arc_compression", desc = "update(__arc) post-edit; thought_tile_create when condensation_hints fire (≥6 traces without tile)." },
+  { name = "situated_edit", desc = "mcp_engram_safe_edit_and_verify per file (preferred) or context_for_edit; read traces_at_locus + edit_arc + scars; quick_trace at forks." },
+  { name = "arc_compression", desc = "mcp_engram_update_with_tensor_bond on __arc post-edit; reflection loop (verify + tensor:edit_pattern_*); thought_tile_create when condensation_hints fire." },
+  { name = "fidelity_self_correction", desc = "On misuse (forget+remember, skip arc): scar + tensor:edit_pattern_failure; harness agent-tool-fidelity suite >=95% gate.", process_ref = "processes/ritual/safe-code-edit.toml" },
   { name = "self_improve", desc = "Optional: invoke self_improvement_loop steps when design/process friction detected.", subagent = "improvement_auditor", process_ref = "processes/meta/self_improvement_loop.toml" },
   { name = "memory_hygiene", desc = "Optional: invoke memory_consolidation_loop when sprawl/scar rate high.", subagent = "memory_auditor", process_ref = "processes/meta/memory_consolidation_loop.toml" },
 ]

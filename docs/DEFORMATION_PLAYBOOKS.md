@@ -27,7 +27,7 @@ Agents deform `.leg3` blocks lawfully (q/p/CRS/AABB/relations). This doc defines
 | Type | Signal | JIT focus |
 |------|--------|-----------|
 | `wake_only` | Thin handoff | Rehydrate goal + trace head |
-| `code_edit` | `files_touched` in handoff | `context_for_edit` → trace → `update(__arc)` |
+| `code_edit` | `files_touched` in handoff | `safe_edit_and_verify` (preferred) or `context_for_edit` → trace → `update_with_tensor_bond(__arc)` |
 | `meta_evolution` | Meta intent or `condensation_hints` | `draft_from_chain` → `thought_tile_create` |
 | `research` | Research intent | `scout` / recall → `research_offload` tile |
 | `recovery` | `open_scars_wake` non-empty | Read scar → falsifiable trace → scar on repeat |

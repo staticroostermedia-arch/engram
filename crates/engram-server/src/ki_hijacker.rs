@@ -619,6 +619,18 @@ async fn bake_ki(store: &SharedStore, ki_dir: &PathBuf) -> anyhow::Result<()> {
                 s.mark_hot(&mem.concept);
             }
         }
+        // Agent tool fidelity: hot-promote tensor edit/update patterns for wake re-hydration.
+        for mem in s
+            .recall_scoped("tensor edit_pattern edit_fidelity", 8, Some("hot"))
+            .0
+        {
+            if mem.concept.starts_with("tensor:edit_pattern_")
+                || mem.concept.starts_with("tensor:update_pattern_")
+            {
+                let _ = s.promote_tile_to_high_priority(&mem.concept);
+                s.mark_hot(&mem.concept);
+            }
+        }
     }
 
     // Exercise real async I/O callers (spawn_blocking wrappers with expanded timing)

@@ -1133,49 +1133,75 @@ pub fn build_harness_bundle(store: &mut StoreHandle, session_intent: Option<&str
         "presentation_stratum": presentation_stratum,
         "agent_discipline": {
             "at_fork": "mcp_engram_quick_trace (chain prev from trace_chain.head)",
+            "at_code_edit": "mcp_engram_safe_edit_and_verify (preferred) or context_for_edit → edit → update(__arc)",
+            "at_memory_update": "mcp_engram_update_with_tensor_bond (recall-first) or recall → update (>0.85 match)",
             "at_meta_boundary": "mcp_engram_thought_tile_create",
             "at_persist": "recall → update (>0.85) or remember (new)",
             "at_dead_end": "mcp_engram_scar",
             "at_verified_fix": "mcp_engram_remember_solution",
+            "post_edit_reflection": "quick_trace delta + verify_block_lawfulness + tensor:edit_pattern_* upsert",
             "jit_construct": "suggested_actions + verified_processes are hints — adapt args to current file/goal/context",
             "pipeline": "traces → scar/repulse → condensation → verified_sequence tile → JIT wake front → ego.leg3",
             "queue_before_edits": "MANDATORY — execute suggested_actions before context_for_edit or broad reads",
+            "fidelity_rituals": ["ritual:safe_code_edit", "ritual:verified_memory_update", "ritual:edit_ack_with_lineage_check"],
         },
     })
 }
 
-/// Concrete post-edit `mcp_engram_update` palette from spatial loci (atlas v2.1).
+/// Concrete post-edit palette from spatial loci (atlas v2.1) — prefers safe composites + reflection.
 pub fn post_edit_update_actions(spatial_concepts: &[String]) -> Vec<Value> {
+    let mut actions = vec![json!({
+        "tool": "mcp_engram_safe_edit_and_verify",
+        "reason": "post-edit reflection: verified composite (trace + lineage + tensor pattern)",
+        "priority": 0,
+        "args_hint": {
+            "path": "{absolute_path}",
+            "decision": "Post-edit verification",
+            "why": "Record delta with lineage after substantive change",
+            "arc_delta": "delta: what changed and why",
+            "run_verify": true
+        },
+    })];
+
     if spatial_concepts.is_empty() {
-        return vec![json!({
-            "tool": "mcp_engram_update",
-            "reason": "post-edit: append delta to {stem}__fn__*__arc — situated edit memory",
+        actions.push(json!({
+            "tool": "mcp_engram_update_with_tensor_bond",
+            "reason": "post-edit: append delta to {stem}__fn__*__arc with tensor bond",
             "priority": 2,
             "args_hint": {
                 "concept": "{ast_concept}__arc",
-                "new_text": "delta: what changed and why"
+                "new_text": "delta: what changed and why",
+                "bond_label": "edit_fidelity"
             },
-        })];
+        }));
+        actions.extend(crate::edit_fidelity::build_reflection_loop_actions(
+            None, None, None,
+        ));
+        return actions;
     }
 
-    spatial_concepts
+    for ast in spatial_concepts
         .iter()
         .filter(|c| !c.ends_with("__arc"))
         .take(4)
-        .map(|ast| {
-            let arc = crate::store::StoreHandle::arc_concept_name(ast);
-            json!({
-                "tool": "mcp_engram_update",
-                "reason": format!("post-edit: append delta to {arc}"),
-                "priority": 2,
-                "args": {
-                    "concept": arc,
-                    "new_text": "delta: what changed and why (replace with actual narrative)"
-                },
-                "ast_concept": ast,
-            })
-        })
-        .collect()
+    {
+        let arc = crate::store::StoreHandle::arc_concept_name(ast);
+        actions.push(json!({
+            "tool": "mcp_engram_update_with_tensor_bond",
+            "reason": format!("post-edit: append delta to {arc} with tensor bond"),
+            "priority": 2,
+            "args": {
+                "concept": arc,
+                "new_text": "delta: what changed and why (replace with actual narrative)",
+                "bond_label": "edit_fidelity"
+            },
+            "ast_concept": ast,
+        }));
+    }
+    actions.extend(crate::edit_fidelity::build_reflection_loop_actions(
+        None, None, None,
+    ));
+    actions
 }
 
 /// Per-file injection for context_for_edit.
@@ -1450,22 +1476,40 @@ mod tests {
             "store__fn__context_for_edit".to_string(),
             "store__fn__update".to_string(),
         ]);
-        assert_eq!(actions.len(), 2);
-        let args = actions[0].get("args").expect("concrete args");
+        assert!(actions.len() >= 3);
+        assert_eq!(
+            actions[0].get("tool").and_then(|v| v.as_str()),
+            Some("mcp_engram_safe_edit_and_verify")
+        );
+        let bonded = actions
+            .iter()
+            .find(|a| {
+                a.get("tool").and_then(|v| v.as_str()) == Some("mcp_engram_update_with_tensor_bond")
+            })
+            .expect("tensor bond update action");
+        let args = bonded.get("args").expect("concrete args");
         assert_eq!(
             args.get("concept").and_then(|v| v.as_str()),
             Some("store__fn__context_for_edit__arc")
         );
         assert!(args.get("new_text").is_some());
-        assert!(actions[0].get("args_hint").is_none());
     }
 
     #[test]
     fn test_post_edit_palette_hint_when_no_spatial() {
         let actions = post_edit_update_actions(&[]);
-        assert_eq!(actions.len(), 1);
-        assert!(actions[0].get("args_hint").is_some());
-        assert!(actions[0].get("args").is_none());
+        assert!(actions.len() >= 2);
+        assert_eq!(
+            actions[0].get("tool").and_then(|v| v.as_str()),
+            Some("mcp_engram_safe_edit_and_verify")
+        );
+        let hint_action = actions
+            .iter()
+            .find(|a| {
+                a.get("tool").and_then(|v| v.as_str()) == Some("mcp_engram_update_with_tensor_bond")
+            })
+            .expect("hint action");
+        assert!(hint_action.get("args_hint").is_some());
     }
 
     #[test]

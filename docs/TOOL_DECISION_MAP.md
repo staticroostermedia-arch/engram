@@ -183,10 +183,12 @@ Always **`recall(scope=anchors)` first**. Escalate only when anchors do not answ
 | What's *trending* in this arc? | `query_with_momentum` | q+p blend — direction, not keyword |
 | What's *geometrically similar*? | `query_pure` | K-NN on phase vectors |
 | What's *connected* to X? | `search_by_relation` → `visualize` | Sheaf graph, not similarity |
-| Pre-edit one file | `context_for_edit` | Spatial AABB + atlas v2.1 in one call |
+| Pre-edit one file | `safe_edit_and_verify` (**preferred**) or `context_for_edit` | Composite adds trace + lineage + tensor pattern in one call |
+| Post-edit arc delta | `update_with_tensor_bond` (**preferred**) or `update` | Recall-first + `edit_fidelity` tensor bond |
 | Arc segments + trace chain at locus | `evolution_at_locus` | Bounded evolution bundle without full `read_concept` |
 | Wake queue executed | `ack_wake_queue` | Unblocks `context_for_edit` when gate is hard |
-| Read-only repeat on edited file | `ack_edit_arc` | Clears `edit_arc_debt` without `update(__arc)` |
+| Read-only repeat on edited file | `ack_edit_arc` | Clears `edit_arc_debt`; use `lineage_check=true` when acking after verified edit |
+| Agent fidelity regression | `engram-harness.sh --suite agent-tool-fidelity` | ≥95% correct edit/update sequence gate |
 | Recall feels sampled/bounded | `get_backend_readiness` → `rebuild_bvh` (deep only) | Quality gate |
 
 ---

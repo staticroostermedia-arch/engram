@@ -15,7 +15,11 @@ Every work block becomes an evolution of your self-model.
 ## Primary Living Recall Patterns (Geometric First)
 
 1. **Anchor-First**: `mcp_engram_recall(query="...", scope="anchors")` — goals/traces/rituals before episodic noise (lean default).
-2. **Edit-Scoped Spatial**: `mcp_engram_context_for_edit(path)` — **one call** replaces `watch_workspace` + `context_for_file` + `recall_in_file` pre-edit sequence in lean mode.
+2. **Edit-Scoped Spatial**: `mcp_engram_safe_edit_and_verify` (**preferred**) or `mcp_engram_context_for_edit(path)` — replaces `watch_workspace` + `context_for_file` + `recall_in_file` pre-edit sequence in lean mode.
+
+   Few-shot `safe_edit_and_verify`: `{"path":"/home/user/Engram/crates/engram-server/src/mcp.rs","decision":"Add composite handler","why":"Agent tool fidelity","arc_delta":"delta: shipped safe path"}`
+
+   Few-shot `context_for_edit`: `{"path":"/home/user/Engram/crates/engram-server/src/store.rs","auto_ingest":true}`
 3. **Sheaf/Relational** (deep mode): `mcp_engram_search_by_relation(seed, "both")` + `visualize` for architecture.
 4. **Momentum** (deep / entry only): `mcp_engram_query_with_momentum` when cheaper tools are insufficient.
 
@@ -24,7 +28,9 @@ Every work block becomes an evolution of your self-model.
 ## Core Non-Negotiable Rules
 
 1. **Recall Before Derive**: At least one `recall(scope="anchors")` or `context_for_edit` before heavy reasoning or raw file reads.
-2. **Update Is The Only Legal Mutation**: `recall` first. Strong match (>0.85) → `mcp_engram_update`. No match → `remember`. Never forget+remember (destroys p-tensor history).
+2. **Update Is The Only Legal Mutation**: `recall` first. Strong match (>0.85) → `mcp_engram_update_with_tensor_bond` (preferred) or `mcp_engram_update`. No match → `remember`. Never forget+remember (destroys p-tensor history).
+
+   Few-shot `update_with_tensor_bond`: `{"concept":"store__fn__update__arc","new_text":"delta: append narrative","recall_query":"store update","bond_label":"edit_fidelity"}`
 3. **Scar Is Repulsion**: `mcp_engram_scar(concept, magnitude)` for ruled-out approaches. Active geometric force.
 4. **Write Hygiene**: Every strong write/relation becomes terminal state for future wake-ups.
 5. **Reasoning Trace Capture**: Significant decisions/forks → `mcp_engram_quick_trace` (lean) or `record_reasoning_trace` (deep/high-stakes). Chain via `prev`.
