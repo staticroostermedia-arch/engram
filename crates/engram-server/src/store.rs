@@ -4385,11 +4385,15 @@ impl StoreHandle {
     /// Bind two concepts via op_bind and store the relation as a new ZEDOS_RELATION block.
     /// The relation block's merkle_sub_root links both parent block signatures.
     pub fn relate(&mut self, concept_a: &str, concept_b: &str, label: &str) -> Result<String> {
+        // Freshly stored blocks (e.g. trace:*) may not be visible via cold fetch_block on
+        // O_DIRECT paths until promoted; fall back to high_priority for immediate chaining.
         let block_a = self
             .fetch_block(concept_a)
+            .or_else(|| self.fetch_block_high_priority(concept_a))
             .ok_or_else(|| anyhow::anyhow!("Concept '{}' not found", concept_a))?;
         let block_b = self
             .fetch_block(concept_b)
+            .or_else(|| self.fetch_block_high_priority(concept_b))
             .ok_or_else(|| anyhow::anyhow!("Concept '{}' not found", concept_b))?;
 
         let bound_q = op_bind(&block_a.q, &block_b.q);

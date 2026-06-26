@@ -145,7 +145,7 @@ fn timestamp_slug() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
-        .as_secs()
+        .as_millis() as u64
 }
 
 fn slugify(s: &str, max: usize) -> String {
@@ -195,9 +195,13 @@ pub fn mint_quick_trace(
     store
         .store(&trace_key, trace_block)
         .map_err(|e| format!("trace store: {e}"))?;
+    store.mark_hot(&trace_key);
 
     if !prev.is_empty() {
-        let _ = store.relate(&prev, &trace_key, "prev_in_trace");
+        store.mark_hot(&prev);
+        store
+            .relate(&prev, &trace_key, "prev_in_trace")
+            .map_err(|e| format!("prev_in_trace: {e}"))?;
         let _ = store.relate(&trace_key, &prev, "next_in_trace");
     }
     if let Some(sp) = spatial_context {
