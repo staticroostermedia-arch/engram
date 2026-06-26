@@ -112,22 +112,10 @@ mod doc_sync_tests {
                 "grok-plugin-engram/commands/engram-remember.md",
                 REMEMBER_EX2,
             ),
-            (
-                "grok-plugin-engram/commands/engram-update.md",
-                REMEMBER_EX1,
-            ),
-            (
-                "grok-plugin-engram/commands/engram-update.md",
-                REMEMBER_EX2,
-            ),
-            (
-                "docs/skills/engram-working-memory.md",
-                REMEMBER_EX1,
-            ),
-            (
-                "docs/skills/engram-working-memory.md",
-                REMEMBER_EX2,
-            ),
+            ("grok-plugin-engram/commands/engram-update.md", REMEMBER_EX1),
+            ("grok-plugin-engram/commands/engram-update.md", REMEMBER_EX2),
+            ("docs/skills/engram-working-memory.md", REMEMBER_EX1),
+            ("docs/skills/engram-working-memory.md", REMEMBER_EX2),
             // ack_edit_arc
             (
                 "grok-plugin-engram/commands/engram-ack-edit-arc.md",
@@ -141,18 +129,9 @@ mod doc_sync_tests {
                 "grok-plugin-engram/commands/engram-ack-edit-arc.md",
                 ACK_EDIT_ARC_EX3,
             ),
-            (
-                "docs/skills/engram-working-memory.md",
-                ACK_EDIT_ARC_EX1,
-            ),
-            (
-                "docs/skills/engram-working-memory.md",
-                ACK_EDIT_ARC_EX2,
-            ),
-            (
-                "docs/skills/engram-working-memory.md",
-                ACK_EDIT_ARC_EX3,
-            ),
+            ("docs/skills/engram-working-memory.md", ACK_EDIT_ARC_EX1),
+            ("docs/skills/engram-working-memory.md", ACK_EDIT_ARC_EX2),
+            ("docs/skills/engram-working-memory.md", ACK_EDIT_ARC_EX3),
             // safe_edit
             (
                 "grok-plugin-engram/commands/engram-safe-edit.md",
@@ -162,14 +141,8 @@ mod doc_sync_tests {
                 "grok-plugin-engram/commands/engram-safe-edit.md",
                 SAFE_EDIT_EX2,
             ),
-            (
-                "grok-plugin-engram/commands/engram-edit.md",
-                SAFE_EDIT_EX1,
-            ),
-            (
-                "grok-plugin-engram/commands/engram-edit.md",
-                SAFE_EDIT_EX2,
-            ),
+            ("grok-plugin-engram/commands/engram-edit.md", SAFE_EDIT_EX1),
+            ("grok-plugin-engram/commands/engram-edit.md", SAFE_EDIT_EX2),
             // context_for_edit
             (
                 "grok-plugin-engram/commands/engram-edit.md",
@@ -179,31 +152,13 @@ mod doc_sync_tests {
                 "grok-plugin-engram/commands/engram-edit.md",
                 CONTEXT_FOR_EDIT_EX2,
             ),
-            (
-                "docs/skills/engram-working-memory.md",
-                CONTEXT_FOR_EDIT_EX1,
-            ),
-            (
-                "docs/skills/engram-working-memory.md",
-                CONTEXT_FOR_EDIT_EX2,
-            ),
+            ("docs/skills/engram-working-memory.md", CONTEXT_FOR_EDIT_EX1),
+            ("docs/skills/engram-working-memory.md", CONTEXT_FOR_EDIT_EX2),
             // update (plain)
-            (
-                "grok-plugin-engram/commands/engram-update.md",
-                UPDATE_EX1,
-            ),
-            (
-                "grok-plugin-engram/commands/engram-update.md",
-                UPDATE_EX2,
-            ),
-            (
-                "docs/skills/engram-working-memory.md",
-                UPDATE_EX1,
-            ),
-            (
-                "docs/skills/engram-working-memory.md",
-                UPDATE_EX2,
-            ),
+            ("grok-plugin-engram/commands/engram-update.md", UPDATE_EX1),
+            ("grok-plugin-engram/commands/engram-update.md", UPDATE_EX2),
+            ("docs/skills/engram-working-memory.md", UPDATE_EX1),
+            ("docs/skills/engram-working-memory.md", UPDATE_EX2),
             // update_with_tensor_bond
             (
                 "grok-plugin-engram/commands/engram-update.md",
@@ -213,14 +168,8 @@ mod doc_sync_tests {
                 "grok-plugin-engram/commands/engram-update.md",
                 UPDATE_BOND_EX2,
             ),
-            (
-                "docs/skills/engram-working-memory.md",
-                UPDATE_BOND_EX1,
-            ),
-            (
-                "docs/skills/engram-working-memory.md",
-                UPDATE_BOND_EX2,
-            ),
+            ("docs/skills/engram-working-memory.md", UPDATE_BOND_EX1),
+            ("docs/skills/engram-working-memory.md", UPDATE_BOND_EX2),
             // remember_solution
             (
                 "grok-plugin-engram/commands/engram-solution.md",

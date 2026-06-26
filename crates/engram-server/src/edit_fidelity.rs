@@ -360,7 +360,9 @@ pub fn primary_ast_from_context(path: &str, payload: &Value) -> Option<String> {
                 .filter_map(|item| {
                     item.get("concept")
                         .and_then(|c| c.as_str())
-                        .filter(|c| !c.is_empty() && !c.ends_with("__arc") && c.starts_with(&prefix))
+                        .filter(|c| {
+                            !c.is_empty() && !c.ends_with("__arc") && c.starts_with(&prefix)
+                        })
                         .map(str::to_string)
                 })
                 .collect()
@@ -375,6 +377,7 @@ pub fn primary_ast_from_context(path: &str, payload: &Value) -> Option<String> {
 }
 
 /// Composite safe edit: context → trace → optional arc update → verify → lineage → tensor pattern.
+#[allow(clippy::too_many_arguments)] // mirrors MCP tool schema fields
 pub fn run_safe_edit_and_verify(
     store: &mut StoreHandle,
     path: &str,
@@ -559,8 +562,7 @@ pub fn run_update_with_tensor_bond(
                         })
                         .flatten()
                         .unwrap_or(false);
-                    recall_match =
-                        name_match || arc_pair_match || top.score >= match_threshold;
+                    recall_match = name_match || arc_pair_match || top.score >= match_threshold;
                 } else {
                     // Query provided but no hits — treat as mismatch (do not auto-pass because block exists)
                     recall_match = false;
@@ -817,17 +819,10 @@ mod tests {
     #[test]
     fn prev_in_trace_chain_verified() {
         let mut store = test_store();
-        let prev = mint_quick_trace(&mut store, "prev", "harness chain", None, None, None)
-            .expect("prev");
-        let next = mint_quick_trace(
-            &mut store,
-            "next",
-            "chained",
-            None,
-            Some(&prev),
-            None,
-        )
-        .expect("next");
+        let prev =
+            mint_quick_trace(&mut store, "prev", "harness chain", None, None, None).expect("prev");
+        let next =
+            mint_quick_trace(&mut store, "next", "chained", None, Some(&prev), None).expect("next");
         let r = verify_edit_lineage(&store, Some(&next), None, Some(&prev), MIN_CRS);
         assert!(r.ok, "prev_in_trace chain should verify: {:?}", r.issues);
         assert!(r.merkle_ok);
