@@ -101,10 +101,11 @@ Usage:
   $0 [options] [--suite SUITE]
 
 Options:
-  --suite NAME          health | full-wakeup | transport-lifetime | heavy-light | optix-stress | compression-measurement | lawfulness-metric | continuation-bundle | agent-memory | goal-clear | resume-large | all (default: health)
+  --suite NAME          health | full-wakeup | transport-lifetime | heavy-light | optix-stress | compression-measurement | lawfulness-metric | continuation-bundle | agent-memory | agent-tool-fidelity | goal-clear | resume-large | all (default: health)
                               resume-large: fresh MCP on live store (~/.engram/stalks) — wait-ready JSON + session_start injection fields + rebuild_bvh poll for full_bvh_gpu (do not run while TUI MCP holds lock)
                               continuation-bundle: goal stack + session_start bundle + compression handoff + MCP store upgrade readiness
                               agent-memory: MVP lean 8-tool loop (session_start → readiness → recall(anchors) → quick_trace → remember → session_end → handoff verify)
+                              agent-tool-fidelity: composite safe_edit_and_verify + update_with_tensor_bond + lineage + >=95% correct usage gate (post tensor MVP / goal agent_tool_fidelity_v1)
                               goal-clear: set_primary → pre observe (raw JSON) → update_status → demote → post observe (2x session_start)
                               compression-measurement: exercises Context Compression Tracking System v1 (dual-lens before/after + COMPRESS marker minting high-CRS event artifacts bound to codeland + MCP harness)
                               lawfulness-metric: exercises + asserts Wake-up Lawfulness Verification Tracking (metric:wake_up_verification_* + trend update via update-preferred; genesis/spatial/ki freshness; lawful bool + score; auto-relates to handoff:codeland_integration_2026_plan + 1780091465 + May 31 investigation artifacts)
@@ -124,6 +125,7 @@ Options:
                         --record-results. Fails hard on any red flag. Use this before any cargo install
                         that could affect the daily driver.
   --workspace PATH      Path passed to watch_workspace in rituals (default: current dir or /path/to/your/engram)
+  --scratch PATH        SCRATCH dir for agent-tool-fidelity evidence (overwrites six artifacts after 2 clean runs)
   --verbose             Pass -v to python client + extra harness chatter
   --help                This message
 
@@ -152,6 +154,7 @@ RECORD_RESULTS=false
 REPRO_PRE_FIX=false
 PRE_SWAP_VALIDATE=false
 WORKSPACE_PATH="${WORKSPACE_PATH:-$(pwd)}"  # defaults to current dir (your engram clone root)
+SCRATCH="${SCRATCH:-}"
 VERBOSE=false
 
 while [[ $# -gt 0 ]]; do
@@ -167,6 +170,7 @@ while [[ $# -gt 0 ]]; do
     --repro-pre-fix) REPRO_PRE_FIX=true; shift ;;
     --pre-swap-validate) PRE_SWAP_VALIDATE=true; shift ;;
     --workspace) WORKSPACE_PATH="$2"; shift 2 ;;
+    --scratch) SCRATCH="$2"; shift 2 ;;
     --verbose|-v) VERBOSE=true; shift ;;
     --help|-h) usage; exit 0 ;;
     *) echo "Unknown arg: $1"; usage; exit 1 ;;
@@ -340,6 +344,10 @@ run_single_suite() {
     py_args+=(--env "ENGRAM_OPTIX_ENABLED=$ENGRAM_OPTIX_ENABLED")
   fi
   py_args+=(--env "ENGRAM_KI_ARTIFACTS_DIR=$DEFAULT_KI_DIR")
+  if [[ "$suite" == "agent-tool-fidelity" && -n "${SCRATCH:-}" ]]; then
+    py_args+=(--scratch "$SCRATCH" --fidelity-runs 2)
+    echo "   SCRATCH evidence: $SCRATCH (2 consecutive runs, overwrite on pass)"
+  fi
 
   echo "   Running python client..."
   local rc=0

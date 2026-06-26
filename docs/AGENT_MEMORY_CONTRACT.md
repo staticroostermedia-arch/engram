@@ -191,7 +191,7 @@ Reset to lean before ending long meta sessions to protect the next agent's wake 
 
 ## Edit Loop Example
 
-Lean mode edit discipline uses **`context_for_edit`** once per file, then **`recall`** for gaps, **`quick_trace`** at forks, **`remember`**/`update` for writes.
+Lean mode edit discipline: prefer **`mcp_engram_safe_edit_and_verify`** for substantive edits (one call: context + trace + optional `__arc` + verify + lineage + `tensor:edit_pattern_*`). Otherwise **`context_for_edit`** once per file, then **`recall`** for gaps, **`quick_trace`** at forks, **`mcp_engram_update_with_tensor_bond`** (preferred) or **`update`** for writes. Harness: `--suite agent-tool-fidelity` asserts ≥95% correct tool usage.
 
 ### 1. Pre-edit — single spatial call
 

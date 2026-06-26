@@ -27,6 +27,7 @@ This directly exercises the exact failure modes from the May 31 MCP transport re
 import argparse
 import json
 import os
+import re
 import queue
 import subprocess
 import sys
@@ -732,6 +733,345 @@ class MCPTestClient:
             "still_alive": self.is_alive,
         }
 
+    def run_agent_tool_fidelity_suite(self, workspace_path: str = "/path/to/your/engram") -> Dict[str, Any]:
+        """Agent tool fidelity: composite edit/update tools, lineage+merkle, reflection, >=95% correct usage."""
+        failures: List[str] = []
+        assertions: List[str] = []
+        composite_responses: Dict[str, Any] = {}
+        ts = int(time.time())
+        harness_concept = f"harness:edit_fidelity_{ts}"
+        arc_concept = f"{harness_concept}__arc"
+        edit_path = f"{workspace_path.rstrip('/')}/crates/engram-server/src/profile.rs"
+
+        steps_ok = 0
+        steps_total = 0
+        prev_trace_id: Optional[str] = None
+
+        def step(
+            tool: str,
+            args: Dict[str, Any],
+            label: str,
+            expect_ok: bool = True,
+            post_check: Optional[Any] = None,
+        ) -> Optional[Dict[str, Any]]:
+            nonlocal steps_ok, steps_total
+            steps_total += 1
+            resp = self.call_tool(tool, args, timeout=90.0)
+            data = self._parse_tool_json(resp)
+            err = "error" in resp or resp.get("result", {}).get("isError")
+            transport_ok = (expect_ok and not err) or (not expect_ok and err)
+            if not transport_ok:
+                failures.append(f"{label}: tool={tool} err={err} data_keys={list((data or {}).keys())}")
+                return data
+            if post_check is not None:
+                ok, detail = post_check(data, resp)
+                if ok:
+                    steps_ok += 1
+                    assertions.append(f"{label}: ok")
+                    if detail:
+                        assertions.append(detail)
+                else:
+                    failures.append(f"{label}: {detail}")
+            else:
+                steps_ok += 1
+                assertions.append(f"{label}: ok")
+            return data
+
+        ss_data = step("mcp_engram_session_start", {"intent": "agent-tool-fidelity harness suite"}, "session_start")
+        if ss_data:
+            cont = ss_data.get("continuation") or ss_data
+            hi = cont.get("harness_injection") or {}
+            discipline = hi.get("agent_discipline") or {}
+            rituals = discipline.get("fidelity_rituals") or []
+            if "ritual:safe_code_edit" in rituals or "agent:engram.ritual.safe-code-edit" in str(rituals):
+                assertions.append("fidelity_rituals present in harness_injection")
+            proc_resp = self.call_tool(
+                "mcp_engram_read_concept",
+                {"concept": "process:engram.ritual.safe-code-edit"},
+                timeout=30.0,
+            )
+            proc_text = self._tool_text(proc_resp)
+            if "not found" in proc_text.lower():
+                failures.append("process:engram.ritual.safe-code-edit not loaded in sheaf")
+            else:
+                assertions.append("process:engram.ritual.safe-code-edit loaded")
+
+        step(
+            "mcp_engram_ack_wake_queue",
+            {"executed": True, "note": "harness agent-tool-fidelity — queue cleared before edits"},
+            "ack_wake_queue",
+        )
+
+        def prev_trace_post_check(
+            _data: Optional[Dict[str, Any]], resp: Dict[str, Any]
+        ) -> Tuple[bool, str]:
+            nonlocal prev_trace_id
+            prev_text = self._tool_text(resp)
+            if "trace:" not in prev_text:
+                return False, "prev_trace_mint: quick_trace failed"
+            m = re.search(r"trace:[^\s\)]+", prev_text)
+            if not m:
+                return False, "prev_trace_mint: trace id not parsed from response"
+            prev_trace_id = m.group(0).rstrip(")")
+            return True, f"prev_trace_mint: ok ({prev_trace_id})"
+
+        step(
+            "mcp_engram_quick_trace",
+            {
+                "decision": "Harness prev trace for safe_edit chain",
+                "why": "Exercise prev_in_trace lineage before composite edit",
+                "goal_context": "goal:agent_tool_fidelity_v1",
+            },
+            "prev_trace_mint",
+            post_check=prev_trace_post_check,
+        )
+
+        step(
+            "mcp_engram_remember",
+            {"concept": harness_concept, "text": "Harness edit fidelity artifact — update target with __arc companion."},
+            "remember_target",
+        )
+        step(
+            "mcp_engram_remember",
+            {
+                "concept": arc_concept,
+                "text": "EDIT ARC — harness fidelity __arc seed for tensor bond path.",
+            },
+            "seed_arc_block",
+        )
+
+        safe_args: Dict[str, Any] = {
+            "path": edit_path,
+            "decision": "Harness safe edit composite smoke",
+            "why": "Verify lineage + tensor pattern path",
+            "arc_delta": "delta: harness safe_edit smoke — no real file change",
+            "goal_context": "goal:agent_tool_fidelity_v1",
+            "run_verify": True,
+        }
+        if prev_trace_id:
+            safe_args["prev_trace"] = prev_trace_id
+
+        def safe_edit_post_check(
+            data: Optional[Dict[str, Any]], _resp: Dict[str, Any]
+        ) -> Tuple[bool, str]:
+            if not data:
+                return False, "safe_edit returned no data"
+            if data.get("ok") is not True:
+                return False, f"safe_edit ok=false: {data}"
+            tid = data.get("trace_id")
+            if not tid:
+                return False, "safe_edit missing trace_id"
+            lineage = data.get("lineage") or {}
+            if lineage.get("merkle_ok") is not True:
+                return False, f"lineage merkle missing: {lineage}"
+            if prev_trace_id and not lineage.get("ok"):
+                return False, f"prev_in_trace chain failed with prev={prev_trace_id}: {lineage}"
+            if data.get("arc_update_error"):
+                return False, f"arc_update_error: {data.get('arc_update_error')}"
+            tp = data.get("tensor_pattern")
+            if not tp or not isinstance(tp, dict):
+                return False, f"safe_edit tensor_pattern missing: {tp!r}"
+            bonds = tp.get("bonds_created", tp.get("bonds", 0))
+            if not (bonds and int(bonds) > 0):
+                return False, f"safe_edit tensor bond not created: {tp}"
+            parts = [
+                f"lineage trace_id={tid}",
+                "lineage.merkle_ok=true",
+                f"tensor_pattern bonds={bonds}",
+            ]
+            if prev_trace_id:
+                parts.append("prev_in_trace chain verified")
+            if data.get("arc_updated") is True:
+                parts.append("arc_updated=true")
+            return True, "; ".join(parts)
+
+        safe_data = step(
+            "mcp_engram_safe_edit_and_verify",
+            safe_args,
+            "safe_edit_and_verify",
+            post_check=safe_edit_post_check,
+        )
+        if safe_data:
+            composite_responses["safe_edit_and_verify"] = safe_data
+
+        def update_arc_post_check(
+            data: Optional[Dict[str, Any]], _resp: Dict[str, Any]
+        ) -> Tuple[bool, str]:
+            if not data:
+                return False, "update_with_tensor_bond returned no data"
+            if data.get("ok") is not True:
+                return False, (
+                    f"update ok=false recall_match={data.get('recall_match')} "
+                    f"top_score={data.get('recall_top_score')}: {data}"
+                )
+            if data.get("recall_match") is not True:
+                return False, f"recall_match false: top={data.get('recall_top')} score={data.get('recall_top_score')}"
+            if data.get("crs_gate_ok") is not True:
+                return False, f"crs_gate failed: after={data.get('crs_after')}"
+            lin = data.get("lineage") or {}
+            arc_merkle = lin.get("merkle_arc_sig") or lin.get("merkle_ok")
+            if not arc_merkle:
+                return False, f"update arc merkle missing: {lin}"
+            tp = data.get("tensor_pattern")
+            if not tp or not isinstance(tp, dict):
+                return False, "update tensor_pattern missing"
+            bonds = tp.get("bonds", 0)
+            if not bonds or int(bonds) <= 0:
+                return False, f"update tensor bond not created: {tp}"
+            return True, (
+                f"crs_after={data.get('crs_after')} (>=0.74); "
+                f"recall_match=true; update arc merkle={arc_merkle}; tensor bonds={bonds}"
+            )
+
+        update_data = step(
+            "mcp_engram_update_with_tensor_bond",
+            {
+                "concept": arc_concept,
+                "new_text": "delta: harness __arc updated via tensor bond composite with recall guard.",
+                "recall_query": harness_concept,
+                "bond_label": "edit_fidelity",
+            },
+            "update_with_tensor_bond_arc",
+            post_check=update_arc_post_check,
+        )
+        if update_data:
+            composite_responses["update_with_tensor_bond_arc"] = update_data
+
+        ack_trace = (safe_data or {}).get("trace_id")
+        ack_data = step(
+            "mcp_engram_ack_edit_arc",
+            {
+                "skip": True,
+                "note": "harness read-only ack",
+                "lineage_check": True,
+                "trace_id": ack_trace,
+            },
+            "ack_edit_arc_lineage",
+        )
+        if ack_data and ack_data.get("lineage_check"):
+            assertions.append("ack lineage_check field present")
+
+        def misuse_post_check(
+            data: Optional[Dict[str, Any]], _resp: Dict[str, Any]
+        ) -> Tuple[bool, str]:
+            if not data:
+                return False, "misuse returned no data"
+            if data.get("recall_match") is not False:
+                return False, "misuse: expected recall_match=false"
+            scar = data.get("scar_key")
+            if not scar:
+                return False, "misuse: expected scar_key on recall mismatch"
+            fp = data.get("failure_pattern")
+            if not fp or not isinstance(fp, dict) or not fp:
+                return False, f"misuse: expected non-empty failure_pattern, got {fp!r}"
+            fp_concept = str(fp.get("concept", ""))
+            if fp.get("kind") != "failure" and "edit_pattern_failure" not in fp_concept:
+                return False, f"misuse: expected failure_pattern kind=failure, got {fp}"
+            if data.get("ok") is True:
+                return False, "misuse: expected ok=false on recall mismatch"
+            if data.get("tensor_pattern"):
+                return False, f"misuse: success tensor_pattern should be absent, got {data.get('tensor_pattern')}"
+            return True, f"misuse scar_key={scar}; failure_pattern ({fp_concept or fp.get('kind')})"
+
+        misuse_data = step(
+            "mcp_engram_update_with_tensor_bond",
+            {
+                "concept": harness_concept,
+                "new_text": "Harness mismatch probe — recall guard exercised.",
+                "recall_query": "completely unrelated quantum physics",
+                "scar_on_mismatch": True,
+                "match_threshold": 0.99,
+            },
+            "misuse_self_correction",
+            post_check=misuse_post_check,
+        )
+        if misuse_data:
+            composite_responses["misuse_self_correction"] = misuse_data
+
+        step("mcp_engram_verify_manifold_integrity", {"min_crs": 0.74, "sample_size": 16}, "verify_manifold")
+        step("mcp_engram_genesis", {"action": "status"}, "genesis_status")
+        spatial_text = self._tool_text(self.call_tool("mcp_engram_spatial_status", {}, timeout=60.0))
+        if spatial_text and "error" not in spatial_text.lower()[:80]:
+            assertions.append("spatial_status: responded")
+        else:
+            assertions.append("spatial_status: n/a on fresh isolated store (non-fatal)")
+
+        # Semantic steps (tools/list registration) — post_check on palette
+        def palette_post_check(
+            data: Optional[Dict[str, Any]], _resp: Dict[str, Any]
+        ) -> Tuple[bool, str]:
+            if not data:
+                return False, "context_for_edit returned no data"
+            hi = data.get("harness_injection") or {}
+            palette = hi.get("post_edit_palette") or data.get("post_edit_palette") or []
+            if palette and palette[0].get("tool") == "mcp_engram_safe_edit_and_verify":
+                return True, "post_edit_palette fronts safe_edit"
+            return False, "post_edit_palette missing safe_edit priority 0"
+
+        ctx_data = step(
+            "mcp_engram_context_for_edit",
+            {"path": edit_path, "auto_ingest": True},
+            "context_for_edit_palette",
+            post_check=palette_post_check,
+        )
+
+        steps_total += 1
+        tools_resp = self._send_request("tools/list", {}, timeout=30.0)
+        tool_names = set()
+        desc_by_name: Dict[str, str] = {}
+        if "result" in tools_resp:
+            for t in tools_resp["result"].get("tools", []):
+                name = t.get("name", "")
+                tool_names.add(name)
+                desc_by_name[name] = t.get("description", "") or ""
+        tools_ok = True
+        tools_detail: List[str] = []
+        for required in (
+            "mcp_engram_safe_edit_and_verify",
+            "mcp_engram_update_with_tensor_bond",
+        ):
+            if required not in tool_names:
+                tools_ok = False
+                failures.append(f"{required} missing from tools/list")
+            elif "FEW-SHOT" not in desc_by_name.get(required, ""):
+                tools_ok = False
+                failures.append(f"{required} description missing FEW-SHOT examples")
+            else:
+                tools_detail.append(f"{required} registered")
+        if tools_ok:
+            steps_ok += 1
+            assertions.extend(tools_detail)
+
+        fidelity_rate = (steps_ok / steps_total) if steps_total else 0.0
+        assertions.append(f"fidelity_rate={fidelity_rate:.3f} ({steps_ok}/{steps_total})")
+        if fidelity_rate < 0.95:
+            failures.append(f"fidelity_rate {fidelity_rate:.3f} below 0.95 threshold")
+        if len(failures) > 0 and fidelity_rate >= 0.95:
+            failures.append(
+                f"fidelity_rate inflated: {steps_ok}/{steps_total} despite {len(failures)} semantic failures"
+            )
+
+        passed = (
+            len(failures) == 0
+            and fidelity_rate >= 0.95
+            and self.is_alive
+            and self.transport_failures == 0
+        )
+        return {
+            "label": "agent_tool_fidelity",
+            "passed": passed,
+            "failures": failures,
+            "assertions": assertions,
+            "fidelity_rate": fidelity_rate,
+            "steps_ok": steps_ok,
+            "steps_total": steps_total,
+            "harness_concept": harness_concept,
+            "arc_concept": arc_concept,
+            "prev_trace_id": prev_trace_id,
+            "composite_responses": composite_responses,
+            "still_alive": self.is_alive,
+        }
+
     def run_goal_clear_suite(self) -> Dict[str, Any]:
         """Goal complete+clear: set_primary (serves) → pre observe → update_status → demote → post observe (2x)."""
         failures: List[str] = []
@@ -1159,13 +1499,25 @@ def main():
     ap.add_argument("--binary", required=True, help="Path to engram binary (stable or dev)")
     ap.add_argument("--store", required=True, help="Isolated temp store dir (will be created)")
     ap.add_argument("--env", action="append", default=[], help="KEY=VAL env override (repeatable)")
-    ap.add_argument("--suite", default="health", choices=["health", "full-wakeup", "transport-lifetime", "heavy-light", "optix-stress", "compression-measurement", "lawfulness-metric", "continuation-bundle", "agent-memory", "goal-clear", "all"])
+    ap.add_argument("--suite", default="health", choices=["health", "full-wakeup", "transport-lifetime", "heavy-light", "optix-stress", "compression-measurement", "lawfulness-metric", "continuation-bundle", "agent-memory", "agent-tool-fidelity", "goal-clear", "all"])
     ap.add_argument("--iterations", type=int, default=12, help="For transport-lifetime")
     ap.add_argument("--timeout", type=float, default=60.0)
     ap.add_argument("--verbose", action="store_true")
     ap.add_argument("--json-out", help="Write full JSON results here")
     ap.add_argument("--workspace", default="/path/to/your/engram", help="For watch_workspace in ritual (your clone root)")
+    ap.add_argument(
+        "--scratch",
+        help="SCRATCH dir for agent-tool-fidelity evidence (overwrites six artifacts after clean runs)",
+    )
+    ap.add_argument(
+        "--fidelity-runs",
+        type=int,
+        default=0,
+        help="Consecutive suite runs (default 2 when --scratch set, else 1)",
+    )
     args = ap.parse_args()
+    if args.fidelity_runs <= 0:
+        args.fidelity_runs = 2 if args.scratch else 1
 
     env_over = {}
     for kv in args.env:
@@ -1235,6 +1587,73 @@ def main():
             if not res.get("passed"):
                 client.errors.append("agent-memory assertions failed")
 
+        fidelity_suite_result: Optional[Dict[str, Any]] = None
+        fidelity_run_results: List[Dict[str, Any]] = []
+        if args.suite in ("agent-tool-fidelity", "all"):
+            workspace_root = os.path.abspath(
+                os.path.join(os.path.dirname(__file__), "..", "..", "..")
+            )
+            if args.scratch:
+                print(f"=== Building engram-server before fidelity evidence ({args.fidelity_runs} runs) ===")
+                subprocess.run(
+                    ["cargo", "build", "-p", "engram-server"],
+                    cwd=workspace_root,
+                    check=False,
+                )
+            for run_idx in range(args.fidelity_runs):
+                run_client = client
+                run_store = args.store
+                shutdown_after = False
+                if args.fidelity_runs > 1:
+                    run_store = tempfile.mkdtemp(prefix=f"engram-fidelity-run{run_idx + 1}-")
+                    run_client = MCPTestClient(
+                        binary=args.binary,
+                        store_dir=run_store,
+                        env_overrides=env_over,
+                        default_timeout=args.timeout,
+                        verbose=args.verbose,
+                    )
+                    if not run_client.start():
+                        client.errors.append(f"agent-tool-fidelity run {run_idx + 1} failed to start")
+                        break
+                    shutdown_after = True
+                print(
+                    f"=== Running agent_tool_fidelity_suite run {run_idx + 1}/{args.fidelity_runs} ==="
+                )
+                res = run_client.run_agent_tool_fidelity_suite(workspace_path=args.workspace)
+                print(json.dumps(res, indent=2))
+                fidelity_run_results.append(res)
+                fidelity_suite_result = res
+                if not res.get("passed"):
+                    client.errors.append(f"agent-tool-fidelity run {run_idx + 1} assertions failed")
+                    if shutdown_after:
+                        run_client.shutdown()
+                    break
+                if shutdown_after:
+                    run_client.shutdown()
+            if (
+                args.scratch
+                and len(fidelity_run_results) == args.fidelity_runs
+                and all(r.get("passed") for r in fidelity_run_results)
+            ):
+                from fidelity_evidence import write_fidelity_evidence
+
+                summary = client.get_summary()
+                final_payload: Dict[str, Any] = {
+                    "ok": True,
+                    "summary": summary,
+                    "timings": client.timings,
+                    "suite_result": fidelity_suite_result,
+                    "runs": fidelity_run_results,
+                }
+                write_fidelity_evidence(
+                    args.scratch,
+                    fidelity_run_results,
+                    args.binary,
+                    workspace_root,
+                    final_payload,
+                )
+
         goal_clear_full_written = False
         if args.suite in ("goal-clear", "all"):
             print("=== Running goal_clear_suite (set_primary → clear → post observe 2x) ===")
@@ -1249,14 +1668,27 @@ def main():
                 client.errors.append("goal-clear assertions failed")
 
         summary = client.get_summary()
+        suite_passed = len(client.errors) == 0
         if args.json_out and not goal_clear_full_written:
+            payload: Dict[str, Any] = {
+                "ok": suite_passed and summary["still_alive"] and summary["transport_failures"] == 0,
+                "summary": summary,
+                "timings": client.timings,
+            }
+            if fidelity_suite_result is not None:
+                payload["suite_result"] = fidelity_suite_result
             with open(args.json_out, "w") as f:
-                json.dump({"ok": True, "summary": summary, "timings": client.timings}, f, indent=2)
+                json.dump(payload, f, indent=2)
             print(f"Results written to {args.json_out}")
 
         print("\n=== CLIENT SUMMARY ===")
         print(json.dumps(summary, indent=2))
-        sys.exit(0 if summary["still_alive"] and summary["transport_failures"] == 0 else 1)
+        ok = (
+            summary["still_alive"]
+            and summary["transport_failures"] == 0
+            and suite_passed
+        )
+        sys.exit(0 if ok else 1)
     finally:
         client.shutdown()
 

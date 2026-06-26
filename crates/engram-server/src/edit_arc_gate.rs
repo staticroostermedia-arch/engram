@@ -341,6 +341,29 @@ pub fn on_arc_updated(concept: &str) {
     });
 }
 
+/// Acknowledge or skip pending edit-arc debt; optional lineage check (edit_ack_with_lineage_check ritual).
+pub fn ack_edit_arc_with_lineage(
+    store: &crate::store::StoreHandle,
+    concepts: Option<&[String]>,
+    skip: bool,
+    note: Option<&str>,
+    lineage_check: bool,
+    trace_id: Option<&str>,
+) -> Value {
+    let mut payload = ack_edit_arc(concepts, skip, note);
+    if lineage_check {
+        let arc = concepts
+            .and_then(|c| c.first())
+            .map(|a| crate::store::StoreHandle::arc_concept_name(a));
+        let lineage =
+            crate::edit_fidelity::verify_edit_lineage(store, trace_id, arc.as_deref(), None, 0.74);
+        if let Some(obj) = payload.as_object_mut() {
+            obj.insert("lineage_check".to_string(), lineage.to_json());
+        }
+    }
+    payload
+}
+
 /// Acknowledge or skip pending edit-arc debt for one or all loci.
 pub fn ack_edit_arc(concepts: Option<&[String]>, skip: bool, note: Option<&str>) -> Value {
     with_session(|s| {

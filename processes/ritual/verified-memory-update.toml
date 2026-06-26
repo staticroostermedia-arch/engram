@@ -1,0 +1,60 @@
+# agent:engram.ritual.verified-memory-update — recall-first update with tensor bond
+
+[process]
+name = "agent:engram.ritual.verified-memory-update"
+zedos_type = "ZEDOS_PRAXIS"
+phase_seed = "verified-memory-update-v1"
+
+[category]
+object = "memory_update_fidelity"
+morphism = "OP_GEOMETRIC_PRODUCT"
+sheaf_role = "recall → update (never forget+remember) → tensor bond → optional scar on mismatch"
+restriction_maps = ["manifold_integrity >= 0.74", "recall_before_derive"]
+gluing = "OP_ADD"
+natural_transformation = "@0.85"
+h1_handler = "OP_IS_SYMBOLIC_OF"
+
+[mcp_tools]
+list = [
+  "mcp_engram_update_with_tensor_bond",
+  "mcp_engram_recall",
+  "mcp_engram_update",
+  "mcp_engram_scar",
+  "mcp_engram_tensor_upsert",
+  "mcp_engram_verify_block_lawfulness",
+]
+
+[requires]
+list = [
+  "process:engram.ritual.working-memory",
+  "recall_before_derive",
+]
+
+[produces]
+list = [
+  "tensor:update_pattern_*",
+  "trace:*_memory_update",
+  "scar:*_mismatch",
+]
+
+[invariants]
+list = [
+  "recall_before_update",
+  "update_only_mutation",
+  "p_momentum_preserved_on_update",
+  "crs_0.74_gate",
+  "tensor_bond_edit_fidelity",
+]
+
+[sequence]
+steps = [
+  { order = 1, tool = "mcp_engram_recall", note = "scope=anchors; check match >0.85 before update" },
+  { order = 2, tool = "mcp_engram_update_with_tensor_bond", note = "Preferred composite with scar_on_mismatch" },
+  { order = 3, tool = "mcp_engram_verify_block_lawfulness", note = "Post-update CRS gate" },
+]
+
+[timeout_ms]
+value = 90000
+
+[notes]
+# Misuse (forget+remember) should scar immediately. Incorrect patterns surface as open_scars at wake.

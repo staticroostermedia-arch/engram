@@ -46,6 +46,8 @@ ln -sf "$REPO_ROOT/scripts/engram-grok" "$HOME/.local/bin/engram-grok" 2>/dev/nu
 if command -v grok >/dev/null 2>&1; then
   echo "==> Installing Grok plugin (trusted)…"
   grok plugin install "$PLUGIN_DIR" --trust
+  echo "==> MCP fidelity sync (rebuild + composite tool verify):"
+  FORCE_MCP_RESTART=1 "$REPO_ROOT/scripts/sync-live-mcp-fidelity.sh" || true
   echo "==> MCP health check:"
   "$REPO_ROOT/scripts/engram-mcp-health.sh" || true
   if pgrep -f "engram.*mcp" >/dev/null 2>&1; then

@@ -1,0 +1,65 @@
+# agent:engram.ritual.safe-code-edit — verified composite edit path (agent_tool_fidelity_v1)
+
+[process]
+name = "agent:engram.ritual.safe-code-edit"
+zedos_type = "ZEDOS_PRAXIS"
+phase_seed = "safe-code-edit-v1"
+
+[category]
+object = "code_edit_fidelity"
+morphism = "OP_GEOMETRIC_PRODUCT"
+sheaf_role = "context_for_edit → quick_trace → optional __arc update → verify → lineage → tensor pattern"
+restriction_maps = ["manifold_integrity >= 0.74", "wake_queue_acked_before_edits", "edit_arc_gate"]
+gluing = "OP_ADD"
+natural_transformation = "@0.85"
+h1_handler = "OP_IS_SYMBOLIC_OF"
+
+[mcp_tools]
+list = [
+  "mcp_engram_safe_edit_and_verify",
+  "mcp_engram_context_for_edit",
+  "mcp_engram_quick_trace",
+  "mcp_engram_update",
+  "mcp_engram_ack_edit_arc",
+  "mcp_engram_verify_manifold_integrity",
+  "mcp_engram_verify_block_lawfulness",
+  "mcp_engram_tensor_upsert",
+]
+
+[requires]
+list = [
+  "process:engram.ritual.working-memory",
+  "manifold_integrity >= 0.74",
+  "queue_before_edits",
+]
+
+[produces]
+list = [
+  "trace:*_edit",
+  "{stem}__fn__*__arc",
+  "tensor:edit_pattern_*",
+  "lineage.verified",
+]
+
+[invariants]
+list = [
+  "context_for_edit_before_edit",
+  "quick_trace_at_fork",
+  "update_only_mutation",
+  "lineage_preserved",
+  "crs_0.74_gate_on_verified",
+  "no_annihilation_updates",
+]
+
+[sequence]
+steps = [
+  { order = 1, tool = "mcp_engram_safe_edit_and_verify", note = "Preferred one-shot; or manual context_for_edit + quick_trace" },
+  { order = 2, tool = "mcp_engram_update_with_tensor_bond", note = "Post external editor change — arc delta + bond" },
+  { order = 3, tool = "mcp_engram_ack_edit_arc", note = "lineage_check=true when clearing debt" },
+]
+
+[timeout_ms]
+value = 120000
+
+[notes]
+# Surfaced in harness_injection.agent_discipline.at_code_edit and post_edit_palette priority 0.

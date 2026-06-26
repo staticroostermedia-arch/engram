@@ -384,6 +384,8 @@ fn load_process_sheaf(store: &SharedStore) -> Result<(), String> {
         }
         let _ = hlock.promote_tile_to_high_priority("process:engram.ritual.wake-up");
         let _ = hlock.promote_tile_to_high_priority("process:engram.ritual.nrem-consolidation");
+        let _ = hlock.promote_tile_to_high_priority("process:engram.ritual.safe-code-edit");
+        let _ = hlock.promote_tile_to_high_priority("process:engram.ritual.verified-memory-update");
         let _ = hlock
             .promote_tile_to_high_priority("process:engram.ritual.local-context-working-memory");
         let _ = hlock.promote_tile_to_high_priority("process:engram.monitor.subvisor");
@@ -628,16 +630,7 @@ fn tool_list() -> Value {
             },
             {
                 "name": "mcp_engram_remember",
-                "description": "Encode text and store it as a persistent HolographicBlock (.leg3) memory under a concept name. \
-                                WHEN TO CALL: Any time you learn a new fact, decision, user preference, architecture detail, \
-                                or solution you will need in a future session. If you would write it in a comment, store it here. \
-                                WHAT IT DOES: Encodes text into a 256KB complex phase vector (q tensor), applies the ADR \
-                                thermodynamic confidence gate, chains a BLAKE3 Merkle proof of lineage, and writes the block \
-                                to the persistent NVMe manifold. New blocks start at CRS=1.0 (maximum confidence). \
-                                CRS TIERS: 1.0=pinned/immortal | >=0.74=grounded fact (safe to act on) | \
-                                >=0.50=working hypothesis (use with caution) | <0.50=uncertain (verify first). \
-                                WARNING: To modify an existing concept use mcp_engram_update, NOT forget+remember. \
-                                Calling forget+remember destroys the block's thermodynamic history permanently.",
+                "description": crate::fidelity_few_shots::remember_description(),
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -794,7 +787,7 @@ fn tool_list() -> Value {
             },
             {
                 "name": "mcp_engram_ack_edit_arc",
-                "description": "Acknowledge or skip pending edit-arc debt — unblocks repeat context_for_edit on the same path when ENGRAM_EDIT_ARC_GATE=hard. Prefer mcp_engram_update on *__arc after edits; use skip=true with an honest note only for read-only passes.",
+                "description": crate::fidelity_few_shots::ack_edit_arc_description(),
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -810,8 +803,88 @@ fn tool_list() -> Value {
                         "note": {
                             "type": "string",
                             "description": "Reason for skip or ack (e.g. read-only recon, no edits made)"
+                        },
+                        "lineage_check": {
+                            "type": "boolean",
+                            "description": "If true, verify trace/arc lineage before ack (edit_ack_with_lineage_check ritual)"
+                        },
+                        "trace_id": {
+                            "type": "string",
+                            "description": "Optional trace concept for lineage_check"
                         }
                     }
+                }
+            },
+            {
+                "name": "mcp_engram_safe_edit_and_verify",
+                "description": crate::fidelity_few_shots::safe_edit_description(),
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "path": {
+                            "type": "string",
+                            "description": "Absolute file path to edit (required)"
+                        },
+                        "decision": {
+                            "type": "string",
+                            "description": "Edit intent — one clear sentence"
+                        },
+                        "why": {
+                            "type": "string",
+                            "description": "Justification for the edit"
+                        },
+                        "arc_delta": {
+                            "type": "string",
+                            "description": "Optional delta narrative appended to first spatial __arc"
+                        },
+                        "prev_trace": {
+                            "type": "string",
+                            "description": "Optional prev_in_trace chain head"
+                        },
+                        "goal_context": {
+                            "type": "string",
+                            "description": "Optional goal:* this edit serves"
+                        },
+                        "run_verify": {
+                            "type": "boolean",
+                            "description": "Run sampled verify_manifold_integrity (default true)"
+                        }
+                    },
+                    "required": ["path", "decision", "why"]
+                }
+            },
+            {
+                "name": "mcp_engram_update_with_tensor_bond",
+                "description": crate::fidelity_few_shots::update_bond_description(),
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "concept": {
+                            "type": "string",
+                            "description": "Existing concept to update (required)"
+                        },
+                        "new_text": {
+                            "type": "string",
+                            "description": "Delta or replacement text (required)"
+                        },
+                        "recall_query": {
+                            "type": "string",
+                            "description": "Recall-first query — mismatch may scar when scar_on_mismatch=true"
+                        },
+                        "bond_label": {
+                            "type": "string",
+                            "description": "Tensor bond label (default edit_fidelity)"
+                        },
+                        "scar_on_mismatch": {
+                            "type": "boolean",
+                            "description": "Mint scar when recall top does not match concept (default false)"
+                        },
+                        "match_threshold": {
+                            "type": "number",
+                            "description": "Min recall score to accept without name match (default 0.85)"
+                        }
+                    },
+                    "required": ["concept", "new_text"]
                 }
             },
             {
@@ -1010,10 +1083,7 @@ fn tool_list() -> Value {
             },
             {
                 "name": "mcp_engram_quick_trace",
-                "description": "ULTRA LOW FRICTION version of trace capture for daily TUI use. \
-                                Takes simple natural fields and produces a proper structured `trace:*` .leg block with correct relations. \
-                                Use this for fast thinking capture during active work. The result is identical in quality to the full structured tool. \
-                                Strongly preferred for real-time TUI sessions.",
+                "description": crate::fidelity_few_shots::quick_trace_description(),
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -1586,7 +1656,7 @@ fn tool_list() -> Value {
             },
             {
                 "name": "mcp_engram_context_for_edit",
-                "description": "Code atlas v2 — pre-edit situated memory. Returns JSON: spatial_items (tree-sitter AABB + edit_arc per locus), traces_at_locus (decisions at file:line), scars_at_locus, spatial_siblings, anchor goals/traces. Requires wake queue ack when ENGRAM_WAKE_QUEUE_GATE=hard (call mcp_engram_ack_wake_queue after session_start queue). Soft mode embeds wake_queue_gate warning if not acked. Auto-ingests single file when empty.",
+                "description": crate::fidelity_few_shots::context_for_edit_description(),
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -1659,7 +1729,7 @@ fn tool_list() -> Value {
             },
             {
                 "name": "mcp_engram_remember_solution",
-                "description": "Store a crystallized error→solution pair as a ZEDOS_PRAXIS block, auto-pinned to CRS=1.0. Solutions never decay.",
+                "description": crate::fidelity_few_shots::remember_solution_description(),
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -1719,11 +1789,7 @@ fn tool_list() -> Value {
             },
             {
                 "name": "mcp_engram_update",
-                "description": "CRITICAL: Use this whenever you need to change or append to an existing memory. \
-                                NEVER use forget+remember to update — that destroys the block's entire history. \
-                                Superposes q + accumulates p-momentum AND splices ProvLog (append for __arc/trace/design; \
-                                replace for AST structure blocks when new_text is source). Code atlas structure blocks \
-                                also refresh provlog on spatial re-ingest (ingest_ast_item).",
+                "description": crate::fidelity_few_shots::update_description(),
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -3639,6 +3705,11 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
         "mcp_engram_ack_edit_arc" => {
             let skip = args.get("skip").and_then(|v| v.as_bool()).unwrap_or(true);
             let note = args.get("note").and_then(|v| v.as_str());
+            let lineage_check = args
+                .get("lineage_check")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            let trace_id = args.get("trace_id").and_then(|v| v.as_str());
             let concepts: Option<Vec<String>> =
                 args.get("concepts").and_then(|v| v.as_array()).map(|arr| {
                     arr.iter()
@@ -3646,7 +3717,22 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                         .collect()
                 });
             let concept_refs = concepts.as_deref();
-            let payload = crate::edit_arc_gate::ack_edit_arc(concept_refs, skip, note);
+            let payload = match store.lock() {
+                Ok(lock) => crate::edit_arc_gate::ack_edit_arc_with_lineage(
+                    &lock,
+                    concept_refs,
+                    skip,
+                    note,
+                    lineage_check,
+                    trace_id,
+                ),
+                Err(p) => {
+                    return json!({
+                        "content": [{ "type": "text", "text": format!("Error: store mutex poisoned: {}", p) }],
+                        "isError": true
+                    });
+                }
+            };
             if let Ok(mut lock) = store.lock() {
                 let detail = note.unwrap_or(if skip {
                     "arc debt skipped"
@@ -3666,6 +3752,107 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                 }]
             })
         }
+
+        "mcp_engram_safe_edit_and_verify" => {
+            let path = args["path"].as_str().unwrap_or("").trim();
+            let decision = args["decision"].as_str().unwrap_or("").trim();
+            let why = args["why"].as_str().unwrap_or("").trim();
+            if path.is_empty() || decision.is_empty() || why.is_empty() {
+                return json!({
+                    "content": [{
+                        "type": "text",
+                        "text": serde_json::json!({"error": "path, decision, and why are required"}).to_string()
+                    }],
+                    "isError": true
+                });
+            }
+            let arc_delta = args.get("arc_delta").and_then(|v| v.as_str());
+            let prev_trace = args.get("prev_trace").and_then(|v| v.as_str());
+            let goal_context = args.get("goal_context").and_then(|v| v.as_str());
+            let run_verify = args
+                .get("run_verify")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(true);
+
+            match store.lock() {
+                Ok(mut lock) => {
+                    let payload = crate::edit_fidelity::run_safe_edit_and_verify(
+                        &mut lock,
+                        path,
+                        decision,
+                        why,
+                        arc_delta,
+                        prev_trace,
+                        goal_context,
+                        run_verify,
+                    );
+                    lock.log_activity("ritual:safe_code_edit", "composite", Some(path));
+                    json!({
+                        "content": [{
+                            "type": "text",
+                            "text": payload.to_string()
+                        }]
+                    })
+                }
+                Err(p) => json!({
+                    "content": [{ "type": "text", "text": format!("Error: store mutex poisoned: {}", p) }],
+                    "isError": true
+                }),
+            }
+        }
+
+        "mcp_engram_update_with_tensor_bond" => {
+            let concept = args["concept"].as_str().unwrap_or("").trim();
+            let new_text = args["new_text"].as_str().unwrap_or("").trim();
+            if concept.is_empty() || new_text.is_empty() {
+                return json!({
+                    "content": [{
+                        "type": "text",
+                        "text": "Error: concept and new_text are required."
+                    }],
+                    "isError": true
+                });
+            }
+            let recall_query = args.get("recall_query").and_then(|v| v.as_str());
+            let bond_label = args
+                .get("bond_label")
+                .and_then(|v| v.as_str())
+                .unwrap_or("edit_fidelity");
+            let scar_on_mismatch = args
+                .get("scar_on_mismatch")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            let match_threshold = args
+                .get("match_threshold")
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.85) as f32;
+
+            match store.lock() {
+                Ok(mut lock) => {
+                    let payload = crate::edit_fidelity::run_update_with_tensor_bond(
+                        &mut lock,
+                        concept,
+                        new_text,
+                        recall_query,
+                        bond_label,
+                        scar_on_mismatch,
+                        match_threshold,
+                    );
+                    lock.log_activity("ritual:verified_memory_update", "composite", Some(concept));
+                    json!({
+                        "content": [{
+                            "type": "text",
+                            "text": payload.to_string()
+                        }]
+                    })
+                }
+                Err(p) => json!({
+                    "content": [{ "type": "text", "text": format!("Error: store mutex poisoned: {}", p) }],
+                    "isError": true
+                }),
+            }
+        }
+
         "mcp_engram_session_start" => {
             let intent = args["intent"].as_str().unwrap_or("").trim().to_string();
             if intent.is_empty() {

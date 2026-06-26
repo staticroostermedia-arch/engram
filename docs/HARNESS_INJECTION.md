@@ -86,6 +86,8 @@ flowchart LR
 
 **Harness without TUI:** `STABLE_BIN=target/debug/engram tools/test-harness/bin/engram-harness.sh --suite agent-memory` — new MCP client per run simulates restart; asserts `injection_completeness.score`, `nvme_context.recall_mode`, `suggested_actions[0].injection_rank`.
 
+**Agent tool fidelity (post tensor MVP #47):** `STABLE_BIN=target/debug/engram tools/test-harness/bin/engram-harness.sh --suite agent-tool-fidelity --workspace /path/to/Engram --scratch /tmp/grok-goal-XXX/implementer --record-results` — runs **2 consecutive** clean suites, overwrites six SCRATCH artifacts (`fidelity_harness.json` with `suite_result`, `agent_tool_fidelity_harness.log`, `fidelity_demo.log`, `composite_tool_evidence.txt`, `fidelity_diagnosis_source.txt`, `ritual_toml_evidence.txt`). Asserts `fidelity_rate=1.0`, `prev_in_trace chain verified`, misuse scar + `failure_pattern`. AC1 doc drift gated by `cargo test -p engram-server fidelity_few_shots_docs_match_canonical`. After substrate changes: restart MCP (`scripts/install-engram-plugin.sh` or new Grok session).
+
 | 6 | Goal complete — clear injection | `goal_update_status(completed)` + `demote_from_context` on task goal; TUI `/goal` → `update_goal(completed=true)` |
 | 7 | Terminal — push notes | Commit + PR describing fixes/improvements (traces, ACs, branch); see `{SCRATCH}/pr-notes.md` in harness runs |
 

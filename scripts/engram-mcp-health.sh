@@ -32,12 +32,20 @@ echo "    Store:  $STORE"
 "$BINARY" --version 2>/dev/null || true
 
 # Live session already owns MCP for this store?
-if pgrep -f "engram.*--store.*mcp" >/dev/null 2>&1; then
+if pgrep -f "engram.*mcp" >/dev/null 2>&1; then
   LIVE_PID=$(pgrep -f "engram.*mcp" | head -1)
-  echo "OK: Live engram MCP already running (pid=$LIVE_PID)."
-  echo "    grok mcp doctor will fail while this session is open — that is expected."
-  echo "    Open /engram-wake in your Grok session to verify tools."
-  exit 0
+  BIN_MTIME=$(stat -c %Y "$BINARY" 2>/dev/null || echo 0)
+  PROC_START=$(stat -c %Y "/proc/$LIVE_PID" 2>/dev/null || echo 0)
+  if [[ "$BIN_MTIME" -gt "$PROC_START" ]]; then
+    echo "WARN: Binary newer than live MCP (pid=$LIVE_PID). Restart required for new tools."
+    echo "      Run: pkill -f 'engram.*mcp' && open a new Grok session, or scripts/install-engram-plugin.sh"
+    echo "      Probing fresh isolated MCP for composite registration..."
+  else
+    echo "OK: Live engram MCP already running (pid=$LIVE_PID)."
+    echo "    grok mcp doctor will fail while this session is open — that is expected."
+    echo "    Open /engram-wake in your Grok session to verify tools."
+    exit 0
+  fi
 fi
 
 # Isolated handshake (no flock on production store)
@@ -49,6 +57,17 @@ RESP=$(printf '%s\n' "$INIT" | timeout 10 "$BINARY" --store "$TMPSTORE" mcp 2>/d
 
 if echo "$RESP" | grep -q '"serverInfo".*"engram"'; then
   echo "OK: MCP initialize handshake succeeded (isolated probe)."
+  # Verify agent-tool-fidelity composites are registered (post agent_tool_fidelity_v1)
+  LIST='{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}'
+  TOOLS=$(printf '%s\n%s\n' "$INIT" "$LIST" | timeout 15 "$BINARY" --store "$TMPSTORE" mcp 2>/dev/null | tail -1 || true)
+  for composite in mcp_engram_safe_edit_and_verify mcp_engram_update_with_tensor_bond; do
+    if echo "$TOOLS" | grep -q "\"name\":\"$composite\""; then
+      echo "    Composite registered: $composite"
+    else
+      echo "WARN: $composite missing from tools/list — rebuild: cargo build -p engram-server"
+      echo "      Then restart MCP (new Grok session or pkill -f 'engram.*mcp')."
+    fi
+  done
   exit 0
 fi
 
