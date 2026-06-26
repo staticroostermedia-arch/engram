@@ -101,11 +101,12 @@ Usage:
   $0 [options] [--suite SUITE]
 
 Options:
-  --suite NAME          health | full-wakeup | transport-lifetime | heavy-light | optix-stress | compression-measurement | lawfulness-metric | continuation-bundle | agent-memory | agent-tool-fidelity | goal-clear | resume-large | all (default: health)
+  --suite NAME          health | full-wakeup | transport-lifetime | heavy-light | optix-stress | compression-measurement | lawfulness-metric | continuation-bundle | agent-memory | agent-tool-fidelity | tensor-thought-unification | goal-clear | resume-large | all (default: health)
                               resume-large: fresh MCP on live store (~/.engram/stalks) — wait-ready JSON + session_start injection fields + rebuild_bvh poll for full_bvh_gpu (do not run while TUI MCP holds lock)
                               continuation-bundle: goal stack + session_start bundle + compression handoff + MCP store upgrade readiness
                               agent-memory: MVP lean 8-tool loop (session_start → readiness → recall(anchors) → quick_trace → remember → session_end → handoff verify)
                               agent-tool-fidelity: composite safe_edit_and_verify + update_with_tensor_bond + lineage + >=95% correct usage gate (post tensor MVP / goal agent_tool_fidelity_v1)
+                              tensor-thought-unification: tile create → tensor mirror → update bond → session_end consolidate → wake recall + propose_improvement (goal tensor_thought_unification_v1)
                               goal-clear: set_primary → pre observe (raw JSON) → update_status → demote → post observe (2x session_start)
                               compression-measurement: exercises Context Compression Tracking System v1 (dual-lens before/after + COMPRESS marker minting high-CRS event artifacts bound to codeland + MCP harness)
                               lawfulness-metric: exercises + asserts Wake-up Lawfulness Verification Tracking (metric:wake_up_verification_* + trend update via update-preferred; genesis/spatial/ki freshness; lawful bool + score; auto-relates to handoff:codeland_integration_2026_plan + 1780091465 + May 31 investigation artifacts)
@@ -125,7 +126,7 @@ Options:
                         --record-results. Fails hard on any red flag. Use this before any cargo install
                         that could affect the daily driver.
   --workspace PATH      Path passed to watch_workspace in rituals (default: current dir or /path/to/your/engram)
-  --scratch PATH        SCRATCH dir for agent-tool-fidelity evidence (overwrites six artifacts after 2 clean runs)
+  --scratch PATH        SCRATCH dir for agent-tool-fidelity or tensor-thought-unification evidence (overwrites artifacts after 2 clean runs)
   --verbose             Pass -v to python client + extra harness chatter
   --help                This message
 
@@ -331,6 +332,26 @@ run_single_suite() {
     echo "   (REPRO: skipping dup kill — old logic)"
   fi
 
+  # tensor-thought-unification: Rust handle_tool_call harness is sole SCRATCH producer (no duplicate Python MCP seq)
+  if [[ "$suite" == "tensor-thought-unification" ]]; then
+    echo -e "${BOLD}→ tensor-thought-unification via Rust ttu_evidence_harness${RESET}"
+    local rc=0
+    local ttu_env="ENGRAM_DISABLE_SHEAF=1 ENGRAM_FORCE_CPU_BACKEND=1"
+    if [[ -n "${SCRATCH:-}" ]]; then
+      echo "   SCRATCH evidence: $SCRATCH (handle_tool_call 2×, overwrite on pass)"
+      env $ttu_env SCRATCH="$SCRATCH" cargo test -p engram-server ttu_write_scratch_when_env_set \
+        --manifest-path "$WORKSPACE_PATH/Cargo.toml" \
+        -- --test-threads=1 --nocapture || rc=$?
+    else
+      echo "   SCRATCH unset — fast no-op test only"
+      env $ttu_env cargo test -p engram-server ttu_write_scratch_when_env_set \
+        --manifest-path "$WORKSPACE_PATH/Cargo.toml" \
+        -- --test-threads=1 || rc=$?
+    fi
+    echo "   Rust ttu harness exit: $rc"
+    return $rc
+  fi
+
   # Build env for this launch (match production + allow override)
   local launch_env="ENGRAM_KI_ARTIFACTS_DIR=$DEFAULT_KI_DIR"
   if [[ -n "${ENGRAM_OPTIX_ENABLED:-}" ]]; then
@@ -348,7 +369,6 @@ run_single_suite() {
     py_args+=(--scratch "$SCRATCH" --fidelity-runs 2)
     echo "   SCRATCH evidence: $SCRATCH (2 consecutive runs, overwrite on pass)"
   fi
-
   echo "   Running python client..."
   local rc=0
   env $launch_env python3 "$PYTHON_CLIENT" "${py_args[@]}" || rc=$?

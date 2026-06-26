@@ -17,10 +17,18 @@ list = [
     "mcp_engram_tensor_upsert",
     "mcp_engram_promote_hot",
     "mcp_engram_quick_trace",
+    "mcp_engram_thought_tile_create",
+    "mcp_engram_thought_tile_write_result",
+    "mcp_engram_update_with_tensor_bond",
+    "mcp_engram_session_end",
 ]
 
 [requires]
-list = ["ritual:wake_up_anchor", "primary_goal"]
+list = [
+    "ritual:wake_up_anchor",
+    "primary_goal",
+    "process:engram.ritual.thought-tile-to-tensor",
+]
 
 [produces]
 list = [
@@ -52,3 +60,5 @@ value = 45000
 # Solid-State Tensor MVP ritual: lightly LogoPhysics-style self-org via momentum-driven
 # OP_ADD consolidation on tensor: entries with elevated p-drift. Complements relational lean v2
 # + presentation stratum + cuFile hot path. Loaded at session_start with other process sheaf tomls.
+# tensor_thought_unification_v1: tile create/write_result dual-writes tensor:tile__ mirrors;
+# update_with_tensor_bond + session_end invoke this consolidation on drift >= stale_p_drift_threshold.

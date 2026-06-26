@@ -54,6 +54,7 @@ mod serve;
 mod session_lifecycle;
 mod solid_state_tensor;
 mod store;
+mod tensor_tile_bridge;
 mod tile_draft;
 mod turn_extract;
 mod wake_bundle;

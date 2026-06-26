@@ -1,0 +1,55 @@
+# agent:engram.ritual.verified-update-with-consolidation — update + tensor bond + optional OP_ADD consolidate
+
+[process]
+name = "agent:engram.ritual.verified-update-with-consolidation"
+zedos_type = "ZEDOS_PRAXIS"
+phase_seed = "verified-update-with-consolidation-v1"
+
+[category]
+object = "tensor_thought_unification"
+morphism = "OP_ADD"
+sheaf_role = "recall-gated update maintains bonds; consolidation on p-drift threshold"
+restriction_maps = ["manifold_integrity >= 0.74"]
+gluing = "OP_BIND"
+h1_handler = "OP_IS_SYMBOLIC_OF"
+
+[mcp_tools]
+list = [
+  "mcp_engram_update_with_tensor_bond",
+  "mcp_engram_update",
+  "mcp_engram_tensor_upsert",
+  "mcp_engram_tensor_recall",
+  "mcp_engram_session_end",
+  "mcp_engram_verify_block_lawfulness",
+]
+
+[requires]
+list = [
+  "process:engram.ritual.verified-memory-update",
+  "process:engram.ritual.solid-tensor-consolidation",
+]
+
+[produces]
+list = [
+  "tensor:update_pattern_*",
+  "tensor:tile__*",
+  "trace:*",
+]
+
+[invariants]
+list = [
+  "recall_before_update",
+  "update_only_mutation",
+  "tensor_bond_on_success",
+  "consolidation_on_p_drift",
+  "lineage_preserved",
+]
+
+[sequence]
+steps = [
+  { order = 1, tool = "mcp_engram_update_with_tensor_bond", note = "Tile/tensor targets sync mirror; consolidation when drift high" },
+  { order = 2, tool = "mcp_engram_session_end", note = "session_end also runs solid_tensor_consolidation" },
+]
+
+[timeout_ms]
+value = 120000

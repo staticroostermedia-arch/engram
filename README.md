@@ -55,7 +55,7 @@ Engram is particularly well-suited for:
 | | Flat vector / markdown | Engram |
 |--|------------------------|--------|
 | Storage | append-log / chunks | Structured blocks with integrity checks (details: [GEOMETRIC_MEMORY](docs/GEOMETRIC_MEMORY.md)) |
-| Context scale | bounded context window | **Solid-State Tensor** — NVMe-backed q/p entries + bonds; subgraph recall via MCP |
+| Context scale | bounded context window | **Solid-State Tensor** — NVMe-backed q/p entries + bonds; thought tiles dual-write `tensor:tile__*` mirrors |
 | Wake | cold start every time | `session_start` restores goals, last session, suggested next steps |
 | Integrity | none | `verify_*`, scars, lawfulness gates (CRS ≥ 0.74) |
 | Code context | RAG chunks | `context_for_edit` — file-scoped memory before you edit |
@@ -145,7 +145,9 @@ tensor_upsert → relate/bonds → promote_hot → tensor_recall (q preview + ed
 
 **MCP tools:** `mcp_engram_tensor_upsert`, `mcp_engram_tensor_recall` (plus lean default `recall`, `query_with_momentum` when trending matters). Poll `mcp_engram_get_backend_readiness` until `nvme_recall_ready: true` on large stores. Ritual: `processes/ritual/solid-tensor-consolidation.toml` (p-drift OP_ADD at `session_end`).
 
-Demo: `cargo test -p engram-server solid_state_tensor_verification_harness` or [examples/tensor_demo.py](examples/tensor_demo.py).
+**Thought tiles ↔ tensor (unified):** `mcp_engram_thought_tile_create` and `write_result` dual-write a first-class `tensor:tile__{stem}` mirror with bonds to goal/trace/spatial concepts. Plain `mcp_engram_update` on `tile:*` syncs the mirror; `mcp_engram_update_with_tensor_bond` is the verified composite. `tile_type: propose_improvement` routes verified update on `target_concept`. Wake surfaces rituals via `agent_discipline.tensor_unification_rituals`. Harness: `--suite tensor-thought-unification`. Rituals: `processes/ritual/thought_tile_to_tensor.toml`, `verified-update-with-consolidation.toml`. See [docs/skills/engram-thought-tiles.md](docs/skills/engram-thought-tiles.md) and [docs/HARNESS_INJECTION.md](docs/HARNESS_INJECTION.md).
+
+Demo: `cargo test -p engram-server solid_state_tensor_verification_harness` or [examples/tensor_demo.py](examples/tensor_demo.py). Full tile→tensor cycle: `STABLE_BIN=target/debug/engram tools/test-harness/bin/engram-harness.sh --suite tensor-thought-unification`.
 
 **Linguistic calculus** (words + numbers in the same sheaf): [docs/CATEGORICAL_LINGUISTIC_CALCULUS.md](docs/CATEGORICAL_LINGUISTIC_CALCULUS.md).
 
@@ -158,6 +160,7 @@ flowchart LR
 
 ## What's new (v0.7.0-beta.4+)
 
+- **Tensor–thought-tile unification:** Dual-write `tile:*` → `tensor:tile__*` mirrors with bonds; `update_with_tensor_bond` + plain `update` sync; `propose_improvement` tile type; `session_end` p-drift consolidation; harness suite `tensor-thought-unification` (2× consecutive runs + SCRATCH evidence). Rituals: `thought_tile_to_tensor`, `verified-update-with-consolidation`.
 - **Solid-State Tensor MVP:** NVMe-backed geometric memory as context extension — `tensor_upsert` / `tensor_recall`, bond subgraph delivery, momentum consolidation ritual, hermetic verification harness.
 - **Goal hygiene:** 72h stale autopause + `session_end` audit (active goal stack stays bounded).
 - **Code atlas continuity v2:** situated edit memory at the locus — atlas v2.1, `evolution_at_locus`, hard wake gate, `post_edit_palette`, update coherence. [CODE_ATLAS_CONTINUITY.md](docs/CODE_ATLAS_CONTINUITY.md)

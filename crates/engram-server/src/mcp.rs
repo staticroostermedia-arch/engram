@@ -1488,13 +1488,13 @@ fn tool_list() -> Value {
             // --- Thought Tile tools (Item 2) - inserted after goal tools ---
             {
                 "name": "mcp_engram_thought_tile_create",
-                "description": "Create a new Thought Tile (textual functor payload optimized for agent recall, momentum, NREM, and ki_hijacker). Supports research_offload, state_machine, tabular, knowledge_graph, formal_spec and similar agent-first-principles tiles. Pair with thought_tile_create_visualization for rich human-viewable companion. Auto-links to Primary Intent.",
+                "description": "Create a new Thought Tile (textual functor payload optimized for agent recall, momentum, NREM, and ki_hijacker). Dual-writes a tensor:tile__ mirror with bonds (goal/trace/spatial). Supports research_offload, state_machine, tabular, knowledge_graph, formal_spec, propose_improvement (verified tensor update on target). Pair with thought_tile_create_visualization for rich human-viewable companion. Auto-links to Primary Intent.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
                         "tile_type": {
                             "type": "string",
-                            "description": "research_offload | state_machine | tabular | knowledge_graph | formal_spec | html_visualization | verified_sequence | agent_response (RPT v3 — use mcp_engram_turn_record for turn envelope)"
+                            "description": "research_offload | state_machine | tabular | knowledge_graph | formal_spec | propose_improvement | html_visualization | verified_sequence | agent_response (RPT v3 — use mcp_engram_turn_record for turn envelope)"
                         },
                         "title": {
                             "type": "string",
@@ -3829,6 +3829,9 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
 
             match store.lock() {
                 Ok(mut lock) => {
+                    let lineage_trace = args.get("trace_id").and_then(|v| v.as_str());
+                    let prev_trace = args.get("prev_trace").and_then(|v| v.as_str());
+                    let goal_context = args.get("goal_context").and_then(|v| v.as_str());
                     let payload = crate::edit_fidelity::run_update_with_tensor_bond(
                         &mut lock,
                         concept,
@@ -3837,6 +3840,9 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                         bond_label,
                         scar_on_mismatch,
                         match_threshold,
+                        lineage_trace,
+                        prev_trace,
+                        goal_context,
                     );
                     lock.log_activity("ritual:verified_memory_update", "composite", Some(concept));
                     json!({
@@ -5882,6 +5888,37 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                 }
             }
 
+            if tile_type == crate::tensor_tile_bridge::PROPOSE_TILE_TYPE {
+                let suggestion = payload
+                    .get("suggestion")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .trim()
+                    .to_string();
+                let target = payload
+                    .get("target_concept")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .trim()
+                    .to_string();
+                if suggestion.is_empty() || target.is_empty() {
+                    return json!({
+                        "content": [{ "type": "text", "text": "Error: propose_improvement requires payload.suggestion and payload.target_concept." }],
+                        "isError": true
+                    });
+                }
+                let mut lock = store.lock().unwrap();
+                let (goal_ctx, _, _) = resolve_goal_context_and_link(&mut lock, goal_ctx);
+                let out = crate::tensor_tile_bridge::propose_improvement(
+                    &mut lock,
+                    &suggestion,
+                    &target,
+                    &goal_ctx,
+                );
+                let text = serde_json::to_string_pretty(&out).unwrap_or_else(|_| "{}".to_string());
+                return json!({ "content": [{ "type": "text", "text": text }] });
+            }
+
             let process_context = args
                 .get("process_context")
                 .and_then(|v| v.as_str())
@@ -5999,7 +6036,27 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                     if auto_linked_to_primary || !goal_ctx.is_empty() || !spatial_refs.is_empty() {
                         lock.mark_ki_rebake_needed();
                     }
-                    json!({ "content": [{ "type": "text", "text": format!("✓ Thought Tile created: {}\n  hot_path: promoted (mcp_engram_promote_hot)\n  (textual functor payload ready for agent use; pair with create_visualization for rich human view)", tile_key) }] })
+                    let tensor_result = crate::tensor_tile_bridge::ensure_tensor_for_tile(
+                        &mut lock,
+                        &tile_key,
+                        &tile_payload,
+                        &goal_ctx,
+                        &parent_tile,
+                        &spatial_refs,
+                    );
+                    let tensor_json = tensor_result
+                        .as_ref()
+                        .map(|u| {
+                            crate::tensor_tile_bridge::tile_tensor_summary(&lock, &tile_key, u)
+                        })
+                        .unwrap_or_else(|e| json!({ "tensor_error": e.to_string() }));
+                    let body = serde_json::to_string_pretty(&json!({
+                        "ok": true,
+                        "tile_key": tile_key,
+                        "tensor_unification": tensor_json,
+                    }))
+                    .unwrap_or_else(|_| format!("✓ Thought Tile created: {tile_key}"));
+                    json!({ "content": [{ "type": "text", "text": body }] })
                 }
                 Err(e) => {
                     json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true })
@@ -6229,7 +6286,26 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                     Ok(_) => {
                         lock.access_index.touch(&tile);
                         lock.mark_ki_rebake_needed();
-                        json!({ "content": [{ "type": "text", "text": format!("✓ Result written to Thought Tile: {}\n  (momentum refreshed; consider creating a visualization companion if this is now a high-value state)", tile) }] })
+                        let tensor_sync = crate::tensor_tile_bridge::sync_tensor_after_tile_write(
+                            &mut lock,
+                            &tile,
+                            &new_content,
+                        );
+                        let consolidation =
+                            crate::tensor_tile_bridge::maybe_consolidate_tensor_drift(
+                                &mut lock, &tile,
+                            );
+                        let body = serde_json::to_string_pretty(&json!({
+                            "ok": true,
+                            "tile": tile,
+                            "tensor_sync": tensor_sync.map(|t| json!({
+                                "concept": t.concept,
+                                "bonds": t.bonds_created.len(),
+                            })),
+                            "consolidation": consolidation.map(|r| r.to_json()),
+                        }))
+                        .unwrap_or_else(|_| format!("✓ Result written to Thought Tile: {tile}"));
+                        json!({ "content": [{ "type": "text", "text": body }] })
                     }
                     Err(e) => {
                         json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true })
@@ -6863,25 +6939,39 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                 .get("provlog_mode")
                 .and_then(|v| v.as_str())
                 .and_then(engram_core::storage::parse_provlog_splice_mode);
-            match store
-                .lock()
-                .unwrap()
-                .update_with_provlog_mode(&concept, &new_text, provlog_mode)
-            {
+            let mut lock = store.lock().unwrap();
+            match lock.update_with_provlog_mode(&concept, &new_text, provlog_mode) {
                 Ok(result) => {
                     if concept.ends_with("__arc") {
                         crate::edit_arc_gate::on_arc_updated(&concept);
-                        if let Ok(mut lock) = store.lock() {
-                            lock.log_activity(
-                                "ritual:edit_arc_gate",
-                                "arc_updated",
-                                Some(&concept),
-                            );
-                        }
+                        lock.log_activity("ritual:edit_arc_gate", "arc_updated", Some(&concept));
                     }
                     info!("updated: {concept}");
+                    let tensor_json = if concept.starts_with("tile:") {
+                        crate::tensor_tile_bridge::plain_tile_update_tensor_extras(
+                            &mut lock, &concept, &new_text,
+                        )
+                    } else {
+                        Value::Null
+                    };
+                    let body = if tensor_json.is_null() {
+                        format!("✓ Updated memory '{concept}': {}", result.message)
+                    } else {
+                        serde_json::to_string_pretty(&json!({
+                            "ok": tensor_json.get("lineage")
+                                .and_then(|l| l.get("ok"))
+                                .and_then(|v| v.as_bool())
+                                .unwrap_or(true),
+                            "concept": concept,
+                            "message": result.message,
+                            "trace_id": tensor_json.get("trace_id"),
+                            "lineage": tensor_json.get("lineage"),
+                            "tensor_unification": tensor_json,
+                        }))
+                        .unwrap_or_else(|_| format!("✓ Updated memory '{concept}'"))
+                    };
                     let mut payload = json!({
-                        "content": [{ "type": "text", "text": format!("✓ Updated memory '{concept}': {}", result.message) }],
+                        "content": [{ "type": "text", "text": body }],
                     });
                     if let Some(coh) = result.provlog_coherence {
                         payload["provlog_coherence"] = json!(coh);

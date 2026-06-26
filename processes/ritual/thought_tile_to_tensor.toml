@@ -1,0 +1,49 @@
+# agent:engram.ritual.thought-tile-to-tensor — dual-write tile + tensor mirror with bonds
+
+[process]
+name = "agent:engram.ritual.thought-tile-to-tensor"
+zedos_type = "ritual"
+phase_seed = "thought-tile-to-tensor-v1"
+
+[category]
+object = "tensor_thought_unification"
+morphism = "OP_BIND"
+sheaf_role = "thought_tile_create/write_result also upserts tensor:tile__ mirror with bonds"
+h1_handler = "OP_INVERT"
+
+[mcp_tools]
+list = [
+  "mcp_engram_thought_tile_create",
+  "mcp_engram_thought_tile_write_result",
+  "mcp_engram_tensor_upsert",
+  "mcp_engram_tensor_recall",
+  "mcp_engram_promote_hot",
+]
+
+[requires]
+list = ["process:engram.ritual.working-memory"]
+
+[produces]
+list = [
+  "tile:*",
+  "tensor:tile__*",
+  "trace:*",
+]
+
+[invariants]
+list = [
+  "dual_write_tile_and_tensor",
+  "tensor_mirror_bonds",
+  "crs_0.74_gate",
+  "merkle_lineage",
+  "p_momentum_preserved_on_update",
+]
+
+[sequence]
+steps = [
+  { order = 1, tool = "mcp_engram_thought_tile_create", note = "Creates tile:* + tensor:tile__ mirror" },
+  { order = 2, tool = "mcp_engram_tensor_recall", note = "Assert mirror visible in subgraph" },
+]
+
+[timeout_ms]
+value = 90000

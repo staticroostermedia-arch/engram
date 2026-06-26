@@ -6,11 +6,13 @@ description: Evolve an existing memory — recall first, then update (never forg
 Run the Engram **Layer 1 write path** when refining an existing concept (`design:`, `progress:`, `helper:`, `ritual:`, goals, or any prior memory):
 
 1. Call `mcp_engram_recall` with `scope: "anchors"` (or the target `concept` name) to find the existing block.
-2. **Preferred:** `mcp_engram_update_with_tensor_bond` (recall-first + tensor bond + lineage).
+2. **Preferred:** `mcp_engram_update_with_tensor_bond` (recall-first + tensor bond + lineage + optional consolidation).
 
    Few-shot (1): `{"concept":"mcp__fn__dispatch__arc","new_text":"delta: wired safe_edit handler","recall_query":"mcp dispatch edit arc","bond_label":"edit_fidelity"}`
 
    Few-shot (2): `{"concept":"design:agent_tool_fidelity_v1","new_text":"Phase 1: composite tools shipped","recall_query":"agent tool fidelity","scar_on_mismatch":true}`
+
+   Few-shot (3 — tile): `{"concept":"tile:research_offload_my-arc","new_text":"delta: arc result merged","recall_query":"my arc tile","bond_label":"tensor_thought_unification"}` — syncs `tensor:tile__` mirror; consolidation when p-drift ≥ threshold.
 
    Or if match score **>0.85**, `mcp_engram_update`:
 
