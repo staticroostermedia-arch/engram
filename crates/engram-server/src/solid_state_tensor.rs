@@ -331,14 +331,17 @@ fn enforce_tensor_bounds(entries: &mut Vec<TensorEntry>, edges: &mut Vec<TensorB
         truncated = true;
     }
 
-    // Rebuild edges from kept entries; drop any bond whose endpoint was capped out.
+    // Prune bonds inside kept entries and rebuild top-level edges from survivors only.
     let kept: HashSet<String> = entries.iter().map(|e| e.concept.clone()).collect();
+    for entry in entries.iter_mut() {
+        entry
+            .bonds
+            .retain(|b| kept.contains(&b.from) && kept.contains(&b.to));
+    }
     let mut reconciled = Vec::new();
     for entry in entries.iter() {
         for b in &entry.bonds {
-            if kept.contains(&b.from) && kept.contains(&b.to) {
-                reconciled.push(b.clone());
-            }
+            reconciled.push(b.clone());
         }
     }
     *edges = reconciled;
@@ -355,12 +358,33 @@ pub fn tensor_subgraph_recall(
     store: &mut StoreHandle,
     query: &str,
     k: usize,
+    include_presentation: bool,
+    seed_concept: Option<&str>,
+) -> TensorSubgraphResult {
+    tensor_subgraph_recall_with_nvme_gate(
+        store,
+        query,
+        k,
+        include_presentation,
+        seed_concept,
+        None,
+    )
+}
+
+/// Same as [`tensor_subgraph_recall`]; `nvme_ready_override` is for hermetic tests only (None in production).
+pub(crate) fn tensor_subgraph_recall_with_nvme_gate(
+    store: &mut StoreHandle,
+    query: &str,
+    k: usize,
     _include_presentation: bool,
     seed_concept: Option<&str>,
+    nvme_ready_override: Option<bool>,
 ) -> TensorSubgraphResult {
     let k = k.clamp(1, 20);
     let recall_mode = store.recall_mode().to_string();
-    let nvme_ready = crate::injection_priority::nvme_recall_path_ready(&recall_mode);
+    let nvme_ready = nvme_ready_override.unwrap_or_else(|| {
+        crate::injection_priority::nvme_recall_path_ready(&recall_mode)
+    });
 
     let mut seen = HashSet::new();
     let mut entries = Vec::new();
@@ -952,8 +976,6 @@ mod tests {
         (dir, store)
     }
 
-
-
     fn scratch_dir() -> std::path::PathBuf {
         std::path::PathBuf::from(
             std::env::var("SCRATCH").unwrap_or_else(|_| SCRATCH_DEFAULT.to_string()),
@@ -963,6 +985,16 @@ mod tests {
     fn write_evidence_file(scratch: &std::path::Path, name: &str, content: &str) {
         std::fs::create_dir_all(scratch).expect("create scratch dir");
         std::fs::write(scratch.join(name), content).expect("write evidence file");
+    }
+
+    fn append_readiness_evidence(scratch: &std::path::Path, section: &str, content: &str) {
+        let path = scratch.join("tensor_readiness_gate.txt");
+        let mut existing = std::fs::read_to_string(&path).unwrap_or_default();
+        if !existing.is_empty() && !existing.ends_with('\n') {
+            existing.push('\n');
+        }
+        existing.push_str(&format!("\n--- {section} ---\n{content}"));
+        write_evidence_file(scratch, "tensor_readiness_gate.txt", &existing);
     }
 
     #[test]
@@ -1114,20 +1146,59 @@ mod tests {
     }
 
     #[test]
-    fn tensor_nvme_readiness_gate_fn() {
+    fn tensor_semantic_recall_when_nvme_ready() {
+        let _guard = MCP_TEST_LOCK.lock().expect("mcp test lock");
         let scratch = scratch_dir();
-        assert!(crate::injection_priority::nvme_recall_path_ready("full_bvh"));
-        assert!(crate::injection_priority::nvme_recall_path_ready("full_bvh_gpu"));
-        assert!(!crate::injection_priority::nvme_recall_path_ready("cpu_linear"));
-        let evidence = concat!(
-            "nvme_recall_path_ready(full_bvh)=true\n",
-            "nvme_recall_path_ready(full_bvh_gpu)=true\n",
-            "nvme_recall_path_ready(cpu_linear)=false\n",
-            "tensor_subgraph_recall semantic branch: nvme_ready && empty -> recall_scoped + is_tensor_eligible filter\n",
-            "hermetic !ready path runtime-tested in tensor_gap_closure_agent_recall\n",
-            "production nvme_ready=true semantic exercised via live MCP after rebuild (full_bvh_gpu)\n",
-        );
-        write_evidence_file(&scratch, "tensor_readiness_gate_nvme_true.txt", evidence);
+        let mut readiness_log = String::new();
+
+        for run in 1..=2 {
+            let (_dir, mut store) = hermetic_store(&format!("nvme_semantic_{run}"));
+            let seed_text =
+                "Unique NVMe BVH semantic phrase for tensor recall readiness gate.";
+            tensor_upsert(
+                &mut store,
+                "tensor:bvh_semantic_seed",
+                seed_text,
+                &[],
+                true,
+            )
+            .expect("semantic seed upsert");
+
+            let recall_mode = store.recall_mode();
+            let result = tensor_subgraph_recall_with_nvme_gate(
+                &mut store,
+                seed_text,
+                5,
+                false,
+                None,
+                Some(true),
+            );
+            readiness_log.push_str(&format!(
+                "=== run{run} nvme_ready=true semantic ===\nrecall_mode={recall_mode}\nnvme_recall_ready={}\ngate_override=true\n",
+                result.nvme_recall_ready
+            ));
+            readiness_log.push_str(
+                &serde_json::to_string_pretty(&tensor_subgraph_to_json(&result)).unwrap(),
+            );
+            readiness_log.push('\n');
+
+            assert_eq!(
+                result.recall_path, "tensor_bvh_semantic",
+                "run{run}: expected semantic BVH path"
+            );
+            assert!(result.nvme_recall_ready);
+            assert!(
+                result
+                    .entries
+                    .iter()
+                    .any(|e| e.concept == "tensor:bvh_semantic_seed"),
+                "run{run}: semantic phrase must surface tensor seed (entries={:?})",
+                result.entries.iter().map(|e| &e.concept).collect::<Vec<_>>()
+            );
+        }
+
+        write_evidence_file(&scratch, "tensor_readiness_gate_nvme_true.txt", &readiness_log);
+        append_readiness_evidence(&scratch, "nvme_ready semantic 2x", &readiness_log);
     }
 
     #[test]
@@ -1148,7 +1219,7 @@ mod tests {
              text_pin: only when !nvme_ready && no pin && no seed\n\
              semantic: nvme_ready && empty -> recall_scoped filtered to is_tensor_eligible\n\
              1-hop: search_relations with is_tensor_eligible filter only\n\
-             enforce_tensor_bounds: cap entries, reconcile edges from kept, cap edges\n\
+             enforce_tensor_bounds: cap entries, prune entry.bonds + reconcile edges, cap edges\n\
              TensorSubgraphResult: nvme_recall_ready, truncated, presentation_hits=[]\n\
              mcp handler: seed_concept from args; tool_list schema at mcp.rs ~1140\n\
              nvme_recall_path_ready: full_bvh_gpu | full_bvh in injection_priority.rs\n"
@@ -1311,6 +1382,15 @@ mod tests {
                 broad.edges.iter().all(|b| kept.contains(&b.from) && kept.contains(&b.to)),
                 "edges must not reference dropped entries run{run}"
             );
+            let hub_entry = broad
+                .entries
+                .iter()
+                .find(|e| e.concept == "tensor:bound_hub")
+                .expect("hub entry in bounded result");
+            assert!(
+                hub_entry.bonds.iter().all(|b| kept.contains(&b.to)),
+                "hub entry.bonds must not reference dropped spokes run{run}"
+            );
 
             bounds_log.push_str(&format!("=== run{run} bounds ===\n"));
             bounds_log
@@ -1449,15 +1529,14 @@ mod tests {
 
         write_evidence_file(&scratch, "tensor_roundtrip_evidence.txt", &roundtrip_log);
         write_evidence_file(&scratch, "tensor_bounds_evidence.txt", &bounds_log);
-        write_evidence_file(&scratch, "tensor_readiness_gate.txt", &readiness_log);
+        append_readiness_evidence(&scratch, "cpu_linear !ready 2x", &readiness_log);
         write_evidence_file(&scratch, "tensor_mcp_gap_closure.txt", &mcp_log);
         write_evidence_file(&scratch, "tensor_schema_evidence.txt", &schema_evidence);
     }
 
-    #[test]
-    fn enforce_tensor_bounds_drops_dangling_edges() {
-        let entry_a = TensorEntry {
-            concept: "tensor:kept_a".to_string(),
+    fn make_test_entry(concept: &str, bonds: Vec<TensorBond>) -> TensorEntry {
+        TensorEntry {
+            concept: concept.to_string(),
             crs: 0.9,
             hot: false,
             q: TensorQSummary {
@@ -1468,7 +1547,21 @@ mod tests {
                 q_preview: vec![0.0; 8],
                 p_drift: 0.0,
             },
-            bonds: vec![TensorBond {
+            bonds,
+            lineage: TensorLineage {
+                merkle_sub_nonzero: false,
+                served_by_goals: vec![],
+                prev_traces: vec![],
+            },
+            text_preview: String::new(),
+        }
+    }
+
+    #[test]
+    fn enforce_tensor_bounds_drops_dangling_edges() {
+        let entry_a = make_test_entry(
+            "tensor:kept_a",
+            vec![TensorBond {
                 from: "tensor:kept_a".to_string(),
                 label: "links".to_string(),
                 to: "tensor:dropped".to_string(),
@@ -1477,33 +1570,8 @@ mod tests {
                 merkle_sub_nonzero: false,
                 allowed_transforms: String::new(),
             }],
-            lineage: TensorLineage {
-                merkle_sub_nonzero: false,
-                served_by_goals: vec![],
-                prev_traces: vec![],
-            },
-            text_preview: String::new(),
-        };
-        let entry_b = TensorEntry {
-            concept: "tensor:kept_b".to_string(),
-            crs: 0.9,
-            hot: false,
-            q: TensorQSummary {
-                norm: 1.0,
-                unit_sphere_ok: true,
-                crs: 0.9,
-                zedos_tag: 0,
-                q_preview: vec![0.0; 8],
-                p_drift: 0.0,
-            },
-            bonds: vec![],
-            lineage: TensorLineage {
-                merkle_sub_nonzero: false,
-                served_by_goals: vec![],
-                prev_traces: vec![],
-            },
-            text_preview: String::new(),
-        };
+        );
+        let entry_b = make_test_entry("tensor:kept_b", vec![]);
         let mut entries = vec![entry_a, entry_b];
         let mut edges = vec![TensorBond {
             from: "tensor:bound_hub".to_string(),
@@ -1516,6 +1584,11 @@ mod tests {
         }];
         let truncated = enforce_tensor_bounds(&mut entries, &mut edges);
         assert!(!truncated, "two entries should not truncate");
+        let kept_a = entries.iter().find(|e| e.concept == "tensor:kept_a").unwrap();
+        assert!(
+            kept_a.bonds.is_empty(),
+            "kept entry.bonds must drop refs to capped-out endpoints"
+        );
         assert!(
             edges
                 .iter()
@@ -1526,6 +1599,50 @@ mod tests {
         assert!(
             !edges.iter().any(|b| b.from == "tensor:bound_hub" || b.to == "tensor:dropped"),
             "dangling hub/dropped edges must be removed"
+        );
+    }
+
+    #[test]
+    fn enforce_tensor_bounds_prunes_hub_entry_bonds() {
+        let hub_bonds: Vec<TensorBond> = (0..15)
+            .map(|i| TensorBond {
+                from: "tensor:bound_hub".to_string(),
+                label: "links".to_string(),
+                to: format!("tensor:bound_spoke_{i:02}"),
+                direction: "out".to_string(),
+                rel_block: None,
+                merkle_sub_nonzero: false,
+                allowed_transforms: String::new(),
+            })
+            .collect();
+        let mut entries = vec![make_test_entry("tensor:bound_hub", hub_bonds)];
+        for i in 0..15 {
+            entries.push(make_test_entry(
+                &format!("tensor:bound_spoke_{i:02}"),
+                vec![],
+            ));
+        }
+        let mut edges = Vec::new();
+        let truncated = enforce_tensor_bounds(&mut entries, &mut edges);
+        assert!(truncated);
+        assert_eq!(entries.len(), MAX_TENSOR_ENTRIES);
+        let hub = entries
+            .iter()
+            .find(|e| e.concept == "tensor:bound_hub")
+            .expect("hub kept");
+        let kept: HashSet<String> = entries.iter().map(|e| e.concept.clone()).collect();
+        assert!(
+            hub.bonds.iter().all(|b| kept.contains(&b.to)),
+            "hub entry.bonds must not list dropped spokes"
+        );
+        assert!(
+            !hub.bonds.iter().any(|b| {
+                b.to == "tensor:bound_spoke_11"
+                    || b.to == "tensor:bound_spoke_12"
+                    || b.to == "tensor:bound_spoke_13"
+                    || b.to == "tensor:bound_spoke_14"
+            }),
+            "hub must not retain bonds to spokes capped out"
         );
     }
 }
