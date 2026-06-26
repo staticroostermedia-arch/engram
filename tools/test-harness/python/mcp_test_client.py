@@ -845,8 +845,13 @@ class MCPTestClient:
                 assertions.append("lineage.merkle_ok=true")
             else:
                 failures.append(f"lineage merkle missing: {lineage}")
-            if prev_trace_id and lineage.get("ok"):
-                assertions.append("prev_in_trace chain verified")
+            if prev_trace_id:
+                if lineage.get("ok"):
+                    assertions.append("prev_in_trace chain verified")
+                else:
+                    failures.append(
+                        f"prev_in_trace chain failed with prev={prev_trace_id}: {lineage}"
+                    )
             if safe_data.get("arc_updated") is True:
                 assertions.append("arc_updated=true")
             elif safe_data.get("arc_update_error"):
@@ -909,12 +914,15 @@ class MCPTestClient:
                 assertions.append(f"misuse scar_key={misuse_data.get('scar_key')}")
             else:
                 failures.append("misuse: expected scar_key on recall mismatch")
-            fp = misuse_data.get("failure_pattern") or {}
-            fp_concept = str(fp.get("concept", ""))
-            if fp.get("kind") == "failure" or "edit_pattern_failure" in fp_concept:
-                assertions.append(f"misuse failure_pattern ({fp_concept or fp.get('kind')})")
+            fp = misuse_data.get("failure_pattern")
+            if not fp or not isinstance(fp, dict) or not fp:
+                failures.append(f"misuse: expected non-empty failure_pattern, got {fp!r}")
             else:
-                failures.append(f"misuse: expected failure_pattern kind=failure, got {fp}")
+                fp_concept = str(fp.get("concept", ""))
+                if fp.get("kind") == "failure" or "edit_pattern_failure" in fp_concept:
+                    assertions.append(f"misuse failure_pattern ({fp_concept or fp.get('kind')})")
+                else:
+                    failures.append(f"misuse: expected failure_pattern kind=failure, got {fp}")
 
         step("mcp_engram_verify_manifold_integrity", {"min_crs": 0.74, "sample_size": 16}, "verify_manifold")
         step("mcp_engram_genesis", {"action": "status"}, "genesis_status")
@@ -1484,11 +1492,12 @@ def main():
             if not res.get("passed"):
                 client.errors.append("agent-memory assertions failed")
 
+        fidelity_suite_result: Optional[Dict[str, Any]] = None
         if args.suite in ("agent-tool-fidelity", "all"):
             print("=== Running agent_tool_fidelity_suite (composite edit/update + >=95% usage) ===")
-            res = client.run_agent_tool_fidelity_suite(workspace_path=args.workspace)
-            print(json.dumps(res, indent=2))
-            if not res.get("passed"):
+            fidelity_suite_result = client.run_agent_tool_fidelity_suite(workspace_path=args.workspace)
+            print(json.dumps(fidelity_suite_result, indent=2))
+            if not fidelity_suite_result.get("passed"):
                 client.errors.append("agent-tool-fidelity assertions failed")
 
         goal_clear_full_written = False
@@ -1505,14 +1514,27 @@ def main():
                 client.errors.append("goal-clear assertions failed")
 
         summary = client.get_summary()
+        suite_passed = len(client.errors) == 0
         if args.json_out and not goal_clear_full_written:
+            payload: Dict[str, Any] = {
+                "ok": suite_passed and summary["still_alive"] and summary["transport_failures"] == 0,
+                "summary": summary,
+                "timings": client.timings,
+            }
+            if fidelity_suite_result is not None:
+                payload["suite_result"] = fidelity_suite_result
             with open(args.json_out, "w") as f:
-                json.dump({"ok": True, "summary": summary, "timings": client.timings}, f, indent=2)
+                json.dump(payload, f, indent=2)
             print(f"Results written to {args.json_out}")
 
         print("\n=== CLIENT SUMMARY ===")
         print(json.dumps(summary, indent=2))
-        sys.exit(0 if summary["still_alive"] and summary["transport_failures"] == 0 else 1)
+        ok = (
+            summary["still_alive"]
+            and summary["transport_failures"] == 0
+            and suite_passed
+        )
+        sys.exit(0 if ok else 1)
     finally:
         client.shutdown()
 

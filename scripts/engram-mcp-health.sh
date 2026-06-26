@@ -49,6 +49,17 @@ RESP=$(printf '%s\n' "$INIT" | timeout 10 "$BINARY" --store "$TMPSTORE" mcp 2>/d
 
 if echo "$RESP" | grep -q '"serverInfo".*"engram"'; then
   echo "OK: MCP initialize handshake succeeded (isolated probe)."
+  # Verify agent-tool-fidelity composites are registered (post agent_tool_fidelity_v1)
+  LIST='{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}'
+  TOOLS=$(printf '%s\n%s\n' "$INIT" "$LIST" | timeout 15 "$BINARY" --store "$TMPSTORE" mcp 2>/dev/null | tail -1 || true)
+  for composite in mcp_engram_safe_edit_and_verify mcp_engram_update_with_tensor_bond; do
+    if echo "$TOOLS" | grep -q "\"name\":\"$composite\""; then
+      echo "    Composite registered: $composite"
+    else
+      echo "WARN: $composite missing from tools/list — rebuild: cargo build -p engram-server"
+      echo "      Then restart MCP (new Grok session or pkill -f 'engram.*mcp')."
+    fi
+  done
   exit 0
 fi
 

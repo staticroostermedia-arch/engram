@@ -117,8 +117,9 @@ pub fn verify_edit_lineage(
 
     if let (Some(prev), Some(tid)) = (prev_trace, trace_id) {
         if !prev.is_empty() {
+            // Edge stored as prev --prev_in_trace--> tid (from=prev, to=tid)
             let chained = store
-                .search_relations(prev, Some("prev_in_trace"), "to")
+                .search_relations(prev, Some("prev_in_trace"), "from")
                 .iter()
                 .any(|(_label, other)| other == tid);
             if !chained {
@@ -660,5 +661,24 @@ mod tests {
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .contains("edit_pattern_success"));
+    }
+
+    #[test]
+    fn prev_in_trace_chain_verified() {
+        let mut store = test_store();
+        let prev = mint_quick_trace(&mut store, "prev", "harness chain", None, None, None)
+            .expect("prev");
+        let next = mint_quick_trace(
+            &mut store,
+            "next",
+            "chained",
+            None,
+            Some(&prev),
+            None,
+        )
+        .expect("next");
+        let r = verify_edit_lineage(&store, Some(&next), None, Some(&prev), MIN_CRS);
+        assert!(r.ok, "prev_in_trace chain should verify: {:?}", r.issues);
+        assert!(r.merkle_ok);
     }
 }

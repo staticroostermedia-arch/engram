@@ -5,9 +5,11 @@ description: Clear edit-arc debt on read-only repeat context_for_edit — prefer
 
 When `edit_arc_debt` is pending and you need **read-only** recon on the same file (no substantive edits):
 
-Few-shot (1): `{"skip":true,"note":"read-only context_for_edit — no substantive edits"}`
+Few-shot (1): `{"concepts":["store__fn__context_for_edit"],"skip":false,"note":"updated __arc via mcp_engram_update"}`
 
-Few-shot (2): `{"concepts":["store__fn__context_for_edit"],"skip":false,"note":"updated __arc via mcp_engram_update","lineage_check":true,"trace_id":"trace:..."}`
+Few-shot (2): `{"skip":true,"note":"read-only context_for_edit — no substantive edits"}`
+
+Few-shot (3): `{"concepts":["store__fn__context_for_edit"],"skip":false,"note":"updated __arc via mcp_engram_update","lineage_check":true,"trace_id":"trace:1780000000_post_edit"}`
 
 **When to call:** Repeat `context_for_edit` on a path you already edited this session, but you are only reading context — not writing new arc narrative.
 

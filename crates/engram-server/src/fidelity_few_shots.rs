@@ -6,6 +6,7 @@ pub const REMEMBER_EX2: &str = r#"{"concept":"user__prefers_absolute_paths","tex
 pub const ACK_EDIT_ARC_EX1: &str = r#"{"concepts":["store__fn__context_for_edit"],"skip":false,"note":"updated __arc via mcp_engram_update"}"#;
 pub const ACK_EDIT_ARC_EX2: &str =
     r#"{"skip":true,"note":"read-only context_for_edit — no substantive edits"}"#;
+pub const ACK_EDIT_ARC_EX3: &str = r#"{"concepts":["store__fn__context_for_edit"],"skip":false,"note":"updated __arc via mcp_engram_update","lineage_check":true,"trace_id":"trace:1780000000_post_edit"}"#;
 
 pub const SAFE_EDIT_EX1: &str = r#"{"path":"/home/user/Engram/crates/engram-server/src/mcp.rs","decision":"Add safe_edit composite tool","why":"Agent tool fidelity goal — one-shot verified edit path","arc_delta":"delta: registered mcp_engram_safe_edit_and_verify handler","goal_context":"goal:agent_tool_fidelity_v1"}"#;
 pub const SAFE_EDIT_EX2: &str = r#"{"path":"/home/user/Engram/docs/AGENT_MEMORY_CONTRACT.md","decision":"Refresh 8-tool examples","why":"Mirror hardened few-shots in docs","run_verify":true}"#;
@@ -35,7 +36,7 @@ pub fn remember_description() -> String {
 
 pub fn ack_edit_arc_description() -> String {
     format!(
-        "Acknowledge or skip pending edit-arc debt — unblocks repeat context_for_edit on the same path when ENGRAM_EDIT_ARC_GATE=hard. Prefer mcp_engram_update on *__arc after edits; use skip=true with an honest note only for read-only passes. FEW-SHOT EXAMPLES: (1) Post-edit arc update done elsewhere: {ACK_EDIT_ARC_EX1} (2) Read-only recon: {ACK_EDIT_ARC_EX2}"
+        "Acknowledge or skip pending edit-arc debt — unblocks repeat context_for_edit on the same path when ENGRAM_EDIT_ARC_GATE=hard. Prefer mcp_engram_update on *__arc after edits; use skip=true with an honest note only for read-only passes. FEW-SHOT EXAMPLES: (1) Post-edit arc update done elsewhere: {ACK_EDIT_ARC_EX1} (2) Read-only recon: {ACK_EDIT_ARC_EX2} (3) Post-edit with lineage verification: {ACK_EDIT_ARC_EX3}"
     )
 }
 

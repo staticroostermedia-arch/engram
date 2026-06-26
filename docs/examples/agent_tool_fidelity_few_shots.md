@@ -23,6 +23,7 @@
 ## mcp_engram_ack_edit_arc
 1. `{"concepts":["store__fn__context_for_edit"],"skip":false,"note":"updated __arc via mcp_engram_update"}`
 2. `{"skip":true,"note":"read-only context_for_edit — no substantive edits"}`
+3. `{"concepts":["store__fn__context_for_edit"],"skip":false,"note":"updated __arc via mcp_engram_update","lineage_check":true,"trace_id":"trace:1780000000_post_edit"}`
 
 ## mcp_engram_quick_trace
 1. `{"decision":"Implement edit_fidelity module","why":"Composite tools need testable helpers","spatial_context":"crates/engram-server/src/edit_fidelity.rs:1","goal_context":"goal:agent_tool_fidelity_v1"}`

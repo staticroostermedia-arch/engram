@@ -86,7 +86,7 @@ flowchart LR
 
 **Harness without TUI:** `STABLE_BIN=target/debug/engram tools/test-harness/bin/engram-harness.sh --suite agent-memory` — new MCP client per run simulates restart; asserts `injection_completeness.score`, `nvme_context.recall_mode`, `suggested_actions[0].injection_rank`.
 
-**Agent tool fidelity (post tensor MVP #47):** `STABLE_BIN=target/debug/engram tools/test-harness/bin/engram-harness.sh --suite agent-tool-fidelity --workspace /path/to/Engram` — exercises `mcp_engram_safe_edit_and_verify`, `mcp_engram_update_with_tensor_bond`, lineage fields, `post_edit_palette` safe path, and asserts **≥95%** correct tool usage (`fidelity_rate=1.0` on clean runs). Run twice for regression gate.
+**Agent tool fidelity (post tensor MVP #47):** `STABLE_BIN=target/debug/engram tools/test-harness/bin/engram-harness.sh --suite agent-tool-fidelity --workspace /path/to/Engram --record-results` — exercises `mcp_engram_safe_edit_and_verify`, `mcp_engram_update_with_tensor_bond`, lineage fields (`prev_in_trace`, merkle), `post_edit_palette` safe path, misuse self-correction (scar + `failure_pattern`), and asserts **≥95%** correct tool usage (`fidelity_rate=1.0` on clean runs). JSON output includes `suite_result.passed` and `fidelity_rate`. Run twice for regression gate. After substrate changes: `cargo build -p engram-server` then restart MCP (`scripts/install-engram-plugin.sh` or new Grok session).
 
 | 6 | Goal complete — clear injection | `goal_update_status(completed)` + `demote_from_context` on task goal; TUI `/goal` → `update_goal(completed=true)` |
 | 7 | Terminal — push notes | Commit + PR describing fixes/improvements (traces, ACs, branch); see `{SCRATCH}/pr-notes.md` in harness runs |
