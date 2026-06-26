@@ -110,6 +110,74 @@ def capture_diagnosis_grep(workspace: str) -> str:
     return "\n".join(lines)
 
 
+def _parse_composite_lineage(responses: Dict[str, Any]) -> Dict[str, Any]:
+    """Extract verif-plan fields: trace_id, lineage, tensor_pattern, scar, failure_pattern."""
+    out: Dict[str, Any] = {}
+    safe = responses.get("safe_edit_and_verify") or {}
+    if safe:
+        lin = safe.get("lineage") or {}
+        out["safe_edit_and_verify"] = {
+            "trace_id": safe.get("trace_id"),
+            "arc_concept": safe.get("arc_concept"),
+            "arc_updated": safe.get("arc_updated"),
+            "lineage_ok": lin.get("ok"),
+            "lineage_merkle_ok": lin.get("merkle_ok"),
+            "lineage_merkle_trace_sig": lin.get("merkle_trace_sig"),
+            "lineage_merkle_arc_sig": lin.get("merkle_arc_sig"),
+            "tensor_pattern": safe.get("tensor_pattern"),
+            "full_response": safe,
+        }
+    arc_up = responses.get("update_with_tensor_bond_arc") or {}
+    if arc_up:
+        lin = arc_up.get("lineage") or {}
+        out["update_with_tensor_bond_arc"] = {
+            "concept": arc_up.get("concept"),
+            "crs_after": arc_up.get("crs_after"),
+            "crs_gate_ok": arc_up.get("crs_gate_ok"),
+            "lineage_merkle_arc_sig": lin.get("merkle_arc_sig"),
+            "tensor_pattern": arc_up.get("tensor_pattern"),
+            "full_response": arc_up,
+        }
+    misuse = responses.get("misuse_self_correction") or {}
+    if misuse:
+        out["misuse_self_correction"] = {
+            "recall_match": misuse.get("recall_match"),
+            "scar_key": misuse.get("scar_key"),
+            "failure_pattern": misuse.get("failure_pattern"),
+            "full_response": misuse,
+        }
+    return out
+
+
+def sync_live_mcp_binary(workspace: str, binary: str, scratch_dir: str) -> Dict[str, Any]:
+    """Rebuild + restart stale MCP so connected agents can wield composites."""
+    script = os.path.join(workspace, "scripts", "sync-live-mcp-fidelity.sh")
+    env = {**os.environ, "ENGRAM_BINARY": binary, "SCRATCH": scratch_dir, "FORCE_MCP_RESTART": "1"}
+    try:
+        proc = subprocess.run(
+            ["bash", script],
+            cwd=workspace,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=180,
+        )
+        probe_path = os.path.join(scratch_dir, "live_mcp_probe.json")
+        live_probe: Dict[str, Any] = {}
+        if os.path.isfile(probe_path):
+            with open(probe_path) as f:
+                live_probe = json.load(f)
+        return {
+            "sync_exit_code": proc.returncode,
+            "sync_stdout_tail": proc.stdout[-2000:] if proc.stdout else "",
+            "sync_stderr_tail": proc.stderr[-1000:] if proc.stderr else "",
+            "live_mcp_probe": live_probe,
+            "sync_ok": proc.returncode == 0 and live_probe.get("all_ok", False),
+        }
+    except Exception as e:
+        return {"sync_ok": False, "error": str(e)}
+
+
 def write_fidelity_evidence(
     scratch_dir: str,
     runs: List[Dict[str, Any]],
@@ -120,14 +188,21 @@ def write_fidelity_evidence(
     """Overwrite six SCRATCH artifacts after two consecutive passed:true runs."""
     os.makedirs(scratch_dir, exist_ok=True)
 
+    live_sync = sync_live_mcp_binary(workspace, binary, scratch_dir)
     probe = probe_fresh_mcp_composites(binary, workspace)
+    last_responses = (runs[-1] or {}).get("composite_responses") or {}
+    parsed_lineage = _parse_composite_lineage(last_responses)
     composite_body = {
+        "live_mcp_sync": live_sync,
         "mcp_tools_list_probe": probe,
+        "parsed_lineage_final_run": parsed_lineage,
         "suite_composite_responses": [
             {
                 "run_index": i + 1,
                 "passed": r.get("passed"),
+                "fidelity_rate": r.get("fidelity_rate"),
                 "composite_responses": r.get("composite_responses", {}),
+                "parsed_lineage": _parse_composite_lineage(r.get("composite_responses") or {}),
             }
             for i, r in enumerate(runs)
         ],
@@ -188,15 +263,17 @@ def write_fidelity_evidence(
             f.write("\n")
 
     # Remove stale polluted artifacts from prior manual captures
-    stale = [
-        "agent_tool_fidelity_harness_run1.log",
-        "agent_tool_fidelity_harness_run2.log",
-        "agent_tool_fidelity_harness_run3.log",
-        "fidelity_demo_run1.log",
-    ]
-    for name in stale:
-        p = os.path.join(scratch_dir, name)
-        if os.path.isfile(p):
-            os.remove(p)
+    stale_prefixes = (
+        "agent_tool_fidelity_harness_run",
+        "fidelity_demo_run",
+        "fidelity_harness_harness-",
+        "harness_evidence_run",
+    )
+    for name in os.listdir(scratch_dir):
+        if any(name.startswith(p) for p in stale_prefixes):
+            try:
+                os.remove(os.path.join(scratch_dir, name))
+            except OSError:
+                pass
 
     print(f"Wrote fidelity evidence to {scratch_dir}", file=sys.stderr)

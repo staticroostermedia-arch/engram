@@ -5,6 +5,7 @@
       "command": "/home/a/Documents/Engram/scripts/engram-grok",
       "args": ["mcp"],
       "env": {
+        "ENGRAM_BINARY": "/home/a/Documents/Engram/target/debug/engram",
         "ENGRAM_STORE": "~/.engram/stalks/",
         "ENGRAM_PROFILE": "agent",
         "ENGRAM_LLM_URL": "http://localhost:11434",
