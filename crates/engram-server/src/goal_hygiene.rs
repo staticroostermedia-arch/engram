@@ -36,10 +36,10 @@ impl GoalHygieneReport {
 }
 
 pub fn autopause_enabled() -> bool {
-    match std::env::var("ENGRAM_GOAL_AUTOPAUSE").as_deref() {
-        Ok("0") | Ok("false") | Ok("off") | Ok("no") => false,
-        _ => true,
-    }
+    !matches!(
+        std::env::var("ENGRAM_GOAL_AUTOPAUSE").as_deref(),
+        Ok("0") | Ok("false") | Ok("off") | Ok("no")
+    )
 }
 
 pub fn stale_threshold_secs() -> u64 {
@@ -73,7 +73,12 @@ pub fn goal_last_touch_epoch(store: &StoreHandle, concept: &str, block: &Hologra
     ts
 }
 
-pub fn is_goal_stale(store: &StoreHandle, concept: &str, block: &HolographicBlock, now: u64) -> bool {
+pub fn is_goal_stale(
+    store: &StoreHandle,
+    concept: &str,
+    block: &HolographicBlock,
+    now: u64,
+) -> bool {
     let last = goal_last_touch_epoch(store, concept, block);
     if last == 0 {
         return false;
@@ -206,7 +211,11 @@ mod tests {
     use crate::store::StoreHandle;
 
     fn test_dir(name: &str) -> std::path::PathBuf {
-        let dir = std::env::temp_dir().join(format!("engram_goal_hygiene_{}_{}", name, std::process::id()));
+        let dir = std::env::temp_dir().join(format!(
+            "engram_goal_hygiene_{}_{}",
+            name,
+            std::process::id()
+        ));
         let _ = std::fs::remove_dir_all(&dir);
         dir
     }
@@ -222,10 +231,9 @@ mod tests {
             )
             .unwrap();
         let now = now_epoch();
-        store.access_index.set_last_accessed_for_test(
-            "goal:stale_test",
-            now.saturating_sub(80 * 3600),
-        );
+        store
+            .access_index
+            .set_last_accessed_for_test("goal:stale_test", now.saturating_sub(80 * 3600));
         let block = store.fetch_block_high_priority("goal:stale_test").unwrap();
         assert!(is_goal_stale(&store, "goal:stale_test", &block, now));
     }
@@ -247,14 +255,17 @@ mod tests {
             )
             .unwrap();
         let now = now_epoch();
-        store.access_index.set_last_accessed_for_test(
-            "goal:engram_mvp_v1",
-            now.saturating_sub(90 * 3600),
-        );
+        store
+            .access_index
+            .set_last_accessed_for_test("goal:engram_mvp_v1", now.saturating_sub(90 * 3600));
         std::env::set_var("ENGRAM_GOAL_AUTOPAUSE", "1");
         let paused = autopause_stale_active_goals(&mut store);
         assert!(!paused.contains(&"goal:engram_mvp_v1".to_string()));
-        let text = goal_block_text(&store.fetch_block_high_priority("goal:engram_mvp_v1").unwrap());
+        let text = goal_block_text(
+            &store
+                .fetch_block_high_priority("goal:engram_mvp_v1")
+                .unwrap(),
+        );
         assert!(goal_status_is_active(&text));
     }
 
@@ -281,13 +292,10 @@ mod tests {
             )
             .unwrap();
         let now = now_epoch();
+        store.access_index.touch("goal:engram_mvp_v1");
         store
             .access_index
-            .touch("goal:engram_mvp_v1");
-        store.access_index.set_last_accessed_for_test(
-            "goal:old_sprint",
-            now.saturating_sub(100 * 3600),
-        );
+            .set_last_accessed_for_test("goal:old_sprint", now.saturating_sub(100 * 3600));
         std::env::set_var("ENGRAM_GOAL_AUTOPAUSE", "1");
         let paused = autopause_stale_active_goals(&mut store);
         assert_eq!(paused, vec!["goal:old_sprint".to_string()]);

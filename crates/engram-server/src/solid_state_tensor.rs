@@ -272,9 +272,9 @@ pub fn extract_tensor_pin(query: &str) -> Option<String> {
         return Some(first.to_string());
     }
     for token in q.split(|c: char| c.is_whitespace() || c == ',' || c == ';') {
-        let t = token.trim().trim_matches(|c: char| {
-            !c.is_alphanumeric() && c != ':' && c != '_' && c != '-'
-        });
+        let t = token
+            .trim()
+            .trim_matches(|c: char| !c.is_alphanumeric() && c != ':' && c != '_' && c != '-');
         if is_tensor_eligible(t) {
             return Some(t.to_string());
         }
@@ -361,14 +361,7 @@ pub fn tensor_subgraph_recall(
     include_presentation: bool,
     seed_concept: Option<&str>,
 ) -> TensorSubgraphResult {
-    tensor_subgraph_recall_with_nvme_gate(
-        store,
-        query,
-        k,
-        include_presentation,
-        seed_concept,
-        None,
-    )
+    tensor_subgraph_recall_with_nvme_gate(store, query, k, include_presentation, seed_concept, None)
 }
 
 /// Same as [`tensor_subgraph_recall`]; `nvme_ready_override` is for hermetic tests only (None in production).
@@ -382,9 +375,8 @@ pub(crate) fn tensor_subgraph_recall_with_nvme_gate(
 ) -> TensorSubgraphResult {
     let k = k.clamp(1, 20);
     let recall_mode = store.recall_mode().to_string();
-    let nvme_ready = nvme_ready_override.unwrap_or_else(|| {
-        crate::injection_priority::nvme_recall_path_ready(&recall_mode)
-    });
+    let nvme_ready = nvme_ready_override
+        .unwrap_or_else(|| crate::injection_priority::nvme_recall_path_ready(&recall_mode));
 
     let mut seen = HashSet::new();
     let mut entries = Vec::new();
@@ -538,9 +530,9 @@ pub fn verify_relation_block(store: &StoreHandle, from: &str, to: &str) -> bool 
 #[cfg(test)]
 pub(crate) mod sst_evidence_harness {
     use super::*;
-    use anyhow::Context;
     use crate::mcp::handle_tool_call;
     use crate::store::{open_store, SharedStore};
+    use anyhow::Context;
     use std::sync::Arc;
 
     #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -567,11 +559,7 @@ pub(crate) mod sst_evidence_harness {
     }
 
     fn test_dir(name: &str) -> std::path::PathBuf {
-        let dir = std::env::temp_dir().join(format!(
-            "engram_sst_{}_{}",
-            name,
-            std::process::id()
-        ));
+        let dir = std::env::temp_dir().join(format!("engram_sst_{}_{}", name, std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         dir
     }
@@ -607,7 +595,9 @@ pub(crate) mod sst_evidence_harness {
     }
 
     fn mcp_is_error(resp: &Value) -> bool {
-        resp.get("isError").and_then(|v| v.as_bool()).unwrap_or(false)
+        resp.get("isError")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false)
     }
 
     fn handle_mcp(name: &str, args: Value, store: &SharedStore) -> Value {
@@ -625,14 +615,17 @@ pub(crate) mod sst_evidence_harness {
         let payload: Value = serde_json::from_str(recall_text).expect("recall json");
         let entries = payload["entries"].as_array().map(|a| a.len()).unwrap_or(0);
         let edges = payload["edges"].as_array().map(|a| a.len()).unwrap_or(0);
-        let has_vector = payload["entries"].as_array().map(|arr| {
-            arr.iter().any(|e| {
-                e.get("q")
-                    .and_then(|q| q.get("unit_sphere_ok"))
-                    .and_then(|v| v.as_bool())
-                    .unwrap_or(false)
+        let has_vector = payload["entries"]
+            .as_array()
+            .map(|arr| {
+                arr.iter().any(|e| {
+                    e.get("q")
+                        .and_then(|q| q.get("unit_sphere_ok"))
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false)
+                })
             })
-        }).unwrap_or(false);
+            .unwrap_or(false);
         let has_bond = edges >= 2
             || payload["entries"]
                 .as_array()
@@ -688,7 +681,11 @@ pub(crate) mod sst_evidence_harness {
         Ok(())
     }
 
-    fn recall_via_mcp(store: &SharedStore, log: &mut String, label: &str) -> anyhow::Result<DemoMetrics> {
+    fn recall_via_mcp(
+        store: &SharedStore,
+        log: &mut String,
+        label: &str,
+    ) -> anyhow::Result<DemoMetrics> {
         let resp = handle_mcp(
             "mcp_engram_tensor_recall",
             json!({
@@ -779,20 +776,10 @@ pub(crate) mod sst_evidence_harness {
         }
         let (subgraph, subgraph2) = {
             let mut lock = store.lock().unwrap();
-            let sg = tensor_subgraph_recall(
-                &mut lock,
-                "tensor:solid_state_query_seed",
-                5,
-                false,
-                None,
-            );
-            let sg2 = tensor_subgraph_recall(
-                &mut lock,
-                "tensor:solid_state_query_seed",
-                5,
-                false,
-                None,
-            );
+            let sg =
+                tensor_subgraph_recall(&mut lock, "tensor:solid_state_query_seed", 5, false, None);
+            let sg2 =
+                tensor_subgraph_recall(&mut lock, "tensor:solid_state_query_seed", 5, false, None);
             (sg, sg2)
         };
         anyhow::ensure!(!subgraph.entries.is_empty(), "subgraph empty");
@@ -815,8 +802,7 @@ pub(crate) mod sst_evidence_harness {
         log.push_str("\n\n");
         anyhow::ensure!(!mcp_is_error(&wake_resp), "session_start failed");
 
-        let wake_packet: Value =
-            serde_json::from_str(&wake_text).context("session_start json")?;
+        let wake_packet: Value = serde_json::from_str(&wake_text).context("session_start json")?;
         let session_key = wake_packet["session_key"]
             .as_str()
             .context("session_key missing")?
@@ -833,7 +819,10 @@ pub(crate) mod sst_evidence_harness {
         let post_upsert = recall_via_mcp(&store, &mut log, "post_upsert")?;
         let run1 = recall_via_mcp(&store, &mut log, "run1")?;
         let run2 = recall_via_mcp(&store, &mut log, "run2")?;
-        anyhow::ensure!(post_upsert.has_vector && post_upsert.has_bond, "post_upsert recall");
+        anyhow::ensure!(
+            post_upsert.has_vector && post_upsert.has_bond,
+            "post_upsert recall"
+        );
         anyhow::ensure!(run1.has_vector && run1.has_bond, "run1 recall");
         anyhow::ensure!(run2.has_vector && run2.has_bond, "run2 recall");
         let demo_consistent = run1 == run2;
@@ -843,7 +832,10 @@ pub(crate) mod sst_evidence_harness {
         let readiness_mcp_text = mcp_text(&readiness_resp);
         log.push_str(&readiness_mcp_text);
         log.push_str("\n\n");
-        anyhow::ensure!(!mcp_is_error(&readiness_resp), "get_backend_readiness failed");
+        anyhow::ensure!(
+            !mcp_is_error(&readiness_resp),
+            "get_backend_readiness failed"
+        );
         let readiness_mcp: Value = serde_json::from_str(&readiness_mcp_text).unwrap_or(json!({}));
         anyhow::ensure!(
             readiness_mcp.get("nvme_recall_ready").is_some(),
@@ -859,7 +851,10 @@ pub(crate) mod sst_evidence_harness {
         let verify_text = mcp_text(&verify_resp);
         log.push_str(&verify_text);
         log.push_str("\n\n");
-        anyhow::ensure!(!mcp_is_error(&verify_resp), "verify_manifold_integrity failed");
+        anyhow::ensure!(
+            !mcp_is_error(&verify_resp),
+            "verify_manifold_integrity failed"
+        );
         let verify_healthy =
             verify_text.contains("healthy") || verify_text.contains("Overall: healthy");
 
@@ -870,11 +865,8 @@ pub(crate) mod sst_evidence_harness {
         let (genesis, has_session_lineage) = {
             let lock = store.lock().unwrap();
             let genesis = lock.genesis_status();
-            let has_session_lineage = lock
-                .access_index
-                .recent(30)
-                .iter()
-                .any(|(c, _)| c == &session_key);
+            let has_session_lineage = lock.fetch_block(&session_key).is_some()
+                || lock.fetch_block_high_priority(&session_key).is_some();
             (genesis, has_session_lineage)
         };
         anyhow::ensure!(has_session_lineage, "session_start lineage missing");
@@ -941,21 +933,23 @@ pub(crate) mod sst_evidence_harness {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::sst_evidence_harness;
+    use super::*;
     use std::sync::Mutex;
 
     /// MCP/session tests share global store side effects — serialize to avoid lineage races.
     static MCP_TEST_LOCK: Mutex<()> = Mutex::new(());
 
+    fn mcp_test_guard() -> std::sync::MutexGuard<'static, ()> {
+        MCP_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
     const SCRATCH_DEFAULT: &str = "/tmp/grok-goal-a664843bfc49/implementer";
 
     fn test_dir(name: &str) -> std::path::PathBuf {
-        let dir = std::env::temp_dir().join(format!(
-            "engram_sst_{}_{}",
-            name,
-            std::process::id()
-        ));
+        let dir = std::env::temp_dir().join(format!("engram_sst_{}_{}", name, std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         dir
     }
@@ -999,16 +993,36 @@ mod tests {
 
     #[test]
     fn solid_state_tensor_verification_harness() {
-        let _guard = MCP_TEST_LOCK.lock().expect("mcp test lock");
+        let _guard = mcp_test_guard();
         let scratch = scratch_dir();
         let report = sst_evidence_harness::run().expect("evidence harness");
 
-        write_evidence_file(&scratch, "tensor_vectors_verify.txt", &report.tensor_vectors_verify);
+        write_evidence_file(
+            &scratch,
+            "tensor_vectors_verify.txt",
+            &report.tensor_vectors_verify,
+        );
         write_evidence_file(&scratch, "tensor_bonds.txt", &report.tensor_bonds);
-        write_evidence_file(&scratch, "tensor_subgraph_recall.txt", &report.tensor_subgraph_recall);
-        write_evidence_file(&scratch, "tensor_mcp_invocations.txt", &report.tensor_mcp_invocations);
-        write_evidence_file(&scratch, "tensor_wake_verify.txt", &report.tensor_wake_verify);
-        write_evidence_file(&scratch, "tensor_demo_stdout.txt", &report.tensor_demo_stdout);
+        write_evidence_file(
+            &scratch,
+            "tensor_subgraph_recall.txt",
+            &report.tensor_subgraph_recall,
+        );
+        write_evidence_file(
+            &scratch,
+            "tensor_mcp_invocations.txt",
+            &report.tensor_mcp_invocations,
+        );
+        write_evidence_file(
+            &scratch,
+            "tensor_wake_verify.txt",
+            &report.tensor_wake_verify,
+        );
+        write_evidence_file(
+            &scratch,
+            "tensor_demo_stdout.txt",
+            &report.tensor_demo_stdout,
+        );
 
         assert!(
             report.tensor_recall_invocation_count >= 3,
@@ -1049,7 +1063,11 @@ mod tests {
         )
         .expect("upsert");
 
-        assert!(result.entry.q.unit_sphere_ok, "q norm ~1.0: {}", result.entry.q.norm);
+        assert!(
+            result.entry.q.unit_sphere_ok,
+            "q norm ~1.0: {}",
+            result.entry.q.norm
+        );
         assert!(
             result.entry.crs >= 0.74,
             "CRS must meet grounded gate (ego disabled in hermetic store): {}",
@@ -1085,13 +1103,8 @@ mod tests {
         )
         .unwrap();
 
-        let subgraph = tensor_subgraph_recall(
-            &mut store,
-            "tensor:solid_state_query_seed",
-            5,
-            false,
-            None,
-        );
+        let subgraph =
+            tensor_subgraph_recall(&mut store, "tensor:solid_state_query_seed", 5, false, None);
 
         assert!(!subgraph.entries.is_empty());
         assert!(
@@ -1111,16 +1124,14 @@ mod tests {
             subgraph.entries.len()
         );
         assert!(subgraph.presentation_hits.is_empty());
-        assert!(subgraph.entries.iter().all(|e| is_tensor_eligible(&e.concept)));
+        assert!(subgraph
+            .entries
+            .iter()
+            .all(|e| is_tensor_eligible(&e.concept)));
 
         // Consistency: second run same query
-        let subgraph2 = tensor_subgraph_recall(
-            &mut store,
-            "tensor:solid_state_query_seed",
-            5,
-            false,
-            None,
-        );
+        let subgraph2 =
+            tensor_subgraph_recall(&mut store, "tensor:solid_state_query_seed", 5, false, None);
         assert_eq!(subgraph.entries.len(), subgraph2.entries.len());
     }
 
@@ -1147,22 +1158,15 @@ mod tests {
 
     #[test]
     fn tensor_semantic_recall_when_nvme_ready() {
-        let _guard = MCP_TEST_LOCK.lock().expect("mcp test lock");
+        let _guard = mcp_test_guard();
         let scratch = scratch_dir();
         let mut readiness_log = String::new();
 
         for run in 1..=2 {
             let (_dir, mut store) = hermetic_store(&format!("nvme_semantic_{run}"));
-            let seed_text =
-                "Unique NVMe BVH semantic phrase for tensor recall readiness gate.";
-            tensor_upsert(
-                &mut store,
-                "tensor:bvh_semantic_seed",
-                seed_text,
-                &[],
-                true,
-            )
-            .expect("semantic seed upsert");
+            let seed_text = "Unique NVMe BVH semantic phrase for tensor recall readiness gate.";
+            tensor_upsert(&mut store, "tensor:bvh_semantic_seed", seed_text, &[], true)
+                .expect("semantic seed upsert");
 
             let recall_mode = store.recall_mode();
             let result = tensor_subgraph_recall_with_nvme_gate(
@@ -1193,17 +1197,25 @@ mod tests {
                     .iter()
                     .any(|e| e.concept == "tensor:bvh_semantic_seed"),
                 "run{run}: semantic phrase must surface tensor seed (entries={:?})",
-                result.entries.iter().map(|e| &e.concept).collect::<Vec<_>>()
+                result
+                    .entries
+                    .iter()
+                    .map(|e| &e.concept)
+                    .collect::<Vec<_>>()
             );
         }
 
-        write_evidence_file(&scratch, "tensor_readiness_gate_nvme_true.txt", &readiness_log);
+        write_evidence_file(
+            &scratch,
+            "tensor_readiness_gate_nvme_true.txt",
+            &readiness_log,
+        );
         append_readiness_evidence(&scratch, "nvme_ready semantic 2x", &readiness_log);
     }
 
     #[test]
     fn tensor_gap_closure_agent_recall() {
-        let _guard = MCP_TEST_LOCK.lock().expect("mcp test lock");
+        let _guard = mcp_test_guard();
         use crate::mcp::handle_tool_call;
         use crate::store::{open_store, SharedStore};
         use std::sync::Arc;
@@ -1270,15 +1282,12 @@ mod tests {
             )
             .expect("smoke upsert");
 
-            let pin = tensor_subgraph_recall(
-                &mut store,
-                "tensor:tui_restart_smoke",
-                5,
-                false,
-                None,
-            );
+            let pin =
+                tensor_subgraph_recall(&mut store, "tensor:tui_restart_smoke", 5, false, None);
             assert!(
-                pin.entries.iter().any(|e| e.concept == "tensor:tui_restart_smoke"),
+                pin.entries
+                    .iter()
+                    .any(|e| e.concept == "tensor:tui_restart_smoke"),
                 "pin roundtrip missing smoke entry run{run}"
             );
             let smoke_entry = pin
@@ -1324,11 +1333,13 @@ mod tests {
             assert_eq!(seeded.recall_path, "tensor_seed_concept");
 
             roundtrip_log.push_str(&format!("=== run{run} pin ===\n"));
-            roundtrip_log.push_str(&serde_json::to_string_pretty(&tensor_subgraph_to_json(&pin)).unwrap());
+            roundtrip_log
+                .push_str(&serde_json::to_string_pretty(&tensor_subgraph_to_json(&pin)).unwrap());
             roundtrip_log.push('\n');
             roundtrip_log.push_str(&format!("=== run{run} phrase ===\n"));
-            roundtrip_log
-                .push_str(&serde_json::to_string_pretty(&tensor_subgraph_to_json(&phrase)).unwrap());
+            roundtrip_log.push_str(
+                &serde_json::to_string_pretty(&tensor_subgraph_to_json(&phrase)).unwrap(),
+            );
             roundtrip_log.push('\n');
 
             // Deterministic overflow: hub + 15 spokes via seed + 1-hop = 16 entries (>12 cap).
@@ -1373,13 +1384,13 @@ mod tests {
             assert!(broad.edges.len() <= MAX_TENSOR_EDGES);
             assert!(broad.truncated, "hub+15 spokes must truncate run{run}");
             assert!(broad.presentation_hits.is_empty());
-            assert!(broad
-                .entries
-                .iter()
-                .all(|e| is_tensor_eligible(&e.concept)));
+            assert!(broad.entries.iter().all(|e| is_tensor_eligible(&e.concept)));
             let kept: HashSet<String> = broad.entries.iter().map(|e| e.concept.clone()).collect();
             assert!(
-                broad.edges.iter().all(|b| kept.contains(&b.from) && kept.contains(&b.to)),
+                broad
+                    .edges
+                    .iter()
+                    .all(|b| kept.contains(&b.from) && kept.contains(&b.to)),
                 "edges must not reference dropped entries run{run}"
             );
             let hub_entry = broad
@@ -1410,13 +1421,8 @@ mod tests {
                 semantic_empty.entries.is_empty(),
                 "semantic path must not run when !nvme_ready run{run}"
             );
-            let pin_only = tensor_subgraph_recall(
-                &mut store,
-                "tensor:tui_restart_smoke",
-                5,
-                false,
-                None,
-            );
+            let pin_only =
+                tensor_subgraph_recall(&mut store, "tensor:tui_restart_smoke", 5, false, None);
             assert!(!pin_only.entries.is_empty());
 
             readiness_log.push_str(&format!(
@@ -1453,15 +1459,14 @@ mod tests {
             mcp_log.push_str(&format!("=== run{run} upsert ===\n"));
             mcp_log.push_str(&mcp_text(&upsert_resp));
             mcp_log.push('\n');
-            assert!(!upsert_resp.get("isError").and_then(|v| v.as_bool()).unwrap_or(false));
+            assert!(!upsert_resp
+                .get("isError")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false));
 
             for (label, query, seed) in [
                 ("exact", "tensor:tui_restart_smoke", None),
-                (
-                    "phrase",
-                    "addressable working memory roundtrip MCP",
-                    None,
-                ),
+                ("phrase", "addressable working memory roundtrip MCP", None),
                 ("seed", "noise", Some("tensor:tui_restart_smoke")),
             ] {
                 let mut args = json!({ "query": query, "k": 8, "include_presentation": false });
@@ -1473,7 +1478,10 @@ mod tests {
                 let text = mcp_text(&recall_resp);
                 mcp_log.push_str(&text);
                 mcp_log.push('\n');
-                assert!(!recall_resp.get("isError").and_then(|v| v.as_bool()).unwrap_or(false));
+                assert!(!recall_resp
+                    .get("isError")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false));
                 let payload: Value = serde_json::from_str(&text).expect("recall json");
                 assert!(payload.get("truncated").is_some());
                 assert!(payload["entry_count"].as_u64().unwrap_or(99) <= MAX_TENSOR_ENTRIES as u64);
@@ -1481,8 +1489,7 @@ mod tests {
                     payload["entries"]
                         .as_array()
                         .map(|a| a.iter().any(|e| {
-                            e.get("concept")
-                                .and_then(|c| c.as_str())
+                            e.get("concept").and_then(|c| c.as_str())
                                 == Some("tensor:tui_restart_smoke")
                         }))
                         .unwrap_or(false),
@@ -1511,11 +1518,7 @@ mod tests {
             .expect("tools array");
         let tensor_tool = tools
             .iter()
-            .find(|t| {
-                t.get("name")
-                    .and_then(|n| n.as_str())
-                    == Some("mcp_engram_tensor_recall")
-            })
+            .find(|t| t.get("name").and_then(|n| n.as_str()) == Some("mcp_engram_tensor_recall"))
             .expect("mcp_engram_tensor_recall in tool_list");
         let schema_evidence = serde_json::to_string_pretty(tensor_tool).expect("tool json");
         assert!(
@@ -1584,7 +1587,10 @@ mod tests {
         }];
         let truncated = enforce_tensor_bounds(&mut entries, &mut edges);
         assert!(!truncated, "two entries should not truncate");
-        let kept_a = entries.iter().find(|e| e.concept == "tensor:kept_a").unwrap();
+        let kept_a = entries
+            .iter()
+            .find(|e| e.concept == "tensor:kept_a")
+            .unwrap();
         assert!(
             kept_a.bonds.is_empty(),
             "kept entry.bonds must drop refs to capped-out endpoints"
@@ -1597,7 +1603,9 @@ mod tests {
             "edges must only reference kept entries"
         );
         assert!(
-            !edges.iter().any(|b| b.from == "tensor:bound_hub" || b.to == "tensor:dropped"),
+            !edges
+                .iter()
+                .any(|b| b.from == "tensor:bound_hub" || b.to == "tensor:dropped"),
             "dangling hub/dropped edges must be removed"
         );
     }

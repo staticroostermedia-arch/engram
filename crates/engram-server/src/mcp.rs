@@ -6114,7 +6114,10 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                     "isError": true
                 });
             }
-            let promote = args.get("promote").and_then(|v| v.as_bool()).unwrap_or(true);
+            let promote = args
+                .get("promote")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(true);
             let mut bonds = Vec::new();
             if let Some(arr) = args.get("bonds").and_then(|v| v.as_array()) {
                 for item in arr {
@@ -6146,11 +6149,12 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                     });
                 }
             };
-            match crate::solid_state_tensor::tensor_upsert(&mut lock, &concept, &text, &bonds, promote)
-            {
+            match crate::solid_state_tensor::tensor_upsert(
+                &mut lock, &concept, &text, &bonds, promote,
+            ) {
                 Ok(result) => {
-                    let text = serde_json::to_string_pretty(&result)
-                        .unwrap_or_else(|_| "{}".to_string());
+                    let text =
+                        serde_json::to_string_pretty(&result).unwrap_or_else(|_| "{}".to_string());
                     json!({ "content": [{ "type": "text", "text": text }] })
                 }
                 Err(e) => json!({

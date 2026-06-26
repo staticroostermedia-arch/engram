@@ -278,9 +278,7 @@ fn index_root_for_store(store_path: &std::path::Path) -> PathBuf {
     let store = store_path
         .canonicalize()
         .unwrap_or_else(|_| store_path.to_path_buf());
-    let engram = default_engram
-        .canonicalize()
-        .unwrap_or(default_engram);
+    let engram = default_engram.canonicalize().unwrap_or(default_engram);
     if store.starts_with(&engram) {
         engram
     } else {
