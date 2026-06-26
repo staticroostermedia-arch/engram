@@ -1136,7 +1136,8 @@ pub fn build_harness_bundle(store: &mut StoreHandle, session_intent: Option<&str
             "at_fork": "mcp_engram_quick_trace (chain prev from trace_chain.head)",
             "at_code_edit": "mcp_engram_safe_edit_and_verify (preferred) or context_for_edit → edit → update(__arc)",
             "at_memory_update": "mcp_engram_update_with_tensor_bond (recall-first) or recall → update (>0.85 match)",
-            "at_meta_boundary": "mcp_engram_thought_tile_create",
+            "at_meta_boundary": "mcp_engram_thought_tile_create (dual-writes tensor:tile__ mirror + bonds)",
+            "at_tensor_propose": "mcp_engram_thought_tile_create tile_type=propose_improvement → verified update + consolidation",
             "at_persist": "recall → update (>0.85) or remember (new)",
             "at_dead_end": "mcp_engram_scar",
             "at_verified_fix": "mcp_engram_remember_solution",
@@ -1145,6 +1146,7 @@ pub fn build_harness_bundle(store: &mut StoreHandle, session_intent: Option<&str
             "pipeline": "traces → scar/repulse → condensation → verified_sequence tile → JIT wake front → ego.leg3",
             "queue_before_edits": "MANDATORY — execute suggested_actions before context_for_edit or broad reads",
             "fidelity_rituals": ["ritual:safe_code_edit", "ritual:verified_memory_update", "ritual:edit_ack_with_lineage_check"],
+            "tensor_unification_rituals": ["ritual:thought_tile_to_tensor", "ritual:verified_update_with_consolidation"],
         },
     })
 }

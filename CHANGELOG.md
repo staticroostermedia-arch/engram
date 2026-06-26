@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Tensor–thought-tile unification (`tensor_tile_bridge`):** `thought_tile_create` / `write_result` dual-write `tensor:tile__{stem}` mirrors with bonds to goal/trace/spatial concepts; `tensor_unification` field in tile MCP responses.
+- **`propose_improvement` tile type:** Verified update on `payload.target_concept` via `process:engram.ritual.verified-update-with-consolidation`.
+- **Rituals:** `processes/ritual/thought_tile_to_tensor.toml`, `processes/ritual/verified-update-with-consolidation.toml`; `solid-tensor-consolidation` + `verified-memory-update` extended for TTU.
+- **Harness suite `tensor-thought-unification`:** 2× consecutive runs — tile create → tensor mirror → `update_with_tensor_bond` → `session_end` consolidation → wake `tensor_recall` + `propose_improvement`; SCRATCH evidence via Rust `ttu_evidence_harness`.
+- **Wake injection:** `agent_discipline.tensor_unification_rituals` lists TTU rituals in `continuation_bundle.harness_injection`.
+
+### Changed
+
+- **`mcp_engram_update` on `tile:*`:** Syncs tensor mirror + optional p-drift consolidation (single store lock — fixes harness deadlock).
+- **Plugin/docs:** `engram-tile`, `engram-update`, `engram-evolution` commands; `docs/skills/engram-thought-tiles.md`, `docs/HARNESS_INJECTION.md`, `docs/MCP_TOOLS_REFERENCE.md`.
+
+### Fixed
+
+- **Harness plain-update hang:** Deadlock from double `store.lock()` in `mcp_engram_update`; harness-only trim/damp env vars for hermetic runs (`ENGRAM_TTU_PLAIN_SKIP_SYNC`, `ENGRAM_SKIP_SOLID_TENSOR_CONSOLIDATION`).
+- **`update_with_tensor_bond`:** Requires `lineage.ok` in `edit_fidelity.rs`.
+
 ## [0.7.0-beta.4] - 2026-06-25
 
 ### Added

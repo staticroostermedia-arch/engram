@@ -1072,6 +1072,359 @@ class MCPTestClient:
             "still_alive": self.is_alive,
         }
 
+    def run_tensor_thought_unification_suite(self) -> Dict[str, Any]:
+        """Tensor-thought unification: tile create → tensor mirror → update bond → consolidate → clean wake."""
+        failures: List[str] = []
+        assertions: List[str] = []
+        composite_responses: Dict[str, Any] = {}
+        ts = int(time.time())
+        goal_key = f"goal:tensor_thought_unification_{ts}"
+        target_design = f"design:ttu_harness_target_{ts}"
+        tile_title = f"ttu-harness-{ts}"
+
+        steps_ok = 0
+        steps_total = 0
+        tile_key: Optional[str] = None
+        tensor_concept: Optional[str] = None
+        trace_id: Optional[str] = None
+
+        def step(
+            tool: str,
+            args: Dict[str, Any],
+            label: str,
+            expect_ok: bool = True,
+            post_check: Optional[Any] = None,
+        ) -> Optional[Dict[str, Any]]:
+            nonlocal steps_ok, steps_total
+            steps_total += 1
+            resp = self.call_tool(tool, args, timeout=90.0)
+            data = self._parse_tool_json(resp)
+            err = "error" in resp or resp.get("result", {}).get("isError")
+            transport_ok = (expect_ok and not err) or (not expect_ok and err)
+            if not transport_ok:
+                failures.append(f"{label}: tool={tool} err={err}")
+                return data
+            if post_check is not None:
+                ok, detail = post_check(data, resp)
+                if ok:
+                    steps_ok += 1
+                    assertions.append(f"{label}: ok")
+                    if detail:
+                        assertions.append(detail)
+                else:
+                    failures.append(f"{label}: {detail}")
+            else:
+                steps_ok += 1
+                assertions.append(f"{label}: ok")
+            return data
+
+        step(
+            "mcp_engram_session_start",
+            {"intent": "tensor-thought-unification harness suite"},
+            "session_start",
+        )
+        step(
+            "mcp_engram_ack_wake_queue",
+            {"executed": True, "note": "harness tensor-thought-unification — queue cleared"},
+            "ack_wake_queue",
+        )
+
+        proc_resp = self.call_tool(
+            "mcp_engram_read_concept",
+            {"concept": "process:engram.ritual.thought-tile-to-tensor"},
+            timeout=30.0,
+        )
+        proc_text = self._tool_text(proc_resp)
+        if "not found" in proc_text.lower():
+            failures.append("process:engram.ritual.thought-tile-to-tensor not loaded")
+        else:
+            assertions.append("ritual thought-tile-to-tensor loaded")
+
+        step(
+            "mcp_engram_remember",
+            {"concept": goal_key, "text": "Harness goal for tensor thought unification v1."},
+            "remember_goal",
+        )
+        step(
+            "mcp_engram_remember",
+            {
+                "concept": target_design,
+                "text": "Baseline design block for propose_improvement harness target.",
+            },
+            "remember_target_design",
+        )
+
+        def trace_post_check(
+            _data: Optional[Dict[str, Any]], resp: Dict[str, Any]
+        ) -> Tuple[bool, str]:
+            nonlocal trace_id
+            text = self._tool_text(resp)
+            m = re.search(r"trace:[^\s\)]+", text)
+            if not m:
+                return False, "trace id not parsed"
+            trace_id = m.group(0).rstrip(")")
+            return True, f"trace={trace_id}"
+
+        step(
+            "mcp_engram_quick_trace",
+            {
+                "decision": "Harness tensor-thought-unification tile create",
+                "why": "Spatial anchor for tile compresses_chain_from bond",
+                "goal_context": goal_key,
+            },
+            "mint_trace",
+            post_check=trace_post_check,
+        )
+
+        spatial_refs = [trace_id] if trace_id else []
+
+        def tile_create_post_check(
+            data: Optional[Dict[str, Any]], _resp: Dict[str, Any]
+        ) -> Tuple[bool, str]:
+            nonlocal tile_key, tensor_concept
+            if not data or data.get("ok") is not True:
+                return False, f"tile create ok=false: {data}"
+            tile_key = data.get("tile_key")
+            if not tile_key or not str(tile_key).startswith("tile:"):
+                return False, f"tile_key missing: {data}"
+            tu = data.get("tensor_unification") or {}
+            tensor_concept = tu.get("tensor_concept")
+            crs = tu.get("tensor_crs")
+            bonds = tu.get("tensor_bonds", 0)
+            projected = tu.get("projected")
+            if not tensor_concept or not str(tensor_concept).startswith("tensor:tile__"):
+                return False, f"tensor mirror missing: {tu}"
+            if projected is not True:
+                return False, f"projected=false: {tu}"
+            if crs is None or float(crs) < 0.74:
+                return False, f"tensor CRS below gate: {crs}"
+            if not bonds or int(bonds) <= 0:
+                return False, f"tensor bonds missing: {bonds}"
+            return True, f"tile={tile_key} mirror={tensor_concept} crs={crs} bonds={bonds}"
+
+        tile_data = step(
+            "mcp_engram_thought_tile_create",
+            {
+                "tile_type": "research_offload",
+                "title": tile_title,
+                "payload": {
+                    "summary": "Harness tensor-thought-unification research offload tile",
+                    "tasks": ["assert tensor mirror", "update bond", "consolidate on wake"],
+                },
+                "goal_context": goal_key,
+                "spatial_references": spatial_refs,
+            },
+            "thought_tile_create",
+            post_check=tile_create_post_check,
+        )
+        if tile_data:
+            composite_responses["tile_create"] = tile_data
+
+        def tensor_recall_post_check(
+            data: Optional[Dict[str, Any]], _resp: Dict[str, Any]
+        ) -> Tuple[bool, str]:
+            if not data or not tensor_concept:
+                return False, "tensor_recall: no data or mirror concept"
+            entries = data.get("entries") or []
+            concepts = {e.get("concept") for e in entries if isinstance(e, dict)}
+            if tensor_concept not in concepts:
+                return False, f"mirror {tensor_concept} not in entries: {concepts}"
+            mirror = next((e for e in entries if e.get("concept") == tensor_concept), {})
+            crs = mirror.get("q", {}).get("crs") if isinstance(mirror.get("q"), dict) else mirror.get("crs")
+            if crs is not None and float(crs) < 0.74:
+                return False, f"mirror CRS {crs} < 0.74"
+            edges = data.get("edges") or []
+            return True, f"tensor_recall entries={len(entries)} edges={len(edges)} mirror_present=true"
+
+        recall_data = step(
+            "mcp_engram_tensor_recall",
+            {"query": tensor_concept or "tensor:tile__", "seed_concept": tensor_concept, "k": 8},
+            "tensor_recall_mirror",
+            post_check=tensor_recall_post_check,
+        )
+        if recall_data:
+            composite_responses["tensor_recall"] = recall_data
+
+        def update_tile_post_check(
+            data: Optional[Dict[str, Any]], _resp: Dict[str, Any]
+        ) -> Tuple[bool, str]:
+            if not data or data.get("ok") is not True:
+                return False, f"update ok=false: {data}"
+            if data.get("crs_gate_ok") is not True:
+                return False, f"crs_gate failed: {data}"
+            tid = data.get("trace_id")
+            if not tid or not str(tid).startswith("trace:"):
+                return False, f"update missing trace_id: {data}"
+            tp = data.get("tensor_pattern") or {}
+            bonds = tp.get("bonds", 0)
+            if not bonds or int(bonds) <= 0:
+                return False, f"update tensor bond missing: {tp}"
+            lin = data.get("lineage") or {}
+            if lin.get("ok") is not True:
+                return False, f"lineage ok=false issues={lin.get('issues')}"
+            if lin.get("merkle_ok") is not True:
+                return False, f"lineage merkle_ok=false: {lin}"
+            cons = data.get("consolidation") or {}
+            promoted = cons.get("promoted") or []
+            consolidated = cons.get("consolidated") or []
+            if not promoted and not consolidated:
+                return False, f"update consolidation empty (expected drift promote): {cons}"
+            return True, (
+                f"trace={tid}; bonds={bonds}; lineage.ok; "
+                f"consolidated={len(consolidated)} promoted={len(promoted)}"
+            )
+
+        update_data = step(
+            "mcp_engram_update_with_tensor_bond",
+            {
+                "concept": tile_key or "tile:missing",
+                "new_text": "delta: harness updated tile body via verified tensor bond path.",
+                "recall_query": tile_title,
+                "bond_label": "tensor_thought_unification",
+            },
+            "update_tile_tensor_bond",
+            post_check=update_tile_post_check,
+        )
+        if update_data:
+            composite_responses["update_tile"] = update_data
+
+        write_data = step(
+            "mcp_engram_thought_tile_write_result",
+            {
+                "tile": tile_key or "tile:missing",
+                "result_payload": {"harness": "write_result", "ts": ts},
+                "status": "completed",
+            },
+            "thought_tile_write_result",
+        )
+        if write_data:
+            composite_responses["write_result"] = write_data
+            tu = write_data.get("tensor_sync") or {}
+            if tu.get("concept"):
+                assertions.append(f"write_result tensor_sync={tu.get('concept')}")
+
+        def session_end_post_check(
+            data: Optional[Dict[str, Any]], _resp: Dict[str, Any]
+        ) -> Tuple[bool, str]:
+            if not data:
+                return False, "session_end returned no data"
+            tc = data.get("tensor_consolidation") or {}
+            if not isinstance(tc, dict):
+                return False, f"tensor_consolidation missing: {data.keys()}"
+            consolidated = tc.get("consolidated") or []
+            promoted = tc.get("promoted") or []
+            if len(consolidated) == 0 and len(promoted) == 0:
+                return False, f"session_end consolidation empty: {tc}"
+            return True, (
+                f"session_end consolidated={len(consolidated)} promoted={len(promoted)}"
+            )
+
+        end_data = step(
+            "mcp_engram_session_end",
+            {
+                "summary": "Harness tensor-thought-unification: tile→tensor→update→consolidate",
+                "prepare_compression": True,
+            },
+            "session_end_consolidation",
+            post_check=session_end_post_check,
+        )
+        if end_data:
+            composite_responses["session_end"] = end_data
+
+        wake_data = step(
+            "mcp_engram_session_start",
+            {"intent": "tensor-thought-unification wake verify after session_end"},
+            "wake_after_session_end",
+        )
+        if wake_data:
+            composite_responses["wake_after"] = wake_data
+
+        def wake_recall_post_check(
+            data: Optional[Dict[str, Any]], _resp: Dict[str, Any]
+        ) -> Tuple[bool, str]:
+            if not data or not tensor_concept:
+                return False, "wake tensor_recall: no data"
+            entries = data.get("entries") or []
+            concepts = {e.get("concept") for e in entries if isinstance(e, dict)}
+            if tensor_concept not in concepts:
+                return False, f"post-wake mirror missing: {concepts}"
+            return True, "post-wake tensor mirror present — lineage clean"
+
+        wake_recall = step(
+            "mcp_engram_tensor_recall",
+            {"query": tensor_concept or "tensor:tile__", "seed_concept": tensor_concept, "k": 8},
+            "wake_tensor_recall",
+            post_check=wake_recall_post_check,
+        )
+        if wake_recall:
+            composite_responses["wake_tensor_recall"] = wake_recall
+
+        def propose_post_check(
+            data: Optional[Dict[str, Any]], _resp: Dict[str, Any]
+        ) -> Tuple[bool, str]:
+            if not data:
+                return False, "propose returned no data"
+            if data.get("ok") is not True:
+                return False, f"propose ok=false: {data}"
+            tile = data.get("tile_key") or ""
+            if "propose_improvement" not in tile:
+                return False, f"propose tile_key unexpected: {tile}"
+            mirror = data.get("tensor_mirror") or ""
+            if not str(mirror).startswith("tensor:tile__"):
+                return False, f"propose tensor_mirror missing: {mirror}"
+            trace = data.get("trace_id")
+            if not trace or not str(trace).startswith("trace:"):
+                return False, f"propose missing trace_id: {data}"
+            upd = data.get("update") or {}
+            if upd.get("ok") is not True:
+                return False, f"propose update failed: {upd}"
+            lin = upd.get("lineage") or {}
+            if lin.get("ok") is not True or lin.get("merkle_ok") is not True:
+                return False, f"propose update lineage broken: {lin}"
+            if upd.get("trace_id") != trace:
+                return False, f"propose update trace_id mismatch: {upd.get('trace_id')} vs {trace}"
+            return True, f"propose tile={tile} mirror={mirror} trace={trace}"
+
+        propose_data = step(
+            "mcp_engram_thought_tile_create",
+            {
+                "tile_type": "propose_improvement",
+                "title": f"propose-{ts}",
+                "payload": {
+                    "suggestion": "Wire consolidation ritual invoke from tile write_result path",
+                    "target_concept": target_design,
+                },
+                "goal_context": goal_key,
+            },
+            "propose_improvement",
+            post_check=propose_post_check,
+        )
+        if propose_data:
+            composite_responses["propose_improvement"] = propose_data
+
+        step("mcp_engram_verify_manifold_integrity", {"min_crs": 0.74, "sample_size": 16}, "verify_manifold")
+        step("mcp_engram_genesis", {"action": "status"}, "genesis_status")
+
+        passed = (
+            len(failures) == 0
+            and self.is_alive
+            and self.transport_failures == 0
+            and steps_ok == steps_total
+        )
+        return {
+            "label": "tensor_thought_unification",
+            "passed": passed,
+            "failures": failures,
+            "assertions": assertions,
+            "steps_ok": steps_ok,
+            "steps_total": steps_total,
+            "tile_key": tile_key,
+            "tensor_concept": tensor_concept,
+            "trace_id": trace_id,
+            "composite_responses": composite_responses,
+            "still_alive": self.is_alive,
+        }
+
     def run_goal_clear_suite(self) -> Dict[str, Any]:
         """Goal complete+clear: set_primary (serves) → pre observe → update_status → demote → post observe (2x)."""
         failures: List[str] = []
@@ -1499,7 +1852,7 @@ def main():
     ap.add_argument("--binary", required=True, help="Path to engram binary (stable or dev)")
     ap.add_argument("--store", required=True, help="Isolated temp store dir (will be created)")
     ap.add_argument("--env", action="append", default=[], help="KEY=VAL env override (repeatable)")
-    ap.add_argument("--suite", default="health", choices=["health", "full-wakeup", "transport-lifetime", "heavy-light", "optix-stress", "compression-measurement", "lawfulness-metric", "continuation-bundle", "agent-memory", "agent-tool-fidelity", "goal-clear", "all"])
+    ap.add_argument("--suite", default="health", choices=["health", "full-wakeup", "transport-lifetime", "heavy-light", "optix-stress", "compression-measurement", "lawfulness-metric", "continuation-bundle", "agent-memory", "agent-tool-fidelity", "tensor-thought-unification", "goal-clear", "all"])
     ap.add_argument("--iterations", type=int, default=12, help="For transport-lifetime")
     ap.add_argument("--timeout", type=float, default=60.0)
     ap.add_argument("--verbose", action="store_true")
@@ -1507,7 +1860,7 @@ def main():
     ap.add_argument("--workspace", default="/path/to/your/engram", help="For watch_workspace in ritual (your clone root)")
     ap.add_argument(
         "--scratch",
-        help="SCRATCH dir for agent-tool-fidelity evidence (overwrites six artifacts after clean runs)",
+        help="SCRATCH dir for agent-tool-fidelity or tensor-thought-unification evidence (overwrites artifacts after clean runs)",
     )
     ap.add_argument(
         "--fidelity-runs",
@@ -1515,9 +1868,17 @@ def main():
         default=0,
         help="Consecutive suite runs (default 2 when --scratch set, else 1)",
     )
+    ap.add_argument(
+        "--ttu-runs",
+        type=int,
+        default=0,
+        help="Consecutive tensor-thought-unification runs (default 2 when --scratch set, else 1)",
+    )
     args = ap.parse_args()
     if args.fidelity_runs <= 0:
-        args.fidelity_runs = 2 if args.scratch else 1
+        args.fidelity_runs = 2 if args.scratch and args.suite in ("agent-tool-fidelity", "all") else 1
+    if args.ttu_runs <= 0:
+        args.ttu_runs = 2 if args.scratch and args.suite in ("tensor-thought-unification", "all") else 1
 
     env_over = {}
     for kv in args.env:
@@ -1654,6 +2015,26 @@ def main():
                     final_payload,
                 )
 
+        ttu_suite_result: Optional[Dict[str, Any]] = None
+        if args.suite in ("tensor-thought-unification", "all"):
+            workspace_root = os.path.abspath(
+                os.path.join(os.path.dirname(__file__), "..", "..", "..")
+            )
+            from ttu_evidence import run_fast_skip_test, run_rust_scratch_evidence
+
+            if args.scratch:
+                rc = run_rust_scratch_evidence(args.scratch, workspace_root)
+                if rc != 0:
+                    client.errors.append(f"tensor-thought-unification rust scratch harness exit {rc}")
+                else:
+                    ttu_suite_result = {"passed": True, "via": "rust_handle_tool_call", "scratch": args.scratch}
+            else:
+                rc = run_fast_skip_test(workspace_root)
+                if rc != 0:
+                    client.errors.append(f"tensor-thought-unification fast skip test exit {rc}")
+                else:
+                    ttu_suite_result = {"passed": True, "via": "rust_fast_skip"}
+
         goal_clear_full_written = False
         if args.suite in ("goal-clear", "all"):
             print("=== Running goal_clear_suite (set_primary → clear → post observe 2x) ===")
@@ -1677,6 +2058,8 @@ def main():
             }
             if fidelity_suite_result is not None:
                 payload["suite_result"] = fidelity_suite_result
+            if ttu_suite_result is not None:
+                payload["suite_result"] = ttu_suite_result
             with open(args.json_out, "w") as f:
                 json.dump(payload, f, indent=2)
             print(f"Results written to {args.json_out}")

@@ -22,11 +22,13 @@ list = [
   "mcp_engram_scar",
   "mcp_engram_tensor_upsert",
   "mcp_engram_verify_block_lawfulness",
+  "mcp_engram_thought_tile_write_result",
 ]
 
 [requires]
 list = [
   "process:engram.ritual.working-memory",
+  "process:engram.ritual.thought-tile-to-tensor",
   "recall_before_derive",
 ]
 
@@ -58,3 +60,5 @@ value = 90000
 
 [notes]
 # Misuse (forget+remember) should scar immediately. Incorrect patterns surface as open_scars at wake.
+# tile:* updates via mcp_engram_update sync tensor:tile__ mirror + mint trace + lineage (plain path).
+# Prefer mcp_engram_update_with_tensor_bond for recall guard + tensor bond + consolidation.

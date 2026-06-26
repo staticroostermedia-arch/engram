@@ -512,6 +512,8 @@ pub fn run_safe_edit_and_verify(
 }
 
 /// Recall-first update with tensor bond; scars on mismatch when enabled.
+/// When `lineage_trace` is None and update succeeds, mints a quick_trace for lineage.
+#[allow(clippy::too_many_arguments)]
 pub fn run_update_with_tensor_bond(
     store: &mut StoreHandle,
     concept: &str,
@@ -520,6 +522,9 @@ pub fn run_update_with_tensor_bond(
     bond_label: &str,
     scar_on_mismatch: bool,
     match_threshold: f32,
+    lineage_trace: Option<&str>,
+    prev_trace: Option<&str>,
+    goal_context: Option<&str>,
 ) -> Value {
     let concept = concept.trim();
     let new_text = new_text.trim();
@@ -677,16 +682,71 @@ pub fn run_update_with_tensor_bond(
                 label: "updated_via".to_string(),
             },
         ];
-        tensor_upsert(store, &pattern_concept, &pattern_text, &bonds, true).ok()
+        let upserted = tensor_upsert(store, &pattern_concept, &pattern_text, &bonds, true).ok();
+        if upserted.is_some() {
+            crate::tensor_tile_bridge::bump_tensor_p_drift(store, &pattern_concept);
+        }
+        upserted
     } else {
         None
     };
 
-    let lineage = verify_edit_lineage(store, None, Some(concept), None, MIN_CRS);
+    let trace_id: Option<String> = if recall_match && crs_gate_ok {
+        if let Some(existing) = lineage_trace {
+            Some(existing.to_string())
+        } else {
+            mint_quick_trace(
+                store,
+                &format!("verified update on {concept}"),
+                new_text,
+                Some(concept),
+                prev_trace,
+                goal_context,
+            )
+            .ok()
+        }
+    } else {
+        None
+    };
+
+    if let Some(ref tid) = trace_id {
+        let _ = store.relate(tid, concept, "updated_via");
+        if let Some(tp) = tensor_result.as_ref() {
+            let _ = store.relate(tid, &tp.concept, "tensor_pattern_for");
+        }
+    }
+
+    let lineage = verify_edit_lineage(
+        store,
+        trace_id.as_deref(),
+        Some(concept),
+        prev_trace,
+        MIN_CRS,
+    );
+
+    let consolidation = if recall_match && crs_gate_ok {
+        crate::tensor_tile_bridge::bump_tensor_p_drift(store, concept);
+        crate::tensor_tile_bridge::maybe_consolidate_tensor_drift(store, concept)
+    } else {
+        None
+    };
+
+    // Sync tensor mirror when updating a tile directly.
+    if recall_match && crs_gate_ok && concept.starts_with("tile:") {
+        let full_text = store
+            .fetch_block(concept)
+            .or_else(|| store.fetch_block_high_priority(concept))
+            .map(|b| engram_core::storage::read_provlog(&b))
+            .unwrap_or_else(|| new_text.to_string());
+        let _ = crate::tensor_tile_bridge::sync_tensor_after_tile_write(store, concept, &full_text);
+    }
+
+    let success = recall_match && crs_gate_ok && lineage.ok;
 
     json!({
-        "ok": recall_match && crs_gate_ok,
+        "ok": success,
         "concept": concept,
+        "trace_id": trace_id,
         "message": update_message,
         "recall_match": recall_match,
         "recall_top": top_concept,
@@ -702,8 +762,9 @@ pub fn run_update_with_tensor_bond(
             "bonds": r.bonds_created.len(),
             "stored": r.stored,
         })),
+        "consolidation": consolidation.map(|r| r.to_json()),
         "lineage": lineage.to_json(),
-        "reflection_suggested": build_reflection_loop_actions(None, Some(concept), None),
+        "reflection_suggested": build_reflection_loop_actions(trace_id.as_deref(), Some(concept), None),
     })
 }
 
@@ -713,6 +774,8 @@ mod tests {
     use crate::store::StoreHandle;
 
     fn test_store() -> StoreHandle {
+        std::env::set_var("ENGRAM_DISABLE_SHEAF", "1");
+        std::env::set_var("ENGRAM_FORCE_CPU_BACKEND", "1");
         let dir = std::env::temp_dir().join(format!(
             "engram-edit-fidelity-{}-{}",
             std::process::id(),
@@ -811,6 +874,9 @@ mod tests {
             "edit_fidelity",
             false,
             0.85,
+            None,
+            None,
+            None,
         );
         assert_eq!(
             out.get("recall_match"),
@@ -818,6 +884,36 @@ mod tests {
             "recall_match failed: {out}"
         );
         assert_eq!(out.get("ok"), Some(&json!(true)), "ok failed: {out}");
+    }
+
+    #[test]
+    fn update_with_tensor_bond_lineage_and_consolidation() {
+        let mut store = test_store();
+        let concept = "design:ttu_lineage_target";
+        seed_grounded_block(&mut store, concept, "baseline for lineage update");
+        let out = run_update_with_tensor_bond(
+            &mut store,
+            concept,
+            "delta: lineage + consolidation test",
+            Some(concept),
+            "tensor_thought_unification",
+            false,
+            0.85,
+            None,
+            None,
+            None,
+        );
+        assert_eq!(out.get("ok"), Some(&json!(true)), "{out}");
+        let lin = out.get("lineage").expect("lineage");
+        assert_eq!(lin.get("ok"), Some(&json!(true)), "{lin}");
+        assert!(out
+            .get("trace_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .starts_with("trace:"));
+        let cons = out.get("consolidation").expect("consolidation");
+        let promoted = cons.get("promoted").and_then(|v| v.as_array()).unwrap();
+        assert!(!promoted.is_empty(), "{cons}");
     }
 
     #[test]

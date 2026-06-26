@@ -13,7 +13,7 @@ Rituals turn the geometric substrate into living self-model and continuity for a
 - `docs/skills/engram-wake-up.md` — Full geometric continuation (living anchors via momentum/relations, session_start + bind, Phase 1.5 lawfulness, rehydrate, goal stack, spatial hygiene, success criteria).
 - `docs/skills/engram-working-memory.md` — The runtime discipline (geometric priority, update vs remember, traces/scars, Code Edit pre/post AABB, thought tiles for meta, hot promotion, quick templates).
 - `docs/skills/engram-session-end.md` — Terminal handoff (crystallize, goal review + traces, COMPRESS, anchors, verification, success criteria).
-- `docs/skills/engram-thought-tiles.md` — When and how to mint (mandatory for meta-work, types, hot promotion).
+- `docs/skills/engram-thought-tiles.md` — When and how to mint (mandatory for meta-work, types, hot promotion, tensor mirror dual-write).
 - `docs/skills/README.md` — Index + "For Agents" quickstart loop.
 
 **Summary**:

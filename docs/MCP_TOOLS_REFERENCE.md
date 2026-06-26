@@ -69,6 +69,9 @@ With `ENGRAM_PROFILE=agent`, wake gate defaults to **hard** — `ack_wake_queue`
 
 ### Thought tiles (meta-work arcs)
 - `thought_tile_create`, `thought_tile_write_result`, `thought_tile_create_visualization`
+- `thought_tile_create` dual-writes `tensor:tile__{stem}` mirror + bonds; `tile_type=propose_improvement` routes verified update on `target_concept`
+- `update_with_tensor_bond` on `tile:*` syncs mirror + optional consolidation (`tensor_unification` in create/write responses)
+- Rituals: `process:engram.ritual.thought-tile-to-tensor`, `process:engram.ritual.verified-update-with-consolidation`
 - `promote_hot`, `promote_hot_batch`
 
 ### Verification & health
