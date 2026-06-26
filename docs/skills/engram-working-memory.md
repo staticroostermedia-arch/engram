@@ -41,6 +41,20 @@ Every work block becomes an evolution of your self-model.
    Few-shot `remember` (1): `{"concept":"harness:agent_tool_fidelity_v1","text":"Deterministic suite for edit/update tool fidelity >=95%."}`
 
    Few-shot `remember` (2): `{"concept":"user__prefers_absolute_paths","text":"Always pass absolute paths to context_for_edit and safe_edit_and_verify."}`
+
+   Few-shot `update` (1): `{"concept":"store__fn__update__arc","new_text":"delta: added verify_edit_lineage helper"}`
+
+   Few-shot `update` (2): `{"concept":"design:agent_tool_fidelity_v1","new_text":"Shipped composite safe_edit_and_verify","provlog_mode":"append"}`
+
+   Few-shot `ack_edit_arc` (1): `{"concepts":["store__fn__context_for_edit"],"skip":false,"note":"updated __arc via mcp_engram_update"}`
+
+   Few-shot `ack_edit_arc` (2): `{"skip":true,"note":"read-only context_for_edit — no substantive edits"}`
+
+   Few-shot `ack_edit_arc` (3): `{"concepts":["store__fn__context_for_edit"],"skip":false,"note":"updated __arc via mcp_engram_update","lineage_check":true,"trace_id":"trace:1780000000_post_edit"}`
+
+   Few-shot `remember_solution` (1): `{"error_pattern":"cargo test mcp mutex poison","solution":"Use mcp_test_guard() serializing MCP tests"}`
+
+   Few-shot `remember_solution` (2): `{"error_pattern":"repeated context_for_edit blocked","solution":"mcp_engram_update on __arc or mcp_engram_ack_edit_arc before re-read","process_context":"process:engram.ritual.working-memory"}`
 3. **Scar Is Repulsion**: `mcp_engram_scar(concept, magnitude)` for ruled-out approaches. Active geometric force.
 4. **Write Hygiene**: Every strong write/relation becomes terminal state for future wake-ups.
 5. **Reasoning Trace Capture**: Significant decisions/forks → `mcp_engram_quick_trace` (lean) or `record_reasoning_trace` (deep/high-stakes). Chain via `prev`.

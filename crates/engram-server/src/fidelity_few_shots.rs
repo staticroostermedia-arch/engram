@@ -75,3 +75,173 @@ pub fn quick_trace_description() -> String {
         "Low-friction trace capture → structured trace:* block with prev_in_trace chain. Use at every fork; chain prev from trace_chain.head. Post-edit: run reflection loop or mcp_engram_safe_edit_and_verify. FEW-SHOT EXAMPLES: (1) Edit fork: {QUICK_TRACE_EX1} (2) Post-edit delta: {QUICK_TRACE_EX2}"
     )
 }
+
+#[cfg(test)]
+mod doc_sync_tests {
+    use super::*;
+    use std::path::{Path, PathBuf};
+
+    fn repo_root() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .canonicalize()
+            .expect("workspace root")
+    }
+
+    fn assert_doc_contains(path: &Path, snippet: &str, label: &str) {
+        let content = std::fs::read_to_string(path)
+            .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+        assert!(
+            content.contains(snippet),
+            "AC1 drift: {label} missing in {}",
+            path.display()
+        );
+    }
+
+    /// AC1 gate: every canonical few-shot must appear verbatim in plugin commands + working-memory skill.
+    #[test]
+    fn fidelity_few_shots_docs_match_canonical() {
+        let root = repo_root();
+        let pairs: &[(&str, &str)] = &[
+            // remember
+            (
+                "grok-plugin-engram/commands/engram-remember.md",
+                REMEMBER_EX1,
+            ),
+            (
+                "grok-plugin-engram/commands/engram-remember.md",
+                REMEMBER_EX2,
+            ),
+            (
+                "grok-plugin-engram/commands/engram-update.md",
+                REMEMBER_EX1,
+            ),
+            (
+                "grok-plugin-engram/commands/engram-update.md",
+                REMEMBER_EX2,
+            ),
+            (
+                "docs/skills/engram-working-memory.md",
+                REMEMBER_EX1,
+            ),
+            (
+                "docs/skills/engram-working-memory.md",
+                REMEMBER_EX2,
+            ),
+            // ack_edit_arc
+            (
+                "grok-plugin-engram/commands/engram-ack-edit-arc.md",
+                ACK_EDIT_ARC_EX1,
+            ),
+            (
+                "grok-plugin-engram/commands/engram-ack-edit-arc.md",
+                ACK_EDIT_ARC_EX2,
+            ),
+            (
+                "grok-plugin-engram/commands/engram-ack-edit-arc.md",
+                ACK_EDIT_ARC_EX3,
+            ),
+            (
+                "docs/skills/engram-working-memory.md",
+                ACK_EDIT_ARC_EX1,
+            ),
+            (
+                "docs/skills/engram-working-memory.md",
+                ACK_EDIT_ARC_EX2,
+            ),
+            (
+                "docs/skills/engram-working-memory.md",
+                ACK_EDIT_ARC_EX3,
+            ),
+            // safe_edit
+            (
+                "grok-plugin-engram/commands/engram-safe-edit.md",
+                SAFE_EDIT_EX1,
+            ),
+            (
+                "grok-plugin-engram/commands/engram-safe-edit.md",
+                SAFE_EDIT_EX2,
+            ),
+            (
+                "grok-plugin-engram/commands/engram-edit.md",
+                SAFE_EDIT_EX1,
+            ),
+            (
+                "grok-plugin-engram/commands/engram-edit.md",
+                SAFE_EDIT_EX2,
+            ),
+            // context_for_edit
+            (
+                "grok-plugin-engram/commands/engram-edit.md",
+                CONTEXT_FOR_EDIT_EX1,
+            ),
+            (
+                "grok-plugin-engram/commands/engram-edit.md",
+                CONTEXT_FOR_EDIT_EX2,
+            ),
+            (
+                "docs/skills/engram-working-memory.md",
+                CONTEXT_FOR_EDIT_EX1,
+            ),
+            (
+                "docs/skills/engram-working-memory.md",
+                CONTEXT_FOR_EDIT_EX2,
+            ),
+            // update (plain)
+            (
+                "grok-plugin-engram/commands/engram-update.md",
+                UPDATE_EX1,
+            ),
+            (
+                "grok-plugin-engram/commands/engram-update.md",
+                UPDATE_EX2,
+            ),
+            (
+                "docs/skills/engram-working-memory.md",
+                UPDATE_EX1,
+            ),
+            (
+                "docs/skills/engram-working-memory.md",
+                UPDATE_EX2,
+            ),
+            // update_with_tensor_bond
+            (
+                "grok-plugin-engram/commands/engram-update.md",
+                UPDATE_BOND_EX1,
+            ),
+            (
+                "grok-plugin-engram/commands/engram-update.md",
+                UPDATE_BOND_EX2,
+            ),
+            (
+                "docs/skills/engram-working-memory.md",
+                UPDATE_BOND_EX1,
+            ),
+            (
+                "docs/skills/engram-working-memory.md",
+                UPDATE_BOND_EX2,
+            ),
+            // remember_solution
+            (
+                "grok-plugin-engram/commands/engram-solution.md",
+                REMEMBER_SOLUTION_EX1,
+            ),
+            (
+                "grok-plugin-engram/commands/engram-solution.md",
+                REMEMBER_SOLUTION_EX2,
+            ),
+            (
+                "docs/skills/engram-working-memory.md",
+                REMEMBER_SOLUTION_EX1,
+            ),
+            (
+                "docs/skills/engram-working-memory.md",
+                REMEMBER_SOLUTION_EX2,
+            ),
+        ];
+        for (rel, snippet) in pairs {
+            let path = root.join(rel);
+            assert_doc_contains(&path, snippet, snippet);
+        }
+    }
+}

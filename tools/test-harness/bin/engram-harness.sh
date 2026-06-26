@@ -125,6 +125,7 @@ Options:
                         --record-results. Fails hard on any red flag. Use this before any cargo install
                         that could affect the daily driver.
   --workspace PATH      Path passed to watch_workspace in rituals (default: current dir or /path/to/your/engram)
+  --scratch PATH        SCRATCH dir for agent-tool-fidelity evidence (overwrites six artifacts after 2 clean runs)
   --verbose             Pass -v to python client + extra harness chatter
   --help                This message
 
@@ -153,6 +154,7 @@ RECORD_RESULTS=false
 REPRO_PRE_FIX=false
 PRE_SWAP_VALIDATE=false
 WORKSPACE_PATH="${WORKSPACE_PATH:-$(pwd)}"  # defaults to current dir (your engram clone root)
+SCRATCH="${SCRATCH:-}"
 VERBOSE=false
 
 while [[ $# -gt 0 ]]; do
@@ -168,6 +170,7 @@ while [[ $# -gt 0 ]]; do
     --repro-pre-fix) REPRO_PRE_FIX=true; shift ;;
     --pre-swap-validate) PRE_SWAP_VALIDATE=true; shift ;;
     --workspace) WORKSPACE_PATH="$2"; shift 2 ;;
+    --scratch) SCRATCH="$2"; shift 2 ;;
     --verbose|-v) VERBOSE=true; shift ;;
     --help|-h) usage; exit 0 ;;
     *) echo "Unknown arg: $1"; usage; exit 1 ;;
@@ -341,6 +344,10 @@ run_single_suite() {
     py_args+=(--env "ENGRAM_OPTIX_ENABLED=$ENGRAM_OPTIX_ENABLED")
   fi
   py_args+=(--env "ENGRAM_KI_ARTIFACTS_DIR=$DEFAULT_KI_DIR")
+  if [[ "$suite" == "agent-tool-fidelity" && -n "${SCRATCH:-}" ]]; then
+    py_args+=(--scratch "$SCRATCH" --fidelity-runs 2)
+    echo "   SCRATCH evidence: $SCRATCH (2 consecutive runs, overwrite on pass)"
+  fi
 
   echo "   Running python client..."
   local rc=0
