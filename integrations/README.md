@@ -78,6 +78,10 @@ With `ENGRAM_PROFILE=agent`, wake gate defaults to **hard** — `ack_wake_queue`
 
 Build: `cargo build -p engram-server` → binary at `target/debug/engram`.
 
+### Apple Silicon (macOS)
+
+Metal backend is selected automatically on `aarch64-apple-darwin`. Large stores (>50k `.leg` blocks) auto-set `ENGRAM_DEFER_BVH=1` at MCP start so wake stays responsive; poll `get_backend_readiness` until `bvh_ready: true`, or call `rebuild_bvh` when you need full recall. If MCP hangs on first recall after an old build, update to latest `master` (Metal BVH no longer blocks synchronously on `query()`).
+
 ---
 
 ## Workflows (optional deep path)

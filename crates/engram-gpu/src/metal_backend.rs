@@ -149,11 +149,30 @@ impl MetalBackend {
 
         info!("[engram-gpu] MetalBackend initialized: {:?}", device.name());
 
+        let bvh: Arc<RwLock<Option<BvhManifold>>> = Arc::new(RwLock::new(None));
+        let bvh_build = BvhBuildCoordinator::new_shared();
+
+        // Mirror CudaBackend: background BVH so MCP never blocks on first query.
+        // Mac agent profile sets ENGRAM_DEFER_BVH=1 on large stores via maybe_defer_bvh_for_large_store.
+        if std::env::var("ENGRAM_DEFER_BVH").as_deref() != Ok("1") {
+            spawn_bvh_build(
+                "engram-bvh-build",
+                "Background",
+                &expanded,
+                Arc::clone(&bvh),
+                Arc::clone(&bvh_build),
+            );
+        } else {
+            eprintln!(
+                "[BVH] Build deferred (ENGRAM_DEFER_BVH=1) — queries use capped scan until on-demand rebuild"
+            );
+        }
+
         Self {
             store_path: PathBuf::from(&expanded),
             cpu: CpuBackend::new(&expanded),
-            bvh: Arc::new(RwLock::new(None)),
-            bvh_build: BvhBuildCoordinator::new_shared(),
+            bvh,
+            bvh_build,
             device,
             command_queue,
             cosine_pipeline,
@@ -201,13 +220,31 @@ impl MetalBackend {
 
     /// Kick off a background BVH build (on-demand after ENGRAM_DEFER_BVH=1).
     pub fn rebuild_bvh_async(&self) -> bool {
+        self.schedule_bvh_reindex("engram-bvh-on-demand", "On-demand")
+    }
+
+    /// After store/forget, reindex once in the background (deduped).
+    fn schedule_bvh_reindex(&self, thread_name: &str, label: &str) -> bool {
+        if std::env::var("ENGRAM_DEFER_BVH").as_deref() == Ok("1") {
+            return false;
+        }
         spawn_bvh_build(
-            "engram-bvh-on-demand",
-            "On-demand",
+            thread_name,
+            label,
             &self.store_path,
             Arc::clone(&self.bvh),
             Arc::clone(&self.bvh_build),
         )
+    }
+
+    fn leg_block_count(&self) -> usize {
+        std::fs::read_dir(&self.store_path)
+            .map(|rd| {
+                rd.filter_map(|e| e.ok())
+                    .filter(|e| engram_core::storage::is_leg_block_path(&e.path()))
+                    .count()
+            })
+            .unwrap_or(0)
     }
 
     // ── Internal: GPU dispatch ────────────────────────────────────────────────
@@ -303,8 +340,7 @@ impl MetalBackend {
 
         command_buffer.commit();
 
-        // Async dispatch with timeout + CPU fallback (Metal patch for GPU hand-off).
-        // Avoids indefinite block; on timeout or error fall back gracefully.
+        // Poll status with real timeout + CPU fallback — never block indefinitely on GPU.
         let dispatch_ok = if let Err(e) = self.wait_until_completed_timeout(&command_buffer, 5.0) {
             warn!(
                 "Metal dispatch timeout or error: {:?}, falling back to CPU",
@@ -336,7 +372,8 @@ impl MetalBackend {
         Ok(scores)
     }
 
-    /// Helper: wait with timeout (simple poll + sleep for Metal; production would use semaphore + dispatch_after).
+    /// Poll `MTLCommandBufferStatus` until completed, error, or timeout.
+    /// Caller must `commit()` once before invoking — do not double-commit.
     fn wait_until_completed_timeout(
         &self,
         cb: &CommandBufferRef,
@@ -345,26 +382,20 @@ impl MetalBackend {
         use std::time::{Duration, Instant};
         let start = Instant::now();
         let timeout = Duration::from_secs_f64(timeout_secs);
-        cb.commit(); // ensure committed
         loop {
-            // Metal doesn't expose direct timeout on wait_until_completed; poll status.
-            // In practice, for this patch we use a bounded busy-wait with sleep.
-            if start.elapsed() > timeout {
-                return Err("timeout".to_string());
-            }
-            // Check if completed (non-blocking probe via status if available; fallback sleep).
-            // For robustness, a short sleep + re-check loop.
-            std::thread::sleep(Duration::from_millis(5));
-            // If we reach here without panic in real wait, assume progress; real impl can inspect.
-            // To keep simple and match patch intent, break after short time or let outer handle.
-            if start.elapsed() > Duration::from_millis(100) {
-                // quick probe
-                break;
+            match cb.status() {
+                MTLCommandBufferStatus::Completed => return Ok(()),
+                MTLCommandBufferStatus::Error => {
+                    return Err("metal command buffer error".to_string());
+                }
+                _ => {
+                    if start.elapsed() >= timeout {
+                        return Err("timeout".to_string());
+                    }
+                    std::thread::sleep(Duration::from_millis(2));
+                }
             }
         }
-        // Final blocking wait (capped by our loop); in full patch this would be non-blocking status check.
-        cb.wait_until_completed();
-        Ok(())
     }
 
     /// Load candidate blocks, using BVH for O(log N) filtering when available.
@@ -398,6 +429,11 @@ impl MetalBackend {
             }
         }
 
+        // Large manifold without BVH: avoid scanning thousands of blocks on the MCP thread.
+        if self.leg_block_count() > 10_000 {
+            return Vec::new();
+        }
+
         // Fallback: linear scan, capped at MAX_GPU_BATCH to prevent OOM
         let entries: Vec<_> = match std::fs::read_dir(&self.store_path) {
             Ok(e) => e.flatten().collect(),
@@ -417,16 +453,6 @@ impl MetalBackend {
                 Some((concept, block))
             })
             .collect()
-    }
-
-    /// Ensure the BVH index is populated, building it lazily if needed.
-    fn ensure_bvh(&self) {
-        if let Ok(guard) = self.bvh.read() {
-            if guard.is_some() {
-                return;
-            }
-        }
-        self.rebuild_bvh();
     }
 
     /// Buffer pool helper (Metal patch): reuse or create MTLBuffer of exact size.
@@ -618,7 +644,9 @@ impl VsaBackend for MetalBackend {
     }
 
     fn query(&self, query: &[Complex32; DIMENSION], k: usize) -> Vec<Memory> {
-        self.ensure_bvh();
+        // Do NOT synchronously build BVH here (CudaBackend parity).
+        // ensure_bvh() blocked MCP 18s–minutes on first recall while LBVH scanned the manifold.
+        // Background build from new() / rebuild_bvh_async commits when ready.
 
         // Load candidates (BVH-filtered or fallback scan)
         let candidates = self.load_candidates(query);
@@ -676,10 +704,7 @@ impl VsaBackend for MetalBackend {
     fn store(&self, concept: &str, block: Leg3Pointer) -> Result<()> {
         let result = self.cpu.store(concept, block);
         if result.is_ok() {
-            // Invalidate BVH — it will be rebuilt lazily on the next query
-            if let Ok(mut guard) = self.bvh.write() {
-                *guard = None;
-            }
+            self.schedule_bvh_reindex("engram-bvh-rebuild", "Post-store");
         }
         result
     }
@@ -687,9 +712,7 @@ impl VsaBackend for MetalBackend {
     fn forget(&self, concept: &str) -> Result<()> {
         let result = self.cpu.forget(concept);
         if result.is_ok() {
-            if let Ok(mut guard) = self.bvh.write() {
-                *guard = None;
-            }
+            self.schedule_bvh_reindex("engram-bvh-rebuild", "Post-forget");
         }
         result
     }
