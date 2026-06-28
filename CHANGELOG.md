@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Metal macOS BVH hang:** `MetalBackend::query()` no longer calls synchronous `ensure_bvh()` (parity with `CudaBackend` — background build only). Background BVH spawn at init; real `MTLCommandBufferStatus` poll timeout (removed double-`commit` + fake 100ms timeout that still blocked on `wait_until_completed`). Post-store deduped async reindex instead of invalidate-on-query.
+
 ### Added
 
 - **Tensor–thought-tile unification (`tensor_tile_bridge`):** `thought_tile_create` / `write_result` dual-write `tensor:tile__{stem}` mirrors with bonds to goal/trace/spatial concepts; `tensor_unification` field in tile MCP responses.
