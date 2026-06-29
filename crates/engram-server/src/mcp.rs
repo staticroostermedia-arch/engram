@@ -9393,6 +9393,18 @@ mod tests {
             serde_json::from_str(&mcp_text(resp)).expect("MCP response text must be JSON")
         }
 
+        fn log_mcp_transcript(step: &str, tool: &str, args: &serde_json::Value, resp: &serde_json::Value) {
+            append_evidence(
+                "spikes-continuity.log",
+                &format!(
+                    "\n=== {step} ===\nTOOL: {tool}\nARGS: {}\nRESPONSE_RAW: {}\nRESPONSE_TEXT: {}\n",
+                    serde_json::to_string_pretty(args).unwrap_or_default(),
+                    serde_json::to_string_pretty(resp).unwrap_or_default(),
+                    mcp_text(resp),
+                ),
+            );
+        }
+
         fn run_continuity_sequence(run: u32) -> serde_json::Value {
             let tmp = unique_tmp(&format!("continuity-seq-{run}"));
             let store = prep_store(&tmp);
@@ -9402,67 +9414,89 @@ mod tests {
             }
             setup_post_clear_goals(&store);
 
+            append_evidence(
+                "spikes-continuity.log",
+                &format!("\n######## CONTINUITY SEQUENCE RUN {run} ########\n"),
+            );
+
+            let start1_args = json!({ "intent": format!("theory continuity spike verification run {run}") });
             let start1 = handle_tool_on_big_stack(
                 "mcp_engram_session_start",
-                &json!({ "intent": format!("theory continuity spike verification run {run}") }),
+                &start1_args,
                 &store,
             );
+            log_mcp_transcript("session_start_1", "mcp_engram_session_start", &start1_args, &start1);
             let wake1 = parse_mcp_json(&start1);
             let _cont1 = wake1.get("continuation");
 
+            let sig_args = json!({
+                "decision": "significant fork without triad",
+                "why": "verify soft hint only",
+                "goal_context": "goal:theory_spikes_v1",
+            });
             let sig_fork = handle_tool_on_big_stack(
                 "mcp_engram_quick_trace",
-                &json!({
-                    "decision": "significant fork without triad",
-                    "why": "verify soft hint only",
-                    "goal_context": "goal:theory_spikes_v1",
-                }),
+                &sig_args,
                 &store,
             );
+            log_mcp_transcript("quick_trace_significant_fork", "mcp_engram_quick_trace", &sig_args, &sig_fork);
             let sig_text = mcp_text(&sig_fork);
             assert!(
                 sig_text.contains("significant_fork_soft_hint"),
                 "significant fork must soft-hint: {sig_text}"
             );
 
+            let routine_args = json!({
+                "decision": "routine trace",
+                "why": "no explicit goal context",
+            });
             let routine = handle_tool_on_big_stack(
                 "mcp_engram_quick_trace",
-                &json!({
-                    "decision": "routine trace",
-                    "why": "no explicit goal context",
-                }),
+                &routine_args,
                 &store,
             );
+            log_mcp_transcript("quick_trace_routine", "mcp_engram_quick_trace", &routine_args, &routine);
             let routine_text = mcp_text(&routine);
             assert!(
                 !routine_text.contains("significant_fork_soft_hint"),
                 "routine must not triadic-hint: {routine_text}"
             );
 
+            let unc_args = json!({
+                "concept": "handoff_anchor_state",
+                "uncertainty_status": "memory_insufficient",
+                "requested_anchors": ["goal:theory_spikes_v1"]
+            });
             let unc = handle_tool_on_big_stack(
                 "mcp_engram_scar",
-                &json!({
-                    "concept": "handoff_anchor_state",
-                    "uncertainty_status": "memory_insufficient",
-                    "requested_anchors": ["goal:theory_spikes_v1"]
-                }),
+                &unc_args,
                 &store,
             );
+            log_mcp_transcript("scar_uncertainty", "mcp_engram_scar", &unc_args, &unc);
             let unc_text = mcp_text(&unc);
             assert!(unc_text.contains("Uncertainty receipt minted"), "{unc_text}");
 
             let mut last_turn_text = String::new();
             for i in 0..30 {
+                let turn_args = json!({
+                    "user_utterance": format!("turn {i} user"),
+                    "assistant_output": format!("turn {i} assistant"),
+                    "human_forward": format!("continuity sentinel turn {i}"),
+                });
                 let turn = handle_tool_on_big_stack(
                     "mcp_engram_turn_record",
-                    &json!({
-                        "user_utterance": format!("turn {i} user"),
-                        "assistant_output": format!("turn {i} assistant"),
-                        "human_forward": format!("continuity sentinel turn {i}"),
-                    }),
+                    &turn_args,
                     &store,
                 );
                 last_turn_text = mcp_text(&turn);
+                if i == 0 || i == 29 {
+                    log_mcp_transcript(
+                        &format!("turn_record_{i}"),
+                        "mcp_engram_turn_record",
+                        &turn_args,
+                        &turn,
+                    );
+                }
             }
             assert!(
                 last_turn_text.contains("rehydrate_suggested=true"),
@@ -9485,14 +9519,16 @@ mod tests {
                 "turn counter must be at threshold before handoff (got {turns_pre})"
             );
 
+            let end_args = json!({
+                "summary": "**decisions:** continuity spike verification\n**files_touched:** crates/engram-server/src/continuity_spikes.rs",
+                "prepare_compression": true,
+            });
             let end = handle_tool_on_big_stack(
                 "mcp_engram_session_end",
-                &json!({
-                    "summary": "**decisions:** continuity spike verification\n**files_touched:** crates/engram-server/src/continuity_spikes.rs",
-                    "prepare_compression": true,
-                }),
+                &end_args,
                 &store,
             );
+            log_mcp_transcript("session_end", "mcp_engram_session_end", &end_args, &end);
             let end_json = parse_mcp_json(&end);
             let handoff = end_json
                 .get("handoff")
@@ -9525,11 +9561,13 @@ mod tests {
                 bundle
             };
 
+            let start2_args = json!({ "intent": "post-handoff manifest wake" });
             let start2 = handle_tool_on_big_stack(
                 "mcp_engram_session_start",
-                &json!({ "intent": "post-handoff manifest wake" }),
+                &start2_args,
                 &store,
             );
+            log_mcp_transcript("session_start_2_post_handoff", "mcp_engram_session_start", &start2_args, &start2);
             let wake2 = parse_mcp_json(&start2);
             let cont2 = wake2.get("continuation").expect("continuation");
             let manifest2 = cont2
@@ -9635,7 +9673,7 @@ mod tests {
             append_evidence(
                 "spikes-continuity.log",
                 &format!(
-                    "continuity_spikes_full_session_sequence_twice OK\n{}\n",
+                    "\n=== SUMMARY continuity_spikes_full_session_sequence_twice OK ===\n{}\n",
                     serde_json::to_string_pretty(&evidence).unwrap()
                 ),
             );
