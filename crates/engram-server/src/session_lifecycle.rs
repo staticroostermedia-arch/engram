@@ -21,14 +21,12 @@ pub fn on_mcp_session_start(session_key: &str, intent: &str) {
         s.session_end_committed = false;
         s.last_intent_snippet = Some(snippet);
     }
-    crate::continuity_spikes::sentinel_on_session_start();
 }
 
 pub fn on_mcp_session_end_committed() {
     if let Ok(mut s) = LIFECYCLE.lock() {
         s.session_end_committed = true;
     }
-    crate::continuity_spikes::sentinel_on_handoff_committed();
 }
 
 pub fn should_auto_handoff() -> bool {

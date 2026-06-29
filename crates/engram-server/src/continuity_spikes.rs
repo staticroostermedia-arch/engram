@@ -1,62 +1,21 @@
-//! Theory-informed continuity spikes — pure builders + sentinel counters (lean, nudge-only).
+//! Theory-informed continuity spikes — pure builders (lean, nudge-only).
 
 use serde_json::{json, Value};
-use std::sync::Mutex;
 
 pub const SENTINEL_MAX_TURNS: u32 = 30;
 pub const SENTINEL_MAX_MINUTES: u64 = 120;
 
-#[derive(Debug, Default, Clone)]
-struct SentinelState {
-    turns_since_last_handoff: u32,
-    last_checkpoint_unix: u64,
+#[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct SentinelState {
+    pub turns_since_last_handoff: u32,
+    pub last_checkpoint_unix: u64,
 }
-
-static SENTINEL: std::sync::LazyLock<Mutex<SentinelState>> =
-    std::sync::LazyLock::new(|| Mutex::new(SentinelState::default()));
 
 pub fn now_unix() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0)
-}
-
-pub fn sentinel_on_session_start() {
-    let now = now_unix();
-    if let Ok(mut s) = SENTINEL.lock() {
-        if s.last_checkpoint_unix == 0 {
-            s.last_checkpoint_unix = now;
-        }
-    }
-}
-
-pub fn sentinel_on_turn_record() {
-    if let Ok(mut s) = SENTINEL.lock() {
-        s.turns_since_last_handoff = s.turns_since_last_handoff.saturating_add(1);
-    }
-}
-
-pub fn sentinel_on_handoff_committed() {
-    let now = now_unix();
-    if let Ok(mut s) = SENTINEL.lock() {
-        s.turns_since_last_handoff = 0;
-        s.last_checkpoint_unix = now;
-    }
-}
-
-pub fn sentinel_snapshot() -> (u32, u64) {
-    SENTINEL
-        .lock()
-        .map(|s| (s.turns_since_last_handoff, s.last_checkpoint_unix))
-        .unwrap_or((0, 0))
-}
-
-#[cfg(test)]
-pub fn sentinel_reset_for_test() {
-    if let Ok(mut s) = SENTINEL.lock() {
-        *s = SentinelState::default();
-    }
 }
 
 pub fn minutes_since_checkpoint(last_checkpoint_unix: u64, now: u64) -> u64 {
@@ -220,7 +179,6 @@ mod tests {
 
     #[test]
     fn sentinel_nudge_at_turn_threshold() {
-        sentinel_reset_for_test();
         let (suggest, reason) = compute_sentinel_nudge(30, 0);
         assert!(suggest);
         assert_eq!(reason, "turn_budget_exceeded");
@@ -274,17 +232,5 @@ mod tests {
         assert_eq!(m["version"], "rehydration_manifest_v1");
         assert_eq!(m["manifest_concept"], "manifest:rehydration_99");
         assert_eq!(m["primary_goal"], "goal:test");
-    }
-
-    #[test]
-    fn handoff_resets_turn_counter() {
-        sentinel_reset_for_test();
-        sentinel_on_turn_record();
-        sentinel_on_turn_record();
-        let (t, _) = sentinel_snapshot();
-        assert_eq!(t, 2);
-        sentinel_on_handoff_committed();
-        let (t2, _) = sentinel_snapshot();
-        assert_eq!(t2, 0);
     }
 }

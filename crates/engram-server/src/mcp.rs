@@ -2386,9 +2386,9 @@ fn triadic_fork_suffix(
     }
 }
 
-fn sentinel_turn_suffix() -> String {
-    crate::continuity_spikes::sentinel_on_turn_record();
-    let (turns, checkpoint) = crate::continuity_spikes::sentinel_snapshot();
+fn sentinel_turn_suffix(lock: &mut crate::store::StoreHandle) -> String {
+    lock.sentinel_on_turn_record();
+    let (turns, checkpoint) = lock.sentinel_snapshot();
     let minutes = crate::continuity_spikes::minutes_since_checkpoint(
         checkpoint,
         crate::continuity_spikes::now_unix(),
@@ -3970,6 +3970,7 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                     }
                 };
                 lock.warm_wake_anchors();
+                lock.sentinel_on_session_start();
                 let continuation = lock.build_continuation_bundle(Some(&intent));
                 let readiness = lock.backend_readiness();
                 (continuation, readiness)
@@ -5907,7 +5908,7 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                             trace_n,
                             payload.get("activity_window"),
                             extract_note,
-                            sentinel_turn_suffix(),
+                            sentinel_turn_suffix(&mut lock),
                         ) }]
                     })
                 }
@@ -9335,7 +9336,6 @@ mod tests {
 
         #[test]
         fn quick_trace_significant_fork_soft_triadic_hint() {
-            crate::continuity_spikes::sentinel_reset_for_test();
             let tmp = unique_tmp("triad-hint");
             let store = prep_store(&tmp);
             let resp = handle_tool_on_big_stack(
@@ -9394,9 +9394,12 @@ mod tests {
         }
 
         fn run_continuity_sequence(run: u32) -> serde_json::Value {
-            crate::continuity_spikes::sentinel_reset_for_test();
             let tmp = unique_tmp(&format!("continuity-seq-{run}"));
             let store = prep_store(&tmp);
+            {
+                let mut lock = store.lock().unwrap();
+                lock.sentinel_reset_for_test();
+            }
             setup_post_clear_goals(&store);
 
             let start1 = handle_tool_on_big_stack(
@@ -9473,7 +9476,10 @@ mod tests {
                     .any(|x| x.get("sentinel_nudge").and_then(|v| v.as_bool()) == Some(true))
             };
             assert!(nudge_present, "sentinel nudge action required pre-handoff");
-            let (turns_pre, _) = crate::continuity_spikes::sentinel_snapshot();
+            let turns_pre = {
+                let lock = store.lock().unwrap();
+                lock.sentinel_snapshot().0
+            };
             assert!(
                 turns_pre >= 30,
                 "turn counter must be at threshold before handoff (got {turns_pre})"
@@ -9561,7 +9567,10 @@ mod tests {
                 Some(false),
                 "counters reset after handoff"
             );
-            let (turns, _) = crate::continuity_spikes::sentinel_snapshot();
+            let turns = {
+                let lock = store.lock().unwrap();
+                lock.sentinel_snapshot().0
+            };
             assert_eq!(turns, 0, "turn counter reset after handoff");
 
             let observables = json!({

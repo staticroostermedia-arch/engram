@@ -394,6 +394,7 @@ class MCPTestClient:
                 "ok": ok,
                 "elapsed_ms": round((t1 - t0) * 1000, 1),
                 "has_content": bool(resp.get("result", {}).get("content")) if "result" in resp else False,
+                "response_text": self._tool_text(resp)[:800],
             })
             if not ok:
                 self._log(f"Step {i} {name} failed: {resp.get('error')}")
@@ -591,23 +592,68 @@ class MCPTestClient:
                 "why": "Validates MVP lean loop without production sheaf contention",
                 "context": "tools/test-harness/python/mcp_test_client.py",
             }),
+            ("mcp_engram_quick_trace", {
+                "decision": "Continuity spike — significant fork with goal context",
+                "why": "Verify fork-scoped triadic soft hint path under agent profile",
+                "goal_context": "goal:theory_informed_agent_memory_v1",
+            }),
+            ("mcp_engram_scar", {
+                "concept": "prior_handoff_state",
+                "uncertainty_status": "memory_insufficient",
+                "requested_anchors": ["goal:theory_informed_agent_memory_v1"],
+            }),
             ("mcp_engram_remember", {
                 "concept": harness_concept,
                 "text": "Harness agent-memory MVP test concept — lean loop validation artifact.",
             }),
+        ]
+        agg = self.run_sequence(seq, label="agent_memory")
+
+        # Continuity spikes: 30 turn_record calls must trigger soft sentinel nudge (pre-handoff).
+        turn_spike_failures: List[str] = []
+        turn_spike_assertions: List[str] = []
+        last_turn_text = ""
+        for i in range(30):
+            turn_resp = self.call_tool(
+                "mcp_engram_turn_record",
+                {
+                    "user_utterance": f"harness turn {i}",
+                    "assistant_output": f"harness ack {i}",
+                    "human_forward": f"agent-memory sentinel turn {i}",
+                },
+                timeout=60.0,
+            )
+            last_turn_text = self._tool_text(turn_resp)
+            if turn_resp.get("error") or turn_resp.get("isError"):
+                turn_spike_failures.append(f"turn_record {i} failed: {last_turn_text[:200]}")
+                break
+        if "rehydrate_suggested=true" in last_turn_text:
+            turn_spike_assertions.append("turn_record_30_rehydrate_suggested=true")
+        elif "turns_since_last_handoff=30" in last_turn_text:
+            turn_spike_assertions.append("turn_record_30_turns_since_last_handoff=30")
+        else:
+            turn_spike_failures.append(
+                "30x turn_record did not surface sentinel threshold "
+                f"(last response tail): ...{last_turn_text[-280:]}"
+            )
+
+        handoff_seq = [
             ("mcp_engram_session_end", {
                 "summary": (
                     "Harness agent-memory suite session 1.\n"
                     "Decisions:\n"
                     "- Exercised lean 8-tool contract sequence in isolated store\n"
                     "- Minted test concept for recall validation\n"
+                    "- Drove 30 turn_record sentinel threshold pre-handoff\n"
                     "Next: second session_start should surface handoff."
                 ),
                 "prepare_compression": True,
             }),
             ("mcp_engram_session_start", {"intent": session2_intent}),
         ]
-        agg = self.run_sequence(seq, label="agent_memory")
+        handoff_agg = self.run_sequence(handoff_seq, label="agent_memory_handoff")
+        agg["steps"] = agg.get("steps", []) + handoff_agg.get("steps", [])
+        agg["failed"] = agg.get("failed", 0) + handoff_agg.get("failed", 0)
 
         wake_ms: Optional[float] = None
         for step in agg.get("steps", []):
@@ -689,6 +735,64 @@ class MCPTestClient:
             assertions.append(f"nvme_context.recall_mode={nvme.get('recall_mode')}")
         if harness.get("agent_discipline"):
             assertions.append("harness_injection.agent_discipline present")
+
+        # Theory-informed continuity spikes (manifest, sentinel, uncertainty)
+        ego = harness.get("ego_snapshot") or cont.get("ego_snapshot") or {}
+        if ego.get("turns_since_last_handoff") is not None:
+            assertions.append(f"ego_snapshot.turns_since_last_handoff={ego.get('turns_since_last_handoff')}")
+        if ego.get("rehydrate_suggested") is False:
+            assertions.append("ego_snapshot.rehydrate_suggested=false post-handoff")
+        elif ego.get("rehydrate_suggested") is not None:
+            failures.append(f"expected rehydrate_suggested=false post-handoff, got {ego.get('rehydrate_suggested')}")
+
+        manifest = cont.get("rehydration_manifest") or harness.get("rehydration_manifest")
+        if manifest and manifest.get("version") == "rehydration_manifest_v1":
+            assertions.append("rehydration_manifest_v1 present in wake continuation")
+            if manifest.get("manifest_concept", "").startswith("manifest:rehydration_"):
+                assertions.append(f"manifest_concept={manifest.get('manifest_concept')}")
+        else:
+            failures.append("rehydration_manifest missing or wrong version in post-handoff wake")
+
+        manifest_action = any(
+            (a.get("reason") or "").find("rehydration manifest") >= 0
+            for a in suggested
+        )
+        if manifest_action:
+            assertions.append("suggested_actions includes manifest read")
+        else:
+            failures.append("suggested_actions missing portable rehydration manifest read")
+
+        unc_wake = harness.get("uncertainty_receipts_wake") or cont.get("uncertainty_receipts_wake") or []
+        scar_minted = any(
+            step.get("tool") == "mcp_engram_scar"
+            and "Uncertainty receipt minted" in (step.get("response_text") or "")
+            for step in agg.get("steps", [])
+        )
+        if scar_minted:
+            assertions.append("scar uncertainty_status minted receipt in session1")
+        else:
+            failures.append("scar(uncertainty_status) did not mint uncertainty receipt in session1")
+        if unc_wake:
+            assertions.append(f"uncertainty_receipts_wake len={len(unc_wake)}")
+        else:
+            recall_unc = self.call_tool(
+                "mcp_engram_recall",
+                {"query": "uncertainty memory receipt", "scope": "anchors", "k": 5},
+                timeout=30.0,
+            )
+            recall_data = self._parse_tool_json(recall_unc) or {}
+            hits = recall_data.get("results") or recall_data.get("memories") or []
+            unc_hits = [
+                h for h in hits
+                if str(h.get("concept", "")).startswith("uncertainty:")
+            ]
+            if unc_hits:
+                assertions.append(f"recall_anchors uncertainty hits={len(unc_hits)}")
+            elif scar_minted:
+                assertions.append("uncertainty mint confirmed via scar; wake list optional on fresh store")
+
+        assertions.extend(turn_spike_assertions)
+        failures.extend(turn_spike_failures)
 
         # Substrate wins tools registered (WS-2/WS-3) — list check + process_metrics smoke
         tools_resp = self._send_request("tools/list", {}, timeout=30.0)

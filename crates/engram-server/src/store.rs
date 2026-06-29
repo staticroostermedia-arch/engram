@@ -49,6 +49,7 @@ fn stalk_raw_concept(concept: &str) -> &str {
 }
 
 const SESSION_HANDOFF_LATEST: &str = "helper:session_handoff_latest";
+pub const SESSION_SENTINEL_STATE: &str = "helper:session_sentinel_state";
 
 fn handoff_is_bullet_line(line: &str) -> bool {
     if line.starts_with("- ")
@@ -3132,8 +3133,84 @@ impl StoreHandle {
             let _ = self.relate(receipt_concept, session_end_key, "serves");
         }
 
+        self.sentinel_on_handoff_committed();
         self.invalidate_continuation_bundle_cache();
         packet
+    }
+
+    /// Load persisted sentinel counters (per-store; survives restart).
+    pub fn load_sentinel_state(&self) -> crate::continuity_spikes::SentinelState {
+        let Some(block) = self
+            .fetch_block_high_priority(SESSION_SENTINEL_STATE)
+            .or_else(|| self.fetch_block(SESSION_SENTINEL_STATE))
+        else {
+            return crate::continuity_spikes::SentinelState::default();
+        };
+        let text = engram_core::storage::read_provlog(&block);
+        if let (Some(end), Some(start)) = (text.rfind('}'), text.rfind('{')) {
+            if start <= end {
+                if let Ok(state) = serde_json::from_str::<crate::continuity_spikes::SentinelState>(
+                    &text[start..=end],
+                ) {
+                    return state;
+                }
+            }
+        }
+        crate::continuity_spikes::SentinelState::default()
+    }
+
+    fn persist_sentinel_state(&mut self, state: &crate::continuity_spikes::SentinelState) -> Result<()> {
+        let body = format!(
+            "SESSION SENTINEL STATE v1 (turn/time counters for soft rehydrate nudge)\n\n{}\n",
+            serde_json::to_string_pretty(state).unwrap_or_else(|_| "{}".to_string())
+        );
+        if self.fetch_block(SESSION_SENTINEL_STATE).is_some() {
+            self.update_with_provlog_mode(
+                SESSION_SENTINEL_STATE,
+                &body,
+                Some(engram_core::storage::ProvlogSpliceMode::Replace),
+            )?;
+        } else {
+            let mut block = self.encode(&body);
+            block.zedos_tag = engram_core::types::ZEDOS_OPERATIONAL;
+            block.crs_score = 0.88;
+            block.energetics.crs = 0.88;
+            self.store(SESSION_SENTINEL_STATE, block)?;
+        }
+        let _ = self.promote_tile_to_high_priority(SESSION_SENTINEL_STATE);
+        Ok(())
+    }
+
+    pub fn sentinel_snapshot(&self) -> (u32, u64) {
+        let s = self.load_sentinel_state();
+        (s.turns_since_last_handoff, s.last_checkpoint_unix)
+    }
+
+    pub fn sentinel_on_session_start(&mut self) {
+        let mut s = self.load_sentinel_state();
+        if s.last_checkpoint_unix == 0 {
+            s.last_checkpoint_unix = crate::continuity_spikes::now_unix();
+            let _ = self.persist_sentinel_state(&s);
+        }
+    }
+
+    pub fn sentinel_on_turn_record(&mut self) {
+        let mut s = self.load_sentinel_state();
+        s.turns_since_last_handoff = s.turns_since_last_handoff.saturating_add(1);
+        let _ = self.persist_sentinel_state(&s);
+    }
+
+    pub fn sentinel_on_handoff_committed(&mut self) {
+        let s = crate::continuity_spikes::SentinelState {
+            turns_since_last_handoff: 0,
+            last_checkpoint_unix: crate::continuity_spikes::now_unix(),
+        };
+        let _ = self.persist_sentinel_state(&s);
+    }
+
+    #[cfg(test)]
+    pub fn sentinel_reset_for_test(&mut self) {
+        let _ = self.persist_sentinel_state(&crate::continuity_spikes::SentinelState::default());
     }
 
     /// Portable rehydration kit for wake — handoff packet first, then latest `manifest:rehydration_*` block.
@@ -3197,7 +3274,11 @@ impl StoreHandle {
         let body = format!(
             "UNCERTAINTY RECEIPT (memory claim withheld)\n\n**status:** {status}\n**requested_anchors:** {anchors_line}\n**note:** Emit when recall(scope=anchors) is insufficient for a memory claim — not for general inference.\n"
         );
-        self.remember(&concept, &body)?;
+        let mut block = self.encode(&body);
+        block.zedos_tag = engram_core::types::ZEDOS_OPERATIONAL;
+        block.crs_score = 0.86;
+        block.energetics.crs = 0.86;
+        self.store(&concept, block)?;
         self.access_index.touch(&concept);
         if self.fetch_block(SESSION_HANDOFF_LATEST).is_some() {
             let _ = self.relate(&concept, SESSION_HANDOFF_LATEST, "serves");
@@ -7241,6 +7322,35 @@ mod ingest_ast_tests {
                 .is_some(),
             "wake bundle must surface rehydration_manifest from persisted handoff"
         );
+
+        let (turns, _) = store.sentinel_snapshot();
+        assert_eq!(turns, 0, "handoff must reset sentinel turn counter");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn sentinel_counters_persist_and_reset_on_handoff() {
+        let dir = test_store_dir("sentinel_persist");
+        let path = dir.to_string_lossy().to_string();
+        let mut store = StoreHandle::new(&path);
+        store.sentinel_reset_for_test();
+        store.sentinel_on_session_start();
+        for _ in 0..5 {
+            store.sentinel_on_turn_record();
+        }
+        let (turns, _) = store.sentinel_snapshot();
+        assert_eq!(turns, 5);
+        assert!(store.fetch_block(SESSION_SENTINEL_STATE).is_some());
+
+        let summary = "**decisions:** sentinel reset test";
+        let _ = store.persist_session_handoff_latest(summary, "session_end_sentinel");
+        let (turns_after, _) = store.sentinel_snapshot();
+        assert_eq!(turns_after, 0);
+
+        let reloaded = StoreHandle::new(&path);
+        let (turns_reloaded, _) = reloaded.sentinel_snapshot();
+        assert_eq!(turns_reloaded, 0, "reopened store must read persisted sentinel state");
 
         let _ = std::fs::remove_dir_all(&dir);
     }
