@@ -4375,28 +4375,6 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                         avg_crs, alpha_a, alpha_d
                     );
                     let mut compression_manifest: Option<serde_json::Value> = None;
-                    if prepare_compression {
-                        let snippet: String = summary.chars().take(500).collect();
-                        let manifest = lock.refresh_compression_handoff(&key, &snippet);
-                        compression_manifest = Some(manifest.clone());
-                        let handoff_key = manifest
-                            .get("handoff_key")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("compression_handoff_unknown")
-                            .to_string();
-                        let promoted_n = manifest
-                            .get("promoted")
-                            .and_then(|v| v.as_array())
-                            .map(|a| a.len())
-                            .unwrap_or(0);
-                        response.push_str(&format!(
-                            "\n  → Compression handoff: `{}` | hydration cache refreshed | {} concepts hot-promoted",
-                            handoff_key, promoted_n
-                        ));
-                        response.push_str(
-                            "\n  → Post-compression wake: session_start → CONTINUATION BUNDLE → recall `helper:session_hydration_cache` first"
-                        );
-                    }
                     if !compression_markers.is_empty() {
                         response.push_str(&format!("\n  → {} compression intent(s) recorded for later 0x10 functor minting.", compression_markers.len()));
                     }
@@ -4568,6 +4546,28 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                     }
 
                     let handoff_packet = lock.persist_session_handoff_latest(&summary, &key);
+                    if prepare_compression {
+                        let snippet: String = summary.chars().take(500).collect();
+                        let manifest = lock.refresh_compression_handoff(&key, &snippet);
+                        compression_manifest = Some(manifest.clone());
+                        let handoff_key = manifest
+                            .get("handoff_key")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("compression_handoff_unknown")
+                            .to_string();
+                        let promoted_n = manifest
+                            .get("promoted")
+                            .and_then(|v| v.as_array())
+                            .map(|a| a.len())
+                            .unwrap_or(0);
+                        response.push_str(&format!(
+                            "\n  → Compression handoff: `{}` | hydration cache refreshed | {} concepts hot-promoted",
+                            handoff_key, promoted_n
+                        ));
+                        response.push_str(
+                            "\n  → Post-compression wake: session_start → CONTINUATION BUNDLE → recall `helper:session_hydration_cache` first"
+                        );
+                    }
                     let trace_concepts =
                         lock.collect_program_trace_concepts_for_handoff(&summary, 8);
                     let program_traces_var =
@@ -9574,13 +9574,7 @@ mod tests {
                 .get("rehydration_manifest")
                 .filter(|v| !v.is_null())
                 .cloned()
-                .or_else(|| {
-                    post_handoff_bundle
-                        .get("rehydration_manifest")
-                        .filter(|v| !v.is_null())
-                        .cloned()
-                });
-            let manifest2 = manifest2.expect("post-handoff manifest");
+                .expect("post-handoff slim continuation must expose rehydration_manifest");
             assert_eq!(
                 manifest2.get("manifest_concept"),
                 manifest.get("manifest_concept")

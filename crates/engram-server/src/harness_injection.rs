@@ -1275,8 +1275,10 @@ pub fn build_harness_bundle(store: &mut StoreHandle, session_intent: Option<&str
     );
     let jit_framework = build_jit_deformation_framework(task_type, primary_goal.as_deref());
     let verified_processes = build_verified_processes(store, primary_goal.as_deref());
+    let rehydration_manifest = store.resolve_rehydration_manifest_for_wake();
 
     json!({
+        "rehydration_manifest": rehydration_manifest,
         "suggested_actions": build_suggested_actions(store, session_intent),
         "trusted_tiles": build_trusted_tiles(store, primary_goal.as_deref()),
         "verified_processes": verified_processes,
