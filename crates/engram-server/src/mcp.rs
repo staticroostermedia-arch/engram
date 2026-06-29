@@ -9413,10 +9413,34 @@ mod tests {
                 lock.sentinel_reset_for_test();
             }
             setup_post_clear_goals(&store);
+            {
+                let mut lock = store.lock().unwrap();
+                let _ = lock.remember(
+                    "goal:theory_spikes_v1",
+                    "GOAL\n\n**status:** active\n**goal_statement:** theory continuity spike verification goal\n",
+                );
+            }
 
             append_evidence(
                 "spikes-continuity.log",
                 &format!("\n######## CONTINUITY SEQUENCE RUN {run} ########\n"),
+            );
+
+            let recall_goal_args = json!({
+                "query": "goal:theory_spikes_v1",
+                "scope": "anchors",
+                "k": 3,
+            });
+            let recall_goal = handle_tool_on_big_stack(
+                "mcp_engram_recall",
+                &recall_goal_args,
+                &store,
+            );
+            log_mcp_transcript("recall_goal_anchor", "mcp_engram_recall", &recall_goal_args, &recall_goal);
+            let recall_goal_text = mcp_text(&recall_goal);
+            assert!(
+                recall_goal_text.contains("goal:theory_spikes_v1"),
+                "anchors recall must return exact goal concept: {recall_goal_text}"
             );
 
             let start1_args = json!({ "intent": format!("theory continuity spike verification run {run}") });
@@ -9634,6 +9658,7 @@ mod tests {
                 "uncertainty_minted": true,
                 "sentinel_nudge_pre_handoff": nudge_present,
                 "turn_record_nudge_at_30": last_turn_text.contains("rehydrate_suggested=true"),
+                "anchors_recall_goal_hit": true,
             });
 
             let _ = std::fs::remove_dir_all(&tmp);
@@ -9663,6 +9688,7 @@ mod tests {
                 "uncertainty_minted",
                 "sentinel_nudge_pre_handoff",
                 "turn_record_nudge_at_30",
+                "anchors_recall_goal_hit",
             ] {
                 assert_eq!(
                     run0.get(key),
