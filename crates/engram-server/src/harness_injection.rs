@@ -158,6 +158,52 @@ pub fn infer_task_type(
     "wake_only"
 }
 
+/// Recent uncertainty receipts for wake-time memory-claim hygiene.
+pub fn collect_uncertainty_receipts(store: &mut StoreHandle, limit: usize) -> Vec<Value> {
+    use std::collections::HashSet;
+
+    let cap = limit.max(4);
+    let mut out = Vec::new();
+    let mut seen = HashSet::new();
+
+    for (concept, _) in store.access_index.recent(200) {
+        if !concept.starts_with("uncertainty:") {
+            continue;
+        }
+        if !seen.insert(concept.clone()) {
+            continue;
+        }
+        if let Some(block) = store.fetch_block_high_priority(&concept).or_else(|| store.fetch_block(&concept)) {
+            out.push(json!({
+                "concept": concept,
+                "crs": block.crs_score,
+                "preview": storage::read_provlog(&block).chars().take(140).collect::<String>(),
+            }));
+        }
+        if out.len() >= cap {
+            return out;
+        }
+    }
+
+    for m in store
+        .recall_scoped("uncertainty memory receipt", cap, Some("anchors"))
+        .0
+    {
+        if !m.concept.starts_with("uncertainty:") || !seen.insert(m.concept.clone()) {
+            continue;
+        }
+        out.push(json!({
+            "concept": m.concept,
+            "crs": m.crs,
+            "preview": m.provlog.chars().take(140).collect::<String>(),
+        }));
+        if out.len() >= cap {
+            break;
+        }
+    }
+    out
+}
+
 /// Recent scar concepts for wake-time repulsion hints.
 pub fn collect_open_scars(store: &mut StoreHandle, limit: usize) -> Vec<Value> {
     store
@@ -545,6 +591,19 @@ pub fn build_suggested_actions(
     let mut primary_goal: Option<String> = None;
     let mut handoff_packet: Option<Value> = None;
 
+    let (turns, checkpoint) = crate::continuity_spikes::sentinel_snapshot();
+    let (rehydrate_suggested, rehydrate_reason) =
+        crate::continuity_spikes::compute_sentinel_nudge(
+            turns,
+            crate::continuity_spikes::minutes_since_checkpoint(
+                checkpoint,
+                crate::continuity_spikes::now_unix(),
+            ),
+        );
+    if rehydrate_suggested {
+        actions.push(crate::continuity_spikes::rehydrate_nudge_action(rehydrate_reason));
+    }
+
     for scar in collect_open_scars(store, 3) {
         if let Some(concept) = scar.get("concept").and_then(|v| v.as_str()) {
             push_jit_action(
@@ -591,6 +650,39 @@ pub fn build_suggested_actions(
         let text = storage::read_provlog(&block);
         if let Some(packet) = parse_handoff_packet_json(&text) {
             handoff_packet = Some(packet.clone());
+            if let Some(manifest) = packet.get("rehydration_manifest") {
+                if let Some(concept) = manifest.get("manifest_concept").and_then(|v| v.as_str()) {
+                    push_action(
+                        &mut actions,
+                        "mcp_engram_read_concept",
+                        json!({ "concept": concept }),
+                        "portable rehydration manifest — priority continuation kit",
+                        0,
+                    );
+                }
+                if let Some(goal) = manifest.get("primary_goal").and_then(|v| v.as_str()) {
+                    if !goal.is_empty() {
+                        push_action(
+                            &mut actions,
+                            "mcp_engram_recall",
+                            json!({ "query": goal, "scope": "anchors", "k": 8 }),
+                            "manifest primary_goal — anchor recall without scope=all",
+                            0,
+                        );
+                    }
+                }
+                if let Some(head) = manifest.get("trace_chain_head").and_then(|v| v.as_str()) {
+                    if !head.is_empty() {
+                        push_action(
+                            &mut actions,
+                            "mcp_engram_read_concept",
+                            json!({ "concept": head }),
+                            "manifest trace_chain_head — continue chain",
+                            1,
+                        );
+                    }
+                }
+            }
             if let Some(goal) = packet.get("primary_goal").and_then(|v| v.as_str()) {
                 if store
                     .fetch_block_high_priority(goal)
@@ -1028,6 +1120,14 @@ pub fn build_ego_snapshot(store: &StoreHandle, primary_goal: Option<&str>) -> Va
         }
     }
 
+    let (turns, checkpoint) = crate::continuity_spikes::sentinel_snapshot();
+    let sentinel = crate::continuity_spikes::sentinel_ego_fields(turns, checkpoint);
+    if let Some(obj) = snapshot.as_object_mut() {
+        for (k, v) in sentinel.as_object().into_iter().flatten() {
+            obj.insert(k.clone(), v.clone());
+        }
+    }
+
     snapshot
 }
 
@@ -1104,6 +1204,15 @@ pub fn build_harness_bundle(store: &mut StoreHandle, session_intent: Option<&str
 
     let condensation_hints = build_condensation_hints(store, primary_goal.as_deref());
     let open_scars_wake = collect_open_scars(store, 5);
+    let uncertainty_receipts_wake = collect_uncertainty_receipts(store, 5);
+    let (turns, checkpoint) = crate::continuity_spikes::sentinel_snapshot();
+    let (rehydrate_suggested, _) = crate::continuity_spikes::compute_sentinel_nudge(
+        turns,
+        crate::continuity_spikes::minutes_since_checkpoint(
+            checkpoint,
+            crate::continuity_spikes::now_unix(),
+        ),
+    );
     let handoff_for_task = store
         .fetch_block_high_priority(SESSION_HANDOFF_LATEST)
         .and_then(|b| parse_handoff_packet_json(&storage::read_provlog(&b)));
@@ -1123,6 +1232,8 @@ pub fn build_harness_bundle(store: &mut StoreHandle, session_intent: Option<&str
         "jit_deformation_framework": jit_framework,
         "task_type": task_type,
         "open_scars_wake": open_scars_wake,
+        "uncertainty_receipts_wake": uncertainty_receipts_wake,
+        "rehydrate_suggested": rehydrate_suggested,
         "trace_chain": {
             "head": trace_chain_head,
             "chain": chain,
@@ -1496,6 +1607,17 @@ mod tests {
             Some("store__fn__context_for_edit__arc")
         );
         assert!(args.get("new_text").is_some());
+    }
+
+    #[test]
+    fn test_rehydrate_nudge_action_shape() {
+        let action = crate::continuity_spikes::rehydrate_nudge_action("turn_budget_exceeded");
+        assert_eq!(
+            action.get("tool").and_then(|v| v.as_str()),
+            Some("mcp_engram_session_end")
+        );
+        assert_eq!(action.get("sentinel_nudge").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(action.get("priority").and_then(|v| v.as_u64()), Some(0));
     }
 
     #[test]

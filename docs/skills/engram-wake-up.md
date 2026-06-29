@@ -24,7 +24,7 @@ mcp_engram_session_start(
 ```
 
 **This single call returns (inline, slim by default):**
-- `bundle_tier: "slim"` — top 5 `suggested_actions`, `trace_chain_head`, slim `ego_snapshot`, `presentation_stratum` previews
+- `bundle_tier: "slim"` — top 5 `suggested_actions`, `trace_chain_head`, slim `ego_snapshot`, `presentation_stratum` previews, `rehydration_manifest` (when prior handoff exists), `rehydrate_suggested` (soft sentinel nudge)
 - `readiness` — bvh_ready, recall_mode, leg_block_count
 - `session_key` — bind `agent_instance_continuation` if you write a relation (deep mode)
 - Full harness: `mcp_engram_get_continuation_bundle` (or `ENGRAM_WAKE_BUNDLE=full`)

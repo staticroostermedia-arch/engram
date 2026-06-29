@@ -31,7 +31,7 @@ Every work block becomes an evolution of your self-model.
 
 ## Core Non-Negotiable Rules
 
-1. **Recall Before Derive**: At least one `recall(scope="anchors")` or `context_for_edit` before heavy reasoning or raw file reads.
+1. **Recall Before Derive**: At least one `recall(scope="anchors")` or `context_for_edit` before heavy reasoning or raw file reads. If anchors are insufficient for a **memory claim**, mint `scar(..., uncertainty_status="memory_insufficient")` — do not guess at CRS≥0.74.
 2. **Update Is The Only Legal Mutation**: `recall` first. Strong match (>0.85) → `mcp_engram_update_with_tensor_bond` (preferred) or `mcp_engram_update`. No match → `remember`. Never forget+remember (destroys p-tensor history).
 
    Few-shot `update_with_tensor_bond` (1): `{"concept":"mcp__fn__dispatch__arc","new_text":"delta: wired safe_edit handler","recall_query":"mcp dispatch edit arc","bond_label":"edit_fidelity"}`

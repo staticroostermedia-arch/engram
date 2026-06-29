@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Theory-informed continuity spikes (lean, nudge-only):** `rehydration_manifest` at `session_end` + priority-0 wake seed; soft sentinel (`rehydrate_suggested` after ~30 turns / ~120 min); `uncertainty:*` receipts via `scar(uncertainty_status=…)`; fork-scoped A/D/R soft hints on `quick_trace`/`record_reasoning_trace`; `receipt:session_*` audit sidecar; `processes/monitor/sentinel.toml`.
 - **Tensor–thought-tile unification (`tensor_tile_bridge`):** `thought_tile_create` / `write_result` dual-write `tensor:tile__{stem}` mirrors with bonds to goal/trace/spatial concepts; `tensor_unification` field in tile MCP responses.
 - **`propose_improvement` tile type:** Verified update on `payload.target_concept` via `process:engram.ritual.verified-update-with-consolidation`.
 - **Rituals:** `processes/ritual/thought_tile_to_tensor.toml`, `processes/ritual/verified-update-with-consolidation.toml`; `solid-tensor-consolidation` + `verified-memory-update` extended for TTU.

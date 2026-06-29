@@ -80,6 +80,10 @@ pub fn slim_continuation_bundle(full: &Value) -> Value {
         "nrem_step": ego.get("nrem_step"),
         "drift_velocity": ego.get("drift_velocity"),
         "stability": ego.get("stability"),
+        "turns_since_last_handoff": ego.get("turns_since_last_handoff"),
+        "minutes_since_checkpoint": ego.get("minutes_since_checkpoint"),
+        "rehydrate_suggested": ego.get("rehydrate_suggested"),
+        "rehydrate_reason": ego.get("rehydrate_reason"),
     });
 
     let stratum = full
@@ -108,6 +112,17 @@ pub fn slim_continuation_bundle(full: &Value) -> Value {
         .unwrap_or_default();
 
     let structured_handoff = full.get("structured_handoff").cloned();
+    let rehydration_manifest = full
+        .get("rehydration_manifest")
+        .or_else(|| {
+            full.get("harness_injection")
+                .and_then(|h| h.get("rehydration_manifest"))
+        })
+        .cloned();
+    let rehydrate_suggested = harness
+        .get("rehydrate_suggested")
+        .cloned()
+        .unwrap_or(json!(false));
 
     let local_stratum = full
         .get("local_stratum")
@@ -176,6 +191,8 @@ pub fn slim_continuation_bundle(full: &Value) -> Value {
             "process": local_stratum.get("process"),
         },
         "structured_handoff": structured_handoff,
+        "rehydration_manifest": rehydration_manifest,
+        "rehydrate_suggested": rehydrate_suggested,
         "recall_hint": "Slim wake — call mcp_engram_get_continuation_bundle for full JIT framework, verified_processes, and scars.",
         "full_bundle_tool": "mcp_engram_get_continuation_bundle",
         "wake_queue_gate": harness.get("wake_queue_gate"),

@@ -2106,18 +2106,31 @@ fn tool_list() -> Value {
             },
             {
                 "name": "mcp_engram_scar",
-                "description": "TRIGGER: Call this immediately if you attempt a code fix and it fails, or if the user tells you an approach is a dead end. This creates a geometric repeller in the manifold so you do not hallucinate or attempt the same bad solution again in the future.",
+                "description": "TRIGGER: Call this immediately if you attempt a code fix and it fails, or if the user tells you an approach is a dead end. This creates a geometric repeller in the manifold so you do not hallucinate or attempt the same bad solution again in the future. For insufficient memory anchors (not general inference), pass uncertainty_status to mint an uncertainty:* receipt instead of guessing.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
                         "concept": {
                             "type": "string",
-                            "description": "The concept name to scar (e.g. 'failed_approach_x')"
+                            "description": "The concept name to scar (e.g. 'failed_approach_x') or uncertainty slug when minting uncertainty receipt"
                         },
                         "magnitude": {
                             "type": "number",
                             "description": "Scar magnitude [0.0, 1.0]. Higher = larger CRS penalty and stronger topological deflection. Defaults to 0.15 (M-NOL default for contradiction axis spikes).",
                             "default": 0.15
+                        },
+                        "uncertainty_status": {
+                            "type": "string",
+                            "description": "When set, mint uncertainty:* receipt for withheld memory claim (e.g. memory_insufficient, contradictory_anchors). Scoped to recall/memory — not general inference."
+                        },
+                        "requested_anchors": {
+                            "type": "array",
+                            "items": { "type": "string" },
+                            "description": "Anchor concepts that were sought but insufficient for a memory claim"
+                        },
+                        "process_context": {
+                            "type": "string",
+                            "description": "Optional process:engram.* key — emits realized_by edge for process_metrics"
                         }
                     },
                     "required": ["concept"]
@@ -2347,6 +2360,49 @@ fn normalize_spatial_context_input(raw: &str) -> Result<(String, Option<String>)
 
 fn spatial_warning_suffix(warning: Option<String>) -> String {
     warning.map(|w| format!(" | ⚠ {w}")).unwrap_or_default()
+}
+
+/// Soft fork-scoping hint for significant traces (lean/agent — never blocks).
+fn triadic_fork_suffix(
+    goal_ctx: &str,
+    spatial_ctx: &str,
+    process_ctx: &str,
+    alternatives: &str,
+    affirm: &str,
+    deny: &str,
+    reconcile: &str,
+) -> String {
+    let significant = crate::continuity_spikes::is_significant_fork(
+        goal_ctx,
+        spatial_ctx,
+        process_ctx,
+        alternatives,
+    );
+    match crate::continuity_spikes::triadic_compliance_warning(
+        significant, affirm, deny, reconcile, false,
+    ) {
+        Some(w) => format!(" | ⚠ {w}"),
+        None => String::new(),
+    }
+}
+
+fn sentinel_turn_suffix() -> String {
+    crate::continuity_spikes::sentinel_on_turn_record();
+    let (turns, checkpoint) = crate::continuity_spikes::sentinel_snapshot();
+    let minutes = crate::continuity_spikes::minutes_since_checkpoint(
+        checkpoint,
+        crate::continuity_spikes::now_unix(),
+    );
+    let (rehydrate_suggested, reason) =
+        crate::continuity_spikes::compute_sentinel_nudge(turns, minutes);
+    let reason_note = if rehydrate_suggested {
+        format!(" rehydrate_reason={reason}")
+    } else {
+        String::new()
+    };
+    format!(
+        "\n  sentinel: turns_since_last_handoff={turns} minutes_since_checkpoint={minutes} rehydrate_suggested={rehydrate_suggested}{reason_note}"
+    )
 }
 
 // ── Shared helper for Item 1-style automatic goal linking (used by traces + Thought Tiles) ──
@@ -4653,10 +4709,20 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                 .trim()
                 .to_string();
 
+            let goal_ctx_input = goal_ctx.clone();
             let mut lock = store.lock().unwrap();
 
             let (goal_ctx, auto_linked_to_primary, auto_linked_from_recent) =
                 resolve_goal_context_and_link(&mut lock, goal_ctx);
+            let fork_hint = triadic_fork_suffix(
+                &goal_ctx_input,
+                &spatial_ctx,
+                &ritual_ctx,
+                &alternatives,
+                &affirm,
+                &deny,
+                &reconcile,
+            );
             let timestamp = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
@@ -4827,7 +4893,13 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                     } else {
                         format!(" | edited_at→{}", wired_loci.join(","))
                     };
-                    json!({ "content": [{ "type": "text", "text": format!("✓ Reasoning trace recorded: {} (ZEDOS_TRAINING 8-prop){}{}", trace_key, loci_note, spatial_warning_suffix(spatial_warning)) }] })
+                    json!({ "content": [{ "type": "text", "text": format!(
+                        "✓ Reasoning trace recorded: {} (ZEDOS_TRAINING 8-prop){}{}{}",
+                        trace_key,
+                        loci_note,
+                        spatial_warning_suffix(spatial_warning),
+                        fork_hint,
+                    ) }] })
                 }
                 Err(e) => {
                     json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true })
@@ -4913,6 +4985,7 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                 .trim()
                 .to_string();
 
+            let goal_ctx_input = goal_ctx.clone();
             let mut lock = store.lock().unwrap();
 
             if prev.is_empty() {
@@ -4923,6 +4996,15 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
 
             let (goal_ctx, auto_linked_to_primary, auto_linked_from_recent) =
                 resolve_goal_context_and_link(&mut lock, goal_ctx);
+            let fork_hint = triadic_fork_suffix(
+                &goal_ctx_input,
+                &spatial_ctx,
+                &process_context,
+                &alternatives,
+                &affirm,
+                &deny,
+                &reconcile,
+            );
             let timestamp = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
@@ -5085,7 +5167,13 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                     } else {
                         format!(" | edited_at→{}", wired_loci.join(","))
                     };
-                    json!({ "content": [{ "type": "text", "text": format!("✓ Quick trace recorded: {} (ZEDOS_TRAINING 8-prop){}{}", trace_key, loci_note, spatial_warning_suffix(spatial_warning)) }] })
+                    json!({ "content": [{ "type": "text", "text": format!(
+                        "✓ Quick trace recorded: {} (ZEDOS_TRAINING 8-prop){}{}{}",
+                        trace_key,
+                        loci_note,
+                        spatial_warning_suffix(spatial_warning),
+                        fork_hint,
+                    ) }] })
                 }
                 Err(e) => {
                     json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true })
@@ -5813,12 +5901,13 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                     };
                     json!({
                         "content": [{ "type": "text", "text": format!(
-                            "✓ Turn recorded: {} (RPT v3 {})\n  traces_linked: {}\n  activity_window: {:?}{}",
+                            "✓ Turn recorded: {} (RPT v3 {})\n  traces_linked: {}\n  activity_window: {:?}{}{}",
                             tile_key,
                             payload.get("tier").and_then(|v| v.as_str()).unwrap_or("lean"),
                             trace_n,
                             payload.get("activity_window"),
                             extract_note,
+                            sentinel_turn_suffix(),
                         ) }]
                     })
                 }
@@ -7828,6 +7917,21 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                 .unwrap_or("")
                 .trim()
                 .to_string();
+            let uncertainty_status = args
+                .get("uncertainty_status")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            let requested_anchors: Vec<String> = args
+                .get("requested_anchors")
+                .and_then(|v| v.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|s| s.as_str().map(str::to_string))
+                        .collect()
+                })
+                .unwrap_or_default();
 
             if concept.is_empty() {
                 return json!({
@@ -7843,20 +7947,47 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                 .to_string();
 
             let mut lock = store.lock().unwrap();
-            let result = lock.scar(&raw_concept, magnitude);
-            match result {
-                Ok(msg) => {
-                    relate_realized_by(&mut lock, &raw_concept, &process_context);
-                    warn!(
-                        "[M-NOL SCAR] concept='{}' magnitude={:.3}",
-                        raw_concept, magnitude
-                    );
-                    json!({ "content": [{ "type": "text", "text": msg }] })
+
+            if raw_concept.starts_with("uncertainty:") || !uncertainty_status.is_empty() {
+                let slug = raw_concept
+                    .strip_prefix("uncertainty:")
+                    .unwrap_or(&raw_concept)
+                    .to_string();
+                let status = if uncertainty_status.is_empty() {
+                    "memory_insufficient"
+                } else {
+                    uncertainty_status.as_str()
+                };
+                match lock.mint_uncertainty_receipt(&slug, status, &requested_anchors) {
+                    Ok(minted) => {
+                        relate_realized_by(&mut lock, &minted, &process_context);
+                        json!({
+                            "content": [{ "type": "text", "text": format!(
+                                "✓ Uncertainty receipt minted: {minted} (memory claim withheld — recall first; not for general inference)"
+                            ) }]
+                        })
+                    }
+                    Err(e) => json!({
+                        "content": [{ "type": "text", "text": format!("Uncertainty receipt failed: {e}") }],
+                        "isError": true
+                    }),
                 }
-                Err(e) => json!({
-                    "content": [{ "type": "text", "text": format!("Scar failed: {e}") }],
-                    "isError": true
-                }),
+            } else {
+                let result = lock.scar(&raw_concept, magnitude);
+                match result {
+                    Ok(msg) => {
+                        relate_realized_by(&mut lock, &raw_concept, &process_context);
+                        warn!(
+                            "[M-NOL SCAR] concept='{}' magnitude={:.3}",
+                            raw_concept, magnitude
+                        );
+                        json!({ "content": [{ "type": "text", "text": msg }] })
+                    }
+                    Err(e) => json!({
+                        "content": [{ "type": "text", "text": format!("Scar failed: {e}") }],
+                        "isError": true
+                    }),
+                }
             }
         }
 
@@ -9199,6 +9330,62 @@ mod tests {
 
             let _ = std::fs::remove_dir_all(&tmp);
             std::env::remove_var("ENGRAM_CUFILE_HOT");
+        }
+
+        #[test]
+        fn quick_trace_significant_fork_soft_triadic_hint() {
+            crate::continuity_spikes::sentinel_reset_for_test();
+            let tmp = unique_tmp("triad-hint");
+            let store = prep_store(&tmp);
+            let resp = handle_tool_on_big_stack(
+                "mcp_engram_quick_trace",
+                &json!({
+                    "decision": "wire fork-scoped triadic hint",
+                    "why": "significant fork with goal but no A/D/R should nudge only",
+                    "goal_context": "goal:theory_spikes_v1",
+                }),
+                &store,
+            );
+            let text = mcp_text(&resp);
+            assert!(
+                text.contains("significant_fork_soft_hint"),
+                "expected soft triadic hint in response: {text}"
+            );
+            let routine = handle_tool_on_big_stack(
+                "mcp_engram_quick_trace",
+                &json!({
+                    "decision": "routine note",
+                    "why": "no goal spatial or process — lightweight path",
+                }),
+                &store,
+            );
+            let routine_text = mcp_text(&routine);
+            assert!(
+                !routine_text.contains("significant_fork_soft_hint"),
+                "routine trace should not emit triadic hint: {routine_text}"
+            );
+            let _ = std::fs::remove_dir_all(&tmp);
+        }
+
+        #[test]
+        fn scar_uncertainty_status_mints_receipt() {
+            let tmp = unique_tmp("uncertainty-scar");
+            let store = prep_store(&tmp);
+            let resp = handle_tool_on_big_stack(
+                "mcp_engram_scar",
+                &json!({
+                    "concept": "prior_handoff_state",
+                    "uncertainty_status": "memory_insufficient",
+                    "requested_anchors": ["goal:theory_spikes_v1", "trace:missing_head"]
+                }),
+                &store,
+            );
+            let text = mcp_text(&resp);
+            assert!(
+                text.contains("Uncertainty receipt minted"),
+                "expected uncertainty mint: {text}"
+            );
+            let _ = std::fs::remove_dir_all(&tmp);
         }
     }
 }

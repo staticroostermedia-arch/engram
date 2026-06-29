@@ -48,11 +48,15 @@
 - `search_by_relation(seed, label, k)` to drill the graph
 - `scope=all` / deep mode — BVH full-manifold discovery
 
-**`quick_trace(decision, why, …)`** — Same quality as `record_reasoning_trace` with fewer fields. Auto-chains `prev_in_trace` from latest trace head when `prev` omitted; auto-links `serves` to primary goal.
+**`quick_trace(decision, why, …)`** — Same quality as `record_reasoning_trace` with fewer fields. Auto-chains `prev_in_trace` from latest trace head when `prev` omitted; auto-links `serves` to primary goal. **Significant forks** (goal/process linked or multi-locus spatial) get a **soft** A/D/R hint in the response when `affirm`/`deny`/`reconcile` are missing — never blocks.
 
 **`remember(concept, text)`** — New concept only. Always `recall` first; if score > 0.85 on an existing concept, use `update` instead. Auto-relate: `primary_goal --documents--> concept` (traces use `serves`).
 
-**`session_end(summary, minimal?, prepare_compression?)`** — End-of-block handoff. Use **`minimal=true`** for fast fix loops (thin block + boundary trace + `helper:session_handoff_latest`, no compression ritual). Full path (default) runs compression handoff + rich boundary trace. MCP disconnect without `session_end` auto-emits a thin handoff.
+**Uncertainty receipts (memory claims only):** When `recall(scope=anchors)` is insufficient for a **memory** claim, mint via `scar(concept, uncertainty_status="memory_insufficient", requested_anchors=[...])` — surfaces in wake `uncertainty_receipts_wake`. Not for general inference or tool uncertainty.
+
+**`session_end(summary, minimal?, prepare_compression?)`** — End-of-block handoff. Use **`minimal=true`** for fast fix loops (thin block + boundary trace + `helper:session_handoff_latest`, no compression ritual). Full path (default) runs compression handoff + rich boundary trace + **`rehydration_manifest`** (portable continuation kit at priority 0 next wake) + immutable **`receipt:session_*`** audit sidecar (P2). MCP disconnect without `session_end` auto-emits a thin handoff.
+
+**Sentinel (soft nudge):** After ~30 `turn_record` calls or ~120 min without handoff, wake/turn responses include `rehydrate_suggested: true` and a priority-0 `session_end` nudge in `suggested_actions` — **suggest-only**, never blocks `context_for_edit`.
 
 **`get_backend_readiness()`** — Read-only status. Use after wake or when recall quality seems sampled/bounded. Surfaces `nvme_direct_io`, `nvme_recall_ready`, `recall_mode`, `bvh_ready`, `gpu_hot_resident`, `cufile_hot_ready`, `leg_block_count`.
 

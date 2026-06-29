@@ -2959,15 +2959,40 @@ impl StoreHandle {
             }
         }
 
+        let files_touched = handoff_extract_files_touched(summary);
+        let trusted_tiles =
+            crate::harness_injection::build_trusted_tiles(self, primary_goal.as_deref());
+        let stratum = crate::presentation_stratum::build_presentation_stratum(self, 12, None);
+        let hub_anchors: Vec<String> = stratum
+            .get("nodes")
+            .and_then(|v| v.as_array())
+            .map(|nodes| {
+                nodes
+                    .iter()
+                    .filter_map(|n| n.get("concept").and_then(|v| v.as_str()).map(str::to_string))
+                    .take(12)
+                    .collect()
+            })
+            .unwrap_or_default();
+        let rehydration_manifest = crate::continuity_spikes::build_rehydration_manifest(
+            session_end_key,
+            primary_goal.as_deref(),
+            trace_chain_head.as_deref(),
+            &trusted_tiles,
+            &hub_anchors,
+            &files_touched,
+        );
+
         serde_json::json!({
             "session_end_key": session_end_key,
             "summary": summary_trunc,
             "primary_goal": primary_goal,
             "decisions": handoff_parse_decisions(summary),
             "open_questions": handoff_parse_open_questions(summary),
-            "files_touched": handoff_extract_files_touched(summary),
+            "files_touched": files_touched,
             "recent_traces": recent_traces,
             "trace_chain_head": trace_chain_head,
+            "rehydration_manifest": rehydration_manifest,
             "profile": Self::current_profile_name(),
             "memory_mode": Self::memory_mode(),
             "readiness": self.backend_readiness(),
@@ -3061,8 +3086,95 @@ impl StoreHandle {
         let _ = self.promote_tile_to_high_priority(SESSION_HANDOFF_LATEST);
         let _ = self.relate(SESSION_HANDOFF_LATEST, session_end_key, "compresses_path");
         let _ = self.relate(SESSION_HANDOFF_LATEST, HANDOFF_ANCHOR, "serves");
+
+        if let Some(manifest) = packet.get("rehydration_manifest") {
+            if let Some(concept) = manifest.get("manifest_concept").and_then(|v| v.as_str()) {
+                let manifest_body = format!(
+                    "REHYDRATION MANIFEST v1 (portable continuation kit)\n\n{}\n",
+                    serde_json::to_string_pretty(manifest).unwrap_or_else(|_| "{}".to_string())
+                );
+                if self.fetch_block(concept).is_some() {
+                    let _ = self.update(concept, &manifest_body);
+                } else {
+                    let mut block = self.encode(&manifest_body);
+                    block.zedos_tag = engram_core::types::ZEDOS_OPERATIONAL;
+                    block.crs_score = 0.92;
+                    let _ = self.store(concept, block);
+                }
+                let _ = self.relate(concept, SESSION_HANDOFF_LATEST, "serves");
+                let _ = self.promote_tile_to_high_priority(concept);
+            }
+        }
+
+        let readiness = packet.get("readiness").cloned().unwrap_or(serde_json::json!({}));
+        let manifest = packet
+            .get("rehydration_manifest")
+            .cloned()
+            .unwrap_or(serde_json::json!({}));
+        let receipt = crate::continuity_spikes::build_session_receipt(
+            summary,
+            &packet,
+            &manifest,
+            session_end_key,
+            &readiness,
+            Self::current_profile_name(),
+        );
+        if let Some(receipt_concept) = receipt.get("receipt_concept").and_then(|v| v.as_str()) {
+            let receipt_body = format!(
+                "SESSION RECEIPT v1 (immutable audit sidecar)\n\n{}\n",
+                serde_json::to_string_pretty(&receipt).unwrap_or_else(|_| "{}".to_string())
+            );
+            let mut block = self.encode(&receipt_body);
+            block.zedos_tag = engram_core::types::ZEDOS_OPERATIONAL;
+            block.crs_score = 0.93;
+            let _ = self.store(receipt_concept, block);
+            let _ = self.relate(receipt_concept, SESSION_HANDOFF_LATEST, "compresses_path");
+            let _ = self.relate(receipt_concept, session_end_key, "serves");
+        }
+
         self.invalidate_continuation_bundle_cache();
         packet
+    }
+
+    /// Mint an uncertainty receipt when memory context is insufficient (no guessing).
+    pub fn mint_uncertainty_receipt(
+        &mut self,
+        slug: &str,
+        status: &str,
+        requested_anchors: &[String],
+    ) -> Result<String> {
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let safe_slug: String = slug
+            .chars()
+            .filter(|c| c.is_alphanumeric() || *c == '_' || *c == '-')
+            .take(64)
+            .collect();
+        let concept = if safe_slug.is_empty() {
+            format!("uncertainty:{ts}")
+        } else {
+            format!("uncertainty:{ts}_{safe_slug}")
+        };
+        let anchors_line = if requested_anchors.is_empty() {
+            "none".to_string()
+        } else {
+            requested_anchors.join(", ")
+        };
+        let body = format!(
+            "UNCERTAINTY RECEIPT (memory claim withheld)\n\n**status:** {status}\n**requested_anchors:** {anchors_line}\n**note:** Emit when recall(scope=anchors) is insufficient for a memory claim — not for general inference.\n"
+        );
+        self.remember(&concept, &body)?;
+        self.access_index.touch(&concept);
+        if self.fetch_block(SESSION_HANDOFF_LATEST).is_some() {
+            let _ = self.relate(&concept, SESSION_HANDOFF_LATEST, "serves");
+        }
+        if let Some(primary) = crate::store::resolve_active_primary_goal(self) {
+            let _ = self.relate(&concept, &primary, "serves");
+        }
+        let _ = self.promote_tile_to_high_priority(&concept);
+        Ok(concept)
     }
 
     /// Active continuity artifacts for agent wake-up: primary goal, last session_end,
@@ -3353,6 +3465,13 @@ impl StoreHandle {
 
         let harness = crate::harness_injection::build_harness_bundle(self, session_intent);
 
+        let rehydration_manifest = self
+            .fetch_block_high_priority(SESSION_HANDOFF_LATEST)
+            .and_then(|b| {
+                crate::harness_injection::parse_handoff_packet_json(&engram_core::storage::read_provlog(&b))
+            })
+            .and_then(|p| p.get("rehydration_manifest").cloned());
+
         let presentation_stratum = harness
             .get("presentation_stratum")
             .cloned()
@@ -3417,6 +3536,7 @@ impl StoreHandle {
             "last_session_end": last_session_end,
             "hydration_cache_present": hydration_cache_present,
             "structured_handoff": structured_handoff,
+            "rehydration_manifest": rehydration_manifest,
             "active_artifacts": if stratum_artifacts.is_empty() { active_tiles } else { stratum_artifacts },
             "presentation_stratum": presentation_stratum,
             "local_stratum": local_stratum,
@@ -7038,6 +7158,74 @@ mod ingest_ast_tests {
             "suggested_actions must carry injection_rank after composite sort"
         );
 
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn persist_handoff_emits_manifest_and_receipt() {
+        let dir = test_store_dir("handoff_spikes");
+        let mut store = StoreHandle::new(&dir.to_string_lossy());
+        store
+            .remember(
+                "primary_goal",
+                "PRIMARY GOAL\n\n**goal:** goal:spike_test\n**set_at:** test",
+            )
+            .unwrap();
+        store
+            .remember(
+                "goal:spike_test",
+                "GOAL\n\n**status:** active\n**goal_statement:** spike handoff test\n",
+            )
+            .unwrap();
+
+        let summary = "**decisions:** continuity spike test\n**files_touched:** crates/engram-server/src/continuity_spikes.rs";
+        let packet = store.persist_session_handoff_latest(summary, "session_end_42");
+
+        let manifest = packet
+            .get("rehydration_manifest")
+            .expect("rehydration_manifest in handoff packet");
+        assert_eq!(manifest["version"], "rehydration_manifest_v1");
+        assert_eq!(manifest["manifest_concept"], "manifest:rehydration_42");
+
+        let manifest_concept = manifest["manifest_concept"]
+            .as_str()
+            .expect("manifest concept");
+        assert!(
+            store.fetch_block(manifest_concept).is_some(),
+            "manifest block persisted"
+        );
+
+        let receipts: Vec<String> = store
+            .list()
+            .into_iter()
+            .filter(|c| c.starts_with("receipt:session_"))
+            .collect();
+        assert_eq!(receipts.len(), 1, "one session receipt sidecar");
+        let receipt_body = read_provlog(&store.fetch_block(&receipts[0]).unwrap());
+        assert!(receipt_body.contains("SESSION RECEIPT v1"));
+        assert!(receipt_body.contains("payload_sha256_blake3"));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn mint_uncertainty_receipt_recallable() {
+        let dir = test_store_dir("uncertainty_mint");
+        let mut store = StoreHandle::new(&dir.to_string_lossy());
+        let concept = store
+            .mint_uncertainty_receipt(
+                "test_claim",
+                "memory_insufficient",
+                &["goal:spike_test".to_string()],
+            )
+            .expect("mint");
+        assert!(concept.starts_with("uncertainty:"));
+        assert!(store.fetch_block(&concept).is_some());
+        let recalled = crate::harness_injection::collect_uncertainty_receipts(&mut store, 4);
+        assert!(
+            recalled.iter().any(|r| r.get("concept").and_then(|v| v.as_str()) == Some(concept.as_str())),
+            "uncertainty receipt surfaces in wake collection"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
