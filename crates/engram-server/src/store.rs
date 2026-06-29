@@ -3722,12 +3722,10 @@ impl StoreHandle {
             },
         );
 
-        let bundle = serde_json::json!({
+        let mut bundle = serde_json::json!({
             "primary_goal": primary_goal_name,
             "last_session_end": last_session_end,
             "hydration_cache_present": hydration_cache_present,
-            "structured_handoff": structured_handoff,
-            "rehydration_manifest": rehydration_manifest,
             "active_artifacts": if stratum_artifacts.is_empty() { active_tiles } else { stratum_artifacts },
             "presentation_stratum": presentation_stratum,
             "local_stratum": local_stratum,
@@ -3751,6 +3749,14 @@ impl StoreHandle {
             "harness_injection": harness,
             "cached_at": now,
         });
+        if let Some(obj) = bundle.as_object_mut() {
+            crate::continuity_spikes::insert_optional(obj, "structured_handoff", structured_handoff);
+            crate::continuity_spikes::insert_optional(
+                obj,
+                "rehydration_manifest",
+                rehydration_manifest,
+            );
+        }
         self.continuation_bundle_cached_at = now;
         self.continuation_bundle_cache = Some(bundle.clone());
         bundle

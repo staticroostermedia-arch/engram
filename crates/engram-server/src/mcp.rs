@@ -8980,9 +8980,51 @@ mod tests {
         }
 
         fn prep_store(tmp: &str) -> SharedStore {
+            std::env::set_var("ENGRAM_DISABLE_SHEAF", "1");
+            std::env::set_var("ENGRAM_FORCE_CPU_BACKEND", "1");
             let store = open_store(tmp);
             store.lock().unwrap().mark_fully_initialized();
             store
+        }
+
+        fn assert_pre_handoff_fresh(cont: &serde_json::Value) {
+            use crate::continuity_spikes::json_field_present;
+            assert!(
+                !cont
+                    .get("structured_handoff")
+                    .map(json_field_present)
+                    .unwrap_or(false),
+                "pre-handoff wake must not expose meaningful structured_handoff: {cont}"
+            );
+            assert!(
+                !cont
+                    .get("rehydration_manifest")
+                    .map(json_field_present)
+                    .unwrap_or(false),
+                "pre-handoff wake must not expose meaningful rehydration_manifest: {cont}"
+            );
+        }
+
+        fn assert_post_handoff_manifest(cont: &serde_json::Value) {
+            use crate::continuity_spikes::json_field_present;
+            let handoff = cont
+                .get("structured_handoff")
+                .expect("post-handoff must include structured_handoff");
+            assert!(
+                json_field_present(handoff),
+                "structured_handoff must be non-null object: {cont}"
+            );
+            let manifest = cont
+                .get("rehydration_manifest")
+                .expect("post-handoff must include rehydration_manifest");
+            assert!(
+                json_field_present(manifest),
+                "rehydration_manifest must be present object: {cont}"
+            );
+            assert_eq!(
+                manifest.get("version").and_then(|v| v.as_str()),
+                Some("rehydration_manifest_v1")
+            );
         }
 
         /// handle_tool_call stacks deeply; run on a larger stack in unit-test threads.
@@ -9409,6 +9451,13 @@ mod tests {
             let tmp = unique_tmp(&format!("continuity-seq-{run}"));
             let store = prep_store(&tmp);
             {
+                let lock = store.lock().unwrap();
+                assert!(
+                    lock.fetch_block("helper:session_handoff_latest").is_none(),
+                    "isolated store must have no session handoff before sequence"
+                );
+            }
+            {
                 let mut lock = store.lock().unwrap();
                 lock.sentinel_reset_for_test();
             }
@@ -9452,22 +9501,11 @@ mod tests {
             log_mcp_transcript("session_start_1", "mcp_engram_session_start", &start1_args, &start1);
             let wake1 = parse_mcp_json(&start1);
             let cont1 = wake1.get("continuation").expect("continuation");
-            let pre_manifest = cont1
-                .get("rehydration_manifest")
-                .filter(|v| !v.is_null())
-                .is_some();
-            let pre_has_handoff = cont1.get("structured_handoff").is_some();
-            if pre_has_handoff {
-                assert!(
-                    pre_manifest,
-                    "when structured_handoff present, manifest must resolve from latest packet: {cont1}"
-                );
-            } else {
-                append_evidence(
-                    "spikes-continuity.log",
-                    "NOTE session_start_1: no structured_handoff — rehydration_manifest absent (fresh isolated store)\n",
-                );
-            }
+            assert_pre_handoff_fresh(cont1);
+            append_evidence(
+                "spikes-continuity.log",
+                "NOTE session_start_1: pre-handoff fresh — no structured_handoff or rehydration_manifest keys\n",
+            );
 
             let sig_args = json!({
                 "decision": "significant fork without triad",
@@ -9623,9 +9661,9 @@ mod tests {
             log_mcp_transcript("session_start_2_post_handoff", "mcp_engram_session_start", &start2_args, &start2);
             let wake2 = parse_mcp_json(&start2);
             let cont2 = wake2.get("continuation").expect("continuation");
+            assert_post_handoff_manifest(cont2);
             let manifest2 = cont2
                 .get("rehydration_manifest")
-                .filter(|v| !v.is_null())
                 .cloned()
                 .expect("post-handoff slim continuation must expose rehydration_manifest");
             assert_eq!(
@@ -9675,7 +9713,7 @@ mod tests {
                 "sentinel_nudge_pre_handoff": nudge_present,
                 "turn_record_nudge_at_30": last_turn_text.contains("rehydrate_suggested=true"),
                 "anchors_recall_goal_hit": true,
-                "pre_handoff_manifest_resolved_when_handoff_present": pre_has_handoff && pre_manifest,
+                "pre_handoff_fresh": true,
             });
 
             let _ = std::fs::remove_dir_all(&tmp);
@@ -9706,7 +9744,7 @@ mod tests {
                 "sentinel_nudge_pre_handoff",
                 "turn_record_nudge_at_30",
                 "anchors_recall_goal_hit",
-                "pre_handoff_manifest_resolved_when_handoff_present",
+                "pre_handoff_fresh",
             ] {
                 assert_eq!(
                     run0.get(key),

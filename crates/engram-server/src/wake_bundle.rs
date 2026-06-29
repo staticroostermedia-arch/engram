@@ -111,13 +111,17 @@ pub fn slim_continuation_bundle(full: &Value) -> Value {
         })
         .unwrap_or_default();
 
-    let structured_handoff = full.get("structured_handoff").cloned();
+    let structured_handoff = full
+        .get("structured_handoff")
+        .filter(|v| crate::continuity_spikes::json_field_present(v))
+        .cloned();
     let rehydration_manifest = full
         .get("rehydration_manifest")
         .or_else(|| {
             full.get("harness_injection")
                 .and_then(|h| h.get("rehydration_manifest"))
         })
+        .filter(|v| crate::continuity_spikes::json_field_present(v))
         .cloned();
     let rehydrate_suggested = harness
         .get("rehydrate_suggested")
@@ -171,7 +175,7 @@ pub fn slim_continuation_bundle(full: &Value) -> Value {
         .map(|a| a.len())
         .unwrap_or(0);
 
-    json!({
+    let mut slim = json!({
         "bundle_tier": "slim",
         "primary_goal": full.get("primary_goal"),
         "task_type": task_type,
@@ -190,8 +194,6 @@ pub fn slim_continuation_bundle(full: &Value) -> Value {
             "sovereignty_note": local_stratum.get("sovereignty_note"),
             "process": local_stratum.get("process"),
         },
-        "structured_handoff": structured_handoff,
-        "rehydration_manifest": rehydration_manifest,
         "rehydrate_suggested": rehydrate_suggested,
         "recall_hint": "Slim wake — call mcp_engram_get_continuation_bundle for full JIT framework, verified_processes, and scars.",
         "full_bundle_tool": "mcp_engram_get_continuation_bundle",
@@ -199,7 +201,12 @@ pub fn slim_continuation_bundle(full: &Value) -> Value {
         "injection_completeness": injection_completeness,
         "nvme_context": nvme_context,
         "open_scars_count": open_scars_wake,
-    })
+    });
+    if let Some(obj) = slim.as_object_mut() {
+        crate::continuity_spikes::insert_optional(obj, "structured_handoff", structured_handoff);
+        crate::continuity_spikes::insert_optional(obj, "rehydration_manifest", rehydration_manifest);
+    }
+    slim
 }
 
 #[cfg(test)]

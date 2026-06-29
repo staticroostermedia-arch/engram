@@ -1,6 +1,26 @@
 //! Theory-informed continuity spikes — pure builders (lean, nudge-only).
 
-use serde_json::{json, Value};
+use serde_json::{json, Map, Value};
+
+/// True when a JSON field carries meaningful content (not null / empty).
+pub fn json_field_present(v: &Value) -> bool {
+    match v {
+        Value::Null => false,
+        Value::Bool(_) | Value::Number(_) => true,
+        Value::String(s) => !s.is_empty(),
+        Value::Array(a) => !a.is_empty(),
+        Value::Object(o) => !o.is_empty(),
+    }
+}
+
+/// Insert key only when `opt` is `Some` and non-null/non-empty per `json_field_present`.
+pub fn insert_optional(map: &mut Map<String, Value>, key: &str, opt: Option<Value>) {
+    if let Some(v) = opt {
+        if json_field_present(&v) {
+            map.insert(key.to_string(), v);
+        }
+    }
+}
 
 pub const SENTINEL_MAX_TURNS: u32 = 30;
 pub const SENTINEL_MAX_MINUTES: u64 = 120;
@@ -217,6 +237,32 @@ mod tests {
         )
         .is_none());
         assert!(triadic_compliance_warning(false, "", "", "", false).is_none());
+    }
+
+    #[test]
+    fn json_field_present_contract() {
+        assert!(!json_field_present(&Value::Null));
+        assert!(!json_field_present(&json!({})));
+        assert!(!json_field_present(&json!("")));
+        assert!(json_field_present(&json!({"concept": "helper:x"})));
+        assert!(json_field_present(&json!("goal:test")));
+    }
+
+    #[test]
+    fn insert_optional_omits_null_and_empty() {
+        let mut map = Map::new();
+        insert_optional(&mut map, "structured_handoff", None);
+        insert_optional(&mut map, "rehydration_manifest", Some(Value::Null));
+        insert_optional(&mut map, "empty_obj", Some(json!({})));
+        assert!(!map.contains_key("structured_handoff"));
+        assert!(!map.contains_key("rehydration_manifest"));
+        assert!(!map.contains_key("empty_obj"));
+        insert_optional(
+            &mut map,
+            "rehydration_manifest",
+            Some(json!({"version": "rehydration_manifest_v1"})),
+        );
+        assert!(map.contains_key("rehydration_manifest"));
     }
 
     #[test]
