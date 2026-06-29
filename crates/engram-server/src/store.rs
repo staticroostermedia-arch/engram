@@ -3136,6 +3136,38 @@ impl StoreHandle {
         packet
     }
 
+    /// Portable rehydration kit for wake — handoff packet first, then latest `manifest:rehydration_*` block.
+    pub fn resolve_rehydration_manifest_for_wake(&mut self) -> Option<serde_json::Value> {
+        if let Some(packet) = self
+            .fetch_block_high_priority(SESSION_HANDOFF_LATEST)
+            .and_then(|b| {
+                crate::harness_injection::parse_handoff_packet_json(&engram_core::storage::read_provlog(
+                    &b,
+                ))
+            })
+        {
+            if let Some(m) = packet.get("rehydration_manifest").filter(|v| !v.is_null()) {
+                return Some(m.clone());
+            }
+        }
+        for (concept, _) in self.access_index.recent(200) {
+            if !concept.starts_with("manifest:rehydration_") {
+                continue;
+            }
+            let Some(block) = self
+                .fetch_block_high_priority(&concept)
+                .or_else(|| self.fetch_block(&concept))
+            else {
+                continue;
+            };
+            let body = engram_core::storage::read_provlog(&block);
+            if let Some(v) = crate::harness_injection::parse_handoff_packet_json(&body) {
+                return Some(v);
+            }
+        }
+        None
+    }
+
     /// Mint an uncertainty receipt when memory context is insufficient (no guessing).
     pub fn mint_uncertainty_receipt(
         &mut self,
@@ -3465,12 +3497,7 @@ impl StoreHandle {
 
         let harness = crate::harness_injection::build_harness_bundle(self, session_intent);
 
-        let rehydration_manifest = self
-            .fetch_block_high_priority(SESSION_HANDOFF_LATEST)
-            .and_then(|b| {
-                crate::harness_injection::parse_handoff_packet_json(&engram_core::storage::read_provlog(&b))
-            })
-            .and_then(|p| p.get("rehydration_manifest").cloned());
+        let rehydration_manifest = self.resolve_rehydration_manifest_for_wake();
 
         let presentation_stratum = harness
             .get("presentation_stratum")
@@ -7204,6 +7231,16 @@ mod ingest_ast_tests {
         let receipt_body = read_provlog(&store.fetch_block(&receipts[0]).unwrap());
         assert!(receipt_body.contains("SESSION RECEIPT v1"));
         assert!(receipt_body.contains("payload_sha256_blake3"));
+
+        store.invalidate_continuation_bundle_cache();
+        let bundle = store.build_continuation_bundle(Some("post-handoff"));
+        assert!(
+            bundle
+                .get("rehydration_manifest")
+                .filter(|v| !v.is_null())
+                .is_some(),
+            "wake bundle must surface rehydration_manifest from persisted handoff"
+        );
 
         let _ = std::fs::remove_dir_all(&dir);
     }

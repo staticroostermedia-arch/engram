@@ -649,93 +649,104 @@ pub fn build_suggested_actions(
     if let Some(block) = store.fetch_block_high_priority(SESSION_HANDOFF_LATEST) {
         let text = storage::read_provlog(&block);
         if let Some(packet) = parse_handoff_packet_json(&text) {
-            handoff_packet = Some(packet.clone());
-            if let Some(manifest) = packet.get("rehydration_manifest") {
-                if let Some(concept) = manifest.get("manifest_concept").and_then(|v| v.as_str()) {
-                    push_action(
-                        &mut actions,
-                        "mcp_engram_read_concept",
-                        json!({ "concept": concept }),
-                        "portable rehydration manifest — priority continuation kit",
-                        0,
-                    );
-                }
-                if let Some(goal) = manifest.get("primary_goal").and_then(|v| v.as_str()) {
-                    if !goal.is_empty() {
-                        push_action(
-                            &mut actions,
-                            "mcp_engram_recall",
-                            json!({ "query": goal, "scope": "anchors", "k": 8 }),
-                            "manifest primary_goal — anchor recall without scope=all",
-                            0,
-                        );
-                    }
-                }
-                if let Some(head) = manifest.get("trace_chain_head").and_then(|v| v.as_str()) {
-                    if !head.is_empty() {
-                        push_action(
-                            &mut actions,
-                            "mcp_engram_read_concept",
-                            json!({ "concept": head }),
-                            "manifest trace_chain_head — continue chain",
-                            1,
-                        );
-                    }
-                }
+            handoff_packet = Some(packet);
+        }
+    }
+
+    let manifest_for_seed = handoff_packet
+        .as_ref()
+        .and_then(|p| p.get("rehydration_manifest"))
+        .filter(|v| !v.is_null())
+        .cloned()
+        .or_else(|| store.resolve_rehydration_manifest_for_wake());
+
+    if let Some(manifest) = manifest_for_seed {
+        if let Some(concept) = manifest.get("manifest_concept").and_then(|v| v.as_str()) {
+            push_action(
+                &mut actions,
+                "mcp_engram_read_concept",
+                json!({ "concept": concept }),
+                "portable rehydration manifest — priority continuation kit",
+                0,
+            );
+        }
+        if let Some(goal) = manifest.get("primary_goal").and_then(|v| v.as_str()) {
+            if !goal.is_empty() {
+                push_action(
+                    &mut actions,
+                    "mcp_engram_recall",
+                    json!({ "query": goal, "scope": "anchors", "k": 8 }),
+                    "manifest primary_goal — anchor recall without scope=all",
+                    0,
+                );
             }
-            if let Some(goal) = packet.get("primary_goal").and_then(|v| v.as_str()) {
-                if store
-                    .fetch_block_high_priority(goal)
-                    .map(|b| crate::store::goal_block_text(&b))
-                    .map(|t| crate::store::goal_status_is_active(&t))
-                    .unwrap_or(false)
-                {
-                    primary_goal = Some(goal.to_string());
-                    push_action(
-                        &mut actions,
-                        "mcp_engram_recall",
-                        json!({ "query": goal, "scope": "anchors", "k": 5 }),
-                        "inherit primary goal context",
-                        2,
-                    );
-                }
-            }
-            if let Some(files) = packet.get("files_touched").and_then(|v| v.as_array()) {
-                for (i, file) in files.iter().take(5).enumerate() {
-                    if let Some(path) = file.as_str() {
-                        push_action(
-                            &mut actions,
-                            "mcp_engram_context_for_edit",
-                            json!({ "path": path, "auto_ingest": true }),
-                            "last session touched this file",
-                            10 + i as u64,
-                        );
-                    }
-                }
-            }
-            if let Some(head) = packet.get("trace_chain_head").and_then(|v| v.as_str()) {
+        }
+        if let Some(head) = manifest.get("trace_chain_head").and_then(|v| v.as_str()) {
+            if !head.is_empty() {
                 push_action(
                     &mut actions,
                     "mcp_engram_read_concept",
                     json!({ "concept": head }),
-                    "continue reasoning trace chain",
-                    4,
-                );
-                push_jit_action(
-                    &mut actions,
-                    "mcp_engram_quick_trace",
-                    json!({
-                        "decision": "<your next fork>",
-                        "why": "<justify path>",
-                        "prev": head,
-                        "goal_context": primary_goal,
-                    }),
-                    "chain quick_trace from last session head — construct decision/why JIT",
-                    5,
-                    true,
-                    Some("continuing trace chain"),
+                    "manifest trace_chain_head — continue chain",
+                    1,
                 );
             }
+        }
+    }
+
+    if let Some(ref packet) = handoff_packet {
+        if let Some(goal) = packet.get("primary_goal").and_then(|v| v.as_str()) {
+            if store
+                .fetch_block_high_priority(goal)
+                .map(|b| crate::store::goal_block_text(&b))
+                .map(|t| crate::store::goal_status_is_active(&t))
+                .unwrap_or(false)
+            {
+                primary_goal = Some(goal.to_string());
+                push_action(
+                    &mut actions,
+                    "mcp_engram_recall",
+                    json!({ "query": goal, "scope": "anchors", "k": 5 }),
+                    "inherit primary goal context",
+                    2,
+                );
+            }
+        }
+        if let Some(files) = packet.get("files_touched").and_then(|v| v.as_array()) {
+            for (i, file) in files.iter().take(5).enumerate() {
+                if let Some(path) = file.as_str() {
+                    push_action(
+                        &mut actions,
+                        "mcp_engram_context_for_edit",
+                        json!({ "path": path, "auto_ingest": true }),
+                        "last session touched this file",
+                        10 + i as u64,
+                    );
+                }
+            }
+        }
+        if let Some(head) = packet.get("trace_chain_head").and_then(|v| v.as_str()) {
+            push_action(
+                &mut actions,
+                "mcp_engram_read_concept",
+                json!({ "concept": head }),
+                "continue reasoning trace chain",
+                4,
+            );
+            push_jit_action(
+                &mut actions,
+                "mcp_engram_quick_trace",
+                json!({
+                    "decision": "<your next fork>",
+                    "why": "<justify path>",
+                    "prev": head,
+                    "goal_context": primary_goal,
+                }),
+                "chain quick_trace from last session head — construct decision/why JIT",
+                5,
+                true,
+                Some("continuing trace chain"),
+            );
         }
     } else if let Some(g) = crate::store::resolve_active_primary_goal(store) {
         primary_goal = Some(g.clone());

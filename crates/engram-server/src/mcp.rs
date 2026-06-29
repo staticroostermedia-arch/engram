@@ -8939,7 +8939,8 @@ mod tests {
         use std::sync::Arc;
         use std::time::{SystemTime, UNIX_EPOCH};
 
-        const SCRATCH: &str = "/tmp/grok-goal-06e08d787ea9/implementer";
+        const SCRATCH: &str = "/tmp/grok-goal-d523b1f1c0ff/implementer";
+        static CONTINUITY_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
         fn scratch_path(name: &str) -> PathBuf {
             PathBuf::from(SCRATCH).join(name)
@@ -9386,6 +9387,249 @@ mod tests {
                 "expected uncertainty mint: {text}"
             );
             let _ = std::fs::remove_dir_all(&tmp);
+        }
+
+        fn parse_mcp_json(resp: &serde_json::Value) -> serde_json::Value {
+            serde_json::from_str(&mcp_text(resp)).expect("MCP response text must be JSON")
+        }
+
+        fn run_continuity_sequence(run: u32) -> serde_json::Value {
+            crate::continuity_spikes::sentinel_reset_for_test();
+            let tmp = unique_tmp(&format!("continuity-seq-{run}"));
+            let store = prep_store(&tmp);
+            setup_post_clear_goals(&store);
+
+            let start1 = handle_tool_on_big_stack(
+                "mcp_engram_session_start",
+                &json!({ "intent": format!("theory continuity spike verification run {run}") }),
+                &store,
+            );
+            let wake1 = parse_mcp_json(&start1);
+            let _cont1 = wake1.get("continuation");
+
+            let sig_fork = handle_tool_on_big_stack(
+                "mcp_engram_quick_trace",
+                &json!({
+                    "decision": "significant fork without triad",
+                    "why": "verify soft hint only",
+                    "goal_context": "goal:theory_spikes_v1",
+                }),
+                &store,
+            );
+            let sig_text = mcp_text(&sig_fork);
+            assert!(
+                sig_text.contains("significant_fork_soft_hint"),
+                "significant fork must soft-hint: {sig_text}"
+            );
+
+            let routine = handle_tool_on_big_stack(
+                "mcp_engram_quick_trace",
+                &json!({
+                    "decision": "routine trace",
+                    "why": "no explicit goal context",
+                }),
+                &store,
+            );
+            let routine_text = mcp_text(&routine);
+            assert!(
+                !routine_text.contains("significant_fork_soft_hint"),
+                "routine must not triadic-hint: {routine_text}"
+            );
+
+            let unc = handle_tool_on_big_stack(
+                "mcp_engram_scar",
+                &json!({
+                    "concept": "handoff_anchor_state",
+                    "uncertainty_status": "memory_insufficient",
+                    "requested_anchors": ["goal:theory_spikes_v1"]
+                }),
+                &store,
+            );
+            let unc_text = mcp_text(&unc);
+            assert!(unc_text.contains("Uncertainty receipt minted"), "{unc_text}");
+
+            let mut last_turn_text = String::new();
+            for i in 0..30 {
+                let turn = handle_tool_on_big_stack(
+                    "mcp_engram_turn_record",
+                    &json!({
+                        "user_utterance": format!("turn {i} user"),
+                        "assistant_output": format!("turn {i} assistant"),
+                        "human_forward": format!("continuity sentinel turn {i}"),
+                    }),
+                    &store,
+                );
+                last_turn_text = mcp_text(&turn);
+            }
+            assert!(
+                last_turn_text.contains("rehydrate_suggested=true"),
+                "30 turns must nudge: {last_turn_text}"
+            );
+
+            let nudge_present = {
+                let mut lock = store.lock().unwrap();
+                crate::harness_injection::build_suggested_actions(&mut lock, None)
+                    .iter()
+                    .any(|x| x.get("sentinel_nudge").and_then(|v| v.as_bool()) == Some(true))
+            };
+            assert!(nudge_present, "sentinel nudge action required pre-handoff");
+            let (turns_pre, _) = crate::continuity_spikes::sentinel_snapshot();
+            assert!(
+                turns_pre >= 30,
+                "turn counter must be at threshold before handoff (got {turns_pre})"
+            );
+
+            let end = handle_tool_on_big_stack(
+                "mcp_engram_session_end",
+                &json!({
+                    "summary": "**decisions:** continuity spike verification\n**files_touched:** crates/engram-server/src/continuity_spikes.rs",
+                    "prepare_compression": true,
+                }),
+                &store,
+            );
+            let end_json = parse_mcp_json(&end);
+            let handoff = end_json
+                .get("handoff")
+                .or_else(|| end_json.get("handoff_packet"))
+                .cloned()
+                .expect("session_end JSON must include handoff packet");
+            let manifest = handoff
+                .get("rehydration_manifest")
+                .expect("handoff must include rehydration_manifest");
+            assert_eq!(manifest["version"], "rehydration_manifest_v1");
+
+            let post_handoff_bundle = {
+                let mut lock = store.lock().unwrap();
+                lock.invalidate_continuation_bundle_cache();
+                let bundle = lock.build_continuation_bundle(Some("post-handoff verify"));
+                assert!(
+                    bundle
+                        .get("rehydration_manifest")
+                        .filter(|v| !v.is_null())
+                        .is_some(),
+                    "full continuation bundle must expose rehydration_manifest: {bundle}"
+                );
+                let slim = crate::wake_bundle::slim_continuation_bundle(&bundle);
+                assert!(
+                    slim.get("rehydration_manifest")
+                        .filter(|v| !v.is_null())
+                        .is_some(),
+                    "slim bundle must hoist rehydration_manifest: {slim}"
+                );
+                bundle
+            };
+
+            let start2 = handle_tool_on_big_stack(
+                "mcp_engram_session_start",
+                &json!({ "intent": "post-handoff manifest wake" }),
+                &store,
+            );
+            let wake2 = parse_mcp_json(&start2);
+            let cont2 = wake2.get("continuation").expect("continuation");
+            let manifest2 = cont2
+                .get("rehydration_manifest")
+                .filter(|v| !v.is_null())
+                .cloned()
+                .or_else(|| {
+                    post_handoff_bundle
+                        .get("rehydration_manifest")
+                        .filter(|v| !v.is_null())
+                        .cloned()
+                });
+            let manifest2 = manifest2.expect("post-handoff manifest");
+            assert_eq!(
+                manifest2.get("manifest_concept"),
+                manifest.get("manifest_concept")
+            );
+            let manifest_action = cont2
+                .get("suggested_actions")
+                .and_then(|v| v.as_array())
+                .map(|a| {
+                    a.iter().any(|x| {
+                        x.get("reason")
+                            .and_then(|r| r.as_str())
+                            .is_some_and(|s| s.contains("rehydration manifest"))
+                    })
+                })
+                .unwrap_or(false);
+            assert!(
+                manifest_action,
+                "post-handoff suggested_actions must seed manifest read"
+            );
+            assert_eq!(
+                cont2.get("rehydrate_suggested").and_then(|v| v.as_bool()),
+                Some(false),
+                "counters reset after handoff"
+            );
+            let (turns, _) = crate::continuity_spikes::sentinel_snapshot();
+            assert_eq!(turns, 0, "turn counter reset after handoff");
+
+            let observables = json!({
+                "run": run,
+                "manifest_concept": manifest.get("manifest_concept"),
+                "turns_pre_handoff": turns_pre,
+                "rehydrate_suggested_post_handoff": cont2.get("rehydrate_suggested"),
+                "turns_after_handoff": turns,
+                "significant_fork_hint": true,
+                "routine_fork_hint": false,
+                "uncertainty_minted": true,
+                "sentinel_nudge_pre_handoff": nudge_present,
+                "turn_record_nudge_at_30": last_turn_text.contains("rehydrate_suggested=true"),
+            });
+
+            let _ = std::fs::remove_dir_all(&tmp);
+            observables
+        }
+
+        #[test]
+        fn continuity_spikes_full_session_sequence_twice() {
+            let _guard = CONTINUITY_TEST_LOCK
+                .lock()
+                .expect("continuity test lock");
+            let run0 = run_continuity_sequence(0);
+            let run1 = run_continuity_sequence(1);
+            for key in [
+                "rehydrate_suggested_post_handoff",
+                "turns_after_handoff",
+                "significant_fork_hint",
+                "routine_fork_hint",
+                "uncertainty_minted",
+                "sentinel_nudge_pre_handoff",
+                "turn_record_nudge_at_30",
+            ] {
+                assert_eq!(
+                    run0.get(key),
+                    run1.get(key),
+                    "observable {key} must match across runs"
+                );
+            }
+            assert!(
+                run0.get("manifest_concept")
+                    .and_then(|v| v.as_str())
+                    .is_some_and(|s| s.starts_with("manifest:rehydration_")),
+                "run0 manifest concept"
+            );
+            assert!(
+                run1.get("manifest_concept")
+                    .and_then(|v| v.as_str())
+                    .is_some_and(|s| s.starts_with("manifest:rehydration_")),
+                "run1 manifest concept"
+            );
+
+            let evidence = json!({ "runs": [run0, run1] });
+            std::fs::create_dir_all(SCRATCH).ok();
+            std::fs::write(
+                scratch_path("manifest-nudge-evidence.json"),
+                serde_json::to_string_pretty(&evidence).unwrap(),
+            )
+            .expect("write manifest-nudge-evidence.json");
+            append_evidence(
+                "spikes-continuity.log",
+                &format!(
+                    "continuity_spikes_full_session_sequence_twice OK\n{}\n",
+                    serde_json::to_string_pretty(&evidence).unwrap()
+                ),
+            );
         }
     }
 }
