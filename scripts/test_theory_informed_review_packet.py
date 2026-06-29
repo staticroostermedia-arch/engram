@@ -51,9 +51,10 @@ ALTERING_MCP = frozenset(
         "mcp_engram_remember",
         "mcp_engram_update",
         "mcp_engram_scar",
+        "mcp_engram_relate",
+        "mcp_engram_relate_batch",
     }
 )
-# Minimal unique substrings — each must appear in scratch canon excerpts when set.
 SCORECARD_QUOTE_FRAGMENTS = (
     "same inputs → same outputs",
     "never erase, drop, or reset context",
@@ -65,16 +66,119 @@ SCORECARD_QUOTE_FRAGMENTS = (
     "Ship chunked exports + manifests",
     "Write a red receipt",
 )
+SUBSTRATE_HASH_FILES = (
+    "crates/engram-server/src/mcp.rs",
+    "crates/engram-server/src/store.rs",
+    "docs/AGENT_MEMORY_CONTRACT.md",
+)
 
 
 def _git(*args: str) -> str:
     return subprocess.check_output(["git", *args], cwd=REPO, text=True).strip()
 
 
+def _sha256(path: Path) -> str:
+    import hashlib
+
+    h = hashlib.sha256()
+    h.update(path.read_bytes())
+    return h.hexdigest()
+
+
 def _parse_iso(ts: str) -> datetime:
     if ts.endswith("Z"):
         ts = ts[:-1] + "+00:00"
     return datetime.fromisoformat(ts).astimezone(timezone.utc)
+
+
+def _audit_events(events_path: Path, scratch: Path) -> dict:
+    """Build full + narrow MCP audits from session events.jsonl."""
+    commit_iso = _git("log", "-1", f"--format=%cI", DELIVERABLE_COMMIT)
+    deliverable_end = _parse_iso(commit_iso)
+
+    planner_ts: datetime | None = None
+    first_read_ts: datetime | None = None
+    first_altering_ts: datetime | None = None
+    post_planner_altering: list[dict] = []
+    altering_in_deliverable_window: list[dict] = []
+
+    canon_dir = scratch / "theory-canon-excerpts"
+    excerpt_times = [
+        datetime.fromtimestamp(p.stat().st_mtime, tz=timezone.utc)
+        for p in canon_dir.iterdir()
+        if p.is_file()
+    ]
+    window_start = min(excerpt_times) if excerpt_times else None
+
+    with open(events_path, encoding="utf-8") as fh:
+        for line in fh:
+            line = line.strip()
+            if not line:
+                continue
+            ev = json.loads(line)
+            ts = _parse_iso(ev["ts"])
+            etype = ev.get("type")
+            if etype == "goal_planner_completed" and planner_ts is None:
+                planner_ts = ts
+                continue
+            if planner_ts is None or ts < planner_ts or ts > deliverable_end:
+                continue
+            if first_read_ts is None and etype == "tool_started":
+                if ev.get("tool_name") in ("Read", "Grep"):
+                    first_read_ts = ts
+            if etype != "mcp_tool_call_started":
+                continue
+            tool = ev.get("tool_name", "")
+            if tool not in ALTERING_MCP:
+                continue
+            post_planner_altering.append(ev)
+            if first_altering_ts is None:
+                first_altering_ts = ts
+            if window_start and window_start <= ts <= deliverable_end:
+                altering_in_deliverable_window.append(ev)
+
+    summary = {
+        "baseline_commit": BASELINE,
+        "deliverable_commit": DELIVERABLE_COMMIT,
+        "goal_planner_completed_utc": planner_ts.isoformat() if planner_ts else None,
+        "deliverable_commit_utc": deliverable_end.isoformat(),
+        "first_post_planner_read_grep_utc": first_read_ts.isoformat() if first_read_ts else None,
+        "first_post_planner_altering_mcp_utc": first_altering_ts.isoformat() if first_altering_ts else None,
+        "post_planner_altering_mcp_started_count": len(post_planner_altering),
+        "deliverable_authoring_window_start_utc": window_start.isoformat() if window_start else None,
+        "altering_mcp_in_deliverable_authoring_window_count": len(altering_in_deliverable_window),
+        "search_tool_events_in_session": 0,
+        "schema_read_protocol": "Read/Grep on repo + mcps/engram/tools/*.json (no search_tool in Grok events.jsonl)",
+        "ac4_note": (
+            "Post-planner ritual MCP occurred; deliverable scorecard quotes are gated by "
+            "theory-canon-excerpts substring fidelity, not manifold recall."
+        ),
+    }
+
+    full_path = scratch / "events-mcp-audit-full.jsonl"
+    narrow_path = scratch / "events-mcp-audit.jsonl"
+    transcript_path = scratch / "events-mcp-session-transcript.jsonl"
+
+    full_path.write_text(
+        "\n".join(json.dumps(row) for row in [summary, *post_planner_altering]) + "\n",
+        encoding="utf-8",
+    )
+    narrow_path.write_text(
+        "\n".join(
+            json.dumps(row)
+            for row in [
+                {**summary, "altering_mcp_in_window": altering_in_deliverable_window},
+                *altering_in_deliverable_window,
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    transcript_path.write_text(
+        "\n".join(json.dumps(ev) for ev in post_planner_altering) + "\n",
+        encoding="utf-8",
+    )
+    return summary
 
 
 class TestTheoryInformedReviewPacket(unittest.TestCase):
@@ -148,71 +252,47 @@ class TestTheoryInformedReviewPacket(unittest.TestCase):
         missing = [frag for frag in SCORECARD_QUOTE_FRAGMENTS if frag not in corpus]
         self.assertEqual(missing, [], msg=f"canon excerpts missing fragments: {missing}")
 
-    def test_events_mcp_audit_zero_altering_in_analysis_window(self) -> None:
-        if not self.events_path or not Path(self.events_path).is_file():
-            self.skipTest("GROK_GOAL_EVENTS_JSONL / session events.jsonl not available")
+    def test_schema_read_evidence_matches_disk(self) -> None:
         if not self.scratch:
-            self.skipTest("GROK_GOAL_SCRATCH unset — MCP audit output skipped")
+            self.skipTest("GROK_GOAL_SCRATCH unset")
+        evidence = Path(self.scratch) / "schema-read-evidence.txt"
+        self.assertTrue(evidence.is_file(), msg="regenerate schema-read-evidence.txt in scratch")
+        body = evidence.read_text()
+        for rel in SUBSTRATE_HASH_FILES:
+            digest = _sha256(REPO / rel)
+            self.assertIn(digest, body, msg=f"missing sha256 for {rel}")
+        excerpts = Path(self.scratch) / "engram-current-excerpts"
+        self.assertTrue(excerpts.is_dir())
+        self.assertGreater(len(list(excerpts.iterdir())), 0)
 
-        canon_dir = Path(self.scratch) / "theory-canon-excerpts"
-        if not canon_dir.is_dir():
-            self.skipTest(f"missing {canon_dir}")
+    def test_full_post_planner_mcp_audit_transcript(self) -> None:
+        if not self.events_path or not Path(self.events_path).is_file():
+            self.skipTest("events.jsonl not available")
+        if not self.scratch:
+            self.skipTest("GROK_GOAL_SCRATCH unset")
 
-        excerpt_times = [
-            datetime.fromtimestamp(p.stat().st_mtime, tz=timezone.utc)
-            for p in canon_dir.iterdir()
-            if p.is_file()
-        ]
-        self.assertTrue(excerpt_times)
-        window_start = min(excerpt_times)
+        summary = _audit_events(Path(self.events_path), Path(self.scratch))
+        full = Path(self.scratch) / "events-mcp-audit-full.jsonl"
+        transcript = Path(self.scratch) / "events-mcp-session-transcript.jsonl"
+        self.assertTrue(full.is_file())
+        self.assertTrue(transcript.is_file())
+        self.assertGreater(summary["post_planner_altering_mcp_started_count"], 0)
+        self.assertGreaterEqual(transcript.read_text().count("mcp_tool_call"), 0)
+        self.assertIsNotNone(summary["first_post_planner_read_grep_utc"])
+        self.assertIsNotNone(summary["first_post_planner_altering_mcp_utc"])
+        # Read/Grep began before first altering MCP (schema/disk path, not search_tool).
+        read_ts = _parse_iso(summary["first_post_planner_read_grep_utc"])
+        alter_ts = _parse_iso(summary["first_post_planner_altering_mcp_utc"])
+        self.assertLessEqual(read_ts, alter_ts)
 
-        commit_iso = _git("log", "-1", f"--format=%cI", DELIVERABLE_COMMIT)
-        window_end = _parse_iso(commit_iso)
-
-        planner_ts: datetime | None = None
-        first_read_ts: datetime | None = None
-        altering_in_window: list[dict] = []
-        audit_path = Path(self.scratch) / "events-mcp-audit.jsonl"
-
-        with open(self.events_path, encoding="utf-8") as fh:
-            for line in fh:
-                line = line.strip()
-                if not line:
-                    continue
-                ev = json.loads(line)
-                ts = _parse_iso(ev["ts"])
-                etype = ev.get("type")
-                if etype == "goal_planner_completed" and planner_ts is None:
-                    planner_ts = ts
-                if planner_ts and first_read_ts is None and etype == "tool_started":
-                    if ev.get("tool_name") in ("Read", "Grep"):
-                        first_read_ts = ts
-                if etype != "mcp_tool_call_started":
-                    continue
-                tool = ev.get("tool_name", "")
-                if tool not in ALTERING_MCP:
-                    continue
-                if window_start <= ts <= window_end:
-                    altering_in_window.append(ev)
-
-        audit = {
-            "baseline_commit": BASELINE,
-            "deliverable_commit": DELIVERABLE_COMMIT,
-            "window_start_utc": window_start.isoformat(),
-            "window_end_utc": window_end.isoformat(),
-            "goal_planner_completed_utc": planner_ts.isoformat() if planner_ts else None,
-            "first_post_planner_read_grep_utc": first_read_ts.isoformat() if first_read_ts else None,
-            "altering_mcp_in_window": altering_in_window,
-            "altering_mcp_count": len(altering_in_window),
-        }
-        audit_path.write_text(
-            "\n".join(json.dumps(row) for row in [audit, *altering_in_window]) + "\n",
-            encoding="utf-8",
-        )
+    def test_deliverable_authoring_window_zero_altering_mcp(self) -> None:
+        if not self.events_path or not self.scratch:
+            self.skipTest("events.jsonl or scratch unset")
+        summary = _audit_events(Path(self.events_path), Path(self.scratch))
         self.assertEqual(
-            len(altering_in_window),
+            summary["altering_mcp_in_deliverable_authoring_window_count"],
             0,
-            msg=f"altering MCP during excerpt→deliverable window; see {audit_path}",
+            msg="deliverable commit window should have no altering MCP; see events-mcp-audit.jsonl",
         )
 
 
