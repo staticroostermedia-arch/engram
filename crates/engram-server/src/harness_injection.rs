@@ -41,7 +41,21 @@ pub fn latest_chain_summary_concept(store: &StoreHandle) -> Option<String> {
 }
 
 /// Extract JSON object embedded in SESSION HANDOFF PACKET body text.
+/// Provlog `update` appends multiple packets — always parse the **latest** block.
 pub fn parse_handoff_packet_json(body: &str) -> Option<Value> {
+    let sections: Vec<&str> = body
+        .split("SESSION HANDOFF PACKET")
+        .filter(|s| s.contains('{'))
+        .collect();
+    if let Some(last_section) = sections.last() {
+        let start = last_section.find('{')?;
+        let end = last_section.rfind('}')?;
+        if end > start {
+            if let Ok(v) = serde_json::from_str::<Value>(&last_section[start..=end]) {
+                return Some(v);
+            }
+        }
+    }
     let start = body.find('{')?;
     let end = body.rfind('}')?;
     serde_json::from_str(&body[start..=end]).ok()
@@ -1569,6 +1583,27 @@ mod tests {
         let v = parse_handoff_packet_json(body).expect("parse");
         assert_eq!(v["primary_goal"], "goal:test");
         assert_eq!(v["trace_chain_head"], "trace:123_test");
+    }
+
+    #[test]
+    fn test_parse_handoff_packet_json_latest_update_wins() {
+        let body = r#"SESSION HANDOFF PACKET v1 (old)
+{"primary_goal":"goal:old","trace_chain_head":"trace:old"}
+--- update @ 99 ---
+SESSION HANDOFF PACKET v1 (structured JSON for next-wake read_concept)
+
+{
+  "primary_goal": "goal:new",
+  "session_end_key": "session_end_99",
+  "rehydration_manifest": {"version": "rehydration_manifest_v1", "manifest_concept": "manifest:rehydration_99"}
+}
+"#;
+        let v = parse_handoff_packet_json(body).expect("parse latest");
+        assert_eq!(v["primary_goal"], "goal:new");
+        assert_eq!(
+            v["rehydration_manifest"]["version"],
+            "rehydration_manifest_v1"
+        );
     }
 
     #[test]

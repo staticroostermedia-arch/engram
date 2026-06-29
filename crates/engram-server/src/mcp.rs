@@ -9451,7 +9451,23 @@ mod tests {
             );
             log_mcp_transcript("session_start_1", "mcp_engram_session_start", &start1_args, &start1);
             let wake1 = parse_mcp_json(&start1);
-            let _cont1 = wake1.get("continuation");
+            let cont1 = wake1.get("continuation").expect("continuation");
+            let pre_manifest = cont1
+                .get("rehydration_manifest")
+                .filter(|v| !v.is_null())
+                .is_some();
+            let pre_has_handoff = cont1.get("structured_handoff").is_some();
+            if pre_has_handoff {
+                assert!(
+                    pre_manifest,
+                    "when structured_handoff present, manifest must resolve from latest packet: {cont1}"
+                );
+            } else {
+                append_evidence(
+                    "spikes-continuity.log",
+                    "NOTE session_start_1: no structured_handoff — rehydration_manifest absent (fresh isolated store)\n",
+                );
+            }
 
             let sig_args = json!({
                 "decision": "significant fork without triad",
@@ -9659,6 +9675,7 @@ mod tests {
                 "sentinel_nudge_pre_handoff": nudge_present,
                 "turn_record_nudge_at_30": last_turn_text.contains("rehydrate_suggested=true"),
                 "anchors_recall_goal_hit": true,
+                "pre_handoff_manifest_resolved_when_handoff_present": pre_has_handoff && pre_manifest,
             });
 
             let _ = std::fs::remove_dir_all(&tmp);
@@ -9689,6 +9706,7 @@ mod tests {
                 "sentinel_nudge_pre_handoff",
                 "turn_record_nudge_at_30",
                 "anchors_recall_goal_hit",
+                "pre_handoff_manifest_resolved_when_handoff_present",
             ] {
                 assert_eq!(
                     run0.get(key),
