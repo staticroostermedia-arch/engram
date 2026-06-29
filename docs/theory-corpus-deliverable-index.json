@@ -1,0 +1,98 @@
+{
+  "generated_at": "2026-06-29T07:16:45Z",
+  "goal": "Organize phone-exported corpus — three tracks (books vs research theory)",
+  "round": "round-5-fe-organized-sweep",
+  "trace_ref": "trace:1782716392_mark-theory-corpus-three-track-goal-complete---l",
+  "git_tracked_scripts": [
+    "scripts/corpus_inventory.py",
+    "scripts/corpus_journal_append.py",
+    "scripts/legacy_leg_parse.py",
+    "scripts/theory_corpus_organize.py",
+    "scripts/track_c_fs_cleanup.py",
+    "scripts/track_c_acceptance_gate.py",
+    "scripts/track_c_recall_parser.py",
+    "scripts/test_track_c_recall_parser.py",
+    "scripts/track_c_lift_tile_crs.py",
+    "scripts/track_c_manifold_repair.py",
+    "scripts/track_c_verify_pipeline.sh",
+    "scripts/test_track_c_fs_cleanup.py"
+  ],
+  "fe_cleanup_fix": {
+    "moved_from_static_rooster_ops": [
+      "False_Empire_Glossary_v1.md",
+      "False_Empire_Citation_Protocol_and_Style_Guide_v1.md"
+    ],
+    "destination": "/home/a/Documents/BookForge/corpus/false-empire/deferred-from-track-c/",
+    "manifest_entries_updated": 4,
+    "false_empire_in_organized_after": 0
+  },
+  "deliverables": {
+    "track_a_false_empire": {
+      "corpus_root": "/home/a/Documents/BookForge/corpus/false-empire/",
+      "manifest": "/home/a/Documents/BookForge/corpus/false-empire/false-empire-manifest.jsonl",
+      "manifest_entries": 192,
+      "deferred_from_track_c": "/home/a/Documents/BookForge/corpus/false-empire/deferred-from-track-c/",
+      "archives": "/home/a/Documents/BookForge/corpus/false-empire/archives/"
+    },
+    "track_b_laws_of_coherence": {
+      "corpus_root": "/home/a/Documents/BookForge/corpus/laws-of-coherence/",
+      "manifest": "/home/a/Documents/BookForge/corpus/laws-of-coherence/coherence-book-manifest.jsonl",
+      "manifest_entries": 70
+    },
+    "track_c_research_theory": {
+      "organized_root": "/home/a/Documents/Engram/data/theory-corpus/organized/",
+      "organized_file_count": 2742,
+      "cluster_counts": {
+        "legominism-lawful-cognition": 676,
+        "monad-math-research": 460,
+        "static-rooster-ops": 333,
+        "uncertain-defer": 369,
+        "deeplaw-ops-theory": 47,
+        "gurdjieff-fourth-way": 6,
+        "reference-papers": 4,
+        "project-plans-roadmaps": 2,
+        "_quarantine": 847
+      },
+      "theory_manifest": "/home/a/Documents/Engram/data/theory-corpus/theory-manifest.jsonl",
+      "discernment_journal": "/home/a/Documents/Engram/data/theory-corpus/journal/discernment-journal.jsonl",
+      "journal_lines": 5881,
+      "application_plan": "/home/a/Documents/Engram/docs/plans/theory-to-engram-application-v1.md",
+      "workflow_doc": "/home/a/Documents/Engram/data/theory-corpus/DISCERNMENT_WORKFLOW.md",
+      "keyword_draft_quarantine": "/home/a/Documents/Engram/data/theory-legacy-KEYWORD-DRAFT-INVALID/"
+    }
+  },
+  "verification_pipeline": {
+    "order": [
+      "python3 -m unittest scripts/test_track_c_recall_parser.py -q",
+      "scripts/track_c_verify_pipeline.sh → fs_cleanup → manifold_repair --gaps-only → lift_tile_crs → acceptance_gate (strict) → stability gate"
+    ],
+    "strict_recall_rule": "query theory tile must be rank-1 with theory_tile_crs >= 0.74 (see track_c_recall_parser.py)",
+    "last_gate_result": "PASS",
+    "last_gate_stability": "PASS",
+    "last_gate_at": "2026-06-29T07:16:45Z",
+    "false_empire_in_organized": 0,
+    "last_recall_crs": {
+      "legominism": 0.748,
+      "lawful cognition": 0.768,
+      "ADR bootstrap": 0.796
+    },
+    "proof_log": "scratch/pipeline-fe-fix.log",
+    "scratch_evidence": "/tmp/grok-goal-5879e8737396/implementer/",
+    "artifacts": [
+      "pytest-recall-parser.log",
+      "track-c-fs-cleanup.json",
+      "track-c-manifold-repair.json",
+      "track-c-lift-tile-crs.json",
+      "track-c-acceptance-gate.json",
+      "track-c-acceptance-gate-round4.json",
+      "recall-legominism.mcp-raw.txt",
+      "recall-lawful-cognition.mcp-raw.txt",
+      "recall-adr-bootstrap.mcp-raw.txt",
+      "verify-manifold-integrity.mcp-raw.txt",
+      "verify-manifold-integrity-post.mcp-raw.txt",
+      "pipeline-proof-round4.log",
+      "pipeline-stability.log"
+    ]
+  },
+  "note": "Bulk data under data/ and BookForge/ is gitignored; this index is the git-visible audit trail. track_c_recall_bootstrap.py deprecated — use lift_tile_crs."
+}

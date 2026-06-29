@@ -1,0 +1,26 @@
+[recall_path: sampled_warmup | recall_mode: sampled_bounded | scope: anchors | memory_mode: lean]
+Found 4 memories:
+
+**[1] tile:formal_spec_theory-corpus-search---lawful-cognition-cluster** (score: 0.827, crs: 0.723, dv: 0.000, depth: 0, tag: DECLARATIVE)
+THOUGHT TILE formal_spec — Theory Corpus Search lawful cognition cluster
+Query: lawful cognition
+Hub: hub:theory_corpus_legominism_lawful_cognition
+Path: Engram/data/theory-corpus/organized/legominism-lawful-cognition/
+Search: lawful cognition, lawful_cognition, TVD, CRS gate, verified descent.
+
+**[2] session_start_1782713649** (score: 0.693, crs: 1.000, dv: 0.000, depth: 0, tag: EPISODIC)
+SESSION_START intent: Resume goal: Track C pass 1 — batch discernment on priority theory candidates (monad/.leg, paper/, lawful cognition), journal + legacy .leg parse
+
+**[3] trace:1780025782_initial-targeted-survey-of-codeland-phone-archiv** (score: 0.672, crs: 0.850, dv: 0.000, depth: 0, tag: EPISODIC)
+REASONING TRACE SEGMENT
+
+**decision_point:** Initial targeted survey of CodeLand phone archive for logophysics, ZEDOS, ADR, .leg artifacts, triadic A/D/R, holographic/zedocast concepts, and other precursor terms
+
+**justification:** User explicitly directed careful, non-blind exploration of papers and .md files looking for the conceptual roots (logophysics, cohomology, .leg files, holographic projections, merkle chains, ZEDO/ZADO, ADR, affirm/deny/reconcile, shocks, hamiltonian, dirichlet). Early searches ha
+
+**[4] trace:1780026328_completion-of-phase-2-parallel-deep-dives-on-the** (score: 0.672, crs: 0.850, dv: 0.000, depth: 0, tag: EPISODIC)
+REASONING TRACE SEGMENT
+
+**decision_point:** Completion of Phase 2 parallel deep dives on the two highest-signal clusters from the CodeLand phone archive survey (Logophysics core + Triad/ADR/Holographic/ZEDOS mechanisms); clear picture of conceptual lineage emerging
+
+**justification:** Two specialized sub-agents completed careful, non-superficial analysis of the prioritized .md and paper files. Strong, direct, multi-scale mapping discovered between the archive concepts (ZEDOS/LEG containers, A/D/R triad as
