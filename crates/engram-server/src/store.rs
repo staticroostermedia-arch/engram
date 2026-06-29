@@ -2236,6 +2236,12 @@ impl StoreHandle {
         const MIN_SCORE_THRESHOLD: f32 = 0.67;
 
         let effective_scope = Self::resolve_recall_scope(scope);
+        if effective_scope == "anchors" {
+            if let Some(direct) = self.try_direct_anchor_recall(query, k) {
+                self.set_recall_path("direct_anchor");
+                return (direct, effective_scope);
+            }
+        }
         let encoded = self.encode(query);
         let effective_q = if let Ok(geo) = self.geosphere.read() {
             geo.apply_current_frame(&encoded.q)
@@ -2343,6 +2349,41 @@ impl StoreHandle {
         (filtered, effective_scope)
     }
 
+    /// Exact `goal:` / `trace:` / `manifest:` concept names resolve directly in lean anchors recall.
+    fn try_direct_anchor_recall(&mut self, query: &str, k: usize) -> Option<Vec<Memory>> {
+        let token = query.split_whitespace().next()?.trim();
+        const PREFIXES: &[&str] = &[
+            "goal:",
+            "trace:",
+            "manifest:",
+            "uncertainty:",
+            "receipt:session_",
+        ];
+        if !PREFIXES.iter().any(|p| token.starts_with(p)) {
+            return None;
+        }
+        let block = self
+            .fetch_block_high_priority(token)
+            .or_else(|| self.fetch_block(token))?;
+        let ego = self.ego_q.as_deref();
+        let encoded = self.encode(token);
+        let effective_q = if let Ok(geo) = self.geosphere.read() {
+            geo.apply_current_frame(&encoded.q)
+        } else {
+            engram_core::ops::normalize(&encoded.q)
+        };
+        let mut mem = engram_core::backend::score_memory(
+            token.to_string(),
+            &effective_q,
+            &block,
+            ego,
+        );
+        mem.score = mem.score.max(0.95);
+        mem.explain = format!("{} [direct_anchor=exact_concept]", mem.explain);
+        self.access_index.touch(token);
+        Some(vec![mem].into_iter().take(k).collect())
+    }
+
     fn resolve_recall_scope(scope: Option<&str>) -> &'static str {
         match scope.map(|s| s.trim().to_lowercase()).as_deref() {
             Some("anchors") => "anchors",
@@ -2367,6 +2408,8 @@ impl StoreHandle {
             || raw.starts_with("compression_handoff_")
             || raw.starts_with("goal:")
             || raw.starts_with("trace:")
+            || raw.starts_with("manifest:")
+            || raw.starts_with("uncertainty:")
             || raw.starts_with("scar:")
             || raw.starts_with("ritual:")
             || raw.starts_with("helper:")
@@ -3215,16 +3258,56 @@ impl StoreHandle {
 
     /// Portable rehydration kit for wake — handoff packet first, then latest `manifest:rehydration_*` block.
     pub fn resolve_rehydration_manifest_for_wake(&mut self) -> Option<serde_json::Value> {
-        if let Some(packet) = self
+        if let Some(block) = self
             .fetch_block_high_priority(SESSION_HANDOFF_LATEST)
-            .and_then(|b| {
-                crate::harness_injection::parse_handoff_packet_json(&engram_core::storage::read_provlog(
-                    &b,
-                ))
-            })
+            .or_else(|| self.fetch_block(SESSION_HANDOFF_LATEST))
         {
-            if let Some(m) = packet.get("rehydration_manifest").filter(|v| !v.is_null()) {
-                return Some(m.clone());
+            let body = engram_core::storage::read_provlog(&block);
+            if let Some(packet) = crate::harness_injection::parse_handoff_packet_json(&body) {
+                if let Some(m) = packet.get("rehydration_manifest").filter(|v| !v.is_null()) {
+                    return Some(m.clone());
+                }
+                if let Some(session_end_key) = packet
+                    .get("session_end_key")
+                    .and_then(|v| v.as_str())
+                    .filter(|s| !s.is_empty())
+                {
+                    let resolved_primary = crate::store::resolve_active_primary_goal(self);
+                    let primary_goal = packet
+                        .get("primary_goal")
+                        .and_then(|v| v.as_str())
+                        .or(resolved_primary.as_deref());
+                    let trace_chain_head = packet
+                        .get("trace_chain_head")
+                        .and_then(|v| v.as_str());
+                    let files_touched: Vec<String> = packet
+                        .get("files_touched")
+                        .and_then(|v| v.as_array())
+                        .map(|arr| {
+                            arr.iter()
+                                .filter_map(|x| x.as_str().map(str::to_string))
+                                .collect()
+                        })
+                        .unwrap_or_default();
+                    let hub_anchors: Vec<String> = packet
+                        .get("recent_traces")
+                        .and_then(|v| v.as_array())
+                        .map(|arr| {
+                            arr.iter()
+                                .filter_map(|x| x.as_str().map(str::to_string))
+                                .take(12)
+                                .collect()
+                        })
+                        .unwrap_or_default();
+                    return Some(crate::continuity_spikes::build_rehydration_manifest(
+                        session_end_key,
+                        primary_goal,
+                        trace_chain_head,
+                        &[],
+                        &hub_anchors,
+                        &files_touched,
+                    ));
+                }
             }
         }
         for (concept, _) in self.access_index.recent(200) {
@@ -3684,7 +3767,18 @@ impl StoreHandle {
         const HANDOFF_ANCHOR: &str = "handoff:codeland_integration_2026_plan";
 
         self.invalidate_continuation_bundle_cache();
-        let bundle = self.build_continuation_bundle(None);
+        let mut bundle = self.build_continuation_bundle(None);
+        if bundle
+            .get("rehydration_manifest")
+            .filter(|v| !v.is_null())
+            .is_none()
+        {
+            if let Some(manifest) = self.resolve_rehydration_manifest_for_wake() {
+                if let Some(obj) = bundle.as_object_mut() {
+                    obj.insert("rehydration_manifest".to_string(), manifest);
+                }
+            }
+        }
         let mut promote_list: Vec<String> = Vec::new();
 
         if let Some(arts) = bundle.get("active_artifacts").and_then(|v| v.as_array()) {
@@ -7326,6 +7420,73 @@ mod ingest_ast_tests {
         let (turns, _) = store.sentinel_snapshot();
         assert_eq!(turns, 0, "handoff must reset sentinel turn counter");
 
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn resolve_manifest_from_legacy_handoff_packet() {
+        let dir = test_store_dir("legacy_handoff_manifest");
+        let mut store = StoreHandle::new(&dir.to_string_lossy());
+        let legacy_packet = serde_json::json!({
+            "session_end_key": "session_end_99",
+            "primary_goal": "goal:legacy_test",
+            "trace_chain_head": "trace:legacy_head",
+            "files_touched": ["crates/engram-server/src/store.rs"],
+        });
+        let body = format!(
+            "SESSION HANDOFF PACKET v1 (structured JSON for next-wake read_concept)\n\n{}\n",
+            serde_json::to_string_pretty(&legacy_packet).unwrap()
+        );
+        let mut block = store.encode(&body);
+        block.zedos_tag = engram_core::types::ZEDOS_OPERATIONAL;
+        block.crs_score = 0.94;
+        store
+            .store(crate::harness_injection::SESSION_HANDOFF_LATEST, block)
+            .unwrap();
+        let manifest = store
+            .resolve_rehydration_manifest_for_wake()
+            .expect("legacy handoff must synthesize manifest");
+        assert_eq!(manifest["version"], "rehydration_manifest_v1");
+        assert_eq!(manifest["session_end_key"], "session_end_99");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn direct_anchor_recall_resolves_exact_goal_and_trace() {
+        let dir = test_store_dir("direct_anchor_recall");
+        let mut store = StoreHandle::new(&dir.to_string_lossy());
+        store
+            .remember(
+                "goal:theory_informed_agent_memory_v1",
+                "GOAL\n\n**status:** active\n**goal_statement:** theory spikes\n",
+            )
+            .unwrap();
+        store
+            .remember(
+                "trace:1782772286_verifier-close",
+                "TRACE\n\n**decision_point:** verifier close\n",
+            )
+            .unwrap();
+        let (goal_hits, scope) = store.recall_scoped(
+            "goal:theory_informed_agent_memory_v1",
+            3,
+            Some("anchors"),
+        );
+        assert_eq!(scope, "anchors");
+        assert!(
+            goal_hits.iter().any(|m| m.concept == "goal:theory_informed_agent_memory_v1"),
+            "exact goal concept must recall: {:?}",
+            goal_hits
+        );
+        let (trace_hits, _) =
+            store.recall_scoped("trace:1782772286_verifier-close", 3, Some("anchors"));
+        assert!(
+            trace_hits
+                .iter()
+                .any(|m| m.concept == "trace:1782772286_verifier-close"),
+            "exact trace concept must recall: {:?}",
+            trace_hits
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 

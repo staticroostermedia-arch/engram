@@ -9539,8 +9539,21 @@ mod tests {
                 .get("rehydration_manifest")
                 .expect("handoff must include rehydration_manifest");
             assert_eq!(manifest["version"], "rehydration_manifest_v1");
+            let compression_manifest = end_json
+                .get("compression_manifest")
+                .expect("session_end must include compression_manifest when prepare_compression=true");
+            let compression_bundle = compression_manifest
+                .get("continuation_bundle")
+                .expect("compression_manifest must include continuation_bundle");
+            assert!(
+                compression_bundle
+                    .get("rehydration_manifest")
+                    .filter(|v| !v.is_null())
+                    .is_some(),
+                "compression continuation_bundle must expose rehydration_manifest: {compression_bundle}"
+            );
 
-            let post_handoff_bundle = {
+            {
                 let mut lock = store.lock().unwrap();
                 lock.invalidate_continuation_bundle_cache();
                 let bundle = lock.build_continuation_bundle(Some("post-handoff verify"));
@@ -9608,6 +9621,11 @@ mod tests {
             let observables = json!({
                 "run": run,
                 "manifest_concept": manifest.get("manifest_concept"),
+                "compression_bundle_has_manifest": true,
+                "slim_wake_has_manifest": cont2
+                    .get("rehydration_manifest")
+                    .filter(|v| !v.is_null())
+                    .is_some(),
                 "turns_pre_handoff": turns_pre,
                 "rehydrate_suggested_post_handoff": cont2.get("rehydrate_suggested"),
                 "turns_after_handoff": turns,
@@ -9627,11 +9645,19 @@ mod tests {
             let _guard = CONTINUITY_TEST_LOCK
                 .lock()
                 .expect("continuity test lock");
+            std::fs::create_dir_all(SCRATCH).ok();
+            std::fs::write(
+                scratch_path("spikes-continuity.log"),
+                "=== spikes-continuity.log (fresh run; prior appended history cleared) ===\n",
+            )
+            .expect("truncate spikes-continuity.log");
             let run0 = run_continuity_sequence(0);
             let run1 = run_continuity_sequence(1);
             for key in [
                 "rehydrate_suggested_post_handoff",
                 "turns_after_handoff",
+                "compression_bundle_has_manifest",
+                "slim_wake_has_manifest",
                 "significant_fork_hint",
                 "routine_fork_hint",
                 "uncertainty_minted",
