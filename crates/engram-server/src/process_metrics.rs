@@ -168,8 +168,16 @@ pub fn build_process_metrics(
     })
 }
 
+/// Resolve repo `processes/` directory (portable for tests + loader).
+pub fn resolve_processes_dir() -> std::path::PathBuf {
+    if let Ok(dir) = std::env::var("ENGRAM_PROCESSES_DIR") {
+        return std::path::PathBuf::from(dir);
+    }
+    let candidate = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../processes");
+    std::fs::canonicalize(&candidate).unwrap_or(candidate)
+}
+
 /// Parse `processes/meta/*.toml` workflow name from `[workflow].name`.
-#[allow(dead_code)]
 pub fn parse_meta_workflow_name(path: &Path) -> Option<String> {
     let content = std::fs::read_to_string(path).ok()?;
     let value = toml::from_str::<toml::Value>(&content).ok()?;
@@ -180,23 +188,62 @@ pub fn parse_meta_workflow_name(path: &Path) -> Option<String> {
         .map(str::to_string)
 }
 
+/// Validate a meta workflow TOML parses and exposes execute steps.
+pub fn validate_meta_workflow_toml(path: &Path) -> bool {
+    let content = match std::fs::read_to_string(path) {
+        Ok(c) => c,
+        Err(_) => return false,
+    };
+    let value: toml::Value = match toml::from_str(&content) {
+        Ok(v) => v,
+        Err(_) => return false,
+    };
+    parse_meta_workflow_name(path).is_some() && value.get("execute").is_some()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::path::PathBuf;
 
+    fn full_system_audit_loop_path() -> PathBuf {
+        resolve_processes_dir().join("meta/full_system_audit_loop.toml")
+    }
+
     #[test]
     fn full_system_audit_loop_toml_parses() {
-        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../processes/meta/full_system_audit_loop.toml");
-        let name = parse_meta_workflow_name(&path)
-            .unwrap_or_else(|| panic!("must parse {}", path.display()));
-        assert_eq!(name, "full_system_audit_loop");
-        let content = std::fs::read_to_string(&path).unwrap();
-        let v: toml::Value = toml::from_str(&content).unwrap();
+        let path = full_system_audit_loop_path();
         assert!(
-            v.get("execute").is_some(),
-            "meta workflow must have execute steps"
+            path.is_file(),
+            "meta workflow must exist at {}",
+            path.display()
+        );
+        assert!(
+            validate_meta_workflow_toml(&path),
+            "must parse {}",
+            path.display()
+        );
+        let name = parse_meta_workflow_name(&path).expect("workflow name");
+        assert_eq!(name, "full_system_audit_loop");
+    }
+
+    #[test]
+    fn rsi_batch_verify_scripts_exist() {
+        let scripts = resolve_processes_dir()
+            .parent()
+            .expect("repo root")
+            .join("scripts");
+        assert!(
+            scripts.join("rsi_batch_verify.sh").is_file(),
+            "rsi_batch_verify.sh must exist"
+        );
+        assert!(
+            scripts.join("rsi_batch_mcp_capture.py").is_file(),
+            "rsi_batch_mcp_capture.py must exist"
+        );
+        assert!(
+            scripts.join("rsi_batch_verify_all.sh").is_file(),
+            "rsi_batch_verify_all.sh must exist"
         );
     }
 

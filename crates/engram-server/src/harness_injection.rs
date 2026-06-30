@@ -1398,6 +1398,15 @@ pub fn build_harness_bundle(store: &mut StoreHandle, session_intent: Option<&str
     );
     let jit_framework = build_jit_deformation_framework(task_type, primary_goal.as_deref());
     let verified_processes = build_verified_processes(store, primary_goal.as_deref());
+    let audit_loop_path =
+        crate::process_metrics::resolve_processes_dir().join("meta/full_system_audit_loop.toml");
+    let meta_workflow_registry = json!({
+        "full_system_audit_loop": {
+            "ok": crate::process_metrics::validate_meta_workflow_toml(&audit_loop_path),
+            "name": crate::process_metrics::parse_meta_workflow_name(&audit_loop_path)
+                .unwrap_or_default(),
+        }
+    });
     let surprise_pressure = sentinel_pressure_combined(store, &hub_anchors);
     let ego_drift = ego_drift_velocity();
     let (turns, checkpoint) = store.sentinel_snapshot();
@@ -1417,6 +1426,7 @@ pub fn build_harness_bundle(store: &mut StoreHandle, session_intent: Option<&str
         "suggested_actions": build_suggested_actions(store, session_intent),
         "trusted_tiles": build_trusted_tiles(store, primary_goal.as_deref()),
         "verified_processes": verified_processes,
+        "meta_workflow_registry": meta_workflow_registry,
         "jit_deformation_framework": jit_framework,
         "task_type": task_type,
         "open_scars_wake": open_scars_wake,
@@ -1835,6 +1845,42 @@ SESSION HANDOFF PACKET v1 (structured JSON for next-wake read_concept)
         assert!(
             pressure > 0.0,
             "pre-handoff surprise must be non-zero with residual anchors, got {pressure}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn session_intent_wires_presentation_stratum_for_surprise() {
+        std::env::set_var("ENGRAM_DISABLE_SHEAF", "1");
+        std::env::set_var("ENGRAM_FORCE_CPU_BACKEND", "1");
+        std::env::set_var("ENGRAM_KI_DISABLE", "1");
+        let dir = std::env::temp_dir().join(format!(
+            "session_intent_surprise_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).ok();
+        let mut store = crate::store::StoreHandle::new(&dir.to_string_lossy());
+        store
+            .remember(
+                "trace:session_intent_anchor",
+                "TRACE\n\n**decision_point:** session intent parity test\n",
+            )
+            .unwrap();
+        store
+            .update(
+                "trace:session_intent_anchor",
+                "TRACE\n\n**decision_point:** divergent rewrite for surprise\n",
+            )
+            .unwrap();
+        let with_intent =
+            resolve_hub_anchors_for_surprise(&mut store, Some("goal:engram_mvp_v1 rsi"));
+        assert!(
+            !with_intent.is_empty(),
+            "session_intent path must yield anchors"
         );
         let _ = std::fs::remove_dir_all(&dir);
     }
