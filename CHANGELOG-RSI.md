@@ -54,3 +54,8 @@ Companion to [CHANGELOG.md](CHANGELOG.md) for autonomous RSI iterations.
 - `rsi_batch_verify_all.sh` supports `RSI_CYCLE_MIN/MAX` through cycle 9.
 
 **Batch scores:** CRS 0.86 · Lyapunov 0.86 · RSI-accel 0.88 · perf 0.92 · safety 0.91
+
+**MCP Cycle 6:** `trace:1782841559_rsi-cycle-6-weighted-lyapunov-sentinel-blend` · `tile:formal_spec_rsi-cycle-6---weighted-blend`
+**MCP Cycle 7:** `trace:1782841563_rsi-cycle-7-engram-rsi-cycle-harness-metrics` · `tile:formal_spec_rsi-cycle-7---rsi-cycle-env`
+**MCP Cycle 8:** `trace:1782841567_rsi-cycle-8-meta-workflow-registry-harness-expos` · `tile:formal_spec_rsi-cycle-8---meta-workflow-registry`
+**MCP Cycle 9:** `trace:1782841570_rsi-cycle-9-batch-verify-extended-cycles-6-9-v0-` · `tile:formal_spec_rsi-cycle-9---batch-verify-6-9`

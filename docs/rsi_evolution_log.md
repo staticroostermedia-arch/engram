@@ -219,6 +219,8 @@ Replace max-blend with `weighted_sentinel_pressure` (default w=0.65 residual) vi
 | perf | 0.92 | O(1) per turn |
 | safety | 0.90 | Still soft nudge only |
 
+**MCP:** `trace:1782841559_rsi-cycle-6-weighted-lyapunov-sentinel-blend` · **Tile:** `tile:formal_spec_rsi-cycle-6---weighted-blend`
+
 ```bash
 git add crates/engram-server/src/continuity_spikes.rs
 git commit -m "feat(continuity): RSI Cycle 6 weighted Lyapunov sentinel blend | arXiv:2508.04435,2508.05766"
@@ -248,6 +250,8 @@ git commit -m "feat(continuity): RSI Cycle 6 weighted Lyapunov sentinel blend | 
 
 CRS 0.85 · Lyapunov 0.84 · RSI-accel 0.89 · perf 0.93 · safety 0.91
 
+**MCP:** `trace:1782841563_rsi-cycle-7-engram-rsi-cycle-harness-metrics` · **Tile:** `tile:formal_spec_rsi-cycle-7---rsi-cycle-env`
+
 ```bash
 git add crates/engram-server/src/harness_injection.rs
 git commit -m "feat(harness): RSI Cycle 7 ENGRAM_RSI_CYCLE metrics + residual weight exposure"
@@ -276,6 +280,8 @@ Expose `meta_workflow_ok` in `rsi_cycle_metrics`; add `meta_workflow_registry_in
 
 CRS 0.84 · Lyapunov 0.83 · RSI-accel 0.86 · perf 0.91 · safety 0.92
 
+**MCP:** `trace:1782841567_rsi-cycle-8-meta-workflow-registry-harness-expos` · **Tile:** `tile:formal_spec_rsi-cycle-8---meta-workflow-registry`
+
 ```bash
 git add crates/engram-server/src/harness_injection.rs
 git commit -m "test(harness): RSI Cycle 8 meta_workflow_registry exposure + rsi_cycle_metrics.ok"
@@ -303,6 +309,8 @@ Extend `rsi_batch_verify_all.sh` with `RSI_CYCLE_MIN/MAX`, filters for cycles 6�
 ### Evaluation scores
 
 CRS 0.87 · Lyapunov 0.85 · RSI-accel 0.91 · perf 0.90 · safety 0.92
+
+**MCP:** `trace:1782841570_rsi-cycle-9-batch-verify-extended-cycles-6-9-v0-` · **Tile:** `tile:formal_spec_rsi-cycle-9---batch-verify-6-9`
 
 ```bash
 git add scripts/rsi_batch_verify_all.sh Cargo.toml Cargo.lock CHANGELOG-RSI.md docs/rsi_evolution_log.md
