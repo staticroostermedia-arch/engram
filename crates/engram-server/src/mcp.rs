@@ -2390,15 +2390,19 @@ fn triadic_fork_suffix(
     }
 }
 
-fn sentinel_turn_suffix(lock: &mut crate::store::StoreHandle) -> String {
+fn sentinel_turn_suffix(
+    lock: &mut crate::store::StoreHandle,
+    session_intent: Option<&str>,
+) -> String {
     lock.sentinel_on_turn_record();
     let (turns, checkpoint) = lock.sentinel_snapshot();
     let minutes = crate::continuity_spikes::minutes_since_checkpoint(
         checkpoint,
         crate::continuity_spikes::now_unix(),
     );
-    let hub_anchors = crate::harness_injection::resolve_hub_anchors_for_surprise(lock, None);
-    let surprise = crate::harness_injection::hub_anchor_surprise_pressure(lock, &hub_anchors);
+    let hub_anchors =
+        crate::harness_injection::resolve_hub_anchors_for_surprise(lock, session_intent);
+    let surprise = crate::harness_injection::sentinel_pressure_combined(lock, &hub_anchors);
     let effective = crate::continuity_spikes::effective_max_turns(surprise);
     let (rehydrate_suggested, reason) =
         crate::continuity_spikes::compute_sentinel_nudge_with_surprise(turns, minutes, surprise);
@@ -5915,7 +5919,14 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                             trace_n,
                             payload.get("activity_window"),
                             extract_note,
-                            sentinel_turn_suffix(&mut lock),
+                            sentinel_turn_suffix(
+                                &mut lock,
+                                if conv_arc.is_empty() {
+                                    Some(human_forward.as_str())
+                                } else {
+                                    Some(conv_arc.as_str())
+                                },
+                            ),
                         ) }]
                     })
                 }
