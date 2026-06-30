@@ -40,6 +40,26 @@ pub fn latest_chain_summary_concept(store: &StoreHandle) -> Option<String> {
         .map(|(c, _)| c)
 }
 
+/// Extract JSON object embedded in REHYDRATION MANIFEST v1 provlog body.
+pub fn parse_rehydration_manifest_provlog(body: &str) -> Option<Value> {
+    let start = body.find('{')?;
+    let end = body.rfind('}')?;
+    if end <= start {
+        return None;
+    }
+    let v: Value = serde_json::from_str(&body[start..=end]).ok()?;
+    if v.get("version").and_then(|x| x.as_str()) == Some("rehydration_manifest_v1") {
+        return Some(v);
+    }
+    if v.get("manifest_concept")
+        .and_then(|x| x.as_str())
+        .is_some_and(|c| c.starts_with("manifest:rehydration_"))
+    {
+        return Some(v);
+    }
+    None
+}
+
 /// Extract JSON object embedded in SESSION HANDOFF PACKET body text.
 /// Provlog `update` appends multiple packets — always parse the **latest** block.
 pub fn parse_handoff_packet_json(body: &str) -> Option<Value> {
@@ -1573,6 +1593,23 @@ pub fn format_suggested_actions_markdown(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_parse_rehydration_manifest_provlog() {
+        let manifest = json!({
+            "version": "rehydration_manifest_v1",
+            "manifest_concept": "manifest:rehydration_77",
+            "session_end_key": "session_end_77",
+            "primary_goal": "goal:manifest_read_test",
+        });
+        let body = format!(
+            "REHYDRATION MANIFEST v1 (portable continuation kit)\n\n{}\n",
+            serde_json::to_string_pretty(&manifest).unwrap()
+        );
+        let v = parse_rehydration_manifest_provlog(&body).expect("parse manifest provlog");
+        assert_eq!(v["version"], "rehydration_manifest_v1");
+        assert_eq!(v["manifest_concept"], "manifest:rehydration_77");
+    }
 
     #[test]
     fn test_parse_handoff_packet_json() {
