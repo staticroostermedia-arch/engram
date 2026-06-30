@@ -49,12 +49,46 @@ pub fn minutes_since_checkpoint(last_checkpoint_unix: u64, now: u64) -> u64 {
     now.saturating_sub(last_checkpoint_unix) / 60
 }
 
+/// Default residual weight for weighted Lyapunov sentinel blend (ego drift gets 1−w).
+pub const SENTINEL_RESIDUAL_WEIGHT_DEFAULT: f32 = 0.65;
+
+/// Resolve residual weight from `ENGRAM_SENTINEL_RESIDUAL_WEIGHT` (0..1).
+pub fn resolve_sentinel_residual_weight() -> f32 {
+    std::env::var("ENGRAM_SENTINEL_RESIDUAL_WEIGHT")
+        .ok()
+        .and_then(|s| s.parse::<f32>().ok())
+        .map(|w| w.clamp(0.0, 1.0))
+        .unwrap_or(SENTINEL_RESIDUAL_WEIGHT_DEFAULT)
+}
+
+/// Weighted Lyapunov blend of hub residual surprise and ego NREM drift velocity.
+pub fn weighted_sentinel_pressure(
+    residual_surprise: f32,
+    ego_drift_velocity: Option<f32>,
+    residual_weight: f32,
+) -> f32 {
+    let r = residual_surprise.clamp(0.0, 1.0);
+    let d = ego_drift_velocity.unwrap_or(0.0).clamp(0.0, 1.0);
+    let w = residual_weight.clamp(0.0, 1.0);
+    (w * r + (1.0 - w) * d).clamp(0.0, 1.0)
+}
+
 /// Blend hub-anchor residual surprise with ego NREM drift velocity (Lyapunov proxy).
-///
-/// Uses max-blend so either high prediction error or high ego drift tightens handoff.
 pub fn combined_sentinel_pressure(residual_surprise: f32, ego_drift_velocity: Option<f32>) -> f32 {
-    let drift = ego_drift_velocity.unwrap_or(0.0).clamp(0.0, 1.0);
-    residual_surprise.clamp(0.0, 1.0).max(drift)
+    weighted_sentinel_pressure(
+        residual_surprise,
+        ego_drift_velocity,
+        resolve_sentinel_residual_weight(),
+    )
+}
+
+/// Resolve active RSI cycle from `ENGRAM_RSI_CYCLE` (marathon logging / harness metrics).
+pub fn resolve_rsi_cycle_number() -> u32 {
+    std::env::var("ENGRAM_RSI_CYCLE")
+        .ok()
+        .and_then(|s| s.parse::<u32>().ok())
+        .filter(|&n| n > 0)
+        .unwrap_or(1)
 }
 
 /// Aggregate prediction-error signal from hub-anchor residuals (0..1).
@@ -246,10 +280,28 @@ mod tests {
     use super::*;
 
     #[test]
-    fn combined_sentinel_pressure_blends_ego_drift() {
-        assert!((combined_sentinel_pressure(0.2, Some(0.6)) - 0.6).abs() < 1e-5);
-        assert!((combined_sentinel_pressure(0.8, Some(0.3)) - 0.8).abs() < 1e-5);
-        assert!((combined_sentinel_pressure(0.1, None) - 0.1).abs() < 1e-5);
+    fn weighted_sentinel_pressure_blends_ego_drift() {
+        std::env::remove_var("ENGRAM_SENTINEL_RESIDUAL_WEIGHT");
+        // default w=0.65: 0.65*0.2 + 0.35*0.6 = 0.34
+        assert!((combined_sentinel_pressure(0.2, Some(0.6)) - 0.34).abs() < 1e-5);
+        // 0.65*0.8 + 0.35*0.3 = 0.625
+        assert!((combined_sentinel_pressure(0.8, Some(0.3)) - 0.625).abs() < 1e-5);
+        assert!((combined_sentinel_pressure(0.1, None) - 0.065).abs() < 1e-5);
+    }
+
+    #[test]
+    fn resolve_sentinel_residual_weight_from_env() {
+        std::env::set_var("ENGRAM_SENTINEL_RESIDUAL_WEIGHT", "0.8");
+        assert!((resolve_sentinel_residual_weight() - 0.8).abs() < 1e-5);
+        std::env::remove_var("ENGRAM_SENTINEL_RESIDUAL_WEIGHT");
+    }
+
+    #[test]
+    fn resolve_rsi_cycle_number_from_env() {
+        std::env::set_var("ENGRAM_RSI_CYCLE", "7");
+        assert_eq!(resolve_rsi_cycle_number(), 7);
+        std::env::remove_var("ENGRAM_RSI_CYCLE");
+        assert_eq!(resolve_rsi_cycle_number(), 1);
     }
 
     #[test]
