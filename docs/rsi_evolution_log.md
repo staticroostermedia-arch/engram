@@ -32,6 +32,7 @@ Builds directly on PR #53 AC2 (`l2_norm_residual` surfacing) and existing sentin
 - `crates/engram-core/src/ops.rs` — `prediction_residual`, `apply_prediction_residual` (shared q−prior L2 helper)
 - `crates/engram-server/src/store.rs` — residual propagation on `remember`/`store`/`update` for hub anchors (`trace:`/`tile:`/`goal:`)
 - `crates/engram-server/src/mcp.rs` — `sentinel_turn_suffix` wired to surprise-aware nudge + `resolve_hub_anchors_for_surprise`
+- `scripts/rsi_cycle1_verify.sh`, `scripts/rsi_cycle1_mcp_capture.py` — atomic verify + grep-backed MCP capture
 - `Cargo.toml`, `Cargo.lock` — version `0.7.0-beta.6`
 - `CHANGELOG.md`, `CHANGELOG-RSI.md`, `docs/rsi_evolution_log.md`
 
@@ -60,35 +61,36 @@ Builds directly on PR #53 AC2 (`l2_norm_residual` surfacing) and existing sentin
 | Fake residual in tests | `hub_anchor_surprise_pressure_reads_block_residuals_via_update` + `update_propagates_l2_norm_residual_on_hub_anchor` drive real store path |
 | `mcp.rs` sentinel partial wiring | `sentinel_turn_suffix` uses `compute_sentinel_nudge_with_surprise` + `resolve_hub_anchors_for_surprise` |
 | Pre-handoff surprise=0 | `resolve_hub_anchors_for_surprise`: manifest → presentation stratum fallback for first-session turn_record |
-| MCP AC3 evidence | `trace:1782839402_rsi-cycle-1-gap-closure--wire-residual-on-store-`, `tile:formal_spec_rsi-cycle-1---surprise-aware-sentinel-v0-7-0-bet` |
+| MCP AC3 evidence | Live stdio capture via `scripts/rsi_cycle1_mcp_capture.py`; grep session `mcp/call-*-rsi_cycle1_*.json` |
+| Hand-authored mcp.txt | Replaced by machine-derived `rsi-cycle1-mcp.txt` from capture JSON |
 
 ### Verification (scratch: `/tmp/grok-goal-1d5f7110a8ff/implementer/`)
 
-- `rsi-cycle1-tests.log` — 13/13 targeted pass including `surprise_pressure_tightens_effective_turn_budget`, `surprise_elevated_nudge_before_base_turn_cap`, `hub_anchor_surprise_pressure_reads_block_residuals_via_update`, `update_propagates_l2_norm_residual_on_hub_anchor`, `resolve_hub_anchors_surprise_works_pre_handoff_via_presentation_stratum`, `continuity_spikes_full_session_sequence_twice`
+Run: `SESSION_MCP_DIR=<goal-session>/mcp scripts/rsi_cycle1_verify.sh`
+
+- `rsi-cycle1-tests.log` — TEST_EXIT=0 (13/13 including surprise + pre-handoff + continuity_spikes_full_session_sequence_twice)
 - `rsi-cycle1-lint.log` — CLIPPY_EXIT=0, FMT_EXIT=0
-- `rsi-cycle1-artifacts.txt` — docs excerpt with files + gap-closure + sources + scores
-- `rsi-cycle1-mcp.txt` — quick_trace + thought_tile_create transcript
+- `rsi-cycle1-artifacts.txt` — full `docs/rsi_evolution_log.md` + `CHANGELOG-RSI.md`
+- `rsi-cycle1-mcp.txt` — derived from `rsi-cycle1-mcp-capture.json` (trace/tile IDs from tool responses only)
+- `rsi-cycle1-git.txt` — git log + version + OVERALL_EXIT=0
+- **MCP IDs (latest verify run):** `trace:1782839919_rsi-cycle-1-verification--surprise-aware-sentine`, `tile:formal_spec_rsi-cycle-1---surprise-aware-sentinel-v0-7-0-bet`
 
 ### Git workflow (copy-paste)
 
 ```bash
 git checkout feature/rsi-autonomous-1
-git add crates/engram-core/src/ops.rs \
-        crates/engram-server/src/continuity_spikes.rs \
-        crates/engram-server/src/harness_injection.rs \
-        crates/engram-server/src/store.rs \
-        crates/engram-server/src/mcp.rs \
-        Cargo.toml Cargo.lock CHANGELOG.md CHANGELOG-RSI.md docs/rsi_evolution_log.md
-git commit --amend -m "feat(continuity): RSI Cycle 1 surprise-aware sentinel + residual wiring
+git add scripts/rsi_cycle1_verify.sh scripts/rsi_cycle1_mcp_capture.py \
+        docs/rsi_evolution_log.md CHANGELOG-RSI.md
+git commit -m "chore(rsi): atomic Cycle 1 verify pipeline + grep-backed MCP evidence
 
-Aggregate hub-anchor l2_norm_residual into surprise_pressure; tighten
-effective_max_turns; wire residual on store remember/update paths and
-mcp sentinel_turn_suffix.
+scripts/rsi_cycle1_verify.sh runs plan gating + overwrites scratch captures.
+scripts/rsi_cycle1_mcp_capture.py invokes quick_trace + thought_tile_create
+via stdio; writes call-*-rsi_cycle1_*.json to session mcp/ for grep audit.
 
-Research: arXiv:2508.05766, arXiv:2504.09301
-Scores: CRS=0.84 Lyapunov=0.82 RSI=0.88 perf=0.90 safety=0.88
-Tests: surprise_pressure_* hub_anchor_surprise_* update_propagates_l2_*
-Version: v0.7.0-beta.6"
+MCP: trace:1782839919_rsi-cycle-1-verification--surprise-aware-sentine
+Tile: tile:formal_spec_rsi-cycle-1---surprise-aware-sentinel-v0-7-0-bet
+Verify: OVERALL_EXIT=0 (TEST/CLIPPY/FMT/MCP)
+Version: v0.7.0-beta.6 (commits 5f1dd4ef + c06c88c8)"
 # Optional push:
-# git push -u origin feature/rsi-autonomous-1 --force-with-lease
+# git push -u origin feature/rsi-autonomous-1
 ```

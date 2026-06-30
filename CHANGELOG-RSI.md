@@ -14,4 +14,4 @@ Companion to [CHANGELOG.md](CHANGELOG.md) for autonomous RSI iterations.
 
 **Scores:** CRS 0.84 · Lyapunov 0.82 · RSI-accel 0.88 · perf 0.90 · safety 0.88
 
-**Trace:** `trace:1782839402_rsi-cycle-1-gap-closure--wire-residual-on-store-` · **Tile:** `tile:formal_spec_rsi-cycle-1---surprise-aware-sentinel-v0-7-0-bet`
+**Verify:** `scripts/rsi_cycle1_verify.sh` (OVERALL_EXIT=0) · **Trace:** `trace:1782839919_rsi-cycle-1-verification--surprise-aware-sentine` · **Tile:** `tile:formal_spec_rsi-cycle-1---surprise-aware-sentinel-v0-7-0-bet`
