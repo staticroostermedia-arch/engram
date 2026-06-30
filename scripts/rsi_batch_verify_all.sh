@@ -15,11 +15,18 @@ cd "$REPO_ROOT"
 : > "$SCRATCH/rsi-batch-mcp.txt"
 : > "$SCRATCH/rsi-batch-artifacts.txt"
 
+CYCLE_MIN="${RSI_CYCLE_MIN:-2}"
+CYCLE_MAX="${RSI_CYCLE_MAX:-9}"
+
 declare -A FILTERS=(
   [2]="combined_sentinel"
   [3]="session_intent_wires"
   [4]="full_system_audit_loop"
   [5]="rsi_batch_verify_scripts"
+  [6]="weighted_sentinel"
+  [7]="resolve_rsi_cycle"
+  [8]="meta_workflow_registry"
+  [9]="rsi_batch_verify_scripts"
 )
 
 declare -A DECISIONS=(
@@ -27,6 +34,10 @@ declare -A DECISIONS=(
   [3]="RSI Cycle 3 turn_record session_intent sentinel parity"
   [4]="RSI Cycle 4 full_system_audit_loop TOML parse fix"
   [5]="RSI Cycle 5 batch verify pipeline v0.7.0-beta.7"
+  [6]="RSI Cycle 6 weighted Lyapunov sentinel blend"
+  [7]="RSI Cycle 7 ENGRAM_RSI_CYCLE harness metrics"
+  [8]="RSI Cycle 8 meta_workflow_registry harness exposure"
+  [9]="RSI Cycle 9 batch verify extended cycles 6-9 v0.7.0-beta.8"
 )
 
 declare -A TITLES=(
@@ -34,12 +45,20 @@ declare -A TITLES=(
   [3]="RSI Cycle 3 — session_intent parity"
   [4]="RSI Cycle 4 — audit loop TOML"
   [5]="RSI Cycle 5 — batch verify"
+  [6]="RSI Cycle 6 — weighted blend"
+  [7]="RSI Cycle 7 — RSI cycle env"
+  [8]="RSI Cycle 8 — meta workflow registry"
+  [9]="RSI Cycle 9 — batch verify 6-9"
 )
 
 OVERALL=0
 
-for CYCLE in 2 3 4 5; do
-  FILTER="${FILTERS[$CYCLE]}"
+for CYCLE in $(seq "$CYCLE_MIN" "$CYCLE_MAX"); do
+  FILTER="${FILTERS[$CYCLE]:-}"
+  if [[ -z "$FILTER" ]]; then
+    echo "SKIP CYCLE $CYCLE (no filter)" | tee -a "$SCRATCH/rsi-batch-tests.log"
+    continue
+  fi
   echo "=== CYCLE $CYCLE tests ($FILTER) ===" | tee -a "$SCRATCH/rsi-batch-tests.log"
   if cargo test -p engram-server -- "$FILTER" 2>&1 | tee -a "$SCRATCH/rsi-batch-tests.log"; then
     echo "CYCLE${CYCLE}_TEST_EXIT=0" | tee -a "$SCRATCH/rsi-batch-tests.log"
@@ -64,7 +83,10 @@ FMT_EXIT=$(grep '^FMT_EXIT=' "$SCRATCH/rsi-batch-lint.log" | tail -1 | cut -d= -
 ENGRAM_BIN="${ENGRAM_BINARY:-$REPO_ROOT/target/debug/engram}"
 STORE="${ENGRAM_STORE:-$HOME/.engram/stalks/}"
 
-for CYCLE in 2 3 4 5; do
+for CYCLE in $(seq "$CYCLE_MIN" "$CYCLE_MAX"); do
+  if [[ -z "${DECISIONS[$CYCLE]:-}" ]]; then
+    continue
+  fi
   echo "=== CYCLE $CYCLE MCP ===" | tee -a "$SCRATCH/rsi-batch-mcp.txt"
   if python3 "$REPO_ROOT/scripts/rsi_batch_mcp_capture.py" \
     --binary "$ENGRAM_BIN" --store "$STORE" --scratch "$SCRATCH" \
@@ -108,7 +130,7 @@ cat "$REPO_ROOT/CHANGELOG-RSI.md" >> "$SCRATCH/rsi-batch-artifacts.txt"
 } > "$SCRATCH/rsi-batch-git.txt"
 
 {
-  echo "=== Batch 1 Checkpoint (Cycles 2-5) ==="
+  echo "=== Batch Checkpoint (Cycles ${CYCLE_MIN}-${CYCLE_MAX}) ==="
   cat "$SCRATCH/rsi-batch-git.txt"
   echo ""
   grep -E 'CYCLE[2-5]_(TEST|MCP)_EXIT' "$SCRATCH/rsi-batch-tests.log" "$SCRATCH/rsi-batch-mcp.txt" 2>/dev/null || true

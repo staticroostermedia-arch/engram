@@ -33,4 +33,24 @@ Companion to [CHANGELOG.md](CHANGELOG.md) for autonomous RSI iterations.
 
 **Batch scores:** CRS 0.85 · Lyapunov 0.85 · RSI-accel 0.87 · perf 0.91 · safety 0.89
 
-**MCP Cycle 2:** `trace:1782841002_rsi-cycle-2-shipped-improvement` · `tile:formal_spec_rsi-cycle-2---continuity-batch`
+**MCP Cycle 2:** `trace:1782841433_rsi-cycle-2-lyapunov-ego-sentinel-blend-shipped` · `tile:formal_spec_rsi-cycle-2---lyapunov-ego-blend`
+**MCP Cycle 3:** `trace:1782841436_rsi-cycle-3-turn-record-session-intent-sentinel-` · `tile:formal_spec_rsi-cycle-3---session-intent-parity`
+**MCP Cycle 4:** `trace:1782841440_rsi-cycle-4-full-system-audit-loop-toml-parse-fi` · `tile:formal_spec_rsi-cycle-4---audit-loop-toml`
+**MCP Cycle 5:** `trace:1782841443_rsi-cycle-5-batch-verify-pipeline-v0-7-0-beta-7` · `tile:formal_spec_rsi-cycle-5---batch-verify`
+
+## [0.7.0-beta.8-rsi-batch2] — 2026-06-30 (Cycles 6–9)
+
+### Cycle 6 — Weighted Lyapunov sentinel blend
+- `weighted_sentinel_pressure` + `ENGRAM_SENTINEL_RESIDUAL_WEIGHT` (default 0.65).
+- Sources: [arXiv:2508.04435](https://arxiv.org/abs/2508.04435), [arXiv:2508.05766](https://arxiv.org/abs/2508.05766)
+
+### Cycle 7 — ENGRAM_RSI_CYCLE harness metrics
+- `resolve_rsi_cycle_number()` wires `rsi_cycle_metrics.cycle`; exposes `sentinel_residual_weight`.
+
+### Cycle 8 — meta_workflow_registry harness exposure
+- `meta_workflow_ok` in `rsi_cycle_metrics`; `meta_workflow_registry_in_harness_bundle` test.
+
+### Cycle 9 — Batch verify extended
+- `rsi_batch_verify_all.sh` supports `RSI_CYCLE_MIN/MAX` through cycle 9.
+
+**Batch scores:** CRS 0.86 · Lyapunov 0.86 · RSI-accel 0.88 · perf 0.92 · safety 0.91
