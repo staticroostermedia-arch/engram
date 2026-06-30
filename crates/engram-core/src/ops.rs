@@ -210,6 +210,36 @@ pub fn cosine_similarity(a: &[Complex32; 8192], b: &[Complex32; 8192]) -> f32 {
     (dot / (norm_a * norm_b)).clamp(-1.0, 1.0)
 }
 
+/// Full-space L2 norm and first-16-dim residual between actual and prior q-vectors.
+///
+/// Used by M-NOL scaling (`l2_norm_residual`) and continuity surprise sentinels.
+pub fn prediction_residual(
+    actual_q: &[Complex32; 8192],
+    prior_q: &[Complex32; 8192],
+) -> (f32, [Complex32; 16]) {
+    let l2_sq: f32 = actual_q
+        .iter()
+        .zip(prior_q.iter())
+        .map(|(q, p)| (*q - *p).norm_sqr())
+        .sum();
+    let mut err_residual_16d = [Complex32::default(); 16];
+    for (i, &p) in prior_q.iter().enumerate().take(16) {
+        err_residual_16d[i] = actual_q[i] - p;
+    }
+    (l2_sq.sqrt(), err_residual_16d)
+}
+
+/// Write prediction-error fields on a block from its q-vector vs a prior centroid.
+pub fn apply_prediction_residual(
+    block: &mut crate::types::HolographicBlock,
+    prior_q: &[Complex32; 8192],
+) {
+    let (l2, err) = prediction_residual(&block.q, prior_q);
+    block.l2_norm_residual = l2;
+    block.err_residual_16d = err;
+    block.residual_dims_used = 16;
+}
+
 /// **Gram-Schmidt orthogonalization** — strip basis dimensions from a target vector.
 ///
 /// Used to encode concepts that are explicitly *not* the basis concepts.

@@ -24,6 +24,10 @@ pub fn insert_optional(map: &mut Map<String, Value>, key: &str, opt: Option<Valu
 
 pub const SENTINEL_MAX_TURNS: u32 = 30;
 pub const SENTINEL_MAX_MINUTES: u64 = 120;
+/// Mean hub-anchor `l2_norm_residual` at this L2 value maps to surprise_pressure=1.0.
+pub const SURPRISE_RESIDUAL_FULL_SCALE: f32 = 0.5;
+pub const SURPRISE_TURN_REDUCTION_MAX: u32 = 12;
+pub const SURPRISE_MIN_EFFECTIVE_TURNS: u32 = 8;
 
 #[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct SentinelState {
@@ -45,9 +49,41 @@ pub fn minutes_since_checkpoint(last_checkpoint_unix: u64, now: u64) -> u64 {
     now.saturating_sub(last_checkpoint_unix) / 60
 }
 
-/// Soft nudge only — never blocks edits.
+/// Aggregate prediction-error signal from hub-anchor residuals (0..1).
+pub fn surprise_pressure_from_residuals(residuals: &[f32]) -> f32 {
+    let nonzero: Vec<f32> = residuals.iter().copied().filter(|r| *r > 0.0).collect();
+    if nonzero.is_empty() {
+        return 0.0;
+    }
+    let mean = nonzero.iter().sum::<f32>() / nonzero.len() as f32;
+    (mean / SURPRISE_RESIDUAL_FULL_SCALE).clamp(0.0, 1.0)
+}
+
+/// Tighten turn budget under elevated surprise (active-inference style checkpointing).
+pub fn effective_max_turns(surprise_pressure: f32) -> u32 {
+    let reduction = (surprise_pressure * SURPRISE_TURN_REDUCTION_MAX as f32).round() as u32;
+    SENTINEL_MAX_TURNS
+        .saturating_sub(reduction)
+        .max(SURPRISE_MIN_EFFECTIVE_TURNS)
+}
+
+/// Soft nudge only — never blocks edits. Lean fallback when surprise context is unavailable.
+#[allow(dead_code)]
 pub fn compute_sentinel_nudge(turns: u32, minutes: u64) -> (bool, &'static str) {
-    if turns >= SENTINEL_MAX_TURNS {
+    compute_sentinel_nudge_with_surprise(turns, minutes, 0.0)
+}
+
+/// Surprise-aware sentinel — lowers effective turn budget when hub anchors show high residual.
+pub fn compute_sentinel_nudge_with_surprise(
+    turns: u32,
+    minutes: u64,
+    surprise_pressure: f32,
+) -> (bool, &'static str) {
+    let effective = effective_max_turns(surprise_pressure);
+    if turns >= effective {
+        if surprise_pressure >= 0.5 && turns < SENTINEL_MAX_TURNS {
+            return (true, "surprise_pressure_elevated");
+        }
         return (true, "turn_budget_exceeded");
     }
     if minutes >= SENTINEL_MAX_MINUTES {
@@ -56,19 +92,25 @@ pub fn compute_sentinel_nudge(turns: u32, minutes: u64) -> (bool, &'static str) 
     (false, "")
 }
 
-pub fn sentinel_ego_fields(turns: u32, last_checkpoint_unix: u64) -> Value {
+pub fn sentinel_ego_fields(turns: u32, last_checkpoint_unix: u64, surprise_pressure: f32) -> Value {
     let now = now_unix();
     let minutes = minutes_since_checkpoint(last_checkpoint_unix, now);
-    let (rehydrate_suggested, reason) = compute_sentinel_nudge(turns, minutes);
+    let effective = effective_max_turns(surprise_pressure);
+    let (rehydrate_suggested, reason) =
+        compute_sentinel_nudge_with_surprise(turns, minutes, surprise_pressure);
     json!({
         "turns_since_last_handoff": turns,
         "minutes_since_checkpoint": minutes,
         "last_checkpoint_unix": last_checkpoint_unix,
         "rehydrate_suggested": rehydrate_suggested,
         "rehydrate_reason": if rehydrate_suggested { reason } else { "" },
+        "surprise_pressure": surprise_pressure,
+        "effective_max_turns": effective,
+        "lyapunov_proxy": surprise_pressure,
         "sentinel_thresholds": {
             "max_turns": SENTINEL_MAX_TURNS,
             "max_minutes": SENTINEL_MAX_MINUTES,
+            "surprise_turn_reduction_max": SURPRISE_TURN_REDUCTION_MAX,
         },
     })
 }
@@ -193,6 +235,29 @@ pub fn rehydrate_nudge_action(reason: &str) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn surprise_pressure_tightens_effective_turn_budget() {
+        assert_eq!(effective_max_turns(0.0), SENTINEL_MAX_TURNS);
+        assert_eq!(
+            effective_max_turns(1.0),
+            SENTINEL_MAX_TURNS - SURPRISE_TURN_REDUCTION_MAX
+        );
+        let pressure = surprise_pressure_from_residuals(&[0.25, 0.0, 0.5]);
+        assert!(
+            (pressure - 0.75).abs() < 1e-5,
+            "mean 0.375 / 0.5 scale = 0.75, got {pressure}"
+        );
+    }
+
+    #[test]
+    fn surprise_elevated_nudge_before_base_turn_cap() {
+        let (suggest, reason) = compute_sentinel_nudge_with_surprise(22, 0, 1.0);
+        assert!(suggest);
+        assert_eq!(reason, "surprise_pressure_elevated");
+        let (ok, _) = compute_sentinel_nudge_with_surprise(17, 0, 1.0);
+        assert!(!ok);
+    }
 
     #[test]
     fn sentinel_nudge_at_turn_threshold() {

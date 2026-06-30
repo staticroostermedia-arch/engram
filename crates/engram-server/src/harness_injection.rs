@@ -501,7 +501,13 @@ pub fn build_jit_deformation_framework(task_type: &str, primary_goal: Option<&st
             "crystallize_on": ["verified fix", "successful verified_sequence replay"],
             "condense_on": [">=6 goal traces without linked tile"],
             "identity_surface": "ego_snapshot + NREM → ego.leg3",
-            "process_ref": "process:engram.meta.agent-evolution"
+            "process_ref": "process:engram.meta.agent-evolution",
+            "cycle": 1,
+            "surprise_aware_sentinel": true,
+            "research_refs": [
+                "arXiv:2508.05766 (active inference / bounded rationality checkpoints)",
+                "arXiv:2504.09301 (crystallized reasoning + multi-turn continuity)"
+            ]
         },
         "homotopy_invariants": [
             "update preferred over forget+remember",
@@ -646,6 +652,33 @@ pub fn build_condensation_hints(store: &mut StoreHandle, primary_goal: Option<&s
     })]
 }
 
+/// Sample hub-anchor blocks for prediction-error residual (PR #53 surprise signal).
+pub fn hub_anchor_surprise_pressure(store: &StoreHandle, hub_anchors: &[String]) -> f32 {
+    let residuals: Vec<f32> = hub_anchors
+        .iter()
+        .take(16)
+        .filter_map(|c| {
+            store
+                .fetch_block_high_priority(c)
+                .or_else(|| store.fetch_block(c))
+                .map(|b| b.l2_norm_residual)
+        })
+        .collect();
+    crate::continuity_spikes::surprise_pressure_from_residuals(&residuals)
+}
+
+fn hub_anchors_from_manifest(manifest: Option<&Value>) -> Vec<String> {
+    manifest
+        .and_then(|m| m.get("hub_anchors"))
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|x| x.as_str().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 /// Machine queue for next agent actions (wake injection).
 pub fn build_suggested_actions(
     store: &mut StoreHandle,
@@ -655,14 +688,16 @@ pub fn build_suggested_actions(
     let mut primary_goal: Option<String> = None;
     let mut handoff_packet: Option<Value> = None;
 
+    let manifest = store.resolve_rehydration_manifest_for_wake();
+    let surprise =
+        hub_anchor_surprise_pressure(store, &hub_anchors_from_manifest(manifest.as_ref()));
     let (turns, checkpoint) = store.sentinel_snapshot();
-    let (rehydrate_suggested, rehydrate_reason) = crate::continuity_spikes::compute_sentinel_nudge(
-        turns,
-        crate::continuity_spikes::minutes_since_checkpoint(
-            checkpoint,
-            crate::continuity_spikes::now_unix(),
-        ),
+    let minutes = crate::continuity_spikes::minutes_since_checkpoint(
+        checkpoint,
+        crate::continuity_spikes::now_unix(),
     );
+    let (rehydrate_suggested, rehydrate_reason) =
+        crate::continuity_spikes::compute_sentinel_nudge_with_surprise(turns, minutes, surprise);
     if rehydrate_suggested {
         actions.push(crate::continuity_spikes::rehydrate_nudge_action(
             rehydrate_reason,
@@ -1165,7 +1200,11 @@ pub fn top_goal_serving_concepts(store: &StoreHandle, goal: &str, limit: usize) 
 }
 
 /// Readable agent-evolution snapshot from ego.leg3 + goal-serving stack.
-pub fn build_ego_snapshot(store: &StoreHandle, primary_goal: Option<&str>) -> Value {
+pub fn build_ego_snapshot(
+    store: &StoreHandle,
+    primary_goal: Option<&str>,
+    hub_anchors: Option<&[String]>,
+) -> Value {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
@@ -1209,8 +1248,11 @@ pub fn build_ego_snapshot(store: &StoreHandle, primary_goal: Option<&str>) -> Va
         }
     }
 
+    let surprise = hub_anchors
+        .map(|h| hub_anchor_surprise_pressure(store, h))
+        .unwrap_or(0.0);
     let (turns, checkpoint) = store.sentinel_snapshot();
-    let sentinel = crate::continuity_spikes::sentinel_ego_fields(turns, checkpoint);
+    let sentinel = crate::continuity_spikes::sentinel_ego_fields(turns, checkpoint, surprise);
     if let Some(obj) = snapshot.as_object_mut() {
         for (k, v) in sentinel.as_object().into_iter().flatten() {
             obj.insert(k.clone(), v.clone());
@@ -1283,7 +1325,9 @@ pub fn build_harness_bundle(store: &mut StoreHandle, session_intent: Option<&str
 
     let primary_goal = crate::store::resolve_active_primary_goal(store);
 
-    let ego_snapshot = build_ego_snapshot(store, primary_goal.as_deref());
+    let rehydration_manifest = store.resolve_rehydration_manifest_for_wake();
+    let hub_anchors = hub_anchors_from_manifest(rehydration_manifest.as_ref());
+    let ego_snapshot = build_ego_snapshot(store, primary_goal.as_deref(), Some(&hub_anchors));
     let continuity_playbook = build_continuity_playbook(primary_goal.as_deref());
     let presentation_stratum = crate::presentation_stratum::build_presentation_stratum(
         store,
@@ -1294,14 +1338,6 @@ pub fn build_harness_bundle(store: &mut StoreHandle, session_intent: Option<&str
     let condensation_hints = build_condensation_hints(store, primary_goal.as_deref());
     let open_scars_wake = collect_open_scars(store, 5);
     let uncertainty_receipts_wake = collect_uncertainty_receipts(store, 5);
-    let (turns, checkpoint) = store.sentinel_snapshot();
-    let (rehydrate_suggested, _) = crate::continuity_spikes::compute_sentinel_nudge(
-        turns,
-        crate::continuity_spikes::minutes_since_checkpoint(
-            checkpoint,
-            crate::continuity_spikes::now_unix(),
-        ),
-    );
     let handoff_for_task = store
         .fetch_block_high_priority(SESSION_HANDOFF_LATEST)
         .and_then(|b| parse_handoff_packet_json(&storage::read_provlog(&b)));
@@ -1313,7 +1349,18 @@ pub fn build_harness_bundle(store: &mut StoreHandle, session_intent: Option<&str
     );
     let jit_framework = build_jit_deformation_framework(task_type, primary_goal.as_deref());
     let verified_processes = build_verified_processes(store, primary_goal.as_deref());
-    let rehydration_manifest = store.resolve_rehydration_manifest_for_wake();
+    let surprise_pressure = hub_anchor_surprise_pressure(store, &hub_anchors);
+    let (turns, checkpoint) = store.sentinel_snapshot();
+    let minutes = crate::continuity_spikes::minutes_since_checkpoint(
+        checkpoint,
+        crate::continuity_spikes::now_unix(),
+    );
+    let (rehydrate_suggested, rehydrate_reason) =
+        crate::continuity_spikes::compute_sentinel_nudge_with_surprise(
+            turns,
+            minutes,
+            surprise_pressure,
+        );
 
     json!({
         "rehydration_manifest": rehydration_manifest,
@@ -1325,6 +1372,16 @@ pub fn build_harness_bundle(store: &mut StoreHandle, session_intent: Option<&str
         "open_scars_wake": open_scars_wake,
         "uncertainty_receipts_wake": uncertainty_receipts_wake,
         "rehydrate_suggested": rehydrate_suggested,
+        "rsi_cycle_metrics": {
+            "cycle": 1,
+            "surprise_pressure": surprise_pressure,
+            "effective_max_turns": crate::continuity_spikes::effective_max_turns(surprise_pressure),
+            "rehydrate_reason": if rehydrate_suggested { rehydrate_reason } else { "" },
+            "research_refs": [
+                "https://arxiv.org/abs/2508.05766",
+                "https://arxiv.org/abs/2504.09301"
+            ],
+        },
         "trace_chain": {
             "head": trace_chain_head,
             "chain": chain,
@@ -1552,7 +1609,7 @@ pub fn format_suggested_actions_markdown(
         }
     }
 
-    let ego = build_ego_snapshot(store, primary_goal);
+    let ego = build_ego_snapshot(store, primary_goal, None);
     md.push_str("## Ego evolution snapshot\n\n");
     if ego.get("present").and_then(|v| v.as_bool()) == Some(true) {
         md.push_str(&format!(
@@ -1645,6 +1702,49 @@ SESSION HANDOFF PACKET v1 (structured JSON for next-wake read_concept)
             v["rehydration_manifest"]["version"],
             "rehydration_manifest_v1"
         );
+    }
+
+    #[test]
+    fn hub_anchor_surprise_pressure_reads_block_residuals_via_update() {
+        std::env::set_var("ENGRAM_DISABLE_SHEAF", "1");
+        std::env::set_var("ENGRAM_FORCE_CPU_BACKEND", "1");
+        std::env::set_var("ENGRAM_KI_DISABLE", "1");
+        let dir = std::env::temp_dir().join(format!(
+            "surprise_sentinel_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).ok();
+        let mut store = crate::store::StoreHandle::new(&dir.to_string_lossy());
+        store
+            .remember(
+                "trace:surprise_hub",
+                "TRACE\n\n**decision_point:** initial alpha beta gamma fork\n",
+            )
+            .unwrap();
+        store
+            .update(
+                "trace:surprise_hub",
+                "TRACE\n\n**decision_point:** orthogonal omega zeta theta fork divergent topic\n",
+            )
+            .unwrap();
+        let block = store
+            .fetch_block("trace:surprise_hub")
+            .expect("trace block");
+        assert!(
+            block.l2_norm_residual > 0.01,
+            "update path must set non-zero residual, got {}",
+            block.l2_norm_residual
+        );
+        let pressure = hub_anchor_surprise_pressure(&store, &["trace:surprise_hub".to_string()]);
+        assert!(
+            pressure > 0.0,
+            "non-zero residual must yield surprise pressure, got {pressure}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
