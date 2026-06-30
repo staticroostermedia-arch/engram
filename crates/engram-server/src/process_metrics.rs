@@ -168,9 +168,37 @@ pub fn build_process_metrics(
     })
 }
 
+/// Parse `processes/meta/*.toml` workflow name from `[workflow].name`.
+#[allow(dead_code)]
+pub fn parse_meta_workflow_name(path: &Path) -> Option<String> {
+    let content = std::fs::read_to_string(path).ok()?;
+    let value = toml::from_str::<toml::Value>(&content).ok()?;
+    value
+        .get("workflow")
+        .and_then(|w| w.get("name"))
+        .and_then(|v| v.as_str())
+        .map(str::to_string)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
+
+    #[test]
+    fn full_system_audit_loop_toml_parses() {
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../processes/meta/full_system_audit_loop.toml");
+        let name = parse_meta_workflow_name(&path)
+            .unwrap_or_else(|| panic!("must parse {}", path.display()));
+        assert_eq!(name, "full_system_audit_loop");
+        let content = std::fs::read_to_string(&path).unwrap();
+        let v: toml::Value = toml::from_str(&content).unwrap();
+        assert!(
+            v.get("execute").is_some(),
+            "meta workflow must have execute steps"
+        );
+    }
 
     #[test]
     fn glob_match_wildcard_suffix() {
