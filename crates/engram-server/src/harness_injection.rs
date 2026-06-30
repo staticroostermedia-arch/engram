@@ -672,7 +672,7 @@ pub fn ego_drift_velocity() -> Option<f32> {
     read_ego_block().map(|b| b.energetics.dv.clamp(0.0, 1.0))
 }
 
-/// Residual surprise max-blended with ego drift (Cycle 2 Lyapunov continuity).
+/// Residual surprise weighted-blended with ego drift (Lyapunov continuity).
 pub fn sentinel_pressure_combined(store: &StoreHandle, hub_anchors: &[String]) -> f32 {
     let residual = hub_anchor_surprise_pressure(store, hub_anchors);
     crate::continuity_spikes::combined_sentinel_pressure(residual, ego_drift_velocity())
@@ -1433,10 +1433,16 @@ pub fn build_harness_bundle(store: &mut StoreHandle, session_intent: Option<&str
         "uncertainty_receipts_wake": uncertainty_receipts_wake,
         "rehydrate_suggested": rehydrate_suggested,
         "rsi_cycle_metrics": {
-            "cycle": 2,
+            "cycle": crate::continuity_spikes::resolve_rsi_cycle_number(),
             "surprise_pressure": surprise_pressure,
             "residual_surprise": hub_anchor_surprise_pressure(store, &hub_anchors),
             "ego_drift_velocity": ego_drift,
+            "sentinel_residual_weight": crate::continuity_spikes::resolve_sentinel_residual_weight(),
+            "meta_workflow_ok": meta_workflow_registry
+                .get("full_system_audit_loop")
+                .and_then(|v| v.get("ok"))
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false),
             "effective_max_turns": crate::continuity_spikes::effective_max_turns(surprise_pressure),
             "rehydrate_reason": if rehydrate_suggested { rehydrate_reason } else { "" },
             "research_refs": [
@@ -1881,6 +1887,39 @@ SESSION HANDOFF PACKET v1 (structured JSON for next-wake read_concept)
         assert!(
             !with_intent.is_empty(),
             "session_intent path must yield anchors"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn meta_workflow_registry_in_harness_bundle() {
+        std::env::set_var("ENGRAM_DISABLE_SHEAF", "1");
+        std::env::set_var("ENGRAM_FORCE_CPU_BACKEND", "1");
+        std::env::set_var("ENGRAM_KI_DISABLE", "1");
+        let dir = std::env::temp_dir().join(format!(
+            "meta_workflow_harness_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).ok();
+        let mut store = crate::store::StoreHandle::new(&dir.to_string_lossy());
+        let bundle = build_harness_bundle(&mut store, Some("goal:engram_mvp_v1"));
+        let registry = bundle
+            .get("meta_workflow_registry")
+            .and_then(|v| v.get("full_system_audit_loop"))
+            .expect("meta_workflow_registry.full_system_audit_loop");
+        assert_eq!(registry.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(
+            registry.get("name").and_then(|v| v.as_str()),
+            Some("full_system_audit_loop")
+        );
+        let metrics = bundle.get("rsi_cycle_metrics").expect("rsi_cycle_metrics");
+        assert_eq!(
+            metrics.get("meta_workflow_ok").and_then(|v| v.as_bool()),
+            Some(true)
         );
         let _ = std::fs::remove_dir_all(&dir);
     }
