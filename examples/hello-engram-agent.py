@@ -10,7 +10,7 @@
 #   PYTHONPATH=integrations/python python examples/hello-engram-agent.py
 #
 # Loop: session_start → context_for_edit → recall → quick_trace → remember → session_end
-# Build: target/debug/engram --version  # expect 0.7.0-beta.4
+# Build: target/debug/engram --version  # expect 0.7.0-beta.5
 
 import os
 

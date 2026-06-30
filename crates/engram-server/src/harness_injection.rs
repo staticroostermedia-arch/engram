@@ -41,7 +41,21 @@ pub fn latest_chain_summary_concept(store: &StoreHandle) -> Option<String> {
 }
 
 /// Extract JSON object embedded in SESSION HANDOFF PACKET body text.
+/// Provlog `update` appends multiple packets — always parse the **latest** block.
 pub fn parse_handoff_packet_json(body: &str) -> Option<Value> {
+    let sections: Vec<&str> = body
+        .split("SESSION HANDOFF PACKET")
+        .filter(|s| s.contains('{'))
+        .collect();
+    if let Some(last_section) = sections.last() {
+        let start = last_section.find('{')?;
+        let end = last_section.rfind('}')?;
+        if end > start {
+            if let Ok(v) = serde_json::from_str::<Value>(&last_section[start..=end]) {
+                return Some(v);
+            }
+        }
+    }
     let start = body.find('{')?;
     let end = body.rfind('}')?;
     serde_json::from_str(&body[start..=end]).ok()
@@ -156,6 +170,82 @@ pub fn infer_task_type(
         }
     }
     "wake_only"
+}
+
+/// Recent uncertainty receipts for wake-time memory-claim hygiene.
+pub fn collect_uncertainty_receipts(store: &mut StoreHandle, limit: usize) -> Vec<Value> {
+    use std::collections::HashSet;
+
+    let cap = limit.max(4);
+    let mut out = Vec::new();
+    let mut seen = HashSet::new();
+
+    for (concept, _) in store.access_index.recent(200) {
+        if !concept.starts_with("uncertainty:") {
+            continue;
+        }
+        if !seen.insert(concept.clone()) {
+            continue;
+        }
+        if let Some(block) = store
+            .fetch_block_high_priority(&concept)
+            .or_else(|| store.fetch_block(&concept))
+        {
+            out.push(json!({
+                "concept": concept,
+                "crs": block.crs_score,
+                "preview": storage::read_provlog(&block).chars().take(140).collect::<String>(),
+            }));
+        }
+        if out.len() >= cap {
+            return out;
+        }
+    }
+
+    for m in store
+        .recall_scoped("uncertainty memory receipt", cap, Some("anchors"))
+        .0
+    {
+        if !m.concept.starts_with("uncertainty:") || !seen.insert(m.concept.clone()) {
+            continue;
+        }
+        out.push(json!({
+            "concept": m.concept,
+            "crs": m.crs,
+            "preview": m.provlog.chars().take(140).collect::<String>(),
+        }));
+        if out.len() >= cap {
+            break;
+        }
+    }
+
+    if out.is_empty() {
+        let mut concepts: Vec<String> = store
+            .list()
+            .into_iter()
+            .filter(|c| c.starts_with("uncertainty:"))
+            .collect();
+        concepts.sort_by(|a, b| b.cmp(a));
+        for concept in concepts {
+            if !seen.insert(concept.clone()) {
+                continue;
+            }
+            if let Some(block) = store
+                .fetch_block_high_priority(&concept)
+                .or_else(|| store.fetch_block(&concept))
+            {
+                out.push(json!({
+                    "concept": concept,
+                    "crs": block.crs_score,
+                    "preview": storage::read_provlog(&block).chars().take(140).collect::<String>(),
+                }));
+            }
+            if out.len() >= cap {
+                break;
+            }
+        }
+    }
+    out
 }
 
 /// Recent scar concepts for wake-time repulsion hints.
@@ -545,6 +635,20 @@ pub fn build_suggested_actions(
     let mut primary_goal: Option<String> = None;
     let mut handoff_packet: Option<Value> = None;
 
+    let (turns, checkpoint) = store.sentinel_snapshot();
+    let (rehydrate_suggested, rehydrate_reason) = crate::continuity_spikes::compute_sentinel_nudge(
+        turns,
+        crate::continuity_spikes::minutes_since_checkpoint(
+            checkpoint,
+            crate::continuity_spikes::now_unix(),
+        ),
+    );
+    if rehydrate_suggested {
+        actions.push(crate::continuity_spikes::rehydrate_nudge_action(
+            rehydrate_reason,
+        ));
+    }
+
     for scar in collect_open_scars(store, 3) {
         if let Some(concept) = scar.get("concept").and_then(|v| v.as_str()) {
             push_jit_action(
@@ -590,60 +694,104 @@ pub fn build_suggested_actions(
     if let Some(block) = store.fetch_block_high_priority(SESSION_HANDOFF_LATEST) {
         let text = storage::read_provlog(&block);
         if let Some(packet) = parse_handoff_packet_json(&text) {
-            handoff_packet = Some(packet.clone());
-            if let Some(goal) = packet.get("primary_goal").and_then(|v| v.as_str()) {
-                if store
-                    .fetch_block_high_priority(goal)
-                    .map(|b| crate::store::goal_block_text(&b))
-                    .map(|t| crate::store::goal_status_is_active(&t))
-                    .unwrap_or(false)
-                {
-                    primary_goal = Some(goal.to_string());
-                    push_action(
-                        &mut actions,
-                        "mcp_engram_recall",
-                        json!({ "query": goal, "scope": "anchors", "k": 5 }),
-                        "inherit primary goal context",
-                        2,
-                    );
-                }
+            handoff_packet = Some(packet);
+        }
+    }
+
+    let manifest_for_seed = handoff_packet
+        .as_ref()
+        .and_then(|p| p.get("rehydration_manifest"))
+        .filter(|v| !v.is_null())
+        .cloned()
+        .or_else(|| store.resolve_rehydration_manifest_for_wake());
+
+    if let Some(manifest) = manifest_for_seed {
+        if let Some(concept) = manifest.get("manifest_concept").and_then(|v| v.as_str()) {
+            push_action(
+                &mut actions,
+                "mcp_engram_read_concept",
+                json!({ "concept": concept }),
+                "portable rehydration manifest — priority continuation kit",
+                0,
+            );
+        }
+        if let Some(goal) = manifest.get("primary_goal").and_then(|v| v.as_str()) {
+            if !goal.is_empty() {
+                push_action(
+                    &mut actions,
+                    "mcp_engram_recall",
+                    json!({ "query": goal, "scope": "anchors", "k": 8 }),
+                    "manifest primary_goal — anchor recall without scope=all",
+                    0,
+                );
             }
-            if let Some(files) = packet.get("files_touched").and_then(|v| v.as_array()) {
-                for (i, file) in files.iter().take(5).enumerate() {
-                    if let Some(path) = file.as_str() {
-                        push_action(
-                            &mut actions,
-                            "mcp_engram_context_for_edit",
-                            json!({ "path": path, "auto_ingest": true }),
-                            "last session touched this file",
-                            10 + i as u64,
-                        );
-                    }
-                }
-            }
-            if let Some(head) = packet.get("trace_chain_head").and_then(|v| v.as_str()) {
+        }
+        if let Some(head) = manifest.get("trace_chain_head").and_then(|v| v.as_str()) {
+            if !head.is_empty() {
                 push_action(
                     &mut actions,
                     "mcp_engram_read_concept",
                     json!({ "concept": head }),
-                    "continue reasoning trace chain",
-                    4,
-                );
-                push_jit_action(
-                    &mut actions,
-                    "mcp_engram_quick_trace",
-                    json!({
-                        "decision": "<your next fork>",
-                        "why": "<justify path>",
-                        "prev": head,
-                        "goal_context": primary_goal,
-                    }),
-                    "chain quick_trace from last session head — construct decision/why JIT",
-                    5,
-                    true,
-                    Some("continuing trace chain"),
+                    "manifest trace_chain_head — continue chain",
+                    1,
                 );
             }
+        }
+    }
+
+    if let Some(ref packet) = handoff_packet {
+        if let Some(goal) = packet.get("primary_goal").and_then(|v| v.as_str()) {
+            if store
+                .fetch_block_high_priority(goal)
+                .map(|b| crate::store::goal_block_text(&b))
+                .map(|t| crate::store::goal_status_is_active(&t))
+                .unwrap_or(false)
+            {
+                primary_goal = Some(goal.to_string());
+                push_action(
+                    &mut actions,
+                    "mcp_engram_recall",
+                    json!({ "query": goal, "scope": "anchors", "k": 5 }),
+                    "inherit primary goal context",
+                    2,
+                );
+            }
+        }
+        if let Some(files) = packet.get("files_touched").and_then(|v| v.as_array()) {
+            for (i, file) in files.iter().take(5).enumerate() {
+                if let Some(path) = file.as_str() {
+                    push_action(
+                        &mut actions,
+                        "mcp_engram_context_for_edit",
+                        json!({ "path": path, "auto_ingest": true }),
+                        "last session touched this file",
+                        10 + i as u64,
+                    );
+                }
+            }
+        }
+        if let Some(head) = packet.get("trace_chain_head").and_then(|v| v.as_str()) {
+            push_action(
+                &mut actions,
+                "mcp_engram_read_concept",
+                json!({ "concept": head }),
+                "continue reasoning trace chain",
+                4,
+            );
+            push_jit_action(
+                &mut actions,
+                "mcp_engram_quick_trace",
+                json!({
+                    "decision": "<your next fork>",
+                    "why": "<justify path>",
+                    "prev": head,
+                    "goal_context": primary_goal,
+                }),
+                "chain quick_trace from last session head — construct decision/why JIT",
+                5,
+                true,
+                Some("continuing trace chain"),
+            );
         }
     } else if let Some(g) = crate::store::resolve_active_primary_goal(store) {
         primary_goal = Some(g.clone());
@@ -876,6 +1024,19 @@ fn rank_suggested_actions(store: &StoreHandle, actions: &mut [Value]) {
         action: &Value,
         recency_rank: &std::collections::HashMap<String, u32>,
     ) -> f32 {
+        if action.get("sentinel_nudge").and_then(|v| v.as_bool()) == Some(true) {
+            return 100.0;
+        }
+        let reason = action.get("reason").and_then(|r| r.as_str()).unwrap_or("");
+        if reason.contains("portable rehydration manifest") {
+            return 95.0;
+        }
+        if reason.contains("manifest primary_goal") {
+            return 90.0;
+        }
+        if reason.contains("manifest trace_chain_head") {
+            return 85.0;
+        }
         let concept = action
             .get("args")
             .and_then(|a| a.get("concept"))
@@ -1028,6 +1189,14 @@ pub fn build_ego_snapshot(store: &StoreHandle, primary_goal: Option<&str>) -> Va
         }
     }
 
+    let (turns, checkpoint) = store.sentinel_snapshot();
+    let sentinel = crate::continuity_spikes::sentinel_ego_fields(turns, checkpoint);
+    if let Some(obj) = snapshot.as_object_mut() {
+        for (k, v) in sentinel.as_object().into_iter().flatten() {
+            obj.insert(k.clone(), v.clone());
+        }
+    }
+
     snapshot
 }
 
@@ -1104,6 +1273,15 @@ pub fn build_harness_bundle(store: &mut StoreHandle, session_intent: Option<&str
 
     let condensation_hints = build_condensation_hints(store, primary_goal.as_deref());
     let open_scars_wake = collect_open_scars(store, 5);
+    let uncertainty_receipts_wake = collect_uncertainty_receipts(store, 5);
+    let (turns, checkpoint) = store.sentinel_snapshot();
+    let (rehydrate_suggested, _) = crate::continuity_spikes::compute_sentinel_nudge(
+        turns,
+        crate::continuity_spikes::minutes_since_checkpoint(
+            checkpoint,
+            crate::continuity_spikes::now_unix(),
+        ),
+    );
     let handoff_for_task = store
         .fetch_block_high_priority(SESSION_HANDOFF_LATEST)
         .and_then(|b| parse_handoff_packet_json(&storage::read_provlog(&b)));
@@ -1115,14 +1293,18 @@ pub fn build_harness_bundle(store: &mut StoreHandle, session_intent: Option<&str
     );
     let jit_framework = build_jit_deformation_framework(task_type, primary_goal.as_deref());
     let verified_processes = build_verified_processes(store, primary_goal.as_deref());
+    let rehydration_manifest = store.resolve_rehydration_manifest_for_wake();
 
     json!({
+        "rehydration_manifest": rehydration_manifest,
         "suggested_actions": build_suggested_actions(store, session_intent),
         "trusted_tiles": build_trusted_tiles(store, primary_goal.as_deref()),
         "verified_processes": verified_processes,
         "jit_deformation_framework": jit_framework,
         "task_type": task_type,
         "open_scars_wake": open_scars_wake,
+        "uncertainty_receipts_wake": uncertainty_receipts_wake,
+        "rehydrate_suggested": rehydrate_suggested,
         "trace_chain": {
             "head": trace_chain_head,
             "chain": chain,
@@ -1408,6 +1590,27 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_handoff_packet_json_latest_update_wins() {
+        let body = r#"SESSION HANDOFF PACKET v1 (old)
+{"primary_goal":"goal:old","trace_chain_head":"trace:old"}
+--- update @ 99 ---
+SESSION HANDOFF PACKET v1 (structured JSON for next-wake read_concept)
+
+{
+  "primary_goal": "goal:new",
+  "session_end_key": "session_end_99",
+  "rehydration_manifest": {"version": "rehydration_manifest_v1", "manifest_concept": "manifest:rehydration_99"}
+}
+"#;
+        let v = parse_handoff_packet_json(body).expect("parse latest");
+        assert_eq!(v["primary_goal"], "goal:new");
+        assert_eq!(
+            v["rehydration_manifest"]["version"],
+            "rehydration_manifest_v1"
+        );
+    }
+
+    #[test]
     fn test_continuity_playbook_has_twelve_steps() {
         let pb = build_continuity_playbook(Some("goal:engram_mvp_v1"));
         let steps = pb
@@ -1496,6 +1699,55 @@ mod tests {
             Some("store__fn__context_for_edit__arc")
         );
         assert!(args.get("new_text").is_some());
+    }
+
+    #[test]
+    fn test_rehydrate_nudge_action_shape() {
+        let action = crate::continuity_spikes::rehydrate_nudge_action("turn_budget_exceeded");
+        assert_eq!(
+            action.get("tool").and_then(|v| v.as_str()),
+            Some("mcp_engram_session_end")
+        );
+        assert_eq!(
+            action.get("sentinel_nudge").and_then(|v| v.as_bool()),
+            Some(true)
+        );
+        assert_eq!(action.get("priority").and_then(|v| v.as_u64()), Some(0));
+    }
+
+    #[test]
+    fn test_manifest_and_sentinel_rank_first() {
+        std::env::set_var("ENGRAM_DISABLE_SHEAF", "1");
+        std::env::set_var("ENGRAM_FORCE_CPU_BACKEND", "1");
+        std::env::set_var("ENGRAM_KI_DISABLE", "1");
+        let dir = std::env::temp_dir().join(format!(
+            "rank_spikes_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).ok();
+        let mut store = crate::store::StoreHandle::new(&dir.to_string_lossy());
+        store.sentinel_reset_for_test();
+        for _ in 0..30 {
+            store.sentinel_on_turn_record();
+        }
+        let summary =
+            "**decisions:** rank test\n**files_touched:** crates/engram-server/src/store.rs";
+        let _ = store.persist_session_handoff_latest(summary, "session_end_rank");
+        let actions = build_suggested_actions(&mut store, Some("post-handoff rank test"));
+        assert!(!actions.is_empty());
+        let top = &actions[0];
+        let top_reason = top.get("reason").and_then(|r| r.as_str()).unwrap_or("");
+        let top_nudge = top.get("sentinel_nudge").and_then(|v| v.as_bool()) == Some(true);
+        let top_manifest = top_reason.contains("rehydration manifest");
+        assert!(
+            top_nudge || top_manifest,
+            "first action must be sentinel nudge or manifest read; got: {top:?}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

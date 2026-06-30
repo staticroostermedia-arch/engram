@@ -61,10 +61,13 @@ flowchart LR
 
 | Field | Content |
 |-------|---------|
-| `suggested_actions` | Ordered MCP queue: read handoff → recall goal → `context_for_edit` on files touched → chain `quick_trace` from trace head → read trusted tiles |
+| `suggested_actions` | Ordered MCP queue: sentinel nudge (if due) → read `manifest:rehydration_*` → read handoff → recall goal → `context_for_edit` on files touched → chain `quick_trace` from trace head → read trusted tiles |
 | `trusted_tiles` | CRS ≥0.85 tiles (`verified_sequence`, `state_machine`, `formal_spec`, `research_offload`) linked to goal or handoff |
+| `rehydration_manifest` | Compact portable kit from last `session_end` (`primary_goal`, `trace_chain_head`, trusted tile refs, hub anchors, `files_touched`) — priority-0 wake seed |
+| `rehydrate_suggested` | Soft sentinel flag (~30 turns / ~120 min) — nudge-only; counters in `ego_snapshot` |
+| `uncertainty_receipts_wake` | Recent `uncertainty:*` blocks for withheld memory claims |
 | `trace_chain` | Head + backward walk via `prev_in_trace` relations (up to 8) |
-| `ego_snapshot` | Readable agent evolution: NREM step, `drift_velocity`, stability, last pass age, top 3 goal-serving concepts |
+| `ego_snapshot` | Readable agent evolution: NREM step, `drift_velocity`, stability, last pass age, top 3 goal-serving concepts + sentinel counters |
 | `continuity_playbook` | 12-step ordered narrative (wake → edit → fork → handoff → identity/NREM) with doc refs |
 | `presentation_stratum` | Distilled K-node process/ritual continuation (CRS-ranked, lineage-attached); cold 187k excluded |
 | `condensation_hints` | When ≥6 traces without goal-linked tile → suggest `thought_tile_create` |

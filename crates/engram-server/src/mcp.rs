@@ -2106,18 +2106,31 @@ fn tool_list() -> Value {
             },
             {
                 "name": "mcp_engram_scar",
-                "description": "TRIGGER: Call this immediately if you attempt a code fix and it fails, or if the user tells you an approach is a dead end. This creates a geometric repeller in the manifold so you do not hallucinate or attempt the same bad solution again in the future.",
+                "description": "TRIGGER: Call this immediately if you attempt a code fix and it fails, or if the user tells you an approach is a dead end. This creates a geometric repeller in the manifold so you do not hallucinate or attempt the same bad solution again in the future. For insufficient memory anchors (not general inference), pass uncertainty_status to mint an uncertainty:* receipt instead of guessing.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
                         "concept": {
                             "type": "string",
-                            "description": "The concept name to scar (e.g. 'failed_approach_x')"
+                            "description": "The concept name to scar (e.g. 'failed_approach_x') or uncertainty slug when minting uncertainty receipt"
                         },
                         "magnitude": {
                             "type": "number",
                             "description": "Scar magnitude [0.0, 1.0]. Higher = larger CRS penalty and stronger topological deflection. Defaults to 0.15 (M-NOL default for contradiction axis spikes).",
                             "default": 0.15
+                        },
+                        "uncertainty_status": {
+                            "type": "string",
+                            "description": "When set, mint uncertainty:* receipt for withheld memory claim (e.g. memory_insufficient, contradictory_anchors). Scoped to recall/memory — not general inference."
+                        },
+                        "requested_anchors": {
+                            "type": "array",
+                            "items": { "type": "string" },
+                            "description": "Anchor concepts that were sought but insufficient for a memory claim"
+                        },
+                        "process_context": {
+                            "type": "string",
+                            "description": "Optional process:engram.* key — emits realized_by edge for process_metrics"
                         }
                     },
                     "required": ["concept"]
@@ -2347,6 +2360,53 @@ fn normalize_spatial_context_input(raw: &str) -> Result<(String, Option<String>)
 
 fn spatial_warning_suffix(warning: Option<String>) -> String {
     warning.map(|w| format!(" | ⚠ {w}")).unwrap_or_default()
+}
+
+/// Soft fork-scoping hint for significant traces (lean/agent — never blocks).
+fn triadic_fork_suffix(
+    goal_ctx: &str,
+    spatial_ctx: &str,
+    process_ctx: &str,
+    alternatives: &str,
+    affirm: &str,
+    deny: &str,
+    reconcile: &str,
+) -> String {
+    let significant = crate::continuity_spikes::is_significant_fork(
+        goal_ctx,
+        spatial_ctx,
+        process_ctx,
+        alternatives,
+    );
+    match crate::continuity_spikes::triadic_compliance_warning(
+        significant,
+        affirm,
+        deny,
+        reconcile,
+        false,
+    ) {
+        Some(w) => format!(" | ⚠ {w}"),
+        None => String::new(),
+    }
+}
+
+fn sentinel_turn_suffix(lock: &mut crate::store::StoreHandle) -> String {
+    lock.sentinel_on_turn_record();
+    let (turns, checkpoint) = lock.sentinel_snapshot();
+    let minutes = crate::continuity_spikes::minutes_since_checkpoint(
+        checkpoint,
+        crate::continuity_spikes::now_unix(),
+    );
+    let (rehydrate_suggested, reason) =
+        crate::continuity_spikes::compute_sentinel_nudge(turns, minutes);
+    let reason_note = if rehydrate_suggested {
+        format!(" rehydrate_reason={reason}")
+    } else {
+        String::new()
+    };
+    format!(
+        "\n  sentinel: turns_since_last_handoff={turns} minutes_since_checkpoint={minutes} rehydrate_suggested={rehydrate_suggested}{reason_note}"
+    )
 }
 
 // ── Shared helper for Item 1-style automatic goal linking (used by traces + Thought Tiles) ──
@@ -3914,6 +3974,7 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                     }
                 };
                 lock.warm_wake_anchors();
+                lock.sentinel_on_session_start();
                 let continuation = lock.build_continuation_bundle(Some(&intent));
                 let readiness = lock.backend_readiness();
                 (continuation, readiness)
@@ -4318,28 +4379,6 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                         avg_crs, alpha_a, alpha_d
                     );
                     let mut compression_manifest: Option<serde_json::Value> = None;
-                    if prepare_compression {
-                        let snippet: String = summary.chars().take(500).collect();
-                        let manifest = lock.refresh_compression_handoff(&key, &snippet);
-                        compression_manifest = Some(manifest.clone());
-                        let handoff_key = manifest
-                            .get("handoff_key")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("compression_handoff_unknown")
-                            .to_string();
-                        let promoted_n = manifest
-                            .get("promoted")
-                            .and_then(|v| v.as_array())
-                            .map(|a| a.len())
-                            .unwrap_or(0);
-                        response.push_str(&format!(
-                            "\n  → Compression handoff: `{}` | hydration cache refreshed | {} concepts hot-promoted",
-                            handoff_key, promoted_n
-                        ));
-                        response.push_str(
-                            "\n  → Post-compression wake: session_start → CONTINUATION BUNDLE → recall `helper:session_hydration_cache` first"
-                        );
-                    }
                     if !compression_markers.is_empty() {
                         response.push_str(&format!("\n  → {} compression intent(s) recorded for later 0x10 functor minting.", compression_markers.len()));
                     }
@@ -4511,6 +4550,28 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                     }
 
                     let handoff_packet = lock.persist_session_handoff_latest(&summary, &key);
+                    if prepare_compression {
+                        let snippet: String = summary.chars().take(500).collect();
+                        let manifest = lock.refresh_compression_handoff(&key, &snippet);
+                        compression_manifest = Some(manifest.clone());
+                        let handoff_key = manifest
+                            .get("handoff_key")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("compression_handoff_unknown")
+                            .to_string();
+                        let promoted_n = manifest
+                            .get("promoted")
+                            .and_then(|v| v.as_array())
+                            .map(|a| a.len())
+                            .unwrap_or(0);
+                        response.push_str(&format!(
+                            "\n  → Compression handoff: `{}` | hydration cache refreshed | {} concepts hot-promoted",
+                            handoff_key, promoted_n
+                        ));
+                        response.push_str(
+                            "\n  → Post-compression wake: session_start → CONTINUATION BUNDLE → recall `helper:session_hydration_cache` first"
+                        );
+                    }
                     let trace_concepts =
                         lock.collect_program_trace_concepts_for_handoff(&summary, 8);
                     let program_traces_var =
@@ -4653,10 +4714,20 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                 .trim()
                 .to_string();
 
+            let goal_ctx_input = goal_ctx.clone();
             let mut lock = store.lock().unwrap();
 
             let (goal_ctx, auto_linked_to_primary, auto_linked_from_recent) =
                 resolve_goal_context_and_link(&mut lock, goal_ctx);
+            let fork_hint = triadic_fork_suffix(
+                &goal_ctx_input,
+                &spatial_ctx,
+                &ritual_ctx,
+                &alternatives,
+                &affirm,
+                &deny,
+                &reconcile,
+            );
             let timestamp = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
@@ -4827,7 +4898,13 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                     } else {
                         format!(" | edited_at→{}", wired_loci.join(","))
                     };
-                    json!({ "content": [{ "type": "text", "text": format!("✓ Reasoning trace recorded: {} (ZEDOS_TRAINING 8-prop){}{}", trace_key, loci_note, spatial_warning_suffix(spatial_warning)) }] })
+                    json!({ "content": [{ "type": "text", "text": format!(
+                        "✓ Reasoning trace recorded: {} (ZEDOS_TRAINING 8-prop){}{}{}",
+                        trace_key,
+                        loci_note,
+                        spatial_warning_suffix(spatial_warning),
+                        fork_hint,
+                    ) }] })
                 }
                 Err(e) => {
                     json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true })
@@ -4913,6 +4990,7 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                 .trim()
                 .to_string();
 
+            let goal_ctx_input = goal_ctx.clone();
             let mut lock = store.lock().unwrap();
 
             if prev.is_empty() {
@@ -4923,6 +5001,15 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
 
             let (goal_ctx, auto_linked_to_primary, auto_linked_from_recent) =
                 resolve_goal_context_and_link(&mut lock, goal_ctx);
+            let fork_hint = triadic_fork_suffix(
+                &goal_ctx_input,
+                &spatial_ctx,
+                &process_context,
+                &alternatives,
+                &affirm,
+                &deny,
+                &reconcile,
+            );
             let timestamp = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
@@ -5085,7 +5172,13 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                     } else {
                         format!(" | edited_at→{}", wired_loci.join(","))
                     };
-                    json!({ "content": [{ "type": "text", "text": format!("✓ Quick trace recorded: {} (ZEDOS_TRAINING 8-prop){}{}", trace_key, loci_note, spatial_warning_suffix(spatial_warning)) }] })
+                    json!({ "content": [{ "type": "text", "text": format!(
+                        "✓ Quick trace recorded: {} (ZEDOS_TRAINING 8-prop){}{}{}",
+                        trace_key,
+                        loci_note,
+                        spatial_warning_suffix(spatial_warning),
+                        fork_hint,
+                    ) }] })
                 }
                 Err(e) => {
                     json!({ "content": [{ "type": "text", "text": format!("Error: {}", e) }], "isError": true })
@@ -5813,12 +5906,13 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                     };
                     json!({
                         "content": [{ "type": "text", "text": format!(
-                            "✓ Turn recorded: {} (RPT v3 {})\n  traces_linked: {}\n  activity_window: {:?}{}",
+                            "✓ Turn recorded: {} (RPT v3 {})\n  traces_linked: {}\n  activity_window: {:?}{}{}",
                             tile_key,
                             payload.get("tier").and_then(|v| v.as_str()).unwrap_or("lean"),
                             trace_n,
                             payload.get("activity_window"),
                             extract_note,
+                            sentinel_turn_suffix(&mut lock),
                         ) }]
                     })
                 }
@@ -7828,6 +7922,21 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                 .unwrap_or("")
                 .trim()
                 .to_string();
+            let uncertainty_status = args
+                .get("uncertainty_status")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            let requested_anchors: Vec<String> = args
+                .get("requested_anchors")
+                .and_then(|v| v.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|s| s.as_str().map(str::to_string))
+                        .collect()
+                })
+                .unwrap_or_default();
 
             if concept.is_empty() {
                 return json!({
@@ -7843,20 +7952,47 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                 .to_string();
 
             let mut lock = store.lock().unwrap();
-            let result = lock.scar(&raw_concept, magnitude);
-            match result {
-                Ok(msg) => {
-                    relate_realized_by(&mut lock, &raw_concept, &process_context);
-                    warn!(
-                        "[M-NOL SCAR] concept='{}' magnitude={:.3}",
-                        raw_concept, magnitude
-                    );
-                    json!({ "content": [{ "type": "text", "text": msg }] })
+
+            if raw_concept.starts_with("uncertainty:") || !uncertainty_status.is_empty() {
+                let slug = raw_concept
+                    .strip_prefix("uncertainty:")
+                    .unwrap_or(&raw_concept)
+                    .to_string();
+                let status = if uncertainty_status.is_empty() {
+                    "memory_insufficient"
+                } else {
+                    uncertainty_status.as_str()
+                };
+                match lock.mint_uncertainty_receipt(&slug, status, &requested_anchors) {
+                    Ok(minted) => {
+                        relate_realized_by(&mut lock, &minted, &process_context);
+                        json!({
+                            "content": [{ "type": "text", "text": format!(
+                                "✓ Uncertainty receipt minted: {minted} (memory claim withheld — recall first; not for general inference)"
+                            ) }]
+                        })
+                    }
+                    Err(e) => json!({
+                        "content": [{ "type": "text", "text": format!("Uncertainty receipt failed: {e}") }],
+                        "isError": true
+                    }),
                 }
-                Err(e) => json!({
-                    "content": [{ "type": "text", "text": format!("Scar failed: {e}") }],
-                    "isError": true
-                }),
+            } else {
+                let result = lock.scar(&raw_concept, magnitude);
+                match result {
+                    Ok(msg) => {
+                        relate_realized_by(&mut lock, &raw_concept, &process_context);
+                        warn!(
+                            "[M-NOL SCAR] concept='{}' magnitude={:.3}",
+                            raw_concept, magnitude
+                        );
+                        json!({ "content": [{ "type": "text", "text": msg }] })
+                    }
+                    Err(e) => json!({
+                        "content": [{ "type": "text", "text": format!("Scar failed: {e}") }],
+                        "isError": true
+                    }),
+                }
             }
         }
 
@@ -8808,7 +8944,8 @@ mod tests {
         use std::sync::Arc;
         use std::time::{SystemTime, UNIX_EPOCH};
 
-        const SCRATCH: &str = "/tmp/grok-goal-06e08d787ea9/implementer";
+        const SCRATCH: &str = "/tmp/grok-goal-d523b1f1c0ff/implementer";
+        static CONTINUITY_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
         fn scratch_path(name: &str) -> PathBuf {
             PathBuf::from(SCRATCH).join(name)
@@ -8847,9 +8984,51 @@ mod tests {
         }
 
         fn prep_store(tmp: &str) -> SharedStore {
+            std::env::set_var("ENGRAM_DISABLE_SHEAF", "1");
+            std::env::set_var("ENGRAM_FORCE_CPU_BACKEND", "1");
             let store = open_store(tmp);
             store.lock().unwrap().mark_fully_initialized();
             store
+        }
+
+        fn assert_pre_handoff_fresh(cont: &serde_json::Value) {
+            use crate::continuity_spikes::json_field_present;
+            assert!(
+                !cont
+                    .get("structured_handoff")
+                    .map(json_field_present)
+                    .unwrap_or(false),
+                "pre-handoff wake must not expose meaningful structured_handoff: {cont}"
+            );
+            assert!(
+                !cont
+                    .get("rehydration_manifest")
+                    .map(json_field_present)
+                    .unwrap_or(false),
+                "pre-handoff wake must not expose meaningful rehydration_manifest: {cont}"
+            );
+        }
+
+        fn assert_post_handoff_manifest(cont: &serde_json::Value) {
+            use crate::continuity_spikes::json_field_present;
+            let handoff = cont
+                .get("structured_handoff")
+                .expect("post-handoff must include structured_handoff");
+            assert!(
+                json_field_present(handoff),
+                "structured_handoff must be non-null object: {cont}"
+            );
+            let manifest = cont
+                .get("rehydration_manifest")
+                .expect("post-handoff must include rehydration_manifest");
+            assert!(
+                json_field_present(manifest),
+                "rehydration_manifest must be present object: {cont}"
+            );
+            assert_eq!(
+                manifest.get("version").and_then(|v| v.as_str()),
+                Some("rehydration_manifest_v1")
+            );
         }
 
         /// handle_tool_call stacks deeply; run on a larger stack in unit-test threads.
@@ -9199,6 +9378,412 @@ mod tests {
 
             let _ = std::fs::remove_dir_all(&tmp);
             std::env::remove_var("ENGRAM_CUFILE_HOT");
+        }
+
+        #[test]
+        fn quick_trace_significant_fork_soft_triadic_hint() {
+            let tmp = unique_tmp("triad-hint");
+            let store = prep_store(&tmp);
+            let resp = handle_tool_on_big_stack(
+                "mcp_engram_quick_trace",
+                &json!({
+                    "decision": "wire fork-scoped triadic hint",
+                    "why": "significant fork with goal but no A/D/R should nudge only",
+                    "goal_context": "goal:theory_spikes_v1",
+                }),
+                &store,
+            );
+            let text = mcp_text(&resp);
+            assert!(
+                text.contains("significant_fork_soft_hint"),
+                "expected soft triadic hint in response: {text}"
+            );
+            let routine = handle_tool_on_big_stack(
+                "mcp_engram_quick_trace",
+                &json!({
+                    "decision": "routine note",
+                    "why": "no goal spatial or process — lightweight path",
+                }),
+                &store,
+            );
+            let routine_text = mcp_text(&routine);
+            assert!(
+                !routine_text.contains("significant_fork_soft_hint"),
+                "routine trace should not emit triadic hint: {routine_text}"
+            );
+            let _ = std::fs::remove_dir_all(&tmp);
+        }
+
+        #[test]
+        fn scar_uncertainty_status_mints_receipt() {
+            let tmp = unique_tmp("uncertainty-scar");
+            let store = prep_store(&tmp);
+            let resp = handle_tool_on_big_stack(
+                "mcp_engram_scar",
+                &json!({
+                    "concept": "prior_handoff_state",
+                    "uncertainty_status": "memory_insufficient",
+                    "requested_anchors": ["goal:theory_spikes_v1", "trace:missing_head"]
+                }),
+                &store,
+            );
+            let text = mcp_text(&resp);
+            assert!(
+                text.contains("Uncertainty receipt minted"),
+                "expected uncertainty mint: {text}"
+            );
+            let _ = std::fs::remove_dir_all(&tmp);
+        }
+
+        fn parse_mcp_json(resp: &serde_json::Value) -> serde_json::Value {
+            serde_json::from_str(&mcp_text(resp)).expect("MCP response text must be JSON")
+        }
+
+        fn log_mcp_transcript(
+            step: &str,
+            tool: &str,
+            args: &serde_json::Value,
+            resp: &serde_json::Value,
+        ) {
+            append_evidence(
+                "spikes-continuity.log",
+                &format!(
+                    "\n=== {step} ===\nTOOL: {tool}\nARGS: {}\nRESPONSE_RAW: {}\nRESPONSE_TEXT: {}\n",
+                    serde_json::to_string_pretty(args).unwrap_or_default(),
+                    serde_json::to_string_pretty(resp).unwrap_or_default(),
+                    mcp_text(resp),
+                ),
+            );
+        }
+
+        fn run_continuity_sequence(run: u32) -> serde_json::Value {
+            let tmp = unique_tmp(&format!("continuity-seq-{run}"));
+            let store = prep_store(&tmp);
+            {
+                let lock = store.lock().unwrap();
+                assert!(
+                    lock.fetch_block("helper:session_handoff_latest").is_none(),
+                    "isolated store must have no session handoff before sequence"
+                );
+            }
+            {
+                let mut lock = store.lock().unwrap();
+                lock.sentinel_reset_for_test();
+            }
+            setup_post_clear_goals(&store);
+            {
+                let mut lock = store.lock().unwrap();
+                let _ = lock.remember(
+                    "goal:theory_spikes_v1",
+                    "GOAL\n\n**status:** active\n**goal_statement:** theory continuity spike verification goal\n",
+                );
+            }
+
+            append_evidence(
+                "spikes-continuity.log",
+                &format!("\n######## CONTINUITY SEQUENCE RUN {run} ########\n"),
+            );
+
+            let recall_goal_args = json!({
+                "query": "goal:theory_spikes_v1",
+                "scope": "anchors",
+                "k": 3,
+            });
+            let recall_goal =
+                handle_tool_on_big_stack("mcp_engram_recall", &recall_goal_args, &store);
+            log_mcp_transcript(
+                "recall_goal_anchor",
+                "mcp_engram_recall",
+                &recall_goal_args,
+                &recall_goal,
+            );
+            let recall_goal_text = mcp_text(&recall_goal);
+            assert!(
+                recall_goal_text.contains("goal:theory_spikes_v1"),
+                "anchors recall must return exact goal concept: {recall_goal_text}"
+            );
+
+            let start1_args =
+                json!({ "intent": format!("theory continuity spike verification run {run}") });
+            let start1 = handle_tool_on_big_stack("mcp_engram_session_start", &start1_args, &store);
+            log_mcp_transcript(
+                "session_start_1",
+                "mcp_engram_session_start",
+                &start1_args,
+                &start1,
+            );
+            let wake1 = parse_mcp_json(&start1);
+            let cont1 = wake1.get("continuation").expect("continuation");
+            assert_pre_handoff_fresh(cont1);
+            append_evidence(
+                "spikes-continuity.log",
+                "NOTE session_start_1: pre-handoff fresh — no structured_handoff or rehydration_manifest keys\n",
+            );
+
+            let sig_args = json!({
+                "decision": "significant fork without triad",
+                "why": "verify soft hint only",
+                "goal_context": "goal:theory_spikes_v1",
+            });
+            let sig_fork = handle_tool_on_big_stack("mcp_engram_quick_trace", &sig_args, &store);
+            log_mcp_transcript(
+                "quick_trace_significant_fork",
+                "mcp_engram_quick_trace",
+                &sig_args,
+                &sig_fork,
+            );
+            let sig_text = mcp_text(&sig_fork);
+            assert!(
+                sig_text.contains("significant_fork_soft_hint"),
+                "significant fork must soft-hint: {sig_text}"
+            );
+
+            let routine_args = json!({
+                "decision": "routine trace",
+                "why": "no explicit goal context",
+            });
+            let routine = handle_tool_on_big_stack("mcp_engram_quick_trace", &routine_args, &store);
+            log_mcp_transcript(
+                "quick_trace_routine",
+                "mcp_engram_quick_trace",
+                &routine_args,
+                &routine,
+            );
+            let routine_text = mcp_text(&routine);
+            assert!(
+                !routine_text.contains("significant_fork_soft_hint"),
+                "routine must not triadic-hint: {routine_text}"
+            );
+
+            let unc_args = json!({
+                "concept": "handoff_anchor_state",
+                "uncertainty_status": "memory_insufficient",
+                "requested_anchors": ["goal:theory_spikes_v1"]
+            });
+            let unc = handle_tool_on_big_stack("mcp_engram_scar", &unc_args, &store);
+            log_mcp_transcript("scar_uncertainty", "mcp_engram_scar", &unc_args, &unc);
+            let unc_text = mcp_text(&unc);
+            assert!(
+                unc_text.contains("Uncertainty receipt minted"),
+                "{unc_text}"
+            );
+
+            let mut last_turn_text = String::new();
+            for i in 0..30 {
+                let turn_args = json!({
+                    "user_utterance": format!("turn {i} user"),
+                    "assistant_output": format!("turn {i} assistant"),
+                    "human_forward": format!("continuity sentinel turn {i}"),
+                });
+                let turn = handle_tool_on_big_stack("mcp_engram_turn_record", &turn_args, &store);
+                last_turn_text = mcp_text(&turn);
+                if i == 0 || i == 29 {
+                    log_mcp_transcript(
+                        &format!("turn_record_{i}"),
+                        "mcp_engram_turn_record",
+                        &turn_args,
+                        &turn,
+                    );
+                }
+            }
+            assert!(
+                last_turn_text.contains("rehydrate_suggested=true"),
+                "30 turns must nudge: {last_turn_text}"
+            );
+
+            let nudge_present = {
+                let mut lock = store.lock().unwrap();
+                crate::harness_injection::build_suggested_actions(&mut lock, None)
+                    .iter()
+                    .any(|x| x.get("sentinel_nudge").and_then(|v| v.as_bool()) == Some(true))
+            };
+            assert!(nudge_present, "sentinel nudge action required pre-handoff");
+            let turns_pre = {
+                let lock = store.lock().unwrap();
+                lock.sentinel_snapshot().0
+            };
+            assert!(
+                turns_pre >= 30,
+                "turn counter must be at threshold before handoff (got {turns_pre})"
+            );
+
+            let end_args = json!({
+                "summary": "**decisions:** continuity spike verification\n**files_touched:** crates/engram-server/src/continuity_spikes.rs",
+                "prepare_compression": true,
+            });
+            let end = handle_tool_on_big_stack("mcp_engram_session_end", &end_args, &store);
+            log_mcp_transcript("session_end", "mcp_engram_session_end", &end_args, &end);
+            let end_json = parse_mcp_json(&end);
+            let handoff = end_json
+                .get("handoff")
+                .or_else(|| end_json.get("handoff_packet"))
+                .cloned()
+                .expect("session_end JSON must include handoff packet");
+            let manifest = handoff
+                .get("rehydration_manifest")
+                .expect("handoff must include rehydration_manifest");
+            assert_eq!(manifest["version"], "rehydration_manifest_v1");
+            let compression_manifest = end_json.get("compression_manifest").expect(
+                "session_end must include compression_manifest when prepare_compression=true",
+            );
+            let compression_bundle = compression_manifest
+                .get("continuation_bundle")
+                .expect("compression_manifest must include continuation_bundle");
+            assert!(
+                compression_bundle
+                    .get("rehydration_manifest")
+                    .filter(|v| !v.is_null())
+                    .is_some(),
+                "compression continuation_bundle must expose rehydration_manifest: {compression_bundle}"
+            );
+
+            {
+                let mut lock = store.lock().unwrap();
+                lock.invalidate_continuation_bundle_cache();
+                let bundle = lock.build_continuation_bundle(Some("post-handoff verify"));
+                assert!(
+                    bundle
+                        .get("rehydration_manifest")
+                        .filter(|v| !v.is_null())
+                        .is_some(),
+                    "full continuation bundle must expose rehydration_manifest: {bundle}"
+                );
+                let slim = crate::wake_bundle::slim_continuation_bundle(&bundle);
+                assert!(
+                    slim.get("rehydration_manifest")
+                        .filter(|v| !v.is_null())
+                        .is_some(),
+                    "slim bundle must hoist rehydration_manifest: {slim}"
+                );
+                bundle
+            };
+
+            let start2_args = json!({ "intent": "post-handoff manifest wake" });
+            let start2 = handle_tool_on_big_stack("mcp_engram_session_start", &start2_args, &store);
+            log_mcp_transcript(
+                "session_start_2_post_handoff",
+                "mcp_engram_session_start",
+                &start2_args,
+                &start2,
+            );
+            let wake2 = parse_mcp_json(&start2);
+            let cont2 = wake2.get("continuation").expect("continuation");
+            assert_post_handoff_manifest(cont2);
+            let manifest2 = cont2
+                .get("rehydration_manifest")
+                .cloned()
+                .expect("post-handoff slim continuation must expose rehydration_manifest");
+            assert_eq!(
+                manifest2.get("manifest_concept"),
+                manifest.get("manifest_concept")
+            );
+            let manifest_action = cont2
+                .get("suggested_actions")
+                .and_then(|v| v.as_array())
+                .map(|a| {
+                    a.iter().any(|x| {
+                        x.get("reason")
+                            .and_then(|r| r.as_str())
+                            .is_some_and(|s| s.contains("rehydration manifest"))
+                    })
+                })
+                .unwrap_or(false);
+            assert!(
+                manifest_action,
+                "post-handoff suggested_actions must seed manifest read"
+            );
+            assert_eq!(
+                cont2.get("rehydrate_suggested").and_then(|v| v.as_bool()),
+                Some(false),
+                "counters reset after handoff"
+            );
+            let turns = {
+                let lock = store.lock().unwrap();
+                lock.sentinel_snapshot().0
+            };
+            assert_eq!(turns, 0, "turn counter reset after handoff");
+
+            let observables = json!({
+                "run": run,
+                "manifest_concept": manifest.get("manifest_concept"),
+                "compression_bundle_has_manifest": true,
+                "slim_wake_has_manifest": cont2
+                    .get("rehydration_manifest")
+                    .filter(|v| !v.is_null())
+                    .is_some(),
+                "turns_pre_handoff": turns_pre,
+                "rehydrate_suggested_post_handoff": cont2.get("rehydrate_suggested"),
+                "turns_after_handoff": turns,
+                "significant_fork_hint": true,
+                "routine_fork_hint": false,
+                "uncertainty_minted": true,
+                "sentinel_nudge_pre_handoff": nudge_present,
+                "turn_record_nudge_at_30": last_turn_text.contains("rehydrate_suggested=true"),
+                "anchors_recall_goal_hit": true,
+                "pre_handoff_fresh": true,
+            });
+
+            let _ = std::fs::remove_dir_all(&tmp);
+            observables
+        }
+
+        #[test]
+        fn continuity_spikes_full_session_sequence_twice() {
+            let _guard = CONTINUITY_TEST_LOCK.lock().expect("continuity test lock");
+            std::fs::create_dir_all(SCRATCH).ok();
+            std::fs::write(
+                scratch_path("spikes-continuity.log"),
+                "=== spikes-continuity.log (fresh run; prior appended history cleared) ===\n",
+            )
+            .expect("truncate spikes-continuity.log");
+            let run0 = run_continuity_sequence(0);
+            let run1 = run_continuity_sequence(1);
+            for key in [
+                "rehydrate_suggested_post_handoff",
+                "turns_after_handoff",
+                "compression_bundle_has_manifest",
+                "slim_wake_has_manifest",
+                "significant_fork_hint",
+                "routine_fork_hint",
+                "uncertainty_minted",
+                "sentinel_nudge_pre_handoff",
+                "turn_record_nudge_at_30",
+                "anchors_recall_goal_hit",
+                "pre_handoff_fresh",
+            ] {
+                assert_eq!(
+                    run0.get(key),
+                    run1.get(key),
+                    "observable {key} must match across runs"
+                );
+            }
+            assert!(
+                run0.get("manifest_concept")
+                    .and_then(|v| v.as_str())
+                    .is_some_and(|s| s.starts_with("manifest:rehydration_")),
+                "run0 manifest concept"
+            );
+            assert!(
+                run1.get("manifest_concept")
+                    .and_then(|v| v.as_str())
+                    .is_some_and(|s| s.starts_with("manifest:rehydration_")),
+                "run1 manifest concept"
+            );
+
+            let evidence = json!({ "runs": [run0, run1] });
+            std::fs::create_dir_all(SCRATCH).ok();
+            std::fs::write(
+                scratch_path("manifest-nudge-evidence.json"),
+                serde_json::to_string_pretty(&evidence).unwrap(),
+            )
+            .expect("write manifest-nudge-evidence.json");
+            append_evidence(
+                "spikes-continuity.log",
+                &format!(
+                    "\n=== SUMMARY continuity_spikes_full_session_sequence_twice OK ===\n{}\n",
+                    serde_json::to_string_pretty(&evidence).unwrap()
+                ),
+            );
         }
     }
 }

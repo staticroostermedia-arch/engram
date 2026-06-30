@@ -122,6 +122,7 @@ impl EngramProfile {
         Self::set_default("ENGRAM_UPDATE_COHERENCE", "warn");
         // slim = lean session_start payload; full = inline continuation bundle (legacy)
         Self::set_default("ENGRAM_WAKE_BUNDLE", "slim");
+        // Sentinel continuity (continuity_spikes): ~30 turn_record / ~120 min soft rehydrate nudge — never blocks edits
 
         let sheaf_path = shellexpand::tilde("~/.engram/sheaf.toml").into_owned();
         if std::path::Path::new(&sheaf_path).exists() {

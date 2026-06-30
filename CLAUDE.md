@@ -18,7 +18,7 @@ Lean default: `session_start` → `context_for_edit` → `recall(scope=anchors)`
 
 When working on Engram itself, use the system's own MCP tools to record traces, relate work to active goals, scar friction, and **`update`** design/progress blocks. **Thought tiles** help structured arcs and session re-hydration. See `docs/HARNESS_INJECTION.md`, `docs/DEFORMATION_PLAYBOOKS.md`, and `docs/RITUALS.md`.
 
-- On every new chat/TUI restart involving Engram: **one call** `mcp_engram_session_start(intent)` (inline continuation bundle). Use the wake-up skill; do not run the old 5-tool wake unless deep mode.
+- On every new chat/TUI restart involving Engram: **one call** `mcp_engram_session_start(intent)` (inline continuation bundle). Use the wake-up skill; do not run the old 5-tool wake unless deep mode. Slim wake may include `rehydration_manifest` + soft `rehydrate_suggested` sentinel nudge (never blocking).
 - Working-memory default: momentum/relational/spatial entry before broad reads or derives.
 - For substrate edits: pre `context_for_file` + trace (A/D/R), post delta trace (Code Edit Ritual v1).
 - End substantive work blocks: `session_end` with structured summary (decisions, files changed, open questions). Use `prepare_compression` for handoff when appropriate.

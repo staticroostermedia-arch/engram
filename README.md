@@ -72,7 +72,7 @@ Full comparison vs mem0/Letta/chroma: see [docs/GROK_BUILD_MEMORY.md](docs/GROK_
 git clone https://github.com/staticroostermedia-arch/engram.git
 cd engram
 cargo build -p engram-server
-target/debug/engram --version   # 0.7.0-beta.4
+target/debug/engram --version   # 0.7.0-beta.5
 ```
 
 **MCP config** (Grok Build / Cursor — use `scripts/engram-grok`):
@@ -158,8 +158,9 @@ flowchart LR
   H --> W
 ```
 
-## What's new (v0.7.0-beta.4+)
+## What's new (v0.7.0-beta.5+)
 
+- **Theory-informed continuity spikes:** Portable `rehydration_manifest` at wake (no broad recall); soft sentinel nudge at ~30 turns / ~120 min; `uncertainty:*` receipts for thin memory claims; fork-scoped A/D/R hints; immutable `receipt:session_*` audit sidecar. See [HARNESS_INJECTION.md](docs/HARNESS_INJECTION.md).
 - **Tensor–thought-tile unification:** Dual-write `tile:*` → `tensor:tile__*` mirrors with bonds; `update_with_tensor_bond` + plain `update` sync; `propose_improvement` tile type; `session_end` p-drift consolidation; harness suite `tensor-thought-unification` (2× consecutive runs + SCRATCH evidence). Rituals: `thought_tile_to_tensor`, `verified-update-with-consolidation`.
 - **Solid-State Tensor MVP:** NVMe-backed geometric memory as context extension — `tensor_upsert` / `tensor_recall`, bond subgraph delivery, momentum consolidation ritual, hermetic verification harness.
 - **Goal hygiene:** 72h stale autopause + `session_end` audit (active goal stack stays bounded).

@@ -14,7 +14,8 @@ This file + CLAUDE.md + docs/ + `docs/skills/` + processes/*.toml define the con
 | **Edit prep** | `mcp_engram_context_for_edit(absolute_path)` — code atlas v2.1 + `post_edit_palette` (replaces mandatory `watch_workspace` at wake) |
 | **Read** | `mcp_engram_recall(query, scope="anchors")` — goals/traces/rituals before episodic noise |
 | **Decide / write** | `mcp_engram_quick_trace` at forks; `mcp_engram_remember` for new concepts only (recall first; use `update` if match > 0.85) |
-| **Handoff** | `mcp_engram_session_end(summary, prepare_compression=true)` — structured packet for next wake |
+| **Handoff** | `mcp_engram_session_end(summary, prepare_compression=true)` — structured packet + `rehydration_manifest` for next wake |
+| **Continuity nudges** | Sentinel soft `rehydrate_suggested` (~30 turns / ~120 min); `scar(uncertainty_status=…)` for withheld memory claims; A/D/R soft hint on significant forks only |
 | **Probe / mode** | `mcp_engram_get_backend_readiness`; `mcp_engram_set_memory_mode("lean"|"deep")` |
 
 **Lean by default.** Do **not** call `watch_workspace`, `rebuild_bvh`, `summarize`, or `query_with_momentum` at wake unless deep mode or a specific task requires it. See [docs/MCP_TOOLS_REFERENCE.md](docs/MCP_TOOLS_REFERENCE.md) for Essential / Power / Lean-avoid tiers.

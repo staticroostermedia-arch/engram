@@ -31,6 +31,8 @@ mcp_engram_session_end(
 | `next_actions` | Machine-readable continuation queue |
 | `key_traces` | `trace:*` blocks to surface at next wake |
 | `files_touched` | Spatial continuity for edit-scoped wake |
+| `rehydration_manifest` | Portable continuation kit (`manifest:rehydration_*`) — priority-0 next wake |
+| `receipt:session_*` | Immutable audit sidecar (hash + readiness snapshot; P2) |
 | `compression_handoff_key` | `compression_handoff_*` manifest link |
 | `hydration_cache_refreshed` | `helper:session_hydration_cache` updated |
 | `hot_promoted_count` | Continuity artifacts promoted |

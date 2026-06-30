@@ -1,0 +1,36 @@
+# agent:engram.monitor.sentinel
+
+[process]
+name = "agent:engram.monitor.sentinel"
+zedos_type = "monitor"
+phase_seed = "0xSENTINEL202606..."
+
+[category]
+object = "session_continuity"
+morphism = "OP_INVERT"
+sheaf_role = "Soft rehydrate nudge — turn/time budget without blocking edits (lean/agent default)"
+h1_handler = "OP_IS_SYMBOLIC_OF"
+
+[mcp_tools]
+list = ["mcp_engram_session_end", "mcp_engram_turn_record", "mcp_engram_session_start"]
+
+[requires]
+list = ["helper:session_handoff_latest"]
+
+[produces]
+list = ["manifest:rehydration_*", "receipt:session_*", "metric:sentinel_*"]
+
+[invariants]
+list = ["nudge_only_no_block", "sentinel_reset_on_handoff"]
+
+[thresholds]
+max_turns_since_handoff = 30
+max_minutes_since_checkpoint = 120
+
+[timeout_ms]
+value = 5000
+
+[notes]
+# Lean continuity spike: counters advance on turn_record; wall-time fallback when turn_record omitted.
+# rehydrate_suggested surfaces in ego_snapshot + suggested_actions (priority 0) — never 403/context_for_edit block.
+# Full handoff resets counters via session_lifecycle::on_mcp_session_end_committed.
