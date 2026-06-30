@@ -3106,6 +3106,69 @@ impl StoreHandle {
         out
     }
 
+    /// BLAKE3(handoff.sig_0 || session_end_key) — session-boundary Merkle linkage for manifest/receipt sidecars.
+    fn session_boundary_merkle_sub_root(
+        handoff_sig_0: &[u8; 32],
+        session_end_key: &str,
+    ) -> [u8; 32] {
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(handoff_sig_0);
+        hasher.update(session_end_key.as_bytes());
+        *hasher.finalize().as_bytes()
+    }
+
+    fn apply_session_boundary_merkle(
+        &mut self,
+        concept: &str,
+        handoff_sig_0: &[u8; 32],
+        session_end_key: &str,
+    ) -> Result<()> {
+        let Some(mut block) = self
+            .fetch_block(concept)
+            .or_else(|| self.fetch_block_high_priority(concept))
+        else {
+            return Ok(());
+        };
+        let fingerprint = Self::session_boundary_merkle_sub_root(handoff_sig_0, session_end_key);
+        block.footer.merkle_sub_root.copy_from_slice(&fingerprint);
+        self.store(concept, block)?;
+        Ok(())
+    }
+
+    /// Newest promoted `manifest:rehydration_*` block parsed via REHYDRATION MANIFEST provlog shape.
+    fn resolve_manifest_from_promoted_blocks(&self) -> Option<serde_json::Value> {
+        for (concept, _) in self.access_index.recent(200) {
+            if !concept.starts_with("manifest:rehydration_") {
+                continue;
+            }
+            let Some(block) = self
+                .fetch_block_high_priority(&concept)
+                .or_else(|| self.fetch_block(&concept))
+            else {
+                continue;
+            };
+            let body = engram_core::storage::read_provlog(&block);
+            if let Some(v) = crate::harness_injection::parse_rehydration_manifest_provlog(&body) {
+                return Some(v);
+            }
+        }
+        None
+    }
+
+    /// Agent-profile gate: versioned DSL must permit `update`; legacy contracts keep evidence_update semantics.
+    fn agent_update_transform_permitted(block: &engram_core::types::Leg3Pointer) -> bool {
+        use engram_core::types::ALLOWED_TRANSFORMS_VERSION_V1;
+        if block.allowed_transforms[0] == ALLOWED_TRANSFORMS_VERSION_V1 {
+            return block.enforce_allowed("update");
+        }
+        let contract = std::str::from_utf8(&block.allowed_transforms).unwrap_or("");
+        let trimmed = contract.trim_matches('\0');
+        trimmed.is_empty()
+            || trimmed.contains("0xFF")
+            || trimmed.contains("evidence_update")
+            || trimmed.contains("update")
+    }
+
     /// Mint or update the stable structured handoff block for the next session.
     pub fn persist_session_handoff_latest(
         &mut self,
@@ -3131,6 +3194,12 @@ impl StoreHandle {
         let _ = self.relate(SESSION_HANDOFF_LATEST, session_end_key, "compresses_path");
         let _ = self.relate(SESSION_HANDOFF_LATEST, HANDOFF_ANCHOR, "serves");
 
+        let handoff_sig_0 = self
+            .fetch_block_high_priority(SESSION_HANDOFF_LATEST)
+            .or_else(|| self.fetch_block(SESSION_HANDOFF_LATEST))
+            .map(|b| b.footer.sig_0)
+            .unwrap_or([0u8; 32]);
+
         if let Some(manifest) = packet.get("rehydration_manifest") {
             if let Some(concept) = manifest.get("manifest_concept").and_then(|v| v.as_str()) {
                 let manifest_body = format!(
@@ -3145,6 +3214,8 @@ impl StoreHandle {
                     block.crs_score = 0.92;
                     let _ = self.store(concept, block);
                 }
+                let _ =
+                    self.apply_session_boundary_merkle(concept, &handoff_sig_0, session_end_key);
                 let _ = self.relate(concept, SESSION_HANDOFF_LATEST, "serves");
                 let _ = self.promote_tile_to_high_priority(concept);
             }
@@ -3175,6 +3246,11 @@ impl StoreHandle {
             block.zedos_tag = engram_core::types::ZEDOS_OPERATIONAL;
             block.crs_score = 0.93;
             let _ = self.store(receipt_concept, block);
+            let _ = self.apply_session_boundary_merkle(
+                receipt_concept,
+                &handoff_sig_0,
+                session_end_key,
+            );
             let _ = self.relate(receipt_concept, SESSION_HANDOFF_LATEST, "compresses_path");
             let _ = self.relate(receipt_concept, session_end_key, "serves");
         }
@@ -3262,71 +3338,65 @@ impl StoreHandle {
         let _ = self.persist_sentinel_state(&crate::continuity_spikes::SentinelState::default());
     }
 
-    /// Portable rehydration kit for wake — handoff packet first, then latest `manifest:rehydration_*` block.
+    /// Portable rehydration kit for wake — embedded handoff manifest, promoted manifest block, then legacy synthesis.
     pub fn resolve_rehydration_manifest_for_wake(&mut self) -> Option<serde_json::Value> {
-        if let Some(block) = self
+        let handoff_packet = self
             .fetch_block_high_priority(SESSION_HANDOFF_LATEST)
             .or_else(|| self.fetch_block(SESSION_HANDOFF_LATEST))
-        {
-            let body = engram_core::storage::read_provlog(&block);
-            if let Some(packet) = crate::harness_injection::parse_handoff_packet_json(&body) {
-                if let Some(m) = packet.get("rehydration_manifest").filter(|v| !v.is_null()) {
-                    return Some(m.clone());
-                }
-                if let Some(session_end_key) = packet
-                    .get("session_end_key")
-                    .and_then(|v| v.as_str())
-                    .filter(|s| !s.is_empty())
-                {
-                    let resolved_primary = crate::store::resolve_active_primary_goal(self);
-                    let primary_goal = packet
-                        .get("primary_goal")
-                        .and_then(|v| v.as_str())
-                        .or(resolved_primary.as_deref());
-                    let trace_chain_head = packet.get("trace_chain_head").and_then(|v| v.as_str());
-                    let files_touched: Vec<String> = packet
-                        .get("files_touched")
-                        .and_then(|v| v.as_array())
-                        .map(|arr| {
-                            arr.iter()
-                                .filter_map(|x| x.as_str().map(str::to_string))
-                                .collect()
-                        })
-                        .unwrap_or_default();
-                    let hub_anchors: Vec<String> = packet
-                        .get("recent_traces")
-                        .and_then(|v| v.as_array())
-                        .map(|arr| {
-                            arr.iter()
-                                .filter_map(|x| x.as_str().map(str::to_string))
-                                .take(12)
-                                .collect()
-                        })
-                        .unwrap_or_default();
-                    return Some(crate::continuity_spikes::build_rehydration_manifest(
-                        session_end_key,
-                        primary_goal,
-                        trace_chain_head,
-                        &[],
-                        &hub_anchors,
-                        &files_touched,
-                    ));
-                }
+            .and_then(|block| {
+                let body = engram_core::storage::read_provlog(&block);
+                crate::harness_injection::parse_handoff_packet_json(&body)
+            });
+
+        if let Some(packet) = handoff_packet.as_ref() {
+            if let Some(m) = packet.get("rehydration_manifest").filter(|v| !v.is_null()) {
+                return Some(m.clone());
             }
         }
-        for (concept, _) in self.access_index.recent(200) {
-            if !concept.starts_with("manifest:rehydration_") {
-                continue;
-            }
-            let Some(block) = self
-                .fetch_block_high_priority(&concept)
-                .or_else(|| self.fetch_block(&concept))
-            else {
-                continue;
-            };
-            let body = engram_core::storage::read_provlog(&block);
-            if let Some(v) = crate::harness_injection::parse_handoff_packet_json(&body) {
-                return Some(v);
+
+        if let Some(m) = self.resolve_manifest_from_promoted_blocks() {
+            return Some(m);
+        }
+
+        if let Some(packet) = handoff_packet {
+            if let Some(session_end_key) = packet
+                .get("session_end_key")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+            {
+                let resolved_primary = crate::store::resolve_active_primary_goal(self);
+                let primary_goal = packet
+                    .get("primary_goal")
+                    .and_then(|v| v.as_str())
+                    .or(resolved_primary.as_deref());
+                let trace_chain_head = packet.get("trace_chain_head").and_then(|v| v.as_str());
+                let files_touched: Vec<String> = packet
+                    .get("files_touched")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|x| x.as_str().map(str::to_string))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                let hub_anchors: Vec<String> = packet
+                    .get("recent_traces")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|x| x.as_str().map(str::to_string))
+                            .take(12)
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                return Some(crate::continuity_spikes::build_rehydration_manifest(
+                    session_end_key,
+                    primary_goal,
+                    trace_chain_head,
+                    &[],
+                    &hub_anchors,
+                    &files_touched,
+                ));
             }
         }
         None
@@ -4470,6 +4540,25 @@ impl StoreHandle {
                 concept
             )
         })?;
+
+        // ── Agent-profile allowed_transforms gate (soft block — no geometry mutation) ─
+        if Self::current_profile_name() == "agent"
+            && !Self::agent_update_transform_permitted(&block)
+        {
+            tracing::warn!(
+                "[ALLOWED_TRANSFORMS] '{}' does not permit 'update' under agent profile. \
+                 Update rejected (soft gate).",
+                concept
+            );
+            return Ok(crate::coherence::UpdateResult {
+                message: format!(
+                    "⚠ '{}' update rejected — allowed_transforms does not permit 'update' \
+                     (agent profile soft gate). Block unchanged.",
+                    concept
+                ),
+                provlog_coherence: None,
+            });
+        }
 
         // ── Reflexive Contract (soft enforcement) ─────────────────────────────
         // Check if 'evidence_update' is permitted. Log violation but never block.
@@ -7410,6 +7499,15 @@ mod ingest_ast_tests {
             store.fetch_block(manifest_concept).is_some(),
             "manifest block persisted"
         );
+        let manifest_block = store.fetch_block(manifest_concept).unwrap();
+        assert!(
+            manifest_block
+                .footer
+                .merkle_sub_root
+                .iter()
+                .any(|&b| b != 0),
+            "manifest block must carry session-boundary merkle_sub_root"
+        );
 
         let receipts: Vec<String> = store
             .list()
@@ -7417,9 +7515,14 @@ mod ingest_ast_tests {
             .filter(|c| c.starts_with("receipt:session_"))
             .collect();
         assert_eq!(receipts.len(), 1, "one session receipt sidecar");
-        let receipt_body = read_provlog(&store.fetch_block(&receipts[0]).unwrap());
+        let receipt_block = store.fetch_block(&receipts[0]).unwrap();
+        let receipt_body = read_provlog(&receipt_block);
         assert!(receipt_body.contains("SESSION RECEIPT v1"));
         assert!(receipt_body.contains("payload_sha256_blake3"));
+        assert!(
+            receipt_block.footer.merkle_sub_root.iter().any(|&b| b != 0),
+            "receipt block must carry session-boundary merkle_sub_root"
+        );
 
         store.invalidate_continuation_bundle_cache();
         let bundle = store.build_continuation_bundle(Some("post-handoff"));
@@ -7434,6 +7537,61 @@ mod ingest_ast_tests {
         let (turns, _) = store.sentinel_snapshot();
         assert_eq!(turns, 0, "handoff must reset sentinel turn counter");
 
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn resolve_manifest_from_promoted_block_without_handoff_embed() {
+        let dir = test_store_dir("manifest_block_fallback");
+        let mut store = StoreHandle::new(&dir.to_string_lossy());
+        let handoff_packet = serde_json::json!({
+            "session_end_key": "session_end_77",
+            "primary_goal": "goal:legacy_synth_would_differ",
+            "trace_chain_head": "trace:legacy_head",
+        });
+        let handoff_body = format!(
+            "SESSION HANDOFF PACKET v1 (structured JSON for next-wake read_concept)\n\n{}\n",
+            serde_json::to_string_pretty(&handoff_packet).unwrap()
+        );
+        let mut handoff_block = store.encode(&handoff_body);
+        handoff_block.zedos_tag = engram_core::types::ZEDOS_OPERATIONAL;
+        handoff_block.crs_score = 0.94;
+        store
+            .store(
+                crate::harness_injection::SESSION_HANDOFF_LATEST,
+                handoff_block,
+            )
+            .unwrap();
+
+        let manifest = serde_json::json!({
+            "version": "rehydration_manifest_v1",
+            "manifest_concept": "manifest:rehydration_77",
+            "session_end_key": "session_end_77",
+            "primary_goal": "goal:from_manifest_block",
+            "trace_chain_head": "trace:manifest_block_head",
+            "files_touched": ["crates/engram-server/src/store.rs"],
+            "hub_anchors": ["goal:from_manifest_block"],
+            "trusted_tiles": [],
+        });
+        let manifest_body = format!(
+            "REHYDRATION MANIFEST v1 (portable continuation kit)\n\n{}\n",
+            serde_json::to_string_pretty(&manifest).unwrap()
+        );
+        let mut manifest_block = store.encode(&manifest_body);
+        manifest_block.zedos_tag = engram_core::types::ZEDOS_OPERATIONAL;
+        manifest_block.crs_score = 0.92;
+        store
+            .store("manifest:rehydration_77", manifest_block)
+            .unwrap();
+        let _ = store.promote_tile_to_high_priority("manifest:rehydration_77");
+
+        let resolved = store
+            .resolve_rehydration_manifest_for_wake()
+            .expect("promoted manifest block must win over legacy synthesis");
+        assert_eq!(resolved["version"], "rehydration_manifest_v1");
+        assert_eq!(resolved["manifest_concept"], "manifest:rehydration_77");
+        assert_eq!(resolved["primary_goal"], "goal:from_manifest_block");
+        assert_eq!(resolved["trace_chain_head"], "trace:manifest_block_head");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -7462,6 +7620,91 @@ mod ingest_ast_tests {
             .expect("legacy handoff must synthesize manifest");
         assert_eq!(manifest["version"], "rehydration_manifest_v1");
         assert_eq!(manifest["session_end_key"], "session_end_99");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn recall_surfaces_l2_norm_residual_for_high_surprise_block() {
+        let dir = test_store_dir("l2_residual_recall");
+        let mut store = StoreHandle::new(&dir.to_string_lossy());
+        let mut block = store.encode("TRACE\n\n**decision_point:** high surprise anchor\n");
+        block.l2_norm_residual = 0.42;
+        block.zedos_tag = engram_core::types::ZEDOS_EPISODIC;
+        store.store("trace:surprise_residual_test", block).unwrap();
+        let (hits, scope) = store.recall_scoped("trace:surprise_residual_test", 3, Some("anchors"));
+        assert_eq!(scope, "anchors");
+        let hit = hits
+            .iter()
+            .find(|m| m.concept == "trace:surprise_residual_test")
+            .expect("direct anchor recall must return seeded trace");
+        assert!(
+            (hit.l2_norm_residual - 0.42).abs() < 1e-5,
+            "recall must surface l2_norm_residual, got {}",
+            hit.l2_norm_residual
+        );
+
+        let stratum = crate::presentation_stratum::build_presentation_stratum(
+            &mut store,
+            40,
+            Some("trace:surprise_residual_test"),
+        );
+        let nodes = stratum
+            .get("nodes")
+            .and_then(|v| v.as_array())
+            .expect("presentation nodes");
+        let node = nodes
+            .iter()
+            .find(|n| {
+                n.get("concept").and_then(|v| v.as_str()) == Some("trace:surprise_residual_test")
+            })
+            .expect("presentation stratum must include seeded trace");
+        let residual = node
+            .get("l2_norm_residual")
+            .and_then(|v| v.as_f64())
+            .expect("presentation node must expose l2_norm_residual");
+        assert!(
+            (residual - 0.42).abs() < 1e-4,
+            "presentation residual {residual} should be ~0.42"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn agent_profile_rejects_update_when_transform_not_allowed() {
+        use engram_core::types::ALLOWED_TRANSFORMS_VERSION_V1;
+        let dir = test_store_dir("agent_transform_gate");
+        std::env::set_var("ENGRAM_PROFILE", "agent");
+        let mut store = StoreHandle::new(&dir.to_string_lossy());
+        store
+            .remember(
+                "goal:transform_gate_test",
+                "GOAL\n\n**status:** active\n**goal_statement:** transform gate\n",
+            )
+            .unwrap();
+        let mut block = store.fetch_block("goal:transform_gate_test").unwrap();
+        let mut at = [0u8; 64];
+        at[0] = ALLOWED_TRANSFORMS_VERSION_V1;
+        let dsl = b"read|verify\0";
+        at[1..1 + dsl.len()].copy_from_slice(dsl);
+        block.allowed_transforms = at;
+        let before_sig = block.footer.sig_0;
+        let before_count = block.superposition_count;
+        store.store("goal:transform_gate_test", block).unwrap();
+
+        let result = store
+            .update("goal:transform_gate_test", "GOAL\n\n**status:** blocked\n")
+            .expect("soft gate returns Ok with rejection message");
+        assert!(
+            result.contains("rejected"),
+            "agent gate must surface rejection: {result}"
+        );
+
+        let after = store.fetch_block("goal:transform_gate_test").unwrap();
+        assert_eq!(after.footer.sig_0, before_sig, "geometry must be unchanged");
+        assert_eq!(
+            after.superposition_count, before_count,
+            "superposition_count must be unchanged"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 

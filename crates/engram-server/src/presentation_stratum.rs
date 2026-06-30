@@ -438,7 +438,12 @@ pub fn build_presentation_stratum(
             "memory"
         };
 
-        nodes.push(json!({
+        let l2_norm_residual = store
+            .fetch_block_high_priority(&c.concept)
+            .or_else(|| store.fetch_block(&c.concept))
+            .map(|b| b.l2_norm_residual)
+            .unwrap_or(0.0);
+        let mut node = json!({
             "concept": c.concept,
             "kind": kind,
             "crs": c.crs,
@@ -448,7 +453,11 @@ pub fn build_presentation_stratum(
             "orbit": c.orbit,
             "preview": preview,
             "lineage": lineage,
-        }));
+        });
+        if l2_norm_residual > 0.0 {
+            node["l2_norm_residual"] = json!(l2_norm_residual);
+        }
+        nodes.push(node);
     }
 
     let mut edges: Vec<Value> = Vec::new();
