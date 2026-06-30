@@ -2397,16 +2397,7 @@ fn sentinel_turn_suffix(lock: &mut crate::store::StoreHandle) -> String {
         checkpoint,
         crate::continuity_spikes::now_unix(),
     );
-    let hub_anchors: Vec<String> = lock
-        .resolve_rehydration_manifest_for_wake()
-        .and_then(|m| {
-            m.get("hub_anchors").and_then(|v| v.as_array()).map(|arr| {
-                arr.iter()
-                    .filter_map(|x| x.as_str().map(str::to_string))
-                    .collect()
-            })
-        })
-        .unwrap_or_default();
+    let hub_anchors = crate::harness_injection::resolve_hub_anchors_for_surprise(lock, None);
     let surprise = crate::harness_injection::hub_anchor_surprise_pressure(lock, &hub_anchors);
     let effective = crate::continuity_spikes::effective_max_turns(surprise);
     let (rehydrate_suggested, reason) =

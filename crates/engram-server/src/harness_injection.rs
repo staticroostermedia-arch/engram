@@ -679,6 +679,45 @@ fn hub_anchors_from_manifest(manifest: Option<&Value>) -> Vec<String> {
         .unwrap_or_default()
 }
 
+fn hub_anchors_from_presentation_stratum(
+    store: &mut StoreHandle,
+    session_intent: Option<&str>,
+) -> Vec<String> {
+    let stratum =
+        crate::presentation_stratum::build_presentation_stratum(store, 12, session_intent);
+    stratum
+        .get("nodes")
+        .and_then(|v| v.as_array())
+        .map(|nodes| {
+            nodes
+                .iter()
+                .filter_map(|n| {
+                    n.get("concept")
+                        .and_then(|v| v.as_str())
+                        .map(str::to_string)
+                })
+                .take(16)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Hub anchors for surprise sampling: manifest first, else live presentation stratum.
+///
+/// Pre-handoff sessions have no persisted manifest; presentation stratum supplies
+/// recent trace/tile/goal distillates so turn_record sentinels stay surprise-aware.
+pub fn resolve_hub_anchors_for_surprise(
+    store: &mut StoreHandle,
+    session_intent: Option<&str>,
+) -> Vec<String> {
+    let manifest = store.resolve_rehydration_manifest_for_wake();
+    let from_manifest = hub_anchors_from_manifest(manifest.as_ref());
+    if !from_manifest.is_empty() {
+        return from_manifest;
+    }
+    hub_anchors_from_presentation_stratum(store, session_intent)
+}
+
 /// Machine queue for next agent actions (wake injection).
 pub fn build_suggested_actions(
     store: &mut StoreHandle,
@@ -688,9 +727,8 @@ pub fn build_suggested_actions(
     let mut primary_goal: Option<String> = None;
     let mut handoff_packet: Option<Value> = None;
 
-    let manifest = store.resolve_rehydration_manifest_for_wake();
-    let surprise =
-        hub_anchor_surprise_pressure(store, &hub_anchors_from_manifest(manifest.as_ref()));
+    let hub_anchors = resolve_hub_anchors_for_surprise(store, session_intent);
+    let surprise = hub_anchor_surprise_pressure(store, &hub_anchors);
     let (turns, checkpoint) = store.sentinel_snapshot();
     let minutes = crate::continuity_spikes::minutes_since_checkpoint(
         checkpoint,
@@ -1326,7 +1364,7 @@ pub fn build_harness_bundle(store: &mut StoreHandle, session_intent: Option<&str
     let primary_goal = crate::store::resolve_active_primary_goal(store);
 
     let rehydration_manifest = store.resolve_rehydration_manifest_for_wake();
-    let hub_anchors = hub_anchors_from_manifest(rehydration_manifest.as_ref());
+    let hub_anchors = resolve_hub_anchors_for_surprise(store, session_intent);
     let ego_snapshot = build_ego_snapshot(store, primary_goal.as_deref(), Some(&hub_anchors));
     let continuity_playbook = build_continuity_playbook(primary_goal.as_deref());
     let presentation_stratum = crate::presentation_stratum::build_presentation_stratum(
@@ -1743,6 +1781,46 @@ SESSION HANDOFF PACKET v1 (structured JSON for next-wake read_concept)
         assert!(
             pressure > 0.0,
             "non-zero residual must yield surprise pressure, got {pressure}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn resolve_hub_anchors_surprise_works_pre_handoff_via_presentation_stratum() {
+        std::env::set_var("ENGRAM_DISABLE_SHEAF", "1");
+        std::env::set_var("ENGRAM_FORCE_CPU_BACKEND", "1");
+        std::env::set_var("ENGRAM_KI_DISABLE", "1");
+        let dir = std::env::temp_dir().join(format!(
+            "surprise_pre_handoff_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).ok();
+        let mut store = crate::store::StoreHandle::new(&dir.to_string_lossy());
+        store
+            .remember(
+                "trace:pre_handoff_surprise",
+                "TRACE\n\n**decision_point:** baseline alpha concept\n",
+            )
+            .unwrap();
+        store
+            .update(
+                "trace:pre_handoff_surprise",
+                "TRACE\n\n**decision_point:** divergent omega rewrite topic\n",
+            )
+            .unwrap();
+        let anchors = resolve_hub_anchors_for_surprise(&mut store, None);
+        assert!(
+            !anchors.is_empty(),
+            "pre-handoff must fall back to presentation stratum anchors"
+        );
+        let pressure = hub_anchor_surprise_pressure(&store, &anchors);
+        assert!(
+            pressure > 0.0,
+            "pre-handoff surprise must be non-zero with residual anchors, got {pressure}"
         );
         let _ = std::fs::remove_dir_all(&dir);
     }

@@ -31,7 +31,7 @@ Builds directly on PR #53 AC2 (`l2_norm_residual` surfacing) and existing sentin
 - `crates/engram-server/src/harness_injection.rs` — `hub_anchor_surprise_pressure`, `rsi_cycle_metrics` in harness bundle, surprise-aware `build_suggested_actions` / `build_ego_snapshot`
 - `crates/engram-core/src/ops.rs` — `prediction_residual`, `apply_prediction_residual` (shared q−prior L2 helper)
 - `crates/engram-server/src/store.rs` — residual propagation on `remember`/`store`/`update` for hub anchors (`trace:`/`tile:`/`goal:`)
-- `crates/engram-server/src/mcp.rs` — `sentinel_turn_suffix` wired to surprise-aware nudge + manifest hub anchors
+- `crates/engram-server/src/mcp.rs` — `sentinel_turn_suffix` wired to surprise-aware nudge + `resolve_hub_anchors_for_surprise`
 - `Cargo.toml`, `Cargo.lock` — version `0.7.0-beta.6`
 - `CHANGELOG.md`, `CHANGELOG-RSI.md`, `docs/rsi_evolution_log.md`
 
@@ -39,9 +39,9 @@ Builds directly on PR #53 AC2 (`l2_norm_residual` surfacing) and existing sentin
 
 | Metric | Score | Notes |
 |--------|-------|-------|
-| **CRS** | 0.82 | Extends grounded continuity spikes; pure functions + store read path only |
-| **Lyapunov / stability proxy** | 0.78 | Tightens handoff under high residual — reduces long-session drift risk |
-| **RSI-acceleration** | 0.85 | Reuses PR #53 signal; one vertical slice, 3 new unit tests |
+| **CRS** | 0.84 | Extends grounded continuity spikes; production residual + stratum fallback |
+| **Lyapunov / stability proxy** | 0.82 | Tightens handoff under high residual — reduces long-session drift risk |
+| **RSI-acceleration** | 0.88 | Reuses PR #53 signal; 5 integration tests + MCP trace/tile |
 | **Perf on rig** | 0.90 | O(16) hub-anchor fetches at wake only; no BVH/manifold scan |
 | **Stewardship safety** | 0.88 | Soft nudge only; never blocks edits; agent gate unchanged |
 
@@ -58,12 +58,16 @@ Builds directly on PR #53 AC2 (`l2_norm_residual` surfacing) and existing sentin
 | Unreachable `surprise_pressure` (always 0) | `store::update` sets `l2_norm_residual` from q−prior; `remember`/`store` apply ego/recent-trace prior for hub anchors |
 | `Cargo.lock` omitted | Included in amend commit |
 | Fake residual in tests | `hub_anchor_surprise_pressure_reads_block_residuals_via_update` + `update_propagates_l2_norm_residual_on_hub_anchor` drive real store path |
-| `mcp.rs` sentinel partial wiring | `sentinel_turn_suffix` uses `compute_sentinel_nudge_with_surprise` + manifest hub anchors |
+| `mcp.rs` sentinel partial wiring | `sentinel_turn_suffix` uses `compute_sentinel_nudge_with_surprise` + `resolve_hub_anchors_for_surprise` |
+| Pre-handoff surprise=0 | `resolve_hub_anchors_for_surprise`: manifest → presentation stratum fallback for first-session turn_record |
+| MCP AC3 evidence | `trace:1782839402_rsi-cycle-1-gap-closure--wire-residual-on-store-`, `tile:formal_spec_rsi-cycle-1---surprise-aware-sentinel-v0-7-0-bet` |
 
 ### Verification (scratch: `/tmp/grok-goal-1d5f7110a8ff/implementer/`)
 
-- `rsi-cycle1-tests.log` — 12/12 targeted pass including `surprise_pressure_tightens_effective_turn_budget`, `surprise_elevated_nudge_before_base_turn_cap`, `hub_anchor_surprise_pressure_reads_block_residuals_via_update`, `update_propagates_l2_norm_residual_on_hub_anchor`, `continuity_spikes_full_session_sequence_twice`
-- `rsi-cycle1-lint.log` — clippy `-D warnings` pass, `cargo fmt --check` pass
+- `rsi-cycle1-tests.log` — 13/13 targeted pass including `surprise_pressure_tightens_effective_turn_budget`, `surprise_elevated_nudge_before_base_turn_cap`, `hub_anchor_surprise_pressure_reads_block_residuals_via_update`, `update_propagates_l2_norm_residual_on_hub_anchor`, `resolve_hub_anchors_surprise_works_pre_handoff_via_presentation_stratum`, `continuity_spikes_full_session_sequence_twice`
+- `rsi-cycle1-lint.log` — CLIPPY_EXIT=0, FMT_EXIT=0
+- `rsi-cycle1-artifacts.txt` — docs excerpt with files + gap-closure + sources + scores
+- `rsi-cycle1-mcp.txt` — quick_trace + thought_tile_create transcript
 
 ### Git workflow (copy-paste)
 
