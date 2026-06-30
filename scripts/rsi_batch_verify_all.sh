@@ -62,7 +62,7 @@ for CYCLE in $(seq "$CYCLE_MIN" "$CYCLE_MAX"); do
   echo "=== CYCLE $CYCLE tests ($FILTER) ===" | tee -a "$SCRATCH/rsi-batch-tests.log"
   TEST_OUT="$SCRATCH/rsi-cycle${CYCLE}-test.out"
   if cargo test -p engram-server -- "$FILTER" 2>&1 | tee "$TEST_OUT" | tee -a "$SCRATCH/rsi-batch-tests.log"; then
-    if grep -qE 'running 0 tests' "$TEST_OUT"; then
+    if ! grep -qE 'running [1-9][0-9]* test' "$TEST_OUT"; then
       echo "CYCLE${CYCLE}_TEST_EXIT=1 (filter '$FILTER' matched 0 tests)" | tee -a "$SCRATCH/rsi-batch-tests.log"
       OVERALL=1
     else
