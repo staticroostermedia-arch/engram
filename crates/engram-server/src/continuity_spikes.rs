@@ -49,6 +49,14 @@ pub fn minutes_since_checkpoint(last_checkpoint_unix: u64, now: u64) -> u64 {
     now.saturating_sub(last_checkpoint_unix) / 60
 }
 
+/// Blend hub-anchor residual surprise with ego NREM drift velocity (Lyapunov proxy).
+///
+/// Uses max-blend so either high prediction error or high ego drift tightens handoff.
+pub fn combined_sentinel_pressure(residual_surprise: f32, ego_drift_velocity: Option<f32>) -> f32 {
+    let drift = ego_drift_velocity.unwrap_or(0.0).clamp(0.0, 1.0);
+    residual_surprise.clamp(0.0, 1.0).max(drift)
+}
+
 /// Aggregate prediction-error signal from hub-anchor residuals (0..1).
 pub fn surprise_pressure_from_residuals(residuals: &[f32]) -> f32 {
     let nonzero: Vec<f32> = residuals.iter().copied().filter(|r| *r > 0.0).collect();
@@ -107,6 +115,7 @@ pub fn sentinel_ego_fields(turns: u32, last_checkpoint_unix: u64, surprise_press
         "surprise_pressure": surprise_pressure,
         "effective_max_turns": effective,
         "lyapunov_proxy": surprise_pressure,
+        "combined_pressure_note": "residual_surprise max-blended with ego drift when wired",
         "sentinel_thresholds": {
             "max_turns": SENTINEL_MAX_TURNS,
             "max_minutes": SENTINEL_MAX_MINUTES,
@@ -235,6 +244,13 @@ pub fn rehydrate_nudge_action(reason: &str) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn combined_sentinel_pressure_blends_ego_drift() {
+        assert!((combined_sentinel_pressure(0.2, Some(0.6)) - 0.6).abs() < 1e-5);
+        assert!((combined_sentinel_pressure(0.8, Some(0.3)) - 0.8).abs() < 1e-5);
+        assert!((combined_sentinel_pressure(0.1, None) - 0.1).abs() < 1e-5);
+    }
 
     #[test]
     fn surprise_pressure_tightens_effective_turn_budget() {

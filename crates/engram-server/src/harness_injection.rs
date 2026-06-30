@@ -667,6 +667,17 @@ pub fn hub_anchor_surprise_pressure(store: &StoreHandle, hub_anchors: &[String])
     crate::continuity_spikes::surprise_pressure_from_residuals(&residuals)
 }
 
+/// Ego NREM drift velocity from `ego.leg3` when present.
+pub fn ego_drift_velocity() -> Option<f32> {
+    read_ego_block().map(|b| b.energetics.dv.clamp(0.0, 1.0))
+}
+
+/// Residual surprise max-blended with ego drift (Cycle 2 Lyapunov continuity).
+pub fn sentinel_pressure_combined(store: &StoreHandle, hub_anchors: &[String]) -> f32 {
+    let residual = hub_anchor_surprise_pressure(store, hub_anchors);
+    crate::continuity_spikes::combined_sentinel_pressure(residual, ego_drift_velocity())
+}
+
 fn hub_anchors_from_manifest(manifest: Option<&Value>) -> Vec<String> {
     manifest
         .and_then(|m| m.get("hub_anchors"))
@@ -728,7 +739,7 @@ pub fn build_suggested_actions(
     let mut handoff_packet: Option<Value> = None;
 
     let hub_anchors = resolve_hub_anchors_for_surprise(store, session_intent);
-    let surprise = hub_anchor_surprise_pressure(store, &hub_anchors);
+    let surprise = sentinel_pressure_combined(store, &hub_anchors);
     let (turns, checkpoint) = store.sentinel_snapshot();
     let minutes = crate::continuity_spikes::minutes_since_checkpoint(
         checkpoint,
@@ -1287,7 +1298,7 @@ pub fn build_ego_snapshot(
     }
 
     let surprise = hub_anchors
-        .map(|h| hub_anchor_surprise_pressure(store, h))
+        .map(|h| sentinel_pressure_combined(store, h))
         .unwrap_or(0.0);
     let (turns, checkpoint) = store.sentinel_snapshot();
     let sentinel = crate::continuity_spikes::sentinel_ego_fields(turns, checkpoint, surprise);
@@ -1387,7 +1398,8 @@ pub fn build_harness_bundle(store: &mut StoreHandle, session_intent: Option<&str
     );
     let jit_framework = build_jit_deformation_framework(task_type, primary_goal.as_deref());
     let verified_processes = build_verified_processes(store, primary_goal.as_deref());
-    let surprise_pressure = hub_anchor_surprise_pressure(store, &hub_anchors);
+    let surprise_pressure = sentinel_pressure_combined(store, &hub_anchors);
+    let ego_drift = ego_drift_velocity();
     let (turns, checkpoint) = store.sentinel_snapshot();
     let minutes = crate::continuity_spikes::minutes_since_checkpoint(
         checkpoint,
@@ -1411,13 +1423,15 @@ pub fn build_harness_bundle(store: &mut StoreHandle, session_intent: Option<&str
         "uncertainty_receipts_wake": uncertainty_receipts_wake,
         "rehydrate_suggested": rehydrate_suggested,
         "rsi_cycle_metrics": {
-            "cycle": 1,
+            "cycle": 2,
             "surprise_pressure": surprise_pressure,
+            "residual_surprise": hub_anchor_surprise_pressure(store, &hub_anchors),
+            "ego_drift_velocity": ego_drift,
             "effective_max_turns": crate::continuity_spikes::effective_max_turns(surprise_pressure),
             "rehydrate_reason": if rehydrate_suggested { rehydrate_reason } else { "" },
             "research_refs": [
-                "https://arxiv.org/abs/2508.05766",
-                "https://arxiv.org/abs/2504.09301"
+                "https://arxiv.org/abs/2508.04435",
+                "https://arxiv.org/abs/2508.05766"
             ],
         },
         "trace_chain": {
