@@ -2379,7 +2379,11 @@ fn triadic_fork_suffix(
         alternatives,
     );
     match crate::continuity_spikes::triadic_compliance_warning(
-        significant, affirm, deny, reconcile, false,
+        significant,
+        affirm,
+        deny,
+        reconcile,
+        false,
     ) {
         Some(w) => format!(" | ⚠ {w}"),
         None => String::new(),
@@ -9435,7 +9439,12 @@ mod tests {
             serde_json::from_str(&mcp_text(resp)).expect("MCP response text must be JSON")
         }
 
-        fn log_mcp_transcript(step: &str, tool: &str, args: &serde_json::Value, resp: &serde_json::Value) {
+        fn log_mcp_transcript(
+            step: &str,
+            tool: &str,
+            args: &serde_json::Value,
+            resp: &serde_json::Value,
+        ) {
             append_evidence(
                 "spikes-continuity.log",
                 &format!(
@@ -9480,25 +9489,29 @@ mod tests {
                 "scope": "anchors",
                 "k": 3,
             });
-            let recall_goal = handle_tool_on_big_stack(
+            let recall_goal =
+                handle_tool_on_big_stack("mcp_engram_recall", &recall_goal_args, &store);
+            log_mcp_transcript(
+                "recall_goal_anchor",
                 "mcp_engram_recall",
                 &recall_goal_args,
-                &store,
+                &recall_goal,
             );
-            log_mcp_transcript("recall_goal_anchor", "mcp_engram_recall", &recall_goal_args, &recall_goal);
             let recall_goal_text = mcp_text(&recall_goal);
             assert!(
                 recall_goal_text.contains("goal:theory_spikes_v1"),
                 "anchors recall must return exact goal concept: {recall_goal_text}"
             );
 
-            let start1_args = json!({ "intent": format!("theory continuity spike verification run {run}") });
-            let start1 = handle_tool_on_big_stack(
+            let start1_args =
+                json!({ "intent": format!("theory continuity spike verification run {run}") });
+            let start1 = handle_tool_on_big_stack("mcp_engram_session_start", &start1_args, &store);
+            log_mcp_transcript(
+                "session_start_1",
                 "mcp_engram_session_start",
                 &start1_args,
-                &store,
+                &start1,
             );
-            log_mcp_transcript("session_start_1", "mcp_engram_session_start", &start1_args, &start1);
             let wake1 = parse_mcp_json(&start1);
             let cont1 = wake1.get("continuation").expect("continuation");
             assert_pre_handoff_fresh(cont1);
@@ -9512,12 +9525,13 @@ mod tests {
                 "why": "verify soft hint only",
                 "goal_context": "goal:theory_spikes_v1",
             });
-            let sig_fork = handle_tool_on_big_stack(
+            let sig_fork = handle_tool_on_big_stack("mcp_engram_quick_trace", &sig_args, &store);
+            log_mcp_transcript(
+                "quick_trace_significant_fork",
                 "mcp_engram_quick_trace",
                 &sig_args,
-                &store,
+                &sig_fork,
             );
-            log_mcp_transcript("quick_trace_significant_fork", "mcp_engram_quick_trace", &sig_args, &sig_fork);
             let sig_text = mcp_text(&sig_fork);
             assert!(
                 sig_text.contains("significant_fork_soft_hint"),
@@ -9528,12 +9542,13 @@ mod tests {
                 "decision": "routine trace",
                 "why": "no explicit goal context",
             });
-            let routine = handle_tool_on_big_stack(
+            let routine = handle_tool_on_big_stack("mcp_engram_quick_trace", &routine_args, &store);
+            log_mcp_transcript(
+                "quick_trace_routine",
                 "mcp_engram_quick_trace",
                 &routine_args,
-                &store,
+                &routine,
             );
-            log_mcp_transcript("quick_trace_routine", "mcp_engram_quick_trace", &routine_args, &routine);
             let routine_text = mcp_text(&routine);
             assert!(
                 !routine_text.contains("significant_fork_soft_hint"),
@@ -9545,14 +9560,13 @@ mod tests {
                 "uncertainty_status": "memory_insufficient",
                 "requested_anchors": ["goal:theory_spikes_v1"]
             });
-            let unc = handle_tool_on_big_stack(
-                "mcp_engram_scar",
-                &unc_args,
-                &store,
-            );
+            let unc = handle_tool_on_big_stack("mcp_engram_scar", &unc_args, &store);
             log_mcp_transcript("scar_uncertainty", "mcp_engram_scar", &unc_args, &unc);
             let unc_text = mcp_text(&unc);
-            assert!(unc_text.contains("Uncertainty receipt minted"), "{unc_text}");
+            assert!(
+                unc_text.contains("Uncertainty receipt minted"),
+                "{unc_text}"
+            );
 
             let mut last_turn_text = String::new();
             for i in 0..30 {
@@ -9561,11 +9575,7 @@ mod tests {
                     "assistant_output": format!("turn {i} assistant"),
                     "human_forward": format!("continuity sentinel turn {i}"),
                 });
-                let turn = handle_tool_on_big_stack(
-                    "mcp_engram_turn_record",
-                    &turn_args,
-                    &store,
-                );
+                let turn = handle_tool_on_big_stack("mcp_engram_turn_record", &turn_args, &store);
                 last_turn_text = mcp_text(&turn);
                 if i == 0 || i == 29 {
                     log_mcp_transcript(
@@ -9601,11 +9611,7 @@ mod tests {
                 "summary": "**decisions:** continuity spike verification\n**files_touched:** crates/engram-server/src/continuity_spikes.rs",
                 "prepare_compression": true,
             });
-            let end = handle_tool_on_big_stack(
-                "mcp_engram_session_end",
-                &end_args,
-                &store,
-            );
+            let end = handle_tool_on_big_stack("mcp_engram_session_end", &end_args, &store);
             log_mcp_transcript("session_end", "mcp_engram_session_end", &end_args, &end);
             let end_json = parse_mcp_json(&end);
             let handoff = end_json
@@ -9617,9 +9623,9 @@ mod tests {
                 .get("rehydration_manifest")
                 .expect("handoff must include rehydration_manifest");
             assert_eq!(manifest["version"], "rehydration_manifest_v1");
-            let compression_manifest = end_json
-                .get("compression_manifest")
-                .expect("session_end must include compression_manifest when prepare_compression=true");
+            let compression_manifest = end_json.get("compression_manifest").expect(
+                "session_end must include compression_manifest when prepare_compression=true",
+            );
             let compression_bundle = compression_manifest
                 .get("continuation_bundle")
                 .expect("compression_manifest must include continuation_bundle");
@@ -9653,12 +9659,13 @@ mod tests {
             };
 
             let start2_args = json!({ "intent": "post-handoff manifest wake" });
-            let start2 = handle_tool_on_big_stack(
+            let start2 = handle_tool_on_big_stack("mcp_engram_session_start", &start2_args, &store);
+            log_mcp_transcript(
+                "session_start_2_post_handoff",
                 "mcp_engram_session_start",
                 &start2_args,
-                &store,
+                &start2,
             );
-            log_mcp_transcript("session_start_2_post_handoff", "mcp_engram_session_start", &start2_args, &start2);
             let wake2 = parse_mcp_json(&start2);
             let cont2 = wake2.get("continuation").expect("continuation");
             assert_post_handoff_manifest(cont2);
@@ -9722,9 +9729,7 @@ mod tests {
 
         #[test]
         fn continuity_spikes_full_session_sequence_twice() {
-            let _guard = CONTINUITY_TEST_LOCK
-                .lock()
-                .expect("continuity test lock");
+            let _guard = CONTINUITY_TEST_LOCK.lock().expect("continuity test lock");
             std::fs::create_dir_all(SCRATCH).ok();
             std::fs::write(
                 scratch_path("spikes-continuity.log"),

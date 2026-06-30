@@ -204,7 +204,11 @@ pub fn slim_continuation_bundle(full: &Value) -> Value {
     });
     if let Some(obj) = slim.as_object_mut() {
         crate::continuity_spikes::insert_optional(obj, "structured_handoff", structured_handoff);
-        crate::continuity_spikes::insert_optional(obj, "rehydration_manifest", rehydration_manifest);
+        crate::continuity_spikes::insert_optional(
+            obj,
+            "rehydration_manifest",
+            rehydration_manifest,
+        );
     }
     slim
 }

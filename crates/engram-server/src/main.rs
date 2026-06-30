@@ -28,8 +28,8 @@
 
 mod cockpit_cache;
 mod coherence;
-mod continuity_spikes;
 mod context_var;
+mod continuity_spikes;
 pub mod daemon;
 mod edit_arc_gate;
 mod edit_fidelity;

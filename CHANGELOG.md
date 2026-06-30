@@ -12,8 +12,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Metal macOS BVH hang:** `MetalBackend::query()` no longer calls synchronous `ensure_bvh()` (parity with `CudaBackend` — background build only). Background BVH spawn at init; real `MTLCommandBufferStatus` poll timeout (removed double-`commit` + fake 100ms timeout that still blocked on `wait_until_completed`). Post-store deduped async reindex instead of invalidate-on-query.
 
 ### Added
-
-- **Theory-informed continuity spikes (lean, nudge-only):** `rehydration_manifest` at `session_end` + priority-0 wake seed; soft sentinel (`rehydrate_suggested` after ~30 turns / ~120 min); `uncertainty:*` receipts via `scar(uncertainty_status=…)`; fork-scoped A/D/R soft hints on `quick_trace`/`record_reasoning_trace`; `receipt:session_*` audit sidecar; `processes/monitor/sentinel.toml`.
 - **Tensor–thought-tile unification (`tensor_tile_bridge`):** `thought_tile_create` / `write_result` dual-write `tensor:tile__{stem}` mirrors with bonds to goal/trace/spatial concepts; `tensor_unification` field in tile MCP responses.
 - **`propose_improvement` tile type:** Verified update on `payload.target_concept` via `process:engram.ritual.verified-update-with-consolidation`.
 - **Rituals:** `processes/ritual/thought_tile_to_tensor.toml`, `processes/ritual/verified-update-with-consolidation.toml`; `solid-tensor-consolidation` + `verified-memory-update` extended for TTU.
@@ -29,6 +27,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Harness plain-update hang:** Deadlock from double `store.lock()` in `mcp_engram_update`; harness-only trim/damp env vars for hermetic runs (`ENGRAM_TTU_PLAIN_SKIP_SYNC`, `ENGRAM_SKIP_SOLID_TENSOR_CONSOLIDATION`).
 - **`update_with_tensor_bond`:** Requires `lineage.ok` in `edit_fidelity.rs`.
+
+## [0.7.0-beta.5] - 2026-06-29
+
+### Added
+
+- **Theory-informed continuity spikes (lean, nudge-only):** `rehydration_manifest` at `session_end` + priority-0 wake seed; soft sentinel (`rehydrate_suggested` after ~30 turns / ~120 min); `uncertainty:*` receipts via `scar(uncertainty_status=…)`; fork-scoped A/D/R soft hints on `quick_trace`/`record_reasoning_trace`; `receipt:session_*` audit sidecar; `processes/monitor/sentinel.toml`.
+- **Direct anchor recall:** `recall(scope=anchors)` exact hit on `goal:` / `trace:` / `manifest:` concepts (`recall_path: direct_anchor`).
+
+### Changed
+
+- **Continuation bundle optional fields:** `structured_handoff` and `rehydration_manifest` omitted when absent (never explicit `null`) via `json_field_present` + `insert_optional` in `continuity_spikes.rs`.
+- **Lean contract docs:** `AGENT_MEMORY_CONTRACT.md`, `HARNESS_INJECTION.md`, wake/session-end/working-memory skills updated for manifest-driven wake and sentinel nudges.
+
+### Fixed
+
+- **Wake manifest resolution:** Parse latest `SESSION HANDOFF PACKET` block; legacy handoff packets without `rehydration_manifest` synthesized at wake; `session_end` persists handoff before compression refresh.
+- **Store-scoped sentinel:** Per-store `helper:session_sentinel_state` (not process-global); counters reset cleanly on handoff.
+- **Continuity gating test:** `ENGRAM_DISABLE_SHEAF=1` isolation in `lean_gaps` harness; split pre-handoff fresh vs post-handoff manifest asserts.
 
 ## [0.7.0-beta.4] - 2026-06-25
 

@@ -187,7 +187,10 @@ pub fn collect_uncertainty_receipts(store: &mut StoreHandle, limit: usize) -> Ve
         if !seen.insert(concept.clone()) {
             continue;
         }
-        if let Some(block) = store.fetch_block_high_priority(&concept).or_else(|| store.fetch_block(&concept)) {
+        if let Some(block) = store
+            .fetch_block_high_priority(&concept)
+            .or_else(|| store.fetch_block(&concept))
+        {
             out.push(json!({
                 "concept": concept,
                 "crs": block.crs_score,
@@ -633,16 +636,17 @@ pub fn build_suggested_actions(
     let mut handoff_packet: Option<Value> = None;
 
     let (turns, checkpoint) = store.sentinel_snapshot();
-    let (rehydrate_suggested, rehydrate_reason) =
-        crate::continuity_spikes::compute_sentinel_nudge(
-            turns,
-            crate::continuity_spikes::minutes_since_checkpoint(
-                checkpoint,
-                crate::continuity_spikes::now_unix(),
-            ),
-        );
+    let (rehydrate_suggested, rehydrate_reason) = crate::continuity_spikes::compute_sentinel_nudge(
+        turns,
+        crate::continuity_spikes::minutes_since_checkpoint(
+            checkpoint,
+            crate::continuity_spikes::now_unix(),
+        ),
+    );
     if rehydrate_suggested {
-        actions.push(crate::continuity_spikes::rehydrate_nudge_action(rehydrate_reason));
+        actions.push(crate::continuity_spikes::rehydrate_nudge_action(
+            rehydrate_reason,
+        ));
     }
 
     for scar in collect_open_scars(store, 3) {
@@ -1704,7 +1708,10 @@ SESSION HANDOFF PACKET v1 (structured JSON for next-wake read_concept)
             action.get("tool").and_then(|v| v.as_str()),
             Some("mcp_engram_session_end")
         );
-        assert_eq!(action.get("sentinel_nudge").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(
+            action.get("sentinel_nudge").and_then(|v| v.as_bool()),
+            Some(true)
+        );
         assert_eq!(action.get("priority").and_then(|v| v.as_u64()), Some(0));
     }
 
@@ -1727,7 +1734,8 @@ SESSION HANDOFF PACKET v1 (structured JSON for next-wake read_concept)
         for _ in 0..30 {
             store.sentinel_on_turn_record();
         }
-        let summary = "**decisions:** rank test\n**files_touched:** crates/engram-server/src/store.rs";
+        let summary =
+            "**decisions:** rank test\n**files_touched:** crates/engram-server/src/store.rs";
         let _ = store.persist_session_handoff_latest(summary, "session_end_rank");
         let actions = build_suggested_actions(&mut store, Some("post-handoff rank test"));
         assert!(!actions.is_empty());

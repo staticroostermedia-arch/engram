@@ -2372,12 +2372,8 @@ impl StoreHandle {
         } else {
             engram_core::ops::normalize(&encoded.q)
         };
-        let mut mem = engram_core::backend::score_memory(
-            token.to_string(),
-            &effective_q,
-            &block,
-            ego,
-        );
+        let mut mem =
+            engram_core::backend::score_memory(token.to_string(), &effective_q, &block, ego);
         mem.score = mem.score.max(0.95);
         mem.explain = format!("{} [direct_anchor=exact_concept]", mem.explain);
         self.access_index.touch(token);
@@ -3013,7 +3009,11 @@ impl StoreHandle {
             .map(|nodes| {
                 nodes
                     .iter()
-                    .filter_map(|n| n.get("concept").and_then(|v| v.as_str()).map(str::to_string))
+                    .filter_map(|n| {
+                        n.get("concept")
+                            .and_then(|v| v.as_str())
+                            .map(str::to_string)
+                    })
                     .take(12)
                     .collect()
             })
@@ -3150,7 +3150,10 @@ impl StoreHandle {
             }
         }
 
-        let readiness = packet.get("readiness").cloned().unwrap_or(serde_json::json!({}));
+        let readiness = packet
+            .get("readiness")
+            .cloned()
+            .unwrap_or(serde_json::json!({}));
         let manifest = packet
             .get("rehydration_manifest")
             .cloned()
@@ -3202,7 +3205,10 @@ impl StoreHandle {
         crate::continuity_spikes::SentinelState::default()
     }
 
-    fn persist_sentinel_state(&mut self, state: &crate::continuity_spikes::SentinelState) -> Result<()> {
+    fn persist_sentinel_state(
+        &mut self,
+        state: &crate::continuity_spikes::SentinelState,
+    ) -> Result<()> {
         let body = format!(
             "SESSION SENTINEL STATE v1 (turn/time counters for soft rehydrate nudge)\n\n{}\n",
             serde_json::to_string_pretty(state).unwrap_or_else(|_| "{}".to_string())
@@ -3277,9 +3283,7 @@ impl StoreHandle {
                         .get("primary_goal")
                         .and_then(|v| v.as_str())
                         .or(resolved_primary.as_deref());
-                    let trace_chain_head = packet
-                        .get("trace_chain_head")
-                        .and_then(|v| v.as_str());
+                    let trace_chain_head = packet.get("trace_chain_head").and_then(|v| v.as_str());
                     let files_touched: Vec<String> = packet
                         .get("files_touched")
                         .and_then(|v| v.as_array())
@@ -3750,7 +3754,11 @@ impl StoreHandle {
             "cached_at": now,
         });
         if let Some(obj) = bundle.as_object_mut() {
-            crate::continuity_spikes::insert_optional(obj, "structured_handoff", structured_handoff);
+            crate::continuity_spikes::insert_optional(
+                obj,
+                "structured_handoff",
+                structured_handoff,
+            );
             crate::continuity_spikes::insert_optional(
                 obj,
                 "rehydration_manifest",
@@ -7473,14 +7481,13 @@ mod ingest_ast_tests {
                 "TRACE\n\n**decision_point:** verifier close\n",
             )
             .unwrap();
-        let (goal_hits, scope) = store.recall_scoped(
-            "goal:theory_informed_agent_memory_v1",
-            3,
-            Some("anchors"),
-        );
+        let (goal_hits, scope) =
+            store.recall_scoped("goal:theory_informed_agent_memory_v1", 3, Some("anchors"));
         assert_eq!(scope, "anchors");
         assert!(
-            goal_hits.iter().any(|m| m.concept == "goal:theory_informed_agent_memory_v1"),
+            goal_hits
+                .iter()
+                .any(|m| m.concept == "goal:theory_informed_agent_memory_v1"),
             "exact goal concept must recall: {:?}",
             goal_hits
         );
@@ -7517,7 +7524,10 @@ mod ingest_ast_tests {
 
         let reloaded = StoreHandle::new(&path);
         let (turns_reloaded, _) = reloaded.sentinel_snapshot();
-        assert_eq!(turns_reloaded, 0, "reopened store must read persisted sentinel state");
+        assert_eq!(
+            turns_reloaded, 0,
+            "reopened store must read persisted sentinel state"
+        );
 
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -7537,7 +7547,9 @@ mod ingest_ast_tests {
         assert!(store.fetch_block(&concept).is_some());
         let recalled = crate::harness_injection::collect_uncertainty_receipts(&mut store, 4);
         assert!(
-            recalled.iter().any(|r| r.get("concept").and_then(|v| v.as_str()) == Some(concept.as_str())),
+            recalled
+                .iter()
+                .any(|r| r.get("concept").and_then(|v| v.as_str()) == Some(concept.as_str())),
             "uncertainty receipt surfaces in wake collection"
         );
         let _ = std::fs::remove_dir_all(&dir);

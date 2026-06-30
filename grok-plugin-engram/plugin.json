@@ -1,6 +1,6 @@
 {
   "name": "engram-geometric",
-  "version": "0.7.0-beta.4",
+  "version": "0.7.0-beta.5",
   "description": "Local geometric memory for Grok Build: one-call wake, anchor recall, edit-scoped code context, structured session handoff. 8-tool lean contract.",
   "author": {
     "name": "Engram / Static Rooster Media"

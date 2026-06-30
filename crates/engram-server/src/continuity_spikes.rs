@@ -81,10 +81,7 @@ pub fn build_rehydration_manifest(
     hub_anchors: &[String],
     files_touched: &[String],
 ) -> Value {
-    let ts = session_end_key
-        .rsplit('_')
-        .next()
-        .unwrap_or("0");
+    let ts = session_end_key.rsplit('_').next().unwrap_or("0");
     let manifest_concept = format!("manifest:rehydration_{ts}");
     let tile_refs: Vec<Value> = trusted_tiles
         .iter()
@@ -228,14 +225,7 @@ mod tests {
     #[test]
     fn triadic_warning_only_on_significant() {
         assert!(triadic_compliance_warning(true, "", "", "", false).is_some());
-        assert!(triadic_compliance_warning(
-            true,
-            "a",
-            "d",
-            "r",
-            false
-        )
-        .is_none());
+        assert!(triadic_compliance_warning(true, "a", "d", "r", false).is_none());
         assert!(triadic_compliance_warning(false, "", "", "", false).is_none());
     }
 
