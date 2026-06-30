@@ -280,13 +280,19 @@ mod tests {
     use super::*;
 
     #[test]
-    fn weighted_sentinel_pressure_blends_ego_drift() {
+    fn combined_sentinel_pressure_blends_ego_drift() {
         std::env::remove_var("ENGRAM_SENTINEL_RESIDUAL_WEIGHT");
         // default w=0.65: 0.65*0.2 + 0.35*0.6 = 0.34
         assert!((combined_sentinel_pressure(0.2, Some(0.6)) - 0.34).abs() < 1e-5);
         // 0.65*0.8 + 0.35*0.3 = 0.625
         assert!((combined_sentinel_pressure(0.8, Some(0.3)) - 0.625).abs() < 1e-5);
         assert!((combined_sentinel_pressure(0.1, None) - 0.065).abs() < 1e-5);
+    }
+
+    #[test]
+    fn weighted_sentinel_pressure_explicit_blend() {
+        assert!((weighted_sentinel_pressure(0.4, Some(0.8), 0.5) - 0.6).abs() < 1e-5);
+        assert!((weighted_sentinel_pressure(0.0, None, 0.65) - 0.0).abs() < 1e-5);
     }
 
     #[test]

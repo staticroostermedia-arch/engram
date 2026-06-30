@@ -60,8 +60,14 @@ for CYCLE in $(seq "$CYCLE_MIN" "$CYCLE_MAX"); do
     continue
   fi
   echo "=== CYCLE $CYCLE tests ($FILTER) ===" | tee -a "$SCRATCH/rsi-batch-tests.log"
-  if cargo test -p engram-server -- "$FILTER" 2>&1 | tee -a "$SCRATCH/rsi-batch-tests.log"; then
-    echo "CYCLE${CYCLE}_TEST_EXIT=0" | tee -a "$SCRATCH/rsi-batch-tests.log"
+  TEST_OUT="$SCRATCH/rsi-cycle${CYCLE}-test.out"
+  if cargo test -p engram-server -- "$FILTER" 2>&1 | tee "$TEST_OUT" | tee -a "$SCRATCH/rsi-batch-tests.log"; then
+    if grep -qE 'running 0 tests' "$TEST_OUT"; then
+      echo "CYCLE${CYCLE}_TEST_EXIT=1 (filter '$FILTER' matched 0 tests)" | tee -a "$SCRATCH/rsi-batch-tests.log"
+      OVERALL=1
+    else
+      echo "CYCLE${CYCLE}_TEST_EXIT=0" | tee -a "$SCRATCH/rsi-batch-tests.log"
+    fi
   else
     echo "CYCLE${CYCLE}_TEST_EXIT=1" | tee -a "$SCRATCH/rsi-batch-tests.log"
     OVERALL=1
@@ -133,7 +139,7 @@ cat "$REPO_ROOT/CHANGELOG-RSI.md" >> "$SCRATCH/rsi-batch-artifacts.txt"
   echo "=== Batch Checkpoint (Cycles ${CYCLE_MIN}-${CYCLE_MAX}) ==="
   cat "$SCRATCH/rsi-batch-git.txt"
   echo ""
-  grep -E 'CYCLE[2-5]_(TEST|MCP)_EXIT' "$SCRATCH/rsi-batch-tests.log" "$SCRATCH/rsi-batch-mcp.txt" 2>/dev/null || true
+  grep -E 'CYCLE[0-9]+_(TEST|MCP)_EXIT' "$SCRATCH/rsi-batch-tests.log" "$SCRATCH/rsi-batch-mcp.txt" 2>/dev/null || true
 } > "$SCRATCH/rsi-batch-checkpoint.txt"
 
 echo "OVERALL_EXIT=$OVERALL"
