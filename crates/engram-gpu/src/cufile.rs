@@ -1,13 +1,13 @@
 //! GPUDirect Storage / cuFile detection, init, and NVMe→GPU DMA for hot residency.
 
-use std::ffi::c_void;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
-use std::sync::OnceLock;
 
 static CUFILE_DETECTED: AtomicBool = AtomicBool::new(false);
 static CUFILE_PROBE_DONE: AtomicBool = AtomicBool::new(false);
+#[cfg(target_os = "linux")]
 static CUFILE_INIT_OK: AtomicBool = AtomicBool::new(false);
+#[cfg(target_os = "linux")]
 static CUFILE_INIT_TRIED: AtomicBool = AtomicBool::new(false);
 /// 0=off, 1=cufile_dma, 2=h2d_memcpy, 3=unavailable
 static LAST_TRANSFER_MODE: AtomicU8 = AtomicU8::new(3);
@@ -97,9 +97,11 @@ pub const Q_VECTOR_BYTES: usize = 8192 * std::mem::size_of::<f32>() * 2;
 #[allow(clippy::missing_transmute_annotations)]
 mod ffi {
     use super::*;
+    use std::ffi::c_void;
     use std::fs::OpenOptions;
     use std::os::unix::fs::OpenOptionsExt;
     use std::os::unix::io::AsRawFd;
+    use std::sync::OnceLock;
 
     type CuFileDriverOpenFn = unsafe extern "C" fn() -> i32;
     type CuFileDriverCloseFn = unsafe extern "C" fn() -> i32;
@@ -361,8 +363,10 @@ mod tests {
     #[test]
     fn cufile_init_idempotent() {
         let _guard = cufile_test_lock();
-        let _ = cufile_init();
+        let first = cufile_init();
         let second = cufile_init();
+        assert_eq!(first, second);
+        #[cfg(target_os = "linux")]
         assert_eq!(second, CUFILE_INIT_OK.load(Ordering::Relaxed));
     }
 

@@ -76,9 +76,9 @@ pub struct MetalBackend {
     command_queue: CommandQueue,
     /// Pre-built pipeline state for `engram_cosine_batch`
     cosine_pipeline: ComputePipelineState,
-    /// Pre-built pipeline state for `engram_project_8k_to_3d` (now wired / active per GPU hand-off patch).
-    /// Used for Gaussian CSRP projection 8k→3d when high-dim to low-dim reduction is needed
-    /// (e.g. for certain geometric visualizations or accelerated candidate pre-filtering).
+    /// Pre-built pipeline state for `engram_project_8k_to_3d` (reserved for Metal parity with CUDA).
+    /// Used for Gaussian CSRP projection 8k→3d when high-dim to low-dim reduction is needed.
+    #[allow(dead_code)]
     project_pipeline: ComputePipelineState,
     /// In-memory high-priority cache for low-latency access to high-momentum
     /// Thought Tiles, ritual/state blocks, and promoted substrate artifacts.
