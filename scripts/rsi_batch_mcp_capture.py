@@ -32,6 +32,21 @@ def extract_tile_id(parsed: Optional[Dict[str, Any]], text: str) -> Optional[str
     return f"tile:{m.group(1)}" if m else None
 
 
+def tool_is_error(resp: Dict[str, Any]) -> bool:
+    if "error" in resp:
+        return True
+    result = resp.get("result") or {}
+    if result.get("isError"):
+        return True
+    text = ""
+    content = result.get("content") or []
+    if content and isinstance(content[0], dict):
+        text = (content[0].get("text") or "").strip().lower()
+    if "consult_before_write_violation" in text:
+        return True
+    return False
+
+
 def write_session_call(session_mcp_dir: str, cycle: int, label: str, entry: Dict[str, Any]) -> str:
     os.makedirs(session_mcp_dir, exist_ok=True)
     call_id = str(uuid.uuid4())
@@ -47,10 +62,57 @@ def write_session_call(session_mcp_dir: str, cycle: int, label: str, entry: Dict
         "raw": entry.get("raw"),
         "text": entry.get("text"),
         "parsed": entry.get("parsed"),
+        "is_error": entry.get("is_error"),
     }
     with open(path, "w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2)
     return path
+
+
+def run_cycle12_consult_gate_ritual(
+    snap,
+    failures: List[str],
+) -> None:
+    """Exercise real MCP dispatch under ENGRAM_CONSULT_BEFORE_WRITE=hard."""
+    blocked = snap(
+        "remember_blocked_hard",
+        "mcp_engram_remember",
+        {"concept": "rsi:cycle12_gate", "text": "must block without recall"},
+    )
+    if not blocked.get("is_error"):
+        failures.append("remember must be blocked under hard gate without recall")
+
+    recall = snap(
+        "recall_opens_gate",
+        "mcp_engram_recall",
+        {"query": "rsi cycle 12 consult gate", "k": 3, "scope": "anchors"},
+    )
+    if recall.get("is_error"):
+        failures.append("recall must succeed to open consult gate")
+
+    allowed = snap(
+        "remember_after_recall",
+        "mcp_engram_remember",
+        {"concept": "rsi:cycle12_after_recall", "text": "allowed after recall"},
+    )
+    if allowed.get("is_error"):
+        failures.append("remember after recall must succeed under hard gate")
+
+    batch_blocked = snap(
+        "batch_remember_blocked",
+        "mcp_engram_batch_remember",
+        {"entries": [{"concept": "rsi:batch_blocked", "text": "blocked"}]},
+    )
+    if not batch_blocked.get("is_error"):
+        failures.append("batch_remember must be blocked when gate closed after write")
+
+    solution_blocked = snap(
+        "remember_solution_blocked",
+        "mcp_engram_remember_solution",
+        {"error_pattern": "RSI_GATE", "solution": "recall before write"},
+    )
+    if not solution_blocked.get("is_error"):
+        failures.append("remember_solution must be blocked when gate closed after write")
 
 
 def main() -> int:
@@ -68,10 +130,17 @@ def main() -> int:
     os.makedirs(scratch, exist_ok=True)
     session_mcp_dir = os.path.abspath(args.session_mcp_dir) if args.session_mcp_dir else scratch
 
+    env_overrides: Dict[str, str] = {
+        "ENGRAM_PROFILE": "agent",
+        "ENGRAM_NREM_DISABLE": "1",
+    }
+    if args.cycle == 12:
+        env_overrides["ENGRAM_CONSULT_BEFORE_WRITE"] = "hard"
+
     client = MCPTestClient(
         args.binary,
         args.store,
-        env_overrides={"ENGRAM_PROFILE": "agent", "ENGRAM_NREM_DISABLE": "1"},
+        env_overrides=env_overrides,
         default_timeout=180.0,
     )
     transcript: List[Dict[str, Any]] = []
@@ -85,6 +154,7 @@ def main() -> int:
             "args": tool_args,
             "raw": resp,
             "text": client._tool_text(resp),
+            "is_error": tool_is_error(resp),
         }
         parsed = client._parse_tool_json(resp)
         if parsed:
@@ -100,6 +170,8 @@ def main() -> int:
         if not client.wait_for_fully_initialized(max_wait=180.0):
             failures.append("backend not fully_initialized")
         else:
+            if args.cycle == 12:
+                run_cycle12_consult_gate_ritual(snap, failures)
             snap("quick_trace", "mcp_engram_quick_trace", {
                 "decision": args.decision,
                 "why": f"RSI Cycle {args.cycle} batch MCP ritual",
@@ -126,12 +198,18 @@ def main() -> int:
             failures.append("thought_tile_create missing tile id")
 
         out = os.path.join(scratch, f"rsi-cycle{args.cycle}-mcp-capture.json")
+        session_call_paths = [
+            os.path.join(session_mcp_dir, f)
+            for f in os.listdir(session_mcp_dir)
+            if f.startswith("call-") and f"-rsi_cycle{args.cycle}_" in f
+        ] if os.path.isdir(session_mcp_dir) else []
         result = {
             "cycle": args.cycle,
             "trace_id": trace_id,
             "tile_id": tile_id,
             "transcript": transcript,
             "failures": failures,
+            "session_call_paths": sorted(session_call_paths),
         }
         with open(out, "w", encoding="utf-8") as f:
             json.dump(result, f, indent=2)

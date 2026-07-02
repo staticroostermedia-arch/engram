@@ -186,6 +186,7 @@ pub fn is_metamemory_write_tool(tool: &str) -> bool {
             | "mcp_engram_update_with_tensor_bond"
             | "mcp_engram_remember_solution"
             | "mcp_engram_batch_remember"
+            | "mcp_engram_import"
     )
 }
 
@@ -207,7 +208,8 @@ pub fn classify_mcp_tool(tool: &str) -> Option<&'static str> {
         | "mcp_engram_session_end"
         | "mcp_engram_scar"
         | "mcp_engram_remember_solution"
-        | "mcp_engram_batch_remember" => Some("log"),
+        | "mcp_engram_batch_remember"
+        | "mcp_engram_import" => Some("log"),
         _ => None,
     }
 }
@@ -248,6 +250,7 @@ mod tests {
         store_counters.note_recall(1);
         assert!(is_metamemory_write_tool("mcp_engram_remember_solution"));
         assert!(is_metamemory_write_tool("mcp_engram_batch_remember"));
+        assert!(is_metamemory_write_tool("mcp_engram_import"));
     }
 
     #[test]
