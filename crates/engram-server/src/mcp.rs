@@ -6957,6 +6957,16 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                 return json!({ "content": [{ "type": "text", "text": "Error: missing required strings" }], "isError": true });
             }
 
+            {
+                let lock = store.lock().unwrap();
+                if let Some(block) = consult_before_write_block(
+                    "mcp_engram_remember_solution",
+                    lock.metamemory.recall_gate_open(),
+                ) {
+                    return block;
+                }
+            }
+
             // Synthesize the concept name securely
             use std::hash::{Hash, Hasher};
             let mut h = std::collections::hash_map::DefaultHasher::new();
@@ -6967,6 +6977,14 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                 error_pattern, solution
             );
 
+            let gate_warn = {
+                let lock = store.lock().unwrap();
+                crate::consult_before_write_gate::check_write(
+                    lock.metamemory.recall_gate_open(),
+                    "mcp_engram_remember_solution",
+                )
+                .warn_message
+            };
             let mut lock = store.lock().unwrap();
             match lock.remember(&concept_name, &payload) {
                 Ok(_) => {
@@ -6978,7 +6996,14 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                         let _ = lock.store(&concept_name, m);
                     }
                     relate_realized_by(&mut lock, &concept_name, &process_context);
-                    json!({ "content": [{ "type": "text", "text": format!("✓ Crystallized Solution permanently into geometric memory (CRS = 1.0).\nStored as: {}", concept_name) }] })
+                    let body = append_consult_warn(
+                        format!(
+                            "✓ Crystallized Solution permanently into geometric memory (CRS = 1.0).\nStored as: {}",
+                            concept_name
+                        ),
+                        gate_warn,
+                    );
+                    json!({ "content": [{ "type": "text", "text": body }] })
                 }
                 Err(e) => {
                     json!({ "content": [{ "type": "text", "text": format!("Failed to crystallize solution: {}", e) }], "isError": true })
@@ -7427,6 +7452,18 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                     return json!({ "content": [{ "type": "text", "text": "Error: entries must be a JSON array of {concept, text} objects." }], "isError": true })
                 }
             };
+            let mut lock = store.lock().unwrap();
+            if let Some(block) = consult_before_write_block(
+                "mcp_engram_batch_remember",
+                lock.metamemory.recall_gate_open(),
+            ) {
+                return block;
+            }
+            let gate_warn = crate::consult_before_write_gate::check_write(
+                lock.metamemory.recall_gate_open(),
+                "mcp_engram_batch_remember",
+            )
+            .warn_message;
             let mut succeeded = 0usize;
             let mut failed = 0usize;
             for entry in &entries {
@@ -7436,13 +7473,20 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                     failed += 1;
                     continue;
                 }
-                match store.lock().unwrap().remember(&concept, &text) {
+                match lock.remember(&concept, &text) {
                     Ok(_) => succeeded += 1,
                     Err(_) => failed += 1,
                 }
             }
             info!("batch_remember: {} ok, {} failed", succeeded, failed);
-            json!({ "content": [{ "type": "text", "text": format!("\u{2713} Batch ingestion complete: {} stored, {} failed.", succeeded, failed) }] })
+            let body = append_consult_warn(
+                format!(
+                    "\u{2713} Batch ingestion complete: {} stored, {} failed.",
+                    succeeded, failed
+                ),
+                gate_warn,
+            );
+            json!({ "content": [{ "type": "text", "text": body }] })
         }
 
         "mcp_engram_export" => {
@@ -9929,6 +9973,128 @@ mod tests {
                     serde_json::to_string_pretty(&evidence).unwrap()
                 ),
             );
+        }
+    }
+
+    mod consult_gate_handle_tool {
+        use super::*;
+        use std::sync::Arc;
+
+        fn handle_tool_on_big_stack(
+            name: &str,
+            args: &serde_json::Value,
+            store: &SharedStore,
+        ) -> serde_json::Value {
+            let name = name.to_string();
+            let args = args.clone();
+            let store = Arc::clone(store);
+            std::thread::Builder::new()
+                .stack_size(32 * 1024 * 1024)
+                .spawn(move || handle_tool_call(&name, &args, &store))
+                .expect("spawn big-stack MCP thread")
+                .join()
+                .expect("join big-stack MCP thread")
+        }
+
+        fn prep_store(tmp: &str) -> SharedStore {
+            std::env::set_var("ENGRAM_DISABLE_SHEAF", "1");
+            std::env::set_var("ENGRAM_FORCE_CPU_BACKEND", "1");
+            std::env::set_var("ENGRAM_KI_DISABLE", "1");
+            let store = open_store(tmp);
+            store.lock().unwrap().mark_fully_initialized();
+            store
+        }
+
+        fn resp_is_error(resp: &serde_json::Value) -> bool {
+            resp.get("isError")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false)
+        }
+
+        #[test]
+        fn consult_gate_blocks_remember_via_handle_tool_call() {
+            let _guard = crate::consult_before_write_gate::env_test_lock();
+            std::env::set_var("ENGRAM_CONSULT_BEFORE_WRITE", "hard");
+            let tmp = unique_tmp("cbw-remember");
+            let store = prep_store(&tmp);
+            let resp = handle_tool_on_big_stack(
+                "mcp_engram_remember",
+                &json!({"concept": "test:cbw", "text": "blocked without recall"}),
+                &store,
+            );
+            assert!(resp_is_error(&resp), "remember must be blocked: {resp}");
+            std::env::remove_var("ENGRAM_CONSULT_BEFORE_WRITE");
+            let _ = std::fs::remove_dir_all(&tmp);
+        }
+
+        #[test]
+        fn consult_gate_blocks_batch_remember_via_handle_tool_call() {
+            let _guard = crate::consult_before_write_gate::env_test_lock();
+            std::env::set_var("ENGRAM_CONSULT_BEFORE_WRITE", "hard");
+            let tmp = unique_tmp("cbw-batch");
+            let store = prep_store(&tmp);
+            let resp = handle_tool_on_big_stack(
+                "mcp_engram_batch_remember",
+                &json!({"entries": [{"concept": "batch:a", "text": "one"}]}),
+                &store,
+            );
+            assert!(
+                resp_is_error(&resp),
+                "batch_remember must be blocked: {resp}"
+            );
+            std::env::remove_var("ENGRAM_CONSULT_BEFORE_WRITE");
+            let _ = std::fs::remove_dir_all(&tmp);
+        }
+
+        #[test]
+        fn consult_gate_blocks_remember_solution_via_handle_tool_call() {
+            let _guard = crate::consult_before_write_gate::env_test_lock();
+            std::env::set_var("ENGRAM_CONSULT_BEFORE_WRITE", "hard");
+            let tmp = unique_tmp("cbw-solution");
+            let store = prep_store(&tmp);
+            let resp = handle_tool_on_big_stack(
+                "mcp_engram_remember_solution",
+                &json!({"error_pattern": "ENOENT", "solution": "check path exists"}),
+                &store,
+            );
+            assert!(
+                resp_is_error(&resp),
+                "remember_solution must be blocked: {resp}"
+            );
+            std::env::remove_var("ENGRAM_CONSULT_BEFORE_WRITE");
+            let _ = std::fs::remove_dir_all(&tmp);
+        }
+
+        #[test]
+        fn consult_gate_allows_remember_after_recall_via_handle_tool_call() {
+            let _guard = crate::consult_before_write_gate::env_test_lock();
+            let tmp = unique_tmp("cbw-after-recall");
+            let store = prep_store(&tmp);
+            std::env::set_var("ENGRAM_CONSULT_BEFORE_WRITE", "off");
+            let seed = handle_tool_on_big_stack(
+                "mcp_engram_remember",
+                &json!({"concept": "seed:anchor", "text": "seed for recall query"}),
+                &store,
+            );
+            assert!(!resp_is_error(&seed), "seed remember must succeed: {seed}");
+            std::env::set_var("ENGRAM_CONSULT_BEFORE_WRITE", "hard");
+            let recall = handle_tool_on_big_stack(
+                "mcp_engram_recall",
+                &json!({"query": "seed anchor", "k": 3}),
+                &store,
+            );
+            assert!(!resp_is_error(&recall), "recall must succeed: {recall}");
+            let resp = handle_tool_on_big_stack(
+                "mcp_engram_remember",
+                &json!({"concept": "test:after_recall", "text": "allowed"}),
+                &store,
+            );
+            assert!(
+                !resp_is_error(&resp),
+                "remember after recall must succeed: {resp}"
+            );
+            std::env::remove_var("ENGRAM_CONSULT_BEFORE_WRITE");
+            let _ = std::fs::remove_dir_all(&tmp);
         }
     }
 }

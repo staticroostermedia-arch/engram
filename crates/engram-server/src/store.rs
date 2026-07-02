@@ -1625,11 +1625,7 @@ impl StoreHandle {
         }
         match crate::metamemory_metrics::classify_mcp_tool(tool) {
             Some("plan") => self.metamemory.note_plan_tool(),
-            Some("log")
-                if tool == "mcp_engram_remember"
-                    || tool == "mcp_engram_update"
-                    || tool == "mcp_engram_update_with_tensor_bond" =>
-            {
+            Some("log") if crate::metamemory_metrics::is_metamemory_write_tool(tool) => {
                 self.metamemory.note_write();
                 self.metamemory.note_log_tool();
             }

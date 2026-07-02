@@ -177,6 +177,18 @@ pub fn build_trajectory_meta_review(snapshots: &[Value]) -> Value {
     })
 }
 
+/// Write tools that increment metamemory counters and subject to consult-before-write gate.
+pub fn is_metamemory_write_tool(tool: &str) -> bool {
+    matches!(
+        tool,
+        "mcp_engram_remember"
+            | "mcp_engram_update"
+            | "mcp_engram_update_with_tensor_bond"
+            | "mcp_engram_remember_solution"
+            | "mcp_engram_batch_remember"
+    )
+}
+
 /// Classify MCP tool names into metamemory categories.
 pub fn classify_mcp_tool(tool: &str) -> Option<&'static str> {
     match tool {
@@ -194,7 +206,8 @@ pub fn classify_mcp_tool(tool: &str) -> Option<&'static str> {
         | "mcp_engram_thought_tile_create"
         | "mcp_engram_session_end"
         | "mcp_engram_scar"
-        | "mcp_engram_remember_solution" => Some("log"),
+        | "mcp_engram_remember_solution"
+        | "mcp_engram_batch_remember" => Some("log"),
         _ => None,
     }
 }
@@ -227,6 +240,14 @@ mod tests {
         let tp = build_turn_protocol();
         assert!(tp.get("phases").and_then(|p| p.get("plan")).is_some());
         assert!(tp.get("phases").and_then(|p| p.get("log")).is_some());
+    }
+
+    #[test]
+    fn metamemory_remember_solution_counts_as_write() {
+        let mut store_counters = SessionMetamemoryCounters::default();
+        store_counters.note_recall(1);
+        assert!(is_metamemory_write_tool("mcp_engram_remember_solution"));
+        assert!(is_metamemory_write_tool("mcp_engram_batch_remember"));
     }
 
     #[test]
