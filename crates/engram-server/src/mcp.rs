@@ -3685,14 +3685,52 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                     "isError": true
                 });
             }
-            let lock = store.lock().unwrap();
-            let promoted = lock.promote_tile_to_high_priority(concept).is_some();
-            let hot = lock.is_hot(concept);
+            let concept = concept.to_string();
+            let mut lock = store.lock().unwrap();
+            let raw = concept
+                .split_once("::")
+                .map_or(concept.as_str(), |(_, r)| r);
+            if crate::scaffold_versioning::is_scaffold_concept(raw) {
+                let block_crs = lock
+                    .fetch_block_high_priority(raw)
+                    .or_else(|| lock.fetch_block(raw))
+                    .map(|b| b.crs_score)
+                    .unwrap_or(0.0);
+                let mm = lock.metamemory_snapshot();
+                let verdict = crate::scaffold_versioning::evaluate_scaffold_promotion(
+                    block_crs,
+                    &mm,
+                    lock.metamemory.recalls,
+                );
+                if !verdict.allow {
+                    if let Some(block) = verdict.block_payload {
+                        return json!({
+                            "content": [{ "type": "text", "text": block.to_string() }],
+                            "isError": true
+                        });
+                    }
+                }
+                let gate_warn = verdict.warn_message;
+                let promoted = lock.promote_tile_to_high_priority(raw).is_some();
+                let hot = lock.is_hot(raw);
+                if promoted || hot {
+                    let mut text = format!(
+                        "✓ Promoted to hot path: '{}' (is_hot={}, LegView/backend cache updated)",
+                        raw, hot
+                    );
+                    if let Some(w) = gate_warn {
+                        text.push_str(&format!("\n\n⚠ {w}"));
+                    }
+                    return json!({ "content": [{ "type": "text", "text": text }] });
+                }
+            }
+            let promoted = lock.promote_tile_to_high_priority(raw).is_some();
+            let hot = lock.is_hot(raw);
             if promoted || hot {
                 json!({
                     "content": [{ "type": "text", "text": format!(
                         "✓ Promoted to hot path: '{}' (is_hot={}, LegView/backend cache updated)",
-                        concept, hot
+                        raw, hot
                     ) }]
                 })
             } else {

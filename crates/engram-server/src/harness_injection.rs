@@ -1433,6 +1433,15 @@ pub fn build_harness_bundle(store: &mut StoreHandle, session_intent: Option<&str
         "uncertainty_receipts_wake": uncertainty_receipts_wake,
         "rehydrate_suggested": rehydrate_suggested,
         "turn_protocol": crate::metamemory_metrics::build_turn_protocol(),
+        "scaffold_registry": crate::scaffold_versioning::build_scaffold_registry(
+            &store.metamemory_snapshot(),
+            &crate::consult_before_write_gate::gate_status_json(
+                store.metamemory.recall_gate_open(),
+                store.metamemory.recalls,
+                store.metamemory.writes,
+            ),
+            "automem_inspired_v1",
+        ),
         "rsi_cycle_metrics": {
             "cycle": crate::continuity_spikes::resolve_rsi_cycle_number(),
             "surprise_pressure": surprise_pressure,
@@ -1453,6 +1462,13 @@ pub fn build_harness_bundle(store: &mut StoreHandle, session_intent: Option<&str
                 store.metamemory.writes,
             ),
             "trajectory_meta_review_hint": "scripts/rsi_trajectory_meta_review.sh aggregates receipt:session_* metamemory",
+            "scaffold_promotion_ok": crate::scaffold_versioning::promotion_status_json(
+                &store.metamemory_snapshot(),
+                store.metamemory.recalls,
+            )
+            .get("ok")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false),
             "research_refs": [
                 "https://arxiv.org/abs/2508.04435",
                 "https://arxiv.org/abs/2508.05766",
@@ -1967,6 +1983,38 @@ SESSION HANDOFF PACKET v1 (structured JSON for next-wake read_concept)
         assert!(tp.get("phases").and_then(|p| p.get("plan")).is_some());
         let discipline = bundle.get("agent_discipline").expect("agent_discipline");
         assert!(discipline.get("turn_protocol").is_some());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn scaffold_registry_in_harness_bundle() {
+        std::env::set_var("ENGRAM_DISABLE_SHEAF", "1");
+        std::env::set_var("ENGRAM_FORCE_CPU_BACKEND", "1");
+        std::env::set_var("ENGRAM_KI_DISABLE", "1");
+        let dir = std::env::temp_dir().join(format!(
+            "scaffold_registry_harness_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).ok();
+        let mut store = crate::store::StoreHandle::new(&dir.to_string_lossy());
+        store.note_metamemory_tool("mcp_engram_recall", Some(1));
+        let bundle = build_harness_bundle(&mut store, Some("goal:engram_mvp_v1"));
+        let registry = bundle.get("scaffold_registry").expect("scaffold_registry");
+        assert_eq!(
+            registry.get("version").and_then(|v| v.as_str()),
+            Some(crate::scaffold_versioning::SCAFFOLD_REGISTRY_VERSION)
+        );
+        let metrics = bundle.get("rsi_cycle_metrics").expect("rsi_cycle_metrics");
+        assert_eq!(
+            metrics
+                .get("scaffold_promotion_ok")
+                .and_then(|v| v.as_bool()),
+            Some(true)
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 

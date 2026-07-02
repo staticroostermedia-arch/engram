@@ -50,6 +50,7 @@ mod mirror;
 mod presentation_stratum;
 mod process_metrics;
 mod profile;
+mod scaffold_versioning;
 pub mod scout;
 pub mod scout_supervisor;
 mod scrub_export;

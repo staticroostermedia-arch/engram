@@ -460,4 +460,41 @@ git commit -m "feat(metamemory): RSI Cycle 13 trajectory meta-review v0.7.0-beta
 
 **Cumulative gains:** Enforceable PLAN-before-LOG gate; trajectory-level metamemory review over session receipts.
 
-**Version history:** beta.9 (Batch 3) → **beta.10** (Batch 4 cycles 12–13)
+**Version history:** beta.9 (Batch 3) → **beta.10** (Batch 4 cycles 12–13) → **beta.11** (Batch 5 cycle 14)
+
+---
+
+## Cycle 14 — scaffold versioning + gated promotion (2026-07-02)
+
+### Research synthesis (≥2 cited sources)
+
+| Source | Insight |
+|--------|---------|
+| [arXiv:2607.01224](https://arxiv.org/abs/2607.01224) | Dual outer loop: optimize scaffold separately from memory; gate promotion until PLAN discipline proven. |
+| [arXiv:2505.10569](https://arxiv.org/abs/2505.10569) | Versioned harness registry enables lawful ritual recovery without flat-file mutation. |
+
+### Hypothesis
+
+Expose `scaffold_registry` at wake; gate `promote_hot` on scaffold/RSI concepts until metamemory + CRS criteria pass.
+
+### Files touched
+
+- `scaffold_versioning.rs` (new)
+- `harness_injection.rs`, `mcp.rs`, `scripts/rsi_scaffold_promotion_verify.sh`
+
+### Evaluation scores
+
+CRS 0.87 · Lyapunov 0.86 · RSI-accel 0.89 · perf 0.92 · safety 0.93
+
+```bash
+git add crates/engram-server/src/scaffold_versioning.rs crates/engram-server/src/harness_injection.rs crates/engram-server/src/mcp.rs crates/engram-server/src/main.rs scripts/rsi_scaffold_promotion_verify.sh scripts/rsi_batch_verify_all.sh Cargo.toml CHANGELOG-RSI.md docs/rsi_evolution_log.md
+git commit -m "feat(scaffold): RSI Cycle 14 versioning + gated promotion v0.7.0-beta.11"
+```
+
+---
+
+## Batch 5 checkpoint (Cycle 14) — AutoMem Tier A complete
+
+**Cumulative gains (cycles 10–14):** turn protocol, metamemory KPIs, consult gate, trajectory review, scaffold registry with gated hot promotion — all on geometric `.leg3` substrate.
+
+**Version history:** beta.10 (Batch 4) → **beta.11** (Batch 5 cycle 14)

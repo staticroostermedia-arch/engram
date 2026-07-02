@@ -86,3 +86,12 @@ Companion to [CHANGELOG.md](CHANGELOG.md) for autonomous RSI iterations.
 - `scripts/rsi_trajectory_meta_review.sh` verify pipeline.
 
 **Verify:** `RSI_CYCLE_MIN=12 RSI_CYCLE_MAX=13 scripts/rsi_batch_verify_all.sh`
+
+## [0.7.0-beta.11-rsi-batch5] — 2026-07-02 (Cycle 14)
+
+### Cycle 14 — Scaffold versioning + gated promotion (Tier A4)
+- `scaffold_registry` in harness with versioned ritual components.
+- `ENGRAM_SCAFFOLD_PROMOTION_GATE` on `promote_hot` for scaffold/RSI tiles.
+- Criteria: CRS ≥0.74, recalls ≥1, zero consult-before-write violations.
+
+**Verify:** `RSI_CYCLE_MIN=14 RSI_CYCLE_MAX=14 scripts/rsi_batch_verify_all.sh`

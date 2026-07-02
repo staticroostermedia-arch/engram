@@ -16,7 +16,7 @@ cd "$REPO_ROOT"
 : > "$SCRATCH/rsi-batch-artifacts.txt"
 
 CYCLE_MIN="${RSI_CYCLE_MIN:-2}"
-CYCLE_MAX="${RSI_CYCLE_MAX:-13}"
+CYCLE_MAX="${RSI_CYCLE_MAX:-14}"
 
 declare -A FILTERS=(
   [2]="combined_sentinel"
@@ -31,6 +31,7 @@ declare -A FILTERS=(
   [11]="metamemory"
   [12]="consult_before_write"
   [13]="trajectory_meta_review"
+  [14]="scaffold_registry"
 )
 
 declare -A DECISIONS=(
@@ -46,6 +47,7 @@ declare -A DECISIONS=(
   [11]="RSI Cycle 11 metamemory KPIs + MCP hooks"
   [12]="RSI Cycle 12 consult-before-write gate soft/hard"
   [13]="RSI Cycle 13 trajectory meta-review script"
+  [14]="RSI Cycle 14 scaffold versioning gated promotion"
 )
 
 declare -A TITLES=(
@@ -61,6 +63,7 @@ declare -A TITLES=(
   [11]="RSI Cycle 11 — metamemory KPIs"
   [12]="RSI Cycle 12 — consult-before-write gate"
   [13]="RSI Cycle 13 — trajectory meta-review"
+  [14]="RSI Cycle 14 — scaffold versioning"
 )
 
 OVERALL=0
