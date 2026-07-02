@@ -1447,6 +1447,12 @@ pub fn build_harness_bundle(store: &mut StoreHandle, session_intent: Option<&str
             "effective_max_turns": crate::continuity_spikes::effective_max_turns(surprise_pressure),
             "rehydrate_reason": if rehydrate_suggested { rehydrate_reason } else { "" },
             "metamemory": store.metamemory_snapshot(),
+            "consult_before_write_gate": crate::consult_before_write_gate::gate_status_json(
+                store.metamemory.recall_gate_open(),
+                store.metamemory.recalls,
+                store.metamemory.writes,
+            ),
+            "trajectory_meta_review_hint": "scripts/rsi_trajectory_meta_review.sh aggregates receipt:session_* metamemory",
             "research_refs": [
                 "https://arxiv.org/abs/2508.04435",
                 "https://arxiv.org/abs/2508.05766",
@@ -1962,6 +1968,32 @@ SESSION HANDOFF PACKET v1 (structured JSON for next-wake read_concept)
         let discipline = bundle.get("agent_discipline").expect("agent_discipline");
         assert!(discipline.get("turn_protocol").is_some());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn consult_before_write_gate_in_rsi_cycle_metrics() {
+        std::env::set_var("ENGRAM_DISABLE_SHEAF", "1");
+        std::env::set_var("ENGRAM_FORCE_CPU_BACKEND", "1");
+        std::env::set_var("ENGRAM_KI_DISABLE", "1");
+        std::env::set_var("ENGRAM_CONSULT_BEFORE_WRITE", "soft");
+        let dir = std::env::temp_dir().join(format!(
+            "cbw_gate_harness_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).ok();
+        let mut store = crate::store::StoreHandle::new(&dir.to_string_lossy());
+        let bundle = build_harness_bundle(&mut store, Some("goal:engram_mvp_v1"));
+        let metrics = bundle.get("rsi_cycle_metrics").expect("rsi_cycle_metrics");
+        let gate = metrics
+            .get("consult_before_write_gate")
+            .expect("consult_before_write_gate");
+        assert_eq!(gate.get("mode").and_then(|v| v.as_str()), Some("soft"));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::env::remove_var("ENGRAM_CONSULT_BEFORE_WRITE");
     }
 
     #[test]

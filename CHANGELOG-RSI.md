@@ -74,3 +74,15 @@ Companion to [CHANGELOG.md](CHANGELOG.md) for autonomous RSI iterations.
 **Batch scores:** CRS 0.87 · Lyapunov 0.86 · RSI-accel 0.89 · perf 0.92 · safety 0.92
 
 **Verify:** `RSI_CYCLE_MIN=10 RSI_CYCLE_MAX=11 scripts/rsi_batch_verify_all.sh`
+
+## [0.7.0-beta.10-rsi-batch4] — 2026-07-02 (Cycles 12–13)
+
+### Cycle 12 — consult-before-write gate
+- `ENGRAM_CONSULT_BEFORE_WRITE` soft/hard/off gate on `remember`/`update`/`update_with_tensor_bond`.
+- Harness exposes `consult_before_write_gate` in `rsi_cycle_metrics`.
+
+### Cycle 13 — trajectory meta-review
+- `build_trajectory_meta_review` aggregates metamemory across `receipt:session_*` sidecars.
+- `scripts/rsi_trajectory_meta_review.sh` verify pipeline.
+
+**Verify:** `RSI_CYCLE_MIN=12 RSI_CYCLE_MAX=13 scripts/rsi_batch_verify_all.sh`

@@ -27,6 +27,10 @@ impl SessionMetamemoryCounters {
         self.log_tools = self.log_tools.saturating_add(1);
     }
 
+    pub fn recall_gate_open(&self) -> bool {
+        self.recall_gate_open
+    }
+
     pub fn note_recall(&mut self, result_count: usize) {
         self.recalls = self.recalls.saturating_add(1);
         if result_count == 0 {
@@ -106,6 +110,73 @@ pub fn build_turn_protocol() -> Value {
     })
 }
 
+/// Parse metamemory JSON embedded in a session receipt or handoff provlog body.
+pub fn parse_metamemory_from_provlog(body: &str) -> Option<Value> {
+    let json_start = body.find('{')?;
+    let slice = &body[json_start..];
+    let value: Value = serde_json::from_str(slice).ok()?;
+    value.get("metamemory").cloned()
+}
+
+/// Aggregate metamemory KPIs across session receipts (trajectory-level meta-review).
+pub fn build_trajectory_meta_review(snapshots: &[Value]) -> Value {
+    let mut recalls = 0u64;
+    let mut recalls_empty = 0u64;
+    let mut writes = 0u64;
+    let mut violations = 0u64;
+
+    for snap in snapshots {
+        recalls = recalls.saturating_add(snap.get("recalls").and_then(|v| v.as_u64()).unwrap_or(0));
+        recalls_empty = recalls_empty.saturating_add(
+            snap.get("recalls_empty")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0),
+        );
+        writes = writes.saturating_add(snap.get("writes").and_then(|v| v.as_u64()).unwrap_or(0));
+        violations = violations.saturating_add(
+            snap.get("writes_without_prior_recall")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0),
+        );
+    }
+
+    let writes_per_recall = if recalls == 0 {
+        if writes == 0 {
+            0.0
+        } else {
+            f32::INFINITY
+        }
+    } else {
+        writes as f32 / recalls as f32
+    };
+    let empty_recall_rate = if recalls == 0 {
+        0.0
+    } else {
+        recalls_empty as f32 / recalls as f32
+    };
+
+    json!({
+        "version": "trajectory_meta_review_v1",
+        "source": "arXiv:2607.01224",
+        "sessions_reviewed": snapshots.len(),
+        "aggregate": {
+            "recalls": recalls,
+            "recalls_empty": recalls_empty,
+            "writes": writes,
+            "writes_without_prior_recall": violations,
+            "writes_per_recall": writes_per_recall,
+            "empty_recall_rate": empty_recall_rate,
+        },
+        "recommendations": if violations > 0 {
+            vec!["Increase recall(scope=anchors) before remember/update", "Review consult_before_write_gate violations"]
+        } else if recalls == 0 && writes > 0 {
+            vec!["Sessions writing without any recall — enforce PLAN phase"]
+        } else {
+            vec!["Metamemory discipline within nominal bounds"]
+        },
+    })
+}
+
 /// Classify MCP tool names into metamemory categories.
 pub fn classify_mcp_tool(tool: &str) -> Option<&'static str> {
     match tool {
@@ -156,5 +227,24 @@ mod tests {
         let tp = build_turn_protocol();
         assert!(tp.get("phases").and_then(|p| p.get("plan")).is_some());
         assert!(tp.get("phases").and_then(|p| p.get("log")).is_some());
+    }
+
+    #[test]
+    fn trajectory_meta_review_aggregates_receipts() {
+        let a = json!({"recalls": 2, "recalls_empty": 1, "writes": 3, "writes_without_prior_recall": 1});
+        let b = json!({"recalls": 1, "recalls_empty": 0, "writes": 1, "writes_without_prior_recall": 0});
+        let review = build_trajectory_meta_review(&[a, b]);
+        assert_eq!(
+            review.get("sessions_reviewed").and_then(|v| v.as_u64()),
+            Some(2)
+        );
+        let agg = review.get("aggregate").expect("aggregate");
+        assert_eq!(agg.get("recalls").and_then(|v| v.as_u64()), Some(3));
+        assert_eq!(agg.get("writes").and_then(|v| v.as_u64()), Some(4));
+        assert_eq!(
+            agg.get("writes_without_prior_recall")
+                .and_then(|v| v.as_u64()),
+            Some(1)
+        );
     }
 }

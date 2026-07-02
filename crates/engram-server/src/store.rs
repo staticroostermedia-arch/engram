@@ -1589,6 +1589,35 @@ impl StoreHandle {
         self.metamemory.to_json()
     }
 
+    /// Collect metamemory snapshots from recent `receipt:session_*` sidecars.
+    pub fn collect_recent_receipt_metamemory(&self, max: usize) -> Vec<serde_json::Value> {
+        let mut out = Vec::new();
+        for concept in self.list() {
+            let raw = concept
+                .split_once("::")
+                .map_or(concept.as_str(), |(_, r)| r);
+            if !raw.starts_with("receipt:session_") {
+                continue;
+            }
+            if let Some(block) = self.fetch_block(raw) {
+                let body = engram_core::storage::read_provlog(&block);
+                if let Some(mm) = crate::metamemory_metrics::parse_metamemory_from_provlog(&body) {
+                    out.push(mm);
+                }
+            }
+            if out.len() >= max {
+                break;
+            }
+        }
+        out
+    }
+
+    /// Trajectory-level metamemory meta-review across session receipts.
+    pub fn trajectory_meta_review(&self, max_sessions: usize) -> serde_json::Value {
+        let snaps = self.collect_recent_receipt_metamemory(max_sessions);
+        crate::metamemory_metrics::build_trajectory_meta_review(&snaps)
+    }
+
     pub fn note_metamemory_tool(&mut self, tool: &str, recall_hit_count: Option<usize>) {
         if let Some(count) = recall_hit_count {
             self.metamemory.note_recall(count);

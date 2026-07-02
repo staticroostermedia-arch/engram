@@ -28,6 +28,7 @@
 
 mod cockpit_cache;
 mod coherence;
+mod consult_before_write_gate;
 mod context_var;
 mod continuity_spikes;
 pub mod daemon;

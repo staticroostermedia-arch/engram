@@ -392,4 +392,72 @@ git commit -m "feat(metamemory): RSI Cycle 11 KPIs + MCP hooks + session receipt
 
 **Cumulative gains:** AutoMem discipline adapted to geometric harness (no flat filesystem); measurable metamemory KPIs per MCP session; trajectory audit via handoff + receipt sidecars.
 
-**Version history:** beta.8 (Batch 2) → **beta.9** (Batch 3 cycles 10–11)
+**Version history:** beta.8 (Batch 2) → **beta.9** (Batch 3 cycles 10–11) → **beta.10** (Batch 4 cycles 12–13)
+
+---
+
+## Cycle 12 — consult-before-write gate (2026-07-02)
+
+### Research synthesis (≥2 cited sources)
+
+| Source | Insight |
+|--------|---------|
+| [arXiv:2607.01224](https://arxiv.org/abs/2607.01224) | PLAN phase must precede LOG writes; consult-before-write is measurable and enforceable. |
+| [arXiv:2508.09128](https://arxiv.org/abs/2508.09128) | Soft/hard gates (like wake_queue) nudge agents without blocking CI when `off`. |
+
+### Hypothesis
+
+`ENGRAM_CONSULT_BEFORE_WRITE` gate on remember/update blocks hard mode until recall opens gate; soft warns.
+
+### Files touched
+
+- `consult_before_write_gate.rs` (new)
+- `mcp.rs` — gate on write tools
+- `harness_injection.rs` — `consult_before_write_gate` in metrics
+
+### Evaluation scores
+
+CRS 0.86 · Lyapunov 0.86 · RSI-accel 0.88 · perf 0.92 · safety 0.93
+
+```bash
+git add crates/engram-server/src/consult_before_write_gate.rs crates/engram-server/src/mcp.rs crates/engram-server/src/harness_injection.rs crates/engram-server/src/main.rs
+git commit -m "feat(gate): RSI Cycle 12 consult-before-write soft/hard gate"
+```
+
+---
+
+## Cycle 13 — trajectory meta-review (2026-07-02)
+
+### Research synthesis (≥2 cited sources)
+
+| Source | Insight |
+|--------|---------|
+| [arXiv:2607.01224](https://arxiv.org/abs/2607.01224) | Trajectory-level meta-review over memory episodes improves specialist training signal. |
+| [arXiv:2504.09301](https://arxiv.org/abs/2504.09301) | Session receipts are audit sidecars suitable for cross-session aggregation. |
+
+### Hypothesis
+
+`build_trajectory_meta_review` + `scripts/rsi_trajectory_meta_review.sh` aggregate metamemory from `receipt:session_*`.
+
+### Files touched
+
+- `metamemory_metrics.rs` — trajectory review builder
+- `store.rs` — `trajectory_meta_review()`
+- `scripts/rsi_trajectory_meta_review.sh`, `scripts/rsi_batch_verify_all.sh`
+
+### Evaluation scores
+
+CRS 0.87 · Lyapunov 0.86 · RSI-accel 0.89 · perf 0.91 · safety 0.92
+
+```bash
+git add crates/engram-server/src/metamemory_metrics.rs crates/engram-server/src/store.rs scripts/rsi_trajectory_meta_review.sh scripts/rsi_batch_verify_all.sh Cargo.toml CHANGELOG-RSI.md docs/rsi_evolution_log.md
+git commit -m "feat(metamemory): RSI Cycle 13 trajectory meta-review v0.7.0-beta.10"
+```
+
+---
+
+## Batch 4 checkpoint (Cycles 12–13)
+
+**Cumulative gains:** Enforceable PLAN-before-LOG gate; trajectory-level metamemory review over session receipts.
+
+**Version history:** beta.9 (Batch 3) → **beta.10** (Batch 4 cycles 12–13)
