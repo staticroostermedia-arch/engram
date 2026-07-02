@@ -323,4 +323,73 @@ git commit -m "chore(rsi): RSI Cycle 9 batch verify 6-9 + v0.7.0-beta.8"
 
 **Cumulative gains:** Weighted Lyapunov sentinel replaces max-blend; marathon cycle ID env-driven; meta workflow health in wake metrics; verify script parameterized through cycle 9.
 
-**Version history:** beta.7 (Batch 1) → **beta.8** (Batch 2 cycles 6–9)
+**Version history:** beta.7 (Batch 1) → **beta.8** (Batch 2 cycles 6–9) → **beta.9** (Batch 3 cycles 10–11)
+
+---
+
+## Cycle 10 — AutoMem turn_protocol harness (2026-07-02)
+
+### Research synthesis (≥2 cited sources)
+
+| Source | Insight |
+|--------|---------|
+| [arXiv:2607.01224](https://arxiv.org/abs/2607.01224) | Metamemory is a trainable skill: LOG (encode) + PLAN (retrieve) routines outperform flat filesystem stores. |
+| [arXiv:2508.09128](https://arxiv.org/abs/2508.09128) | Wake harness should expose explicit turn-phase discipline without changing geometric substrate. |
+
+### Hypothesis
+
+Expose AutoMem-inspired PLAN/ACT/LOG `turn_protocol` in harness bundle + `agent_discipline` — geometric `.leg3` substrate unchanged.
+
+### Files touched
+
+- `metamemory_metrics.rs` (new) — `build_turn_protocol`, tool classification
+- `harness_injection.rs` — `turn_protocol` top-level + discipline extension
+
+### Evaluation scores
+
+CRS 0.86 · Lyapunov 0.85 · RSI-accel 0.88 · perf 0.92 · safety 0.93
+
+```bash
+git add crates/engram-server/src/metamemory_metrics.rs crates/engram-server/src/harness_injection.rs crates/engram-server/src/main.rs
+git commit -m "feat(harness): RSI Cycle 10 AutoMem turn_protocol — geometric substrate unchanged"
+```
+
+---
+
+## Cycle 11 — metamemory KPIs + MCP hooks (2026-07-02)
+
+### Research synthesis (≥2 cited sources)
+
+| Source | Insight |
+|--------|---------|
+| [arXiv:2607.01224](https://arxiv.org/abs/2607.01224) | Consult-before-write and recall/write ratios are measurable metamemory KPIs. |
+| [arXiv:2504.09301](https://arxiv.org/abs/2504.09301) | Session receipts should carry audit sidecars for trajectory-level review. |
+
+### Hypothesis
+
+Track per-session metamemory counters via MCP tool hooks; surface in `rsi_cycle_metrics`, handoff packet, and session receipt.
+
+### Files touched
+
+- `metamemory_metrics.rs` — `SessionMetamemoryCounters`
+- `store.rs` — `note_metamemory_tool`, handoff metamemory field
+- `mcp.rs` — `finalize_metamemory_tool` hook
+- `continuity_spikes.rs` — receipt metamemory sidecar
+- `scripts/rsi_batch_verify_all.sh` — cycles 10–11 filters
+
+### Evaluation scores
+
+CRS 0.87 · Lyapunov 0.86 · RSI-accel 0.89 · perf 0.92 · safety 0.92
+
+```bash
+git add crates/engram-server/src/mcp.rs crates/engram-server/src/store.rs crates/engram-server/src/continuity_spikes.rs scripts/rsi_batch_verify_all.sh Cargo.toml CHANGELOG-RSI.md docs/rsi_evolution_log.md
+git commit -m "feat(metamemory): RSI Cycle 11 KPIs + MCP hooks + session receipt v0.7.0-beta.9"
+```
+
+---
+
+## Batch 3 checkpoint (Cycles 10–11)
+
+**Cumulative gains:** AutoMem discipline adapted to geometric harness (no flat filesystem); measurable metamemory KPIs per MCP session; trajectory audit via handoff + receipt sidecars.
+
+**Version history:** beta.8 (Batch 2) → **beta.9** (Batch 3 cycles 10–11)

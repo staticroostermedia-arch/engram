@@ -1232,6 +1232,9 @@ pub struct StoreHandle {
 
     /// Last `recall_scoped` path for MCP observability (relational | sampled_warmup | bvh_discovery | bvh_full).
     last_recall_path: String,
+
+    /// AutoMem-inspired session metamemory KPIs (arXiv:2607.01224).
+    pub metamemory: crate::metamemory_metrics::SessionMetamemoryCounters,
 }
 
 /// Goal block text: provlog first (encode path), payload fallback.
@@ -1578,6 +1581,31 @@ impl StoreHandle {
             leg_block_count_value: std::sync::atomic::AtomicUsize::new(0),
             leg_block_count_cached_at: std::sync::atomic::AtomicU64::new(0),
             last_recall_path: String::new(),
+            metamemory: crate::metamemory_metrics::SessionMetamemoryCounters::default(),
+        }
+    }
+
+    pub fn metamemory_snapshot(&self) -> serde_json::Value {
+        self.metamemory.to_json()
+    }
+
+    pub fn note_metamemory_tool(&mut self, tool: &str, recall_hit_count: Option<usize>) {
+        if let Some(count) = recall_hit_count {
+            self.metamemory.note_recall(count);
+            return;
+        }
+        match crate::metamemory_metrics::classify_mcp_tool(tool) {
+            Some("plan") => self.metamemory.note_plan_tool(),
+            Some("log")
+                if tool == "mcp_engram_remember"
+                    || tool == "mcp_engram_update"
+                    || tool == "mcp_engram_update_with_tensor_bond" =>
+            {
+                self.metamemory.note_write();
+                self.metamemory.note_log_tool();
+            }
+            Some("log") => self.metamemory.note_log_tool(),
+            _ => {}
         }
     }
 
@@ -1698,6 +1726,7 @@ impl StoreHandle {
             leg_block_count_value: std::sync::atomic::AtomicUsize::new(0),
             leg_block_count_cached_at: std::sync::atomic::AtomicU64::new(0),
             last_recall_path: String::new(),
+            metamemory: crate::metamemory_metrics::SessionMetamemoryCounters::default(),
         }
     }
 
@@ -3047,6 +3076,8 @@ impl StoreHandle {
             "memory_mode": Self::memory_mode(),
             "readiness": self.backend_readiness(),
             "handoff_concept": SESSION_HANDOFF_LATEST,
+            "metamemory": self.metamemory_snapshot(),
+            "turn_protocol": crate::metamemory_metrics::build_turn_protocol(),
         })
     }
 

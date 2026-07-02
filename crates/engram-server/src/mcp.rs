@@ -2451,6 +2451,29 @@ fn probe_short_concept(concept: &str) -> String {
 
 // ── Tool dispatch ─────────────────────────────────────────────────────────────
 
+/// AutoMem-inspired metamemory KPI hook (arXiv:2607.01224). Recall passes hit count inline.
+fn note_metamemory_on_success(store: &SharedStore, tool: &str, recall_hits: Option<usize>) {
+    if let Ok(mut lock) = store.lock() {
+        lock.note_metamemory_tool(tool, recall_hits);
+    }
+}
+
+fn finalize_metamemory_tool(store: &SharedStore, tool: &str, result: &Value) {
+    if result
+        .get("isError")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+    {
+        return;
+    }
+    if tool == "mcp_engram_recall" {
+        return;
+    }
+    if crate::metamemory_metrics::classify_mcp_tool(tool).is_some() {
+        note_metamemory_on_success(store, tool, None);
+    }
+}
+
 pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value {
     // === Early MCP Ready Path guard (transitional) ===
     // The fast startup uses a lightweight placeholder so Grok (TUI) can get an
@@ -3064,7 +3087,7 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
         });
     }
 
-    match name {
+    let result = match name {
         "mcp_engram_remember" => {
             let concept = args["concept"].as_str().unwrap_or("").trim().to_string();
             let text = args["text"].as_str().unwrap_or("").trim().to_string();
@@ -3197,6 +3220,7 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                     "recall",
                     &format!("query={q_short} · scope={effective_scope} · hits=0"),
                 );
+                note_metamemory_on_success(store, "mcp_engram_recall", Some(0));
                 return json!({
                     "content": [{ "type": "text", "text": format!("No memories found. {}\n{}", meta, lean_hint.trim()) }]
                 });
@@ -3254,6 +3278,7 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                     results.len()
                 ),
             );
+            note_metamemory_on_success(store, "mcp_engram_recall", Some(results.len()));
             json!({ "content": [{ "type": "text", "text": output.trim() }] })
         }
 
@@ -8499,7 +8524,9 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
             "content": [{ "type": "text", "text": format!("Unknown tool: {unknown}") }],
             "isError": true
         }),
-    }
+    };
+    finalize_metamemory_tool(store, name, &result);
+    result
 }
 
 // ── MCP request dispatch ──────────────────────────────────────────────────────

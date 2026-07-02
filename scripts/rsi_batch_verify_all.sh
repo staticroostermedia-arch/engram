@@ -16,7 +16,7 @@ cd "$REPO_ROOT"
 : > "$SCRATCH/rsi-batch-artifacts.txt"
 
 CYCLE_MIN="${RSI_CYCLE_MIN:-2}"
-CYCLE_MAX="${RSI_CYCLE_MAX:-9}"
+CYCLE_MAX="${RSI_CYCLE_MAX:-11}"
 
 declare -A FILTERS=(
   [2]="combined_sentinel"
@@ -27,6 +27,8 @@ declare -A FILTERS=(
   [7]="resolve_rsi_cycle"
   [8]="meta_workflow_registry"
   [9]="rsi_batch_verify_scripts"
+  [10]="turn_protocol"
+  [11]="metamemory"
 )
 
 declare -A DECISIONS=(
@@ -38,6 +40,8 @@ declare -A DECISIONS=(
   [7]="RSI Cycle 7 ENGRAM_RSI_CYCLE harness metrics"
   [8]="RSI Cycle 8 meta_workflow_registry harness exposure"
   [9]="RSI Cycle 9 batch verify extended cycles 6-9 v0.7.0-beta.8"
+  [10]="RSI Cycle 10 AutoMem turn_protocol harness exposure"
+  [11]="RSI Cycle 11 metamemory KPIs + MCP hooks"
 )
 
 declare -A TITLES=(
@@ -49,6 +53,8 @@ declare -A TITLES=(
   [7]="RSI Cycle 7 — RSI cycle env"
   [8]="RSI Cycle 8 — meta workflow registry"
   [9]="RSI Cycle 9 — batch verify 6-9"
+  [10]="RSI Cycle 10 — turn_protocol harness"
+  [11]="RSI Cycle 11 — metamemory KPIs"
 )
 
 OVERALL=0

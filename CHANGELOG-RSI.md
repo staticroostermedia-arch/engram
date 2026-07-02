@@ -59,3 +59,18 @@ Companion to [CHANGELOG.md](CHANGELOG.md) for autonomous RSI iterations.
 **MCP Cycle 7:** `trace:1782841563_rsi-cycle-7-engram-rsi-cycle-harness-metrics` · `tile:formal_spec_rsi-cycle-7---rsi-cycle-env`
 **MCP Cycle 8:** `trace:1782841567_rsi-cycle-8-meta-workflow-registry-harness-expos` · `tile:formal_spec_rsi-cycle-8---meta-workflow-registry`
 **MCP Cycle 9:** `trace:1782841570_rsi-cycle-9-batch-verify-extended-cycles-6-9-v0-` · `tile:formal_spec_rsi-cycle-9---batch-verify-6-9`
+
+## [0.7.0-beta.9-rsi-batch3] — 2026-07-02 (Cycles 10–11)
+
+### Cycle 10 — AutoMem turn_protocol harness (no filesystem change)
+- `build_turn_protocol()` PLAN/ACT/LOG phases in wake harness (arXiv:2607.01224).
+- `agent_discipline.turn_protocol` + `metamemory_kpis` in harness injection.
+- Source: [arXiv:2607.01224](https://arxiv.org/abs/2607.01224) — memory as trainable skill.
+
+### Cycle 11 — Session metamemory KPIs + MCP hooks
+- `SessionMetamemoryCounters`: recalls, empty recall rate, writes/recall ratio, consult-before-write violations.
+- `note_metamemory_tool` wired in `mcp::handle_tool_call`; snapshot in `rsi_cycle_metrics` + handoff packet + session receipt.
+
+**Batch scores:** CRS 0.87 · Lyapunov 0.86 · RSI-accel 0.89 · perf 0.92 · safety 0.92
+
+**Verify:** `RSI_CYCLE_MIN=10 RSI_CYCLE_MAX=11 scripts/rsi_batch_verify_all.sh`

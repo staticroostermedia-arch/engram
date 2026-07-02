@@ -252,6 +252,7 @@ pub fn build_session_receipt(
         "primary_goal": handoff_packet.get("primary_goal"),
         "readiness": readiness,
         "profile": profile,
+        "metamemory": handoff_packet.get("metamemory").cloned().unwrap_or(json!({})),
         "created_unix": ts,
     });
     let canonical = serde_json::to_string(&core).unwrap_or_default();

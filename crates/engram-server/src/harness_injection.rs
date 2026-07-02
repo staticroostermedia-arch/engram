@@ -1432,6 +1432,7 @@ pub fn build_harness_bundle(store: &mut StoreHandle, session_intent: Option<&str
         "open_scars_wake": open_scars_wake,
         "uncertainty_receipts_wake": uncertainty_receipts_wake,
         "rehydrate_suggested": rehydrate_suggested,
+        "turn_protocol": crate::metamemory_metrics::build_turn_protocol(),
         "rsi_cycle_metrics": {
             "cycle": crate::continuity_spikes::resolve_rsi_cycle_number(),
             "surprise_pressure": surprise_pressure,
@@ -1445,9 +1446,11 @@ pub fn build_harness_bundle(store: &mut StoreHandle, session_intent: Option<&str
                 .unwrap_or(false),
             "effective_max_turns": crate::continuity_spikes::effective_max_turns(surprise_pressure),
             "rehydrate_reason": if rehydrate_suggested { rehydrate_reason } else { "" },
+            "metamemory": store.metamemory_snapshot(),
             "research_refs": [
                 "https://arxiv.org/abs/2508.04435",
-                "https://arxiv.org/abs/2508.05766"
+                "https://arxiv.org/abs/2508.05766",
+                "https://arxiv.org/abs/2607.01224"
             ],
         },
         "trace_chain": {
@@ -1460,6 +1463,16 @@ pub fn build_harness_bundle(store: &mut StoreHandle, session_intent: Option<&str
         "continuity_playbook": continuity_playbook,
         "presentation_stratum": presentation_stratum,
         "agent_discipline": {
+            "turn_protocol": {
+                "plan": "session_start → recall(scope=anchors) → context_for_edit before substrate edits",
+                "act": "agent-native tools + code edits",
+                "log": "quick_trace at forks; update/remember after recall; session_end at handoff"
+            },
+            "metamemory_kpis": [
+                "writes_per_recall",
+                "empty_recall_rate",
+                "writes_without_prior_recall"
+            ],
             "at_fork": "mcp_engram_quick_trace (chain prev from trace_chain.head)",
             "at_code_edit": "mcp_engram_safe_edit_and_verify (preferred) or context_for_edit → edit → update(__arc)",
             "at_memory_update": "mcp_engram_update_with_tensor_bond (recall-first) or recall → update (>0.85 match)",
@@ -1921,6 +1934,65 @@ SESSION HANDOFF PACKET v1 (structured JSON for next-wake read_concept)
             metrics.get("meta_workflow_ok").and_then(|v| v.as_bool()),
             Some(true)
         );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn turn_protocol_in_harness_bundle() {
+        std::env::set_var("ENGRAM_DISABLE_SHEAF", "1");
+        std::env::set_var("ENGRAM_FORCE_CPU_BACKEND", "1");
+        std::env::set_var("ENGRAM_KI_DISABLE", "1");
+        let dir = std::env::temp_dir().join(format!(
+            "turn_protocol_harness_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).ok();
+        let mut store = crate::store::StoreHandle::new(&dir.to_string_lossy());
+        let bundle = build_harness_bundle(&mut store, Some("goal:engram_mvp_v1"));
+        let tp = bundle.get("turn_protocol").expect("turn_protocol");
+        assert_eq!(
+            tp.get("version").and_then(|v| v.as_str()),
+            Some("automem_inspired_v1")
+        );
+        assert!(tp.get("phases").and_then(|p| p.get("plan")).is_some());
+        let discipline = bundle.get("agent_discipline").expect("agent_discipline");
+        assert!(discipline.get("turn_protocol").is_some());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn metamemory_in_rsi_cycle_metrics() {
+        std::env::set_var("ENGRAM_DISABLE_SHEAF", "1");
+        std::env::set_var("ENGRAM_FORCE_CPU_BACKEND", "1");
+        std::env::set_var("ENGRAM_KI_DISABLE", "1");
+        let dir = std::env::temp_dir().join(format!(
+            "metamemory_harness_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).ok();
+        let mut store = crate::store::StoreHandle::new(&dir.to_string_lossy());
+        store.note_metamemory_tool("mcp_engram_recall", Some(2));
+        store.note_metamemory_tool("mcp_engram_remember", None);
+        let bundle = build_harness_bundle(&mut store, Some("goal:engram_mvp_v1"));
+        let metrics = bundle.get("rsi_cycle_metrics").expect("rsi_cycle_metrics");
+        let mm = metrics.get("metamemory").expect("metamemory");
+        assert_eq!(mm.get("recalls").and_then(|v| v.as_u64()), Some(1));
+        assert_eq!(mm.get("writes").and_then(|v| v.as_u64()), Some(1));
+        let refs = metrics
+            .get("research_refs")
+            .and_then(|v| v.as_array())
+            .expect("research_refs");
+        assert!(refs
+            .iter()
+            .any(|r| { r.as_str().is_some_and(|s| s.contains("2607.01224")) }));
         let _ = std::fs::remove_dir_all(&dir);
     }
 

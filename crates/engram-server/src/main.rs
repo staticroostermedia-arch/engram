@@ -44,6 +44,7 @@ mod linguistic_reference_frame;
 mod local_stratum;
 mod mcp;
 mod mcp_lock;
+mod metamemory_metrics;
 mod mirror;
 mod presentation_stratum;
 mod process_metrics;
