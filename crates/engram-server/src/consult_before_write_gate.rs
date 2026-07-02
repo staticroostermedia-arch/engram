@@ -44,10 +44,7 @@ pub struct GateCheck {
 
 /// Write tools subject to consult-before-write discipline.
 pub fn is_gated_write_tool(tool: &str) -> bool {
-    matches!(
-        tool,
-        "mcp_engram_remember" | "mcp_engram_update" | "mcp_engram_update_with_tensor_bond"
-    )
+    crate::metamemory_metrics::is_metamemory_write_tool(tool)
 }
 
 pub fn gate_status_json(recall_gate_open: bool, recalls: u32, writes: u32) -> Value {
@@ -112,15 +109,18 @@ pub fn check_write(recall_gate_open: bool, tool: &str) -> GateCheck {
 }
 
 #[cfg(test)]
+pub(crate) fn env_test_lock() -> std::sync::MutexGuard<'static, ()> {
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    ENV_LOCK.lock().unwrap()
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Mutex;
-
-    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn consult_before_write_gate_blocks_remember_without_recall() {
-        let _guard = ENV_LOCK.lock().unwrap();
+        let _guard = env_test_lock();
         std::env::set_var("ENGRAM_CONSULT_BEFORE_WRITE", "hard");
         let gate = check_write(false, "mcp_engram_remember");
         assert!(!gate.allow);
@@ -136,7 +136,7 @@ mod tests {
 
     #[test]
     fn consult_before_write_soft_allows_with_warning() {
-        let _guard = ENV_LOCK.lock().unwrap();
+        let _guard = env_test_lock();
         std::env::set_var("ENGRAM_CONSULT_BEFORE_WRITE", "soft");
         let gate = check_write(false, "mcp_engram_update");
         assert!(gate.allow);
@@ -145,8 +145,17 @@ mod tests {
     }
 
     #[test]
+    fn consult_before_write_covers_batch_and_solution_tools() {
+        let _guard = env_test_lock();
+        std::env::set_var("ENGRAM_CONSULT_BEFORE_WRITE", "hard");
+        assert!(!check_write(false, "mcp_engram_batch_remember").allow);
+        assert!(!check_write(false, "mcp_engram_remember_solution").allow);
+        std::env::remove_var("ENGRAM_CONSULT_BEFORE_WRITE");
+    }
+
+    #[test]
     fn consult_before_write_off_skips_gate() {
-        let _guard = ENV_LOCK.lock().unwrap();
+        let _guard = env_test_lock();
         std::env::set_var("ENGRAM_CONSULT_BEFORE_WRITE", "off");
         let gate = check_write(false, "mcp_engram_remember");
         assert!(gate.allow);

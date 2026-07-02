@@ -2020,6 +2020,7 @@ SESSION HANDOFF PACKET v1 (structured JSON for next-wake read_concept)
 
     #[test]
     fn consult_before_write_gate_in_rsi_cycle_metrics() {
+        let _guard = crate::consult_before_write_gate::env_test_lock();
         std::env::set_var("ENGRAM_DISABLE_SHEAF", "1");
         std::env::set_var("ENGRAM_FORCE_CPU_BACKEND", "1");
         std::env::set_var("ENGRAM_KI_DISABLE", "1");
