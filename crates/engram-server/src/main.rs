@@ -28,6 +28,7 @@
 
 mod cockpit_cache;
 mod coherence;
+mod consult_before_write_gate;
 mod context_var;
 mod continuity_spikes;
 pub mod daemon;
@@ -44,10 +45,12 @@ mod linguistic_reference_frame;
 mod local_stratum;
 mod mcp;
 mod mcp_lock;
+mod metamemory_metrics;
 mod mirror;
 mod presentation_stratum;
 mod process_metrics;
 mod profile;
+mod scaffold_versioning;
 pub mod scout;
 pub mod scout_supervisor;
 mod scrub_export;

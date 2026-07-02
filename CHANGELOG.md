@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **RSI Cycle 1 — surprise-aware sentinel:** Hub-anchor `l2_norm_residual` pressure tightens effective rehydrate turn budget (`continuity_spikes` + harness `rsi_cycle_metrics`); builds on PR #53 leg3 gap closure.
+
+## [0.7.0-beta.6] - 2026-06-30
+
+### Added
+
+- **RSI Cycle 1 — surprise-aware sentinel:** Manifest hub anchors contribute `surprise_pressure` to `ego_snapshot` and `compute_sentinel_nudge_with_surprise`; soft `surprise_pressure_elevated` nudge before base 30-turn cap when prediction error is high.
+
 ### Fixed
 
 - **Metal macOS BVH hang:** `MetalBackend::query()` no longer calls synchronous `ensure_bvh()` (parity with `CudaBackend` — background build only). Background BVH spawn at init; real `MTLCommandBufferStatus` poll timeout (removed double-`commit` + fake 100ms timeout that still blocked on `wait_until_completed`). Post-store deduped async reindex instead of invalidate-on-query.

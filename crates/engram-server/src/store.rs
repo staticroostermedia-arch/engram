@@ -1232,6 +1232,9 @@ pub struct StoreHandle {
 
     /// Last `recall_scoped` path for MCP observability (relational | sampled_warmup | bvh_discovery | bvh_full).
     last_recall_path: String,
+
+    /// AutoMem-inspired session metamemory KPIs (arXiv:2607.01224).
+    pub metamemory: crate::metamemory_metrics::SessionMetamemoryCounters,
 }
 
 /// Goal block text: provlog first (encode path), payload fallback.
@@ -1578,6 +1581,60 @@ impl StoreHandle {
             leg_block_count_value: std::sync::atomic::AtomicUsize::new(0),
             leg_block_count_cached_at: std::sync::atomic::AtomicU64::new(0),
             last_recall_path: String::new(),
+            metamemory: crate::metamemory_metrics::SessionMetamemoryCounters::default(),
+        }
+    }
+
+    pub fn metamemory_snapshot(&self) -> serde_json::Value {
+        self.metamemory.to_json()
+    }
+
+    /// Collect metamemory snapshots from recent `receipt:session_*` sidecars.
+    pub fn collect_recent_receipt_metamemory(&self, max: usize) -> Vec<serde_json::Value> {
+        let mut out = Vec::new();
+        for concept in self.list() {
+            let raw = concept
+                .split_once("::")
+                .map_or(concept.as_str(), |(_, r)| r);
+            if !raw.starts_with("receipt:session_") {
+                continue;
+            }
+            if let Some(block) = self.fetch_block(raw) {
+                let body = engram_core::storage::read_provlog(&block);
+                if let Some(mm) = crate::metamemory_metrics::parse_metamemory_from_provlog(&body) {
+                    out.push(mm);
+                }
+            }
+            if out.len() >= max {
+                break;
+            }
+        }
+        out
+    }
+
+    /// Trajectory-level metamemory meta-review across session receipts.
+    pub fn trajectory_meta_review(&self, max_sessions: usize) -> serde_json::Value {
+        let snaps = self.collect_recent_receipt_metamemory(max_sessions);
+        crate::metamemory_metrics::build_trajectory_meta_review(&snaps)
+    }
+
+    pub fn note_metamemory_tool(&mut self, tool: &str, recall_hit_count: Option<usize>) {
+        if let Some(count) = recall_hit_count {
+            self.metamemory.note_recall(count);
+            return;
+        }
+        match crate::metamemory_metrics::classify_mcp_tool(tool) {
+            Some("plan") => self.metamemory.note_plan_tool(),
+            Some("log")
+                if tool == "mcp_engram_remember"
+                    || tool == "mcp_engram_update"
+                    || tool == "mcp_engram_update_with_tensor_bond" =>
+            {
+                self.metamemory.note_write();
+                self.metamemory.note_log_tool();
+            }
+            Some("log") => self.metamemory.note_log_tool(),
+            _ => {}
         }
     }
 
@@ -1698,6 +1755,7 @@ impl StoreHandle {
             leg_block_count_value: std::sync::atomic::AtomicUsize::new(0),
             leg_block_count_cached_at: std::sync::atomic::AtomicU64::new(0),
             last_recall_path: String::new(),
+            metamemory: crate::metamemory_metrics::SessionMetamemoryCounters::default(),
         }
     }
 
@@ -2124,6 +2182,12 @@ impl StoreHandle {
 
         // ── Assign reflexive contract by ZEDOS tag ────────────────────────────
         assign_reflexive_contract(&mut block);
+
+        if Self::is_hub_anchor_concept(concept) && block.l2_norm_residual <= 0.0 {
+            if let Some(prior) = self.hub_anchor_prior_q(concept) {
+                engram_core::ops::apply_prediction_residual(&mut block, &prior);
+            }
+        }
 
         // ── Set coherence_time (enables epoch_scalar / recency weighting) ─────
         block.coherence_time = std::time::SystemTime::now()
@@ -3041,6 +3105,8 @@ impl StoreHandle {
             "memory_mode": Self::memory_mode(),
             "readiness": self.backend_readiness(),
             "handoff_concept": SESSION_HANDOFF_LATEST,
+            "metamemory": self.metamemory_snapshot(),
+            "turn_protocol": crate::metamemory_metrics::build_turn_protocol(),
         })
     }
 
@@ -4415,7 +4481,36 @@ impl StoreHandle {
         }
     }
 
-    pub fn store(&mut self, concept: &str, block: Leg3Pointer) -> Result<()> {
+    fn is_hub_anchor_concept(concept: &str) -> bool {
+        concept.starts_with("trace:")
+            || concept.starts_with("tile:")
+            || concept.starts_with("goal:")
+    }
+
+    /// Prior centroid for hub-anchor surprise: ego state, else recent trace chain head.
+    fn hub_anchor_prior_q(&self, concept: &str) -> Option<[engram_core::Complex32; 8192]> {
+        if let Some(ego) = self.ego_q.as_deref() {
+            return Some(*ego);
+        }
+        if concept.starts_with("trace:") {
+            for (c, _) in self.access_index.recent(50) {
+                if c.starts_with("trace:") && c != concept {
+                    if let Some(b) = self.fetch_block(&c) {
+                        return Some(b.q);
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    pub fn store(&mut self, concept: &str, mut block: Leg3Pointer) -> Result<()> {
+        if Self::is_hub_anchor_concept(concept) && block.l2_norm_residual <= 0.0 {
+            if let Some(prior) = self.hub_anchor_prior_q(concept) {
+                engram_core::ops::apply_prediction_residual(&mut block, &prior);
+            }
+        }
+
         let trace_fork_detail = if concept.starts_with("trace:") {
             let text = engram_core::storage::read_provlog(&block);
             crate::mirror::trace_fork_detail(&text)
@@ -4639,6 +4734,13 @@ impl StoreHandle {
                 concept
             ));
         }
+
+        // ── Prediction-error residual (PR #53 / RSI Cycle 1 surprise sentinel) ──
+        let prior_q = block.q;
+        let (l2_residual, err_16d) = engram_core::ops::prediction_residual(&new_block.q, &prior_q);
+        block.l2_norm_residual = l2_residual;
+        block.err_residual_16d = err_16d;
+        block.residual_dims_used = 16;
 
         // ── Phase 8.1: Temporal Momentum ──────────────────────────────────────
         // 1. Measure semantic gradient magnitude (surprise signal)
@@ -7620,6 +7722,34 @@ mod ingest_ast_tests {
             .expect("legacy handoff must synthesize manifest");
         assert_eq!(manifest["version"], "rehydration_manifest_v1");
         assert_eq!(manifest["session_end_key"], "session_end_99");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn update_propagates_l2_norm_residual_on_hub_anchor() {
+        std::env::set_var("ENGRAM_DISABLE_SHEAF", "1");
+        std::env::set_var("ENGRAM_FORCE_CPU_BACKEND", "1");
+        std::env::set_var("ENGRAM_KI_DISABLE", "1");
+        let dir = test_store_dir("update_residual_hub");
+        let mut store = StoreHandle::new(&dir.to_string_lossy());
+        store
+            .remember(
+                "trace:update_residual",
+                "TRACE\n\n**decision_point:** stable baseline concept alpha\n",
+            )
+            .unwrap();
+        store
+            .update(
+                "trace:update_residual",
+                "TRACE\n\n**decision_point:** divergent omega zeta orthogonal rewrite\n",
+            )
+            .unwrap();
+        let block = store.fetch_block("trace:update_residual").unwrap();
+        assert!(
+            block.l2_norm_residual > 0.01,
+            "update must propagate l2_norm_residual, got {}",
+            block.l2_norm_residual
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 

@@ -501,7 +501,13 @@ pub fn build_jit_deformation_framework(task_type: &str, primary_goal: Option<&st
             "crystallize_on": ["verified fix", "successful verified_sequence replay"],
             "condense_on": [">=6 goal traces without linked tile"],
             "identity_surface": "ego_snapshot + NREM → ego.leg3",
-            "process_ref": "process:engram.meta.agent-evolution"
+            "process_ref": "process:engram.meta.agent-evolution",
+            "cycle": 1,
+            "surprise_aware_sentinel": true,
+            "research_refs": [
+                "arXiv:2508.05766 (active inference / bounded rationality checkpoints)",
+                "arXiv:2504.09301 (crystallized reasoning + multi-turn continuity)"
+            ]
         },
         "homotopy_invariants": [
             "update preferred over forget+remember",
@@ -646,6 +652,83 @@ pub fn build_condensation_hints(store: &mut StoreHandle, primary_goal: Option<&s
     })]
 }
 
+/// Sample hub-anchor blocks for prediction-error residual (PR #53 surprise signal).
+pub fn hub_anchor_surprise_pressure(store: &StoreHandle, hub_anchors: &[String]) -> f32 {
+    let residuals: Vec<f32> = hub_anchors
+        .iter()
+        .take(16)
+        .filter_map(|c| {
+            store
+                .fetch_block_high_priority(c)
+                .or_else(|| store.fetch_block(c))
+                .map(|b| b.l2_norm_residual)
+        })
+        .collect();
+    crate::continuity_spikes::surprise_pressure_from_residuals(&residuals)
+}
+
+/// Ego NREM drift velocity from `ego.leg3` when present.
+pub fn ego_drift_velocity() -> Option<f32> {
+    read_ego_block().map(|b| b.energetics.dv.clamp(0.0, 1.0))
+}
+
+/// Residual surprise weighted-blended with ego drift (Lyapunov continuity).
+pub fn sentinel_pressure_combined(store: &StoreHandle, hub_anchors: &[String]) -> f32 {
+    let residual = hub_anchor_surprise_pressure(store, hub_anchors);
+    crate::continuity_spikes::combined_sentinel_pressure(residual, ego_drift_velocity())
+}
+
+fn hub_anchors_from_manifest(manifest: Option<&Value>) -> Vec<String> {
+    manifest
+        .and_then(|m| m.get("hub_anchors"))
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|x| x.as_str().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn hub_anchors_from_presentation_stratum(
+    store: &mut StoreHandle,
+    session_intent: Option<&str>,
+) -> Vec<String> {
+    let stratum =
+        crate::presentation_stratum::build_presentation_stratum(store, 12, session_intent);
+    stratum
+        .get("nodes")
+        .and_then(|v| v.as_array())
+        .map(|nodes| {
+            nodes
+                .iter()
+                .filter_map(|n| {
+                    n.get("concept")
+                        .and_then(|v| v.as_str())
+                        .map(str::to_string)
+                })
+                .take(16)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Hub anchors for surprise sampling: manifest first, else live presentation stratum.
+///
+/// Pre-handoff sessions have no persisted manifest; presentation stratum supplies
+/// recent trace/tile/goal distillates so turn_record sentinels stay surprise-aware.
+pub fn resolve_hub_anchors_for_surprise(
+    store: &mut StoreHandle,
+    session_intent: Option<&str>,
+) -> Vec<String> {
+    let manifest = store.resolve_rehydration_manifest_for_wake();
+    let from_manifest = hub_anchors_from_manifest(manifest.as_ref());
+    if !from_manifest.is_empty() {
+        return from_manifest;
+    }
+    hub_anchors_from_presentation_stratum(store, session_intent)
+}
+
 /// Machine queue for next agent actions (wake injection).
 pub fn build_suggested_actions(
     store: &mut StoreHandle,
@@ -655,14 +738,15 @@ pub fn build_suggested_actions(
     let mut primary_goal: Option<String> = None;
     let mut handoff_packet: Option<Value> = None;
 
+    let hub_anchors = resolve_hub_anchors_for_surprise(store, session_intent);
+    let surprise = sentinel_pressure_combined(store, &hub_anchors);
     let (turns, checkpoint) = store.sentinel_snapshot();
-    let (rehydrate_suggested, rehydrate_reason) = crate::continuity_spikes::compute_sentinel_nudge(
-        turns,
-        crate::continuity_spikes::minutes_since_checkpoint(
-            checkpoint,
-            crate::continuity_spikes::now_unix(),
-        ),
+    let minutes = crate::continuity_spikes::minutes_since_checkpoint(
+        checkpoint,
+        crate::continuity_spikes::now_unix(),
     );
+    let (rehydrate_suggested, rehydrate_reason) =
+        crate::continuity_spikes::compute_sentinel_nudge_with_surprise(turns, minutes, surprise);
     if rehydrate_suggested {
         actions.push(crate::continuity_spikes::rehydrate_nudge_action(
             rehydrate_reason,
@@ -1165,7 +1249,11 @@ pub fn top_goal_serving_concepts(store: &StoreHandle, goal: &str, limit: usize) 
 }
 
 /// Readable agent-evolution snapshot from ego.leg3 + goal-serving stack.
-pub fn build_ego_snapshot(store: &StoreHandle, primary_goal: Option<&str>) -> Value {
+pub fn build_ego_snapshot(
+    store: &StoreHandle,
+    primary_goal: Option<&str>,
+    hub_anchors: Option<&[String]>,
+) -> Value {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
@@ -1209,8 +1297,11 @@ pub fn build_ego_snapshot(store: &StoreHandle, primary_goal: Option<&str>) -> Va
         }
     }
 
+    let surprise = hub_anchors
+        .map(|h| sentinel_pressure_combined(store, h))
+        .unwrap_or(0.0);
     let (turns, checkpoint) = store.sentinel_snapshot();
-    let sentinel = crate::continuity_spikes::sentinel_ego_fields(turns, checkpoint);
+    let sentinel = crate::continuity_spikes::sentinel_ego_fields(turns, checkpoint, surprise);
     if let Some(obj) = snapshot.as_object_mut() {
         for (k, v) in sentinel.as_object().into_iter().flatten() {
             obj.insert(k.clone(), v.clone());
@@ -1283,7 +1374,9 @@ pub fn build_harness_bundle(store: &mut StoreHandle, session_intent: Option<&str
 
     let primary_goal = crate::store::resolve_active_primary_goal(store);
 
-    let ego_snapshot = build_ego_snapshot(store, primary_goal.as_deref());
+    let rehydration_manifest = store.resolve_rehydration_manifest_for_wake();
+    let hub_anchors = resolve_hub_anchors_for_surprise(store, session_intent);
+    let ego_snapshot = build_ego_snapshot(store, primary_goal.as_deref(), Some(&hub_anchors));
     let continuity_playbook = build_continuity_playbook(primary_goal.as_deref());
     let presentation_stratum = crate::presentation_stratum::build_presentation_stratum(
         store,
@@ -1294,14 +1387,6 @@ pub fn build_harness_bundle(store: &mut StoreHandle, session_intent: Option<&str
     let condensation_hints = build_condensation_hints(store, primary_goal.as_deref());
     let open_scars_wake = collect_open_scars(store, 5);
     let uncertainty_receipts_wake = collect_uncertainty_receipts(store, 5);
-    let (turns, checkpoint) = store.sentinel_snapshot();
-    let (rehydrate_suggested, _) = crate::continuity_spikes::compute_sentinel_nudge(
-        turns,
-        crate::continuity_spikes::minutes_since_checkpoint(
-            checkpoint,
-            crate::continuity_spikes::now_unix(),
-        ),
-    );
     let handoff_for_task = store
         .fetch_block_high_priority(SESSION_HANDOFF_LATEST)
         .and_then(|b| parse_handoff_packet_json(&storage::read_provlog(&b)));
@@ -1313,18 +1398,83 @@ pub fn build_harness_bundle(store: &mut StoreHandle, session_intent: Option<&str
     );
     let jit_framework = build_jit_deformation_framework(task_type, primary_goal.as_deref());
     let verified_processes = build_verified_processes(store, primary_goal.as_deref());
-    let rehydration_manifest = store.resolve_rehydration_manifest_for_wake();
+    let audit_loop_path =
+        crate::process_metrics::resolve_processes_dir().join("meta/full_system_audit_loop.toml");
+    let meta_workflow_registry = json!({
+        "full_system_audit_loop": {
+            "ok": crate::process_metrics::validate_meta_workflow_toml(&audit_loop_path),
+            "name": crate::process_metrics::parse_meta_workflow_name(&audit_loop_path)
+                .unwrap_or_default(),
+        }
+    });
+    let surprise_pressure = sentinel_pressure_combined(store, &hub_anchors);
+    let ego_drift = ego_drift_velocity();
+    let (turns, checkpoint) = store.sentinel_snapshot();
+    let minutes = crate::continuity_spikes::minutes_since_checkpoint(
+        checkpoint,
+        crate::continuity_spikes::now_unix(),
+    );
+    let (rehydrate_suggested, rehydrate_reason) =
+        crate::continuity_spikes::compute_sentinel_nudge_with_surprise(
+            turns,
+            minutes,
+            surprise_pressure,
+        );
 
     json!({
         "rehydration_manifest": rehydration_manifest,
         "suggested_actions": build_suggested_actions(store, session_intent),
         "trusted_tiles": build_trusted_tiles(store, primary_goal.as_deref()),
         "verified_processes": verified_processes,
+        "meta_workflow_registry": meta_workflow_registry,
         "jit_deformation_framework": jit_framework,
         "task_type": task_type,
         "open_scars_wake": open_scars_wake,
         "uncertainty_receipts_wake": uncertainty_receipts_wake,
         "rehydrate_suggested": rehydrate_suggested,
+        "turn_protocol": crate::metamemory_metrics::build_turn_protocol(),
+        "scaffold_registry": crate::scaffold_versioning::build_scaffold_registry(
+            &store.metamemory_snapshot(),
+            &crate::consult_before_write_gate::gate_status_json(
+                store.metamemory.recall_gate_open(),
+                store.metamemory.recalls,
+                store.metamemory.writes,
+            ),
+            "automem_inspired_v1",
+        ),
+        "rsi_cycle_metrics": {
+            "cycle": crate::continuity_spikes::resolve_rsi_cycle_number(),
+            "surprise_pressure": surprise_pressure,
+            "residual_surprise": hub_anchor_surprise_pressure(store, &hub_anchors),
+            "ego_drift_velocity": ego_drift,
+            "sentinel_residual_weight": crate::continuity_spikes::resolve_sentinel_residual_weight(),
+            "meta_workflow_ok": meta_workflow_registry
+                .get("full_system_audit_loop")
+                .and_then(|v| v.get("ok"))
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false),
+            "effective_max_turns": crate::continuity_spikes::effective_max_turns(surprise_pressure),
+            "rehydrate_reason": if rehydrate_suggested { rehydrate_reason } else { "" },
+            "metamemory": store.metamemory_snapshot(),
+            "consult_before_write_gate": crate::consult_before_write_gate::gate_status_json(
+                store.metamemory.recall_gate_open(),
+                store.metamemory.recalls,
+                store.metamemory.writes,
+            ),
+            "trajectory_meta_review_hint": "scripts/rsi_trajectory_meta_review.sh aggregates receipt:session_* metamemory",
+            "scaffold_promotion_ok": crate::scaffold_versioning::promotion_status_json(
+                &store.metamemory_snapshot(),
+                store.metamemory.recalls,
+            )
+            .get("ok")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false),
+            "research_refs": [
+                "https://arxiv.org/abs/2508.04435",
+                "https://arxiv.org/abs/2508.05766",
+                "https://arxiv.org/abs/2607.01224"
+            ],
+        },
         "trace_chain": {
             "head": trace_chain_head,
             "chain": chain,
@@ -1335,6 +1485,16 @@ pub fn build_harness_bundle(store: &mut StoreHandle, session_intent: Option<&str
         "continuity_playbook": continuity_playbook,
         "presentation_stratum": presentation_stratum,
         "agent_discipline": {
+            "turn_protocol": {
+                "plan": "session_start → recall(scope=anchors) → context_for_edit before substrate edits",
+                "act": "agent-native tools + code edits",
+                "log": "quick_trace at forks; update/remember after recall; session_end at handoff"
+            },
+            "metamemory_kpis": [
+                "writes_per_recall",
+                "empty_recall_rate",
+                "writes_without_prior_recall"
+            ],
             "at_fork": "mcp_engram_quick_trace (chain prev from trace_chain.head)",
             "at_code_edit": "mcp_engram_safe_edit_and_verify (preferred) or context_for_edit → edit → update(__arc)",
             "at_memory_update": "mcp_engram_update_with_tensor_bond (recall-first) or recall → update (>0.85 match)",
@@ -1552,7 +1712,7 @@ pub fn format_suggested_actions_markdown(
         }
     }
 
-    let ego = build_ego_snapshot(store, primary_goal);
+    let ego = build_ego_snapshot(store, primary_goal, None);
     md.push_str("## Ego evolution snapshot\n\n");
     if ego.get("present").and_then(|v| v.as_bool()) == Some(true) {
         md.push_str(&format!(
@@ -1645,6 +1805,275 @@ SESSION HANDOFF PACKET v1 (structured JSON for next-wake read_concept)
             v["rehydration_manifest"]["version"],
             "rehydration_manifest_v1"
         );
+    }
+
+    #[test]
+    fn hub_anchor_surprise_pressure_reads_block_residuals_via_update() {
+        std::env::set_var("ENGRAM_DISABLE_SHEAF", "1");
+        std::env::set_var("ENGRAM_FORCE_CPU_BACKEND", "1");
+        std::env::set_var("ENGRAM_KI_DISABLE", "1");
+        let dir = std::env::temp_dir().join(format!(
+            "surprise_sentinel_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).ok();
+        let mut store = crate::store::StoreHandle::new(&dir.to_string_lossy());
+        store
+            .remember(
+                "trace:surprise_hub",
+                "TRACE\n\n**decision_point:** initial alpha beta gamma fork\n",
+            )
+            .unwrap();
+        store
+            .update(
+                "trace:surprise_hub",
+                "TRACE\n\n**decision_point:** orthogonal omega zeta theta fork divergent topic\n",
+            )
+            .unwrap();
+        let block = store
+            .fetch_block("trace:surprise_hub")
+            .expect("trace block");
+        assert!(
+            block.l2_norm_residual > 0.01,
+            "update path must set non-zero residual, got {}",
+            block.l2_norm_residual
+        );
+        let pressure = hub_anchor_surprise_pressure(&store, &["trace:surprise_hub".to_string()]);
+        assert!(
+            pressure > 0.0,
+            "non-zero residual must yield surprise pressure, got {pressure}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn resolve_hub_anchors_surprise_works_pre_handoff_via_presentation_stratum() {
+        std::env::set_var("ENGRAM_DISABLE_SHEAF", "1");
+        std::env::set_var("ENGRAM_FORCE_CPU_BACKEND", "1");
+        std::env::set_var("ENGRAM_KI_DISABLE", "1");
+        let dir = std::env::temp_dir().join(format!(
+            "surprise_pre_handoff_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).ok();
+        let mut store = crate::store::StoreHandle::new(&dir.to_string_lossy());
+        store
+            .remember(
+                "trace:pre_handoff_surprise",
+                "TRACE\n\n**decision_point:** baseline alpha concept\n",
+            )
+            .unwrap();
+        store
+            .update(
+                "trace:pre_handoff_surprise",
+                "TRACE\n\n**decision_point:** divergent omega rewrite topic\n",
+            )
+            .unwrap();
+        let anchors = resolve_hub_anchors_for_surprise(&mut store, None);
+        assert!(
+            !anchors.is_empty(),
+            "pre-handoff must fall back to presentation stratum anchors"
+        );
+        let pressure = hub_anchor_surprise_pressure(&store, &anchors);
+        assert!(
+            pressure > 0.0,
+            "pre-handoff surprise must be non-zero with residual anchors, got {pressure}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn session_intent_wires_presentation_stratum_for_surprise() {
+        std::env::set_var("ENGRAM_DISABLE_SHEAF", "1");
+        std::env::set_var("ENGRAM_FORCE_CPU_BACKEND", "1");
+        std::env::set_var("ENGRAM_KI_DISABLE", "1");
+        let dir = std::env::temp_dir().join(format!(
+            "session_intent_surprise_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).ok();
+        let mut store = crate::store::StoreHandle::new(&dir.to_string_lossy());
+        store
+            .remember(
+                "trace:session_intent_anchor",
+                "TRACE\n\n**decision_point:** session intent parity test\n",
+            )
+            .unwrap();
+        store
+            .update(
+                "trace:session_intent_anchor",
+                "TRACE\n\n**decision_point:** divergent rewrite for surprise\n",
+            )
+            .unwrap();
+        let with_intent =
+            resolve_hub_anchors_for_surprise(&mut store, Some("goal:engram_mvp_v1 rsi"));
+        assert!(
+            !with_intent.is_empty(),
+            "session_intent path must yield anchors"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn meta_workflow_registry_in_harness_bundle() {
+        std::env::set_var("ENGRAM_DISABLE_SHEAF", "1");
+        std::env::set_var("ENGRAM_FORCE_CPU_BACKEND", "1");
+        std::env::set_var("ENGRAM_KI_DISABLE", "1");
+        let dir = std::env::temp_dir().join(format!(
+            "meta_workflow_harness_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).ok();
+        let mut store = crate::store::StoreHandle::new(&dir.to_string_lossy());
+        let bundle = build_harness_bundle(&mut store, Some("goal:engram_mvp_v1"));
+        let registry = bundle
+            .get("meta_workflow_registry")
+            .and_then(|v| v.get("full_system_audit_loop"))
+            .expect("meta_workflow_registry.full_system_audit_loop");
+        assert_eq!(registry.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(
+            registry.get("name").and_then(|v| v.as_str()),
+            Some("full_system_audit_loop")
+        );
+        let metrics = bundle.get("rsi_cycle_metrics").expect("rsi_cycle_metrics");
+        assert_eq!(
+            metrics.get("meta_workflow_ok").and_then(|v| v.as_bool()),
+            Some(true)
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn turn_protocol_in_harness_bundle() {
+        std::env::set_var("ENGRAM_DISABLE_SHEAF", "1");
+        std::env::set_var("ENGRAM_FORCE_CPU_BACKEND", "1");
+        std::env::set_var("ENGRAM_KI_DISABLE", "1");
+        let dir = std::env::temp_dir().join(format!(
+            "turn_protocol_harness_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).ok();
+        let mut store = crate::store::StoreHandle::new(&dir.to_string_lossy());
+        let bundle = build_harness_bundle(&mut store, Some("goal:engram_mvp_v1"));
+        let tp = bundle.get("turn_protocol").expect("turn_protocol");
+        assert_eq!(
+            tp.get("version").and_then(|v| v.as_str()),
+            Some("automem_inspired_v1")
+        );
+        assert!(tp.get("phases").and_then(|p| p.get("plan")).is_some());
+        let discipline = bundle.get("agent_discipline").expect("agent_discipline");
+        assert!(discipline.get("turn_protocol").is_some());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn scaffold_registry_in_harness_bundle() {
+        std::env::set_var("ENGRAM_DISABLE_SHEAF", "1");
+        std::env::set_var("ENGRAM_FORCE_CPU_BACKEND", "1");
+        std::env::set_var("ENGRAM_KI_DISABLE", "1");
+        let dir = std::env::temp_dir().join(format!(
+            "scaffold_registry_harness_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).ok();
+        let mut store = crate::store::StoreHandle::new(&dir.to_string_lossy());
+        store.note_metamemory_tool("mcp_engram_recall", Some(1));
+        let bundle = build_harness_bundle(&mut store, Some("goal:engram_mvp_v1"));
+        let registry = bundle.get("scaffold_registry").expect("scaffold_registry");
+        assert_eq!(
+            registry.get("version").and_then(|v| v.as_str()),
+            Some(crate::scaffold_versioning::SCAFFOLD_REGISTRY_VERSION)
+        );
+        let metrics = bundle.get("rsi_cycle_metrics").expect("rsi_cycle_metrics");
+        assert_eq!(
+            metrics
+                .get("scaffold_promotion_ok")
+                .and_then(|v| v.as_bool()),
+            Some(true)
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn consult_before_write_gate_in_rsi_cycle_metrics() {
+        std::env::set_var("ENGRAM_DISABLE_SHEAF", "1");
+        std::env::set_var("ENGRAM_FORCE_CPU_BACKEND", "1");
+        std::env::set_var("ENGRAM_KI_DISABLE", "1");
+        std::env::set_var("ENGRAM_CONSULT_BEFORE_WRITE", "soft");
+        let dir = std::env::temp_dir().join(format!(
+            "cbw_gate_harness_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).ok();
+        let mut store = crate::store::StoreHandle::new(&dir.to_string_lossy());
+        let bundle = build_harness_bundle(&mut store, Some("goal:engram_mvp_v1"));
+        let metrics = bundle.get("rsi_cycle_metrics").expect("rsi_cycle_metrics");
+        let gate = metrics
+            .get("consult_before_write_gate")
+            .expect("consult_before_write_gate");
+        assert_eq!(gate.get("mode").and_then(|v| v.as_str()), Some("soft"));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::env::remove_var("ENGRAM_CONSULT_BEFORE_WRITE");
+    }
+
+    #[test]
+    fn metamemory_in_rsi_cycle_metrics() {
+        std::env::set_var("ENGRAM_DISABLE_SHEAF", "1");
+        std::env::set_var("ENGRAM_FORCE_CPU_BACKEND", "1");
+        std::env::set_var("ENGRAM_KI_DISABLE", "1");
+        let dir = std::env::temp_dir().join(format!(
+            "metamemory_harness_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).ok();
+        let mut store = crate::store::StoreHandle::new(&dir.to_string_lossy());
+        store.note_metamemory_tool("mcp_engram_recall", Some(2));
+        store.note_metamemory_tool("mcp_engram_remember", None);
+        let bundle = build_harness_bundle(&mut store, Some("goal:engram_mvp_v1"));
+        let metrics = bundle.get("rsi_cycle_metrics").expect("rsi_cycle_metrics");
+        let mm = metrics.get("metamemory").expect("metamemory");
+        assert_eq!(mm.get("recalls").and_then(|v| v.as_u64()), Some(1));
+        assert_eq!(mm.get("writes").and_then(|v| v.as_u64()), Some(1));
+        let refs = metrics
+            .get("research_refs")
+            .and_then(|v| v.as_array())
+            .expect("research_refs");
+        assert!(refs
+            .iter()
+            .any(|r| { r.as_str().is_some_and(|s| s.contains("2607.01224")) }));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

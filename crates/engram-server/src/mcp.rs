@@ -2390,22 +2390,29 @@ fn triadic_fork_suffix(
     }
 }
 
-fn sentinel_turn_suffix(lock: &mut crate::store::StoreHandle) -> String {
+fn sentinel_turn_suffix(
+    lock: &mut crate::store::StoreHandle,
+    session_intent: Option<&str>,
+) -> String {
     lock.sentinel_on_turn_record();
     let (turns, checkpoint) = lock.sentinel_snapshot();
     let minutes = crate::continuity_spikes::minutes_since_checkpoint(
         checkpoint,
         crate::continuity_spikes::now_unix(),
     );
+    let hub_anchors =
+        crate::harness_injection::resolve_hub_anchors_for_surprise(lock, session_intent);
+    let surprise = crate::harness_injection::sentinel_pressure_combined(lock, &hub_anchors);
+    let effective = crate::continuity_spikes::effective_max_turns(surprise);
     let (rehydrate_suggested, reason) =
-        crate::continuity_spikes::compute_sentinel_nudge(turns, minutes);
+        crate::continuity_spikes::compute_sentinel_nudge_with_surprise(turns, minutes, surprise);
     let reason_note = if rehydrate_suggested {
         format!(" rehydrate_reason={reason}")
     } else {
         String::new()
     };
     format!(
-        "\n  sentinel: turns_since_last_handoff={turns} minutes_since_checkpoint={minutes} rehydrate_suggested={rehydrate_suggested}{reason_note}"
+        "\n  sentinel: turns_since_last_handoff={turns} minutes_since_checkpoint={minutes} surprise_pressure={surprise:.3} effective_max_turns={effective} rehydrate_suggested={rehydrate_suggested}{reason_note}"
     )
 }
 
@@ -2443,6 +2450,49 @@ fn probe_short_concept(concept: &str) -> String {
 }
 
 // ── Tool dispatch ─────────────────────────────────────────────────────────────
+
+/// AutoMem-inspired metamemory KPI hook (arXiv:2607.01224). Recall passes hit count inline.
+fn note_metamemory_on_success(store: &SharedStore, tool: &str, recall_hits: Option<usize>) {
+    if let Ok(mut lock) = store.lock() {
+        lock.note_metamemory_tool(tool, recall_hits);
+    }
+}
+
+fn finalize_metamemory_tool(store: &SharedStore, tool: &str, result: &Value) {
+    if result
+        .get("isError")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+    {
+        return;
+    }
+    if tool == "mcp_engram_recall" {
+        return;
+    }
+    if crate::metamemory_metrics::classify_mcp_tool(tool).is_some() {
+        note_metamemory_on_success(store, tool, None);
+    }
+}
+
+fn consult_before_write_block(tool: &str, recall_gate_open: bool) -> Option<Value> {
+    let gate = crate::consult_before_write_gate::check_write(recall_gate_open, tool);
+    if !gate.allow {
+        return gate.block_payload.map(|block| {
+            json!({
+                "content": [{ "type": "text", "text": block.to_string() }],
+                "isError": true
+            })
+        });
+    }
+    None
+}
+
+fn append_consult_warn(mut text: String, warn: Option<String>) -> String {
+    if let Some(w) = warn {
+        text.push_str(&format!("\n\n⚠ {w}"));
+    }
+    text
+}
 
 pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value {
     // === Early MCP Ready Path guard (transitional) ===
@@ -3057,7 +3107,7 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
         });
     }
 
-    match name {
+    let result = match name {
         "mcp_engram_remember" => {
             let concept = args["concept"].as_str().unwrap_or("").trim().to_string();
             let text = args["text"].as_str().unwrap_or("").trim().to_string();
@@ -3077,6 +3127,19 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                     })
                 }
             };
+            let gate = crate::consult_before_write_gate::check_write(
+                s.metamemory.recall_gate_open(),
+                "mcp_engram_remember",
+            );
+            if !gate.allow {
+                if let Some(block) = gate.block_payload {
+                    return json!({
+                        "content": [{ "type": "text", "text": block.to_string() }],
+                        "isError": true
+                    });
+                }
+            }
+            let gate_warn = gate.warn_message;
             match s.remember(&concept, &text) {
                 Ok(_) => {
                     let wired = s.auto_relate_after_write(&concept);
@@ -3086,10 +3149,17 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                     } else {
                         format!("\n  auto-relate: {}", wired.join("; "))
                     };
+                    let body = append_consult_warn(
+                        format!(
+                            "✓ Stored memory: '{concept}' ({} chars){relate_note}",
+                            text.len()
+                        ),
+                        gate_warn,
+                    );
                     json!({
                         "content": [{
                             "type": "text",
-                            "text": format!("✓ Stored memory: '{concept}' ({} chars){relate_note}", text.len())
+                            "text": body
                         }]
                     })
                 }
@@ -3190,6 +3260,7 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                     "recall",
                     &format!("query={q_short} · scope={effective_scope} · hits=0"),
                 );
+                note_metamemory_on_success(store, "mcp_engram_recall", Some(0));
                 return json!({
                     "content": [{ "type": "text", "text": format!("No memories found. {}\n{}", meta, lean_hint.trim()) }]
                 });
@@ -3247,6 +3318,7 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                     results.len()
                 ),
             );
+            note_metamemory_on_success(store, "mcp_engram_recall", Some(results.len()));
             json!({ "content": [{ "type": "text", "text": output.trim() }] })
         }
 
@@ -3613,14 +3685,52 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                     "isError": true
                 });
             }
-            let lock = store.lock().unwrap();
-            let promoted = lock.promote_tile_to_high_priority(concept).is_some();
-            let hot = lock.is_hot(concept);
+            let concept = concept.to_string();
+            let mut lock = store.lock().unwrap();
+            let raw = concept
+                .split_once("::")
+                .map_or(concept.as_str(), |(_, r)| r);
+            if crate::scaffold_versioning::is_scaffold_concept(raw) {
+                let block_crs = lock
+                    .fetch_block_high_priority(raw)
+                    .or_else(|| lock.fetch_block(raw))
+                    .map(|b| b.crs_score)
+                    .unwrap_or(0.0);
+                let mm = lock.metamemory_snapshot();
+                let verdict = crate::scaffold_versioning::evaluate_scaffold_promotion(
+                    block_crs,
+                    &mm,
+                    lock.metamemory.recalls,
+                );
+                if !verdict.allow {
+                    if let Some(block) = verdict.block_payload {
+                        return json!({
+                            "content": [{ "type": "text", "text": block.to_string() }],
+                            "isError": true
+                        });
+                    }
+                }
+                let gate_warn = verdict.warn_message;
+                let promoted = lock.promote_tile_to_high_priority(raw).is_some();
+                let hot = lock.is_hot(raw);
+                if promoted || hot {
+                    let mut text = format!(
+                        "✓ Promoted to hot path: '{}' (is_hot={}, LegView/backend cache updated)",
+                        raw, hot
+                    );
+                    if let Some(w) = gate_warn {
+                        text.push_str(&format!("\n\n⚠ {w}"));
+                    }
+                    return json!({ "content": [{ "type": "text", "text": text }] });
+                }
+            }
+            let promoted = lock.promote_tile_to_high_priority(raw).is_some();
+            let hot = lock.is_hot(raw);
             if promoted || hot {
                 json!({
                     "content": [{ "type": "text", "text": format!(
                         "✓ Promoted to hot path: '{}' (is_hot={}, LegView/backend cache updated)",
-                        concept, hot
+                        raw, hot
                     ) }]
                 })
             } else {
@@ -3889,6 +3999,17 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
 
             match store.lock() {
                 Ok(mut lock) => {
+                    if let Some(block) = consult_before_write_block(
+                        "mcp_engram_update_with_tensor_bond",
+                        lock.metamemory.recall_gate_open(),
+                    ) {
+                        return block;
+                    }
+                    let gate_warn = crate::consult_before_write_gate::check_write(
+                        lock.metamemory.recall_gate_open(),
+                        "mcp_engram_update_with_tensor_bond",
+                    )
+                    .warn_message;
                     let lineage_trace = args.get("trace_id").and_then(|v| v.as_str());
                     let prev_trace = args.get("prev_trace").and_then(|v| v.as_str());
                     let goal_context = args.get("goal_context").and_then(|v| v.as_str());
@@ -3905,10 +4026,11 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                         goal_context,
                     );
                     lock.log_activity("ritual:verified_memory_update", "composite", Some(concept));
+                    let text = append_consult_warn(payload.to_string(), gate_warn);
                     json!({
                         "content": [{
                             "type": "text",
-                            "text": payload.to_string()
+                            "text": text
                         }]
                     })
                 }
@@ -5912,7 +6034,14 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                             trace_n,
                             payload.get("activity_window"),
                             extract_note,
-                            sentinel_turn_suffix(&mut lock),
+                            sentinel_turn_suffix(
+                                &mut lock,
+                                if conv_arc.is_empty() {
+                                    Some(human_forward.as_str())
+                                } else {
+                                    Some(conv_arc.as_str())
+                                },
+                            ),
                         ) }]
                     })
                 }
@@ -7034,6 +7163,19 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                 .and_then(|v| v.as_str())
                 .and_then(engram_core::storage::parse_provlog_splice_mode);
             let mut lock = store.lock().unwrap();
+            let gate = crate::consult_before_write_gate::check_write(
+                lock.metamemory.recall_gate_open(),
+                "mcp_engram_update",
+            );
+            if !gate.allow {
+                if let Some(block) = gate.block_payload {
+                    return json!({
+                        "content": [{ "type": "text", "text": block.to_string() }],
+                        "isError": true
+                    });
+                }
+            }
+            let gate_warn = gate.warn_message;
             match lock.update_with_provlog_mode(&concept, &new_text, provlog_mode) {
                 Ok(result) => {
                     if concept.ends_with("__arc") {
@@ -7064,6 +7206,7 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                         }))
                         .unwrap_or_else(|_| format!("✓ Updated memory '{concept}'"))
                     };
+                    let body = append_consult_warn(body, gate_warn);
                     let mut payload = json!({
                         "content": [{ "type": "text", "text": body }],
                     });
@@ -8485,7 +8628,9 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
             "content": [{ "type": "text", "text": format!("Unknown tool: {unknown}") }],
             "isError": true
         }),
-    }
+    };
+    finalize_metamemory_tool(store, name, &result);
+    result
 }
 
 // ── MCP request dispatch ──────────────────────────────────────────────────────
