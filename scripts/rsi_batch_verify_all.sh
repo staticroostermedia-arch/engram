@@ -4,7 +4,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-SCRATCH="${SCRATCH:-/tmp/grok-goal-f165d4817872/implementer}"
+SCRATCH="${SCRATCH:-/tmp/grok-goal-8b5f66f8feab/implementer}"
 SESSION_MCP_DIR="${SESSION_MCP_DIR:-$SCRATCH/session-mcp}"
 
 mkdir -p "$SCRATCH" "$SESSION_MCP_DIR"
@@ -30,6 +30,7 @@ declare -A FILTERS=(
   [10]="turn_protocol"
   [11]="metamemory"
   [12]="consult_before_write"
+  # CYCLE12 filter matches unit gate tests + mcp::consult_before_write_handle_tool dispatch tests
   [13]="trajectory_meta_review"
   [14]="scaffold_registry"
 )

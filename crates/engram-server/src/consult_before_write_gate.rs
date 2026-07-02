@@ -150,6 +150,7 @@ mod tests {
         std::env::set_var("ENGRAM_CONSULT_BEFORE_WRITE", "hard");
         assert!(!check_write(false, "mcp_engram_batch_remember").allow);
         assert!(!check_write(false, "mcp_engram_remember_solution").allow);
+        assert!(!check_write(false, "mcp_engram_import").allow);
         std::env::remove_var("ENGRAM_CONSULT_BEFORE_WRITE");
     }
 

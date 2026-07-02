@@ -7830,6 +7830,17 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                     return json!({ "content": [{ "type": "text", "text": format!("Error parsing JSON: {e}") }], "isError": true })
                 }
             };
+            let mut lock = store.lock().unwrap();
+            if let Some(block) =
+                consult_before_write_block("mcp_engram_import", lock.metamemory.recall_gate_open())
+            {
+                return block;
+            }
+            let gate_warn = crate::consult_before_write_gate::check_write(
+                lock.metamemory.recall_gate_open(),
+                "mcp_engram_import",
+            )
+            .warn_message;
             let mut succeeded = 0usize;
             let mut failed = 0usize;
             for entry in &entries {
@@ -7839,13 +7850,20 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                     failed += 1;
                     continue;
                 }
-                match store.lock().unwrap().remember(&concept, &text) {
+                match lock.remember(&concept, &text) {
                     Ok(_) => succeeded += 1,
                     Err(_) => failed += 1,
                 }
             }
             info!("import: {} ok, {} failed", succeeded, failed);
-            json!({ "content": [{ "type": "text", "text": format!("\u{2713} Import complete: {} memories restored, {} failed.", succeeded, failed) }] })
+            let body = append_consult_warn(
+                format!(
+                    "\u{2713} Import complete: {} memories restored, {} failed.",
+                    succeeded, failed
+                ),
+                gate_warn,
+            );
+            json!({ "content": [{ "type": "text", "text": body }] })
         }
 
         "mcp_engram_forget_old" => {
@@ -9976,7 +9994,7 @@ mod tests {
         }
     }
 
-    mod consult_gate_handle_tool {
+    mod consult_before_write_handle_tool {
         use super::*;
         use std::sync::Arc;
 
@@ -10061,6 +10079,22 @@ mod tests {
                 resp_is_error(&resp),
                 "remember_solution must be blocked: {resp}"
             );
+            std::env::remove_var("ENGRAM_CONSULT_BEFORE_WRITE");
+            let _ = std::fs::remove_dir_all(&tmp);
+        }
+
+        #[test]
+        fn consult_before_write_blocks_import_via_handle_tool_call() {
+            let _guard = crate::consult_before_write_gate::env_test_lock();
+            std::env::set_var("ENGRAM_CONSULT_BEFORE_WRITE", "hard");
+            let tmp = unique_tmp("cbw-import");
+            let store = prep_store(&tmp);
+            let resp = handle_tool_on_big_stack(
+                "mcp_engram_import",
+                &json!({"json": r#"[{"concept":"import:a","text":"one"}]"#}),
+                &store,
+            );
+            assert!(resp_is_error(&resp), "import must be blocked: {resp}");
             std::env::remove_var("ENGRAM_CONSULT_BEFORE_WRITE");
             let _ = std::fs::remove_dir_all(&tmp);
         }
