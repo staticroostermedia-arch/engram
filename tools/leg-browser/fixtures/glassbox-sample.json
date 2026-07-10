@@ -1,0 +1,58 @@
+{
+  "dual_loop": {
+    "version": 1,
+    "track_next": "S",
+    "track_last": "G",
+    "open_pr": "https://github.com/staticroostermedia-arch/engram/pull/58",
+    "mcp_restart_required": false,
+    "last_fire_goal": "goal:fire_dual_rsi_demo_1",
+    "last_verify": {
+      "type": "gemma_stage",
+      "status": "pass",
+      "at": "2026-07-10T20:00:00Z"
+    },
+    "parents": [
+      "goal:dual_rsi_program",
+      "goal:ship_substrate",
+      "goal:glassbox_leg"
+    ],
+    "gemma": {
+      "stage": "eval_gate",
+      "sft_rows": 51,
+      "eval_passed": true
+    }
+  },
+  "aliveness": {
+    "fidelity": 0.94,
+    "mean_hub_crs": 0.89,
+    "hermies_cos": 0.71
+  },
+  "parents": [
+    {
+      "id": "goal:dual_rsi_program",
+      "status": "active",
+      "last_fire": "goal:fire_dual_rsi_demo_1",
+      "last_verify_status": "pass"
+    },
+    {
+      "id": "goal:ship_substrate",
+      "status": "active",
+      "last_fire": "goal:fire_ship_demo_1",
+      "last_verify_status": "pass"
+    },
+    {
+      "id": "goal:glassbox_leg",
+      "status": "active",
+      "last_fire": null,
+      "last_verify_status": "pending"
+    }
+  ],
+  "last_fire": {
+    "id": "goal:fire_dual_rsi_demo_1",
+    "intent": "eval_gate advance",
+    "verify_type": "gemma_stage",
+    "verify_status": "pass",
+    "verify_evidence": "eval_gate_metrics.json passed=true",
+    "falsify": "eval fail on re-run"
+  }
+}
