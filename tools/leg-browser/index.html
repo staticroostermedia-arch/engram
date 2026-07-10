@@ -534,16 +534,20 @@
       opacity: 0.92;
     }
     [hidden] { display: none !important; }
-    .gb-root { display: flex; flex-direction: column; gap: 12px; padding: 12px; min-height: 100vh; background: var(--bg); color: var(--text); }
+    .gb-root { display: flex; flex-direction: column; gap: 12px; padding: 12px; min-height: 100vh; max-height: 100vh; overflow: auto; background: var(--bg); color: var(--text); box-sizing: border-box; }
     .gb-strip { display: flex; flex-wrap: wrap; gap: 8px; }
-    .gb-chip { border: 1px solid #333; border-radius: 6px; padding: 4px 8px; font-size: 12px; }
+    .gb-chip { border: 1px solid #333; border-radius: 6px; padding: 4px 8px; font-size: 12px; color: inherit; text-decoration: none; }
     .gb-chip.pass { border-color: #2a6; }
     .gb-chip.fail { border-color: #a33; }
     .gb-chip.warn { border-color: #a80; }
     .gb-main { display: grid; grid-template-columns: 1fr 280px; gap: 12px; min-height: 60vh; }
     .gb-parents { display: flex; flex-direction: column; gap: 8px; }
     .gb-card { border: 1px solid #333; border-radius: 8px; padding: 10px; cursor: pointer; }
+    .gb-card:hover { border-color: #555; }
     .gb-activity { border: 1px solid #333; border-radius: 8px; padding: 8px; overflow: auto; max-height: 70vh; }
+    .gb-detail { border: 1px solid #334155; border-radius: 8px; padding: 10px; margin-top: 8px; background: rgba(15,23,42,0.6); font-size: 12px; white-space: pre-wrap; word-break: break-word; max-height: 40vh; overflow: auto; }
+    .gb-detail-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 6px; font-family: ui-monospace, monospace; }
+    .gb-detail-close { border: 1px solid #555; background: transparent; color: var(--text); border-radius: 4px; padding: 2px 8px; cursor: pointer; font-size: 11px; }
     @media (max-width: 900px) { .gb-main { grid-template-columns: 1fr; } }
     .status {
       margin: 12px 16px 0;
@@ -1871,6 +1875,7 @@
         <div id="gb-parents" class="gb-parents"></div>
         <h2>Last fire</h2>
         <div id="gb-last-fire" class="gb-card"></div>
+        <div id="gb-detail" class="gb-detail" hidden></div>
       </div>
       <div>
         <h2>Activity</h2>
@@ -6102,10 +6107,35 @@
       return '';
     }
 
-    function gbOpenConcept(concept) {
+    /** Glassbox-local inspector (layout/overlay is hidden in ?view=glassbox). */
+    async function gbOpenConcept(concept, offlineHint) {
       if (!concept) return;
-      if (typeof leg !== 'undefined' && leg && typeof leg.open === 'function') {
-        try { leg.open(concept); } catch (_) { /* offline / no-op */ }
+      const detail = document.getElementById('gb-detail');
+      if (!detail) return;
+      detail.hidden = false;
+      detail.innerHTML = `<div class="gb-detail-head"><span>${escapeHtml(concept)}</span>
+        <button type="button" class="gb-detail-close" id="gb-detail-close">Close</button></div>
+        <div id="gb-detail-body">Loading…</div>`;
+      detail.querySelector('#gb-detail-close')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        detail.hidden = true;
+        detail.innerHTML = '';
+      });
+      const body = detail.querySelector('#gb-detail-body');
+      if (offlineHint) {
+        body.textContent = typeof offlineHint === 'string' ? offlineHint : JSON.stringify(offlineHint, null, 2);
+        return;
+      }
+      try {
+        const r = await fetch(`${LIVE_BASE}/api/block/${encodeURIComponent(concept)}`);
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const data = await r.json();
+        const text = data.text ?? data.payload ?? data.body ?? '';
+        const crs = data.crs != null ? `CRS ${data.crs}` : '';
+        const head = [data.type, crs].filter(Boolean).join(' · ');
+        body.textContent = (head ? head + '\n\n' : '') + (typeof text === 'string' ? text.slice(0, 4000) : JSON.stringify(data, null, 2).slice(0, 4000));
+      } catch (e) {
+        body.textContent = `Could not load block (offline or unreachable): ${e.message || e}`;
       }
     }
 
@@ -6122,11 +6152,13 @@
       let parents = [];
       let lastFire = null;
       let offline = !!forceFixture;
+      let fixtureBlob = null;
 
       async function loadFixture() {
         const r = await fetch('./fixtures/glassbox-sample.json');
         if (!r.ok) throw new Error(`fixture HTTP ${r.status}`);
         const fix = await r.json();
+        fixtureBlob = fix;
         dual = fix.dual_loop || fix;
         aliveness = fix.aliveness || null;
         parents = Array.isArray(fix.parents) ? fix.parents : [];
@@ -6221,17 +6253,28 @@
         }
       }
 
-      // Status chips
+      // Status chips (design strip: fidelity, hub CRS, hermies, stage, track, PR, CI, verify, mcp_restart)
       const fid = aliveness && (aliveness.fidelity != null) ? Number(aliveness.fidelity).toFixed(2) : 'n/a';
+      const hubCrs = aliveness && (aliveness.mean_hub_crs != null) ? Number(aliveness.mean_hub_crs).toFixed(2) : 'n/a';
+      const hermies = aliveness && (aliveness.hermies_cos != null) ? Number(aliveness.hermies_cos).toFixed(2) : 'n/a';
       const gemmaStage = (dual && dual.gemma && dual.gemma.stage) || 'n/a';
       const trackNext = (dual && dual.track_next) || 'n/a';
       const openPr = dual && dual.open_pr;
       const lastVerify = dual && dual.last_verify;
       const verifyStatus = (lastVerify && lastVerify.status) || 'n/a';
       const mcpRestart = !!(dual && dual.mcp_restart_required);
+      // CI pill: green when open_pr set + last_verify pass; yellow pending/open; red fail
+      let ciLabel = 'ci n/a';
+      let ciCls = 'warn';
+      if (openPr && String(verifyStatus).toLowerCase() === 'pass') { ciLabel = 'ci open+pass'; ciCls = 'pass'; }
+      else if (openPr && String(verifyStatus).toLowerCase() === 'fail') { ciLabel = 'ci open+fail'; ciCls = 'fail'; }
+      else if (openPr) { ciLabel = 'ci open'; ciCls = 'warn'; }
+      else if (String(verifyStatus).toLowerCase() === 'fail') { ciLabel = 'ci fail'; ciCls = 'fail'; }
 
       const chips = [];
       chips.push(`<span class="gb-chip ${gbChipClass(fid === 'n/a' ? 'warn' : 'pass')}">fidelity ${escapeHtml(String(fid))}</span>`);
+      chips.push(`<span class="gb-chip ${gbChipClass(hubCrs === 'n/a' ? 'warn' : 'pass')}">hub_crs ${escapeHtml(String(hubCrs))}</span>`);
+      chips.push(`<span class="gb-chip ${gbChipClass(hermies === 'n/a' ? 'warn' : 'pass')}">hermies ${escapeHtml(String(hermies))}</span>`);
       chips.push(`<span class="gb-chip">gemma ${escapeHtml(String(gemmaStage))}</span>`);
       chips.push(`<span class="gb-chip">track_next ${escapeHtml(String(trackNext))}</span>`);
       if (openPr) {
@@ -6239,6 +6282,7 @@
       } else {
         chips.push(`<span class="gb-chip warn">open_pr none</span>`);
       }
+      chips.push(`<span class="gb-chip ${ciCls}">${escapeHtml(ciLabel)}</span>`);
       chips.push(`<span class="gb-chip ${gbChipClass(verifyStatus)}">last_verify ${escapeHtml(String(verifyStatus))}</span>`);
       chips.push(`<span class="gb-chip ${mcpRestart ? 'warn' : 'pass'}">mcp_restart ${mcpRestart ? 'required' : 'ok'}</span>`);
       if (offline) chips.push(`<span class="gb-chip warn">fixture/offline</span>`);
@@ -6260,7 +6304,12 @@
         </div>`;
       }).join('') || '<div class="gb-card">No parent goals</div>';
       parentsEl.querySelectorAll('.gb-card[data-concept]').forEach(el => {
-        el.addEventListener('click', () => gbOpenConcept(el.getAttribute('data-concept')));
+        el.addEventListener('click', () => {
+          const id = el.getAttribute('data-concept');
+          const row = parents.find(p => (p.id || p.concept) === id);
+          const hint = offline ? (row || { id, note: 'fixture parent' }) : null;
+          gbOpenConcept(id, hint);
+        });
       });
 
       // Last fire
@@ -6272,7 +6321,7 @@
           <div style="font-size:12px">verify ${escapeHtml(String(lastFire.verify_type || ''))}: <span class="${gbChipClass(lastFire.verify_status)}">${escapeHtml(String(lastFire.verify_status || 'n/a'))}</span></div>
           ${lastFire.verify_evidence ? `<div style="font-size:11px;opacity:0.8">${escapeHtml(String(lastFire.verify_evidence))}</div>` : ''}
           ${lastFire.falsify ? `<div style="font-size:11px;opacity:0.7">falsify: ${escapeHtml(String(lastFire.falsify))}</div>` : ''}`;
-        lastFireEl.onclick = () => gbOpenConcept(fid2);
+        lastFireEl.onclick = () => gbOpenConcept(fid2, offline ? (lastFire || fixtureBlob?.last_fire) : null);
       } else {
         lastFireEl.innerHTML = '<div>No last fire</div>';
         lastFireEl.onclick = null;
