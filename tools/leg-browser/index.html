@@ -533,6 +533,18 @@
       line-height: 1.35;
       opacity: 0.92;
     }
+    [hidden] { display: none !important; }
+    .gb-root { display: flex; flex-direction: column; gap: 12px; padding: 12px; min-height: 100vh; background: var(--bg); color: var(--text); }
+    .gb-strip { display: flex; flex-wrap: wrap; gap: 8px; }
+    .gb-chip { border: 1px solid #333; border-radius: 6px; padding: 4px 8px; font-size: 12px; }
+    .gb-chip.pass { border-color: #2a6; }
+    .gb-chip.fail { border-color: #a33; }
+    .gb-chip.warn { border-color: #a80; }
+    .gb-main { display: grid; grid-template-columns: 1fr 280px; gap: 12px; min-height: 60vh; }
+    .gb-parents { display: flex; flex-direction: column; gap: 8px; }
+    .gb-card { border: 1px solid #333; border-radius: 8px; padding: 10px; cursor: pointer; }
+    .gb-activity { border: 1px solid #333; border-radius: 8px; padding: 8px; overflow: auto; max-height: 70vh; }
+    @media (max-width: 900px) { .gb-main { grid-template-columns: 1fr; } }
     .status {
       margin: 12px 16px 0;
       padding: 10px 12px;
@@ -1849,6 +1861,23 @@
       </div>
     </main>
   </div>
+
+  <section id="glassbox-view" class="gb-root" hidden>
+    <div id="gb-banner" class="gb-chip warn" hidden>MCP restart required</div>
+    <div id="gb-strip" class="gb-strip"></div>
+    <div class="gb-main">
+      <div>
+        <h2>Program goals</h2>
+        <div id="gb-parents" class="gb-parents"></div>
+        <h2>Last fire</h2>
+        <div id="gb-last-fire" class="gb-card"></div>
+      </div>
+      <div>
+        <h2>Activity</h2>
+        <div id="gb-activity" class="gb-activity">Loading…</div>
+      </div>
+    </div>
+  </section>
 
   <script>
     const LIVE_BASE = `http://${window.location.hostname || '127.0.0.1'}:3456`;
@@ -6043,8 +6072,250 @@
       return String(s).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
     }
 
+    /** Parse dual_loop / block text: extract ```json fence if present, else JSON.parse body. */
+    function parseJsonText(text) {
+      if (text == null) return null;
+      const s = String(text).trim();
+      const fence = s.match(/```(?:json)?\s*([\s\S]*?)```/i);
+      const body = fence ? fence[1].trim() : s;
+      try { return JSON.parse(body); } catch (_) { return null; }
+    }
+
+    async function fetchBlockJson(concept) {
+      const r = await fetch(`${LIVE_BASE}/api/block/${encodeURIComponent(concept)}`);
+      if (!r.ok) throw new Error(`block ${concept}: ${r.status}`);
+      const data = await r.json();
+      const text = data.text ?? data.payload ?? data.body ?? (typeof data === 'string' ? data : null);
+      if (typeof text === 'string') {
+        const parsed = parseJsonText(text);
+        if (parsed) return { ...data, parsed };
+      }
+      if (data && typeof data === 'object' && !Array.isArray(data)) return { ...data, parsed: data };
+      return { raw: data, parsed: null };
+    }
+
+    function gbChipClass(status) {
+      const s = String(status || '').toLowerCase();
+      if (s === 'pass' || s === 'true' || s === 'ok') return 'pass';
+      if (s === 'fail' || s === 'false' || s === 'error') return 'fail';
+      if (s === 'warn' || s === 'pending' || s === 'n/a') return 'warn';
+      return '';
+    }
+
+    function gbOpenConcept(concept) {
+      if (!concept) return;
+      if (typeof leg !== 'undefined' && leg && typeof leg.open === 'function') {
+        try { leg.open(concept); } catch (_) { /* offline / no-op */ }
+      }
+    }
+
+    async function loadGlassbox(forceFixture) {
+      const strip = document.getElementById('gb-strip');
+      const parentsEl = document.getElementById('gb-parents');
+      const lastFireEl = document.getElementById('gb-last-fire');
+      const activityEl = document.getElementById('gb-activity');
+      const banner = document.getElementById('gb-banner');
+      if (!strip || !parentsEl || !lastFireEl || !activityEl) return;
+
+      let dual = null;
+      let aliveness = null;
+      let parents = [];
+      let lastFire = null;
+      let offline = !!forceFixture;
+
+      async function loadFixture() {
+        const r = await fetch('./fixtures/glassbox-sample.json');
+        if (!r.ok) throw new Error(`fixture HTTP ${r.status}`);
+        const fix = await r.json();
+        dual = fix.dual_loop || fix;
+        aliveness = fix.aliveness || null;
+        parents = Array.isArray(fix.parents) ? fix.parents : [];
+        lastFire = fix.last_fire || null;
+        offline = true;
+      }
+
+      if (forceFixture) {
+        await loadFixture();
+      } else {
+        try {
+          const blk = await fetchBlockJson('helper:rsi_dual_loop_state');
+          dual = blk.parsed || null;
+          if (!dual || typeof dual !== 'object') throw new Error('no dual_loop JSON');
+          // Prefer nested dual_loop if present
+          if (dual.dual_loop) dual = dual.dual_loop;
+
+          // Optional aliveness from recent metrics
+          try {
+            const rr = await fetch(`${LIVE_BASE}/api/recent?n=10`);
+            if (rr.ok) {
+              const recent = await rr.json();
+              const items = Array.isArray(recent) ? recent : (recent.items || recent.blocks || []);
+              for (const it of items) {
+                const id = it.concept || it.id || '';
+                if (String(id).includes('metric:dual_rsi_aliveness') || String(id) === 'metric:dual_rsi_aliveness') {
+                  const t = it.text || it.preview || '';
+                  aliveness = parseJsonText(t) || it;
+                  break;
+                }
+              }
+            }
+          } catch (_) { /* optional */ }
+
+          // Parent cards
+          const parentIds = Array.isArray(dual.parents) ? dual.parents : [];
+          parents = await Promise.all(parentIds.map(async (id) => {
+            try {
+              const b = await fetchBlockJson(id);
+              const p = b.parsed || {};
+              return {
+                id,
+                status: p.status || b.type || 'active',
+                last_fire: p.last_fire || dual.last_fire_goal || null,
+                last_verify_status: (p.last_verify && p.last_verify.status) || (dual.last_verify && dual.last_verify.status) || p.status || 'n/a',
+                snippet: (b.text || b.preview || '').slice(0, 160)
+              };
+            } catch (_) {
+              return { id, status: 'unknown', last_fire: null, last_verify_status: 'n/a' };
+            }
+          }));
+
+          // Last fire goal block
+          if (dual.last_fire_goal) {
+            try {
+              const fb = await fetchBlockJson(dual.last_fire_goal);
+              const p = fb.parsed || {};
+              lastFire = {
+                id: dual.last_fire_goal,
+                intent: p.intent || p.decision_point || '',
+                verify_type: (p.verify && p.verify.type) || (dual.last_verify && dual.last_verify.type) || p.verify_type || '',
+                verify_status: (p.verify && p.verify.status) || (dual.last_verify && dual.last_verify.status) || p.verify_status || '',
+                verify_evidence: (p.verify && p.verify.evidence) || p.verify_evidence || '',
+                falsify: p.falsify || p.falsifiability || ''
+              };
+            } catch (_) {
+              lastFire = {
+                id: dual.last_fire_goal,
+                intent: '',
+                verify_type: dual.last_verify?.type || '',
+                verify_status: dual.last_verify?.status || '',
+                verify_evidence: '',
+                falsify: ''
+              };
+            }
+          }
+
+          // Health probe (non-fatal)
+          try { await fetch(`${LIVE_BASE}/health`); } catch (_) { /* ignore */ }
+        } catch (e) {
+          console.warn('loadGlassbox live failed, fixture fallback', e);
+          await loadFixture();
+        }
+      }
+
+      // Banner
+      if (banner) {
+        if (dual && dual.mcp_restart_required) {
+          banner.hidden = false;
+        } else {
+          banner.hidden = true;
+        }
+      }
+
+      // Status chips
+      const fid = aliveness && (aliveness.fidelity != null) ? Number(aliveness.fidelity).toFixed(2) : 'n/a';
+      const gemmaStage = (dual && dual.gemma && dual.gemma.stage) || 'n/a';
+      const trackNext = (dual && dual.track_next) || 'n/a';
+      const openPr = dual && dual.open_pr;
+      const lastVerify = dual && dual.last_verify;
+      const verifyStatus = (lastVerify && lastVerify.status) || 'n/a';
+      const mcpRestart = !!(dual && dual.mcp_restart_required);
+
+      const chips = [];
+      chips.push(`<span class="gb-chip ${gbChipClass(fid === 'n/a' ? 'warn' : 'pass')}">fidelity ${escapeHtml(String(fid))}</span>`);
+      chips.push(`<span class="gb-chip">gemma ${escapeHtml(String(gemmaStage))}</span>`);
+      chips.push(`<span class="gb-chip">track_next ${escapeHtml(String(trackNext))}</span>`);
+      if (openPr) {
+        chips.push(`<a class="gb-chip pass" href="${escapeHtml(String(openPr))}" target="_blank" rel="noopener">open_pr</a>`);
+      } else {
+        chips.push(`<span class="gb-chip warn">open_pr none</span>`);
+      }
+      chips.push(`<span class="gb-chip ${gbChipClass(verifyStatus)}">last_verify ${escapeHtml(String(verifyStatus))}</span>`);
+      chips.push(`<span class="gb-chip ${mcpRestart ? 'warn' : 'pass'}">mcp_restart ${mcpRestart ? 'required' : 'ok'}</span>`);
+      if (offline) chips.push(`<span class="gb-chip warn">fixture/offline</span>`);
+      strip.innerHTML = chips.join('');
+
+      // Parent cards
+      if (!parents.length && dual && Array.isArray(dual.parents)) {
+        parents = dual.parents.map(id => ({ id, status: 'unknown', last_fire: null, last_verify_status: 'n/a' }));
+      }
+      parentsEl.innerHTML = parents.map(p => {
+        const id = p.id || p.concept || '';
+        const st = p.status || 'n/a';
+        const vs = p.last_verify_status || 'n/a';
+        const lf = p.last_fire || '—';
+        return `<div class="gb-card" data-concept="${escapeHtml(id)}" title="${escapeHtml(id)}">
+          <div><strong>${escapeHtml(id)}</strong></div>
+          <div style="font-size:12px;opacity:0.85">status ${escapeHtml(String(st))} · verify ${escapeHtml(String(vs))}</div>
+          <div style="font-size:11px;opacity:0.7">last_fire ${escapeHtml(String(lf))}</div>
+        </div>`;
+      }).join('') || '<div class="gb-card">No parent goals</div>';
+      parentsEl.querySelectorAll('.gb-card[data-concept]').forEach(el => {
+        el.addEventListener('click', () => gbOpenConcept(el.getAttribute('data-concept')));
+      });
+
+      // Last fire
+      if (lastFire) {
+        const fid2 = lastFire.id || '';
+        lastFireEl.setAttribute('data-concept', fid2);
+        lastFireEl.innerHTML = `<div><strong>${escapeHtml(fid2)}</strong></div>
+          <div style="font-size:12px">${escapeHtml(lastFire.intent || '')}</div>
+          <div style="font-size:12px">verify ${escapeHtml(String(lastFire.verify_type || ''))}: <span class="${gbChipClass(lastFire.verify_status)}">${escapeHtml(String(lastFire.verify_status || 'n/a'))}</span></div>
+          ${lastFire.verify_evidence ? `<div style="font-size:11px;opacity:0.8">${escapeHtml(String(lastFire.verify_evidence))}</div>` : ''}
+          ${lastFire.falsify ? `<div style="font-size:11px;opacity:0.7">falsify: ${escapeHtml(String(lastFire.falsify))}</div>` : ''}`;
+        lastFireEl.onclick = () => gbOpenConcept(fid2);
+      } else {
+        lastFireEl.innerHTML = '<div>No last fire</div>';
+        lastFireEl.onclick = null;
+      }
+
+      // Activity rail
+      if (forceFixture || offline) {
+        activityEl.textContent = 'Activity unavailable (offline/fixture)';
+      } else {
+        try {
+          const ar = await fetch(`${LIVE_BASE}/api/activity?since=0&limit=20`);
+          if (!ar.ok) throw new Error(`activity ${ar.status}`);
+          const act = await ar.json();
+          const events = Array.isArray(act) ? act : (act.events || act.items || act.activity || []);
+          if (!events.length) {
+            activityEl.textContent = 'No recent activity';
+          } else {
+            activityEl.innerHTML = events.slice(0, 20).map(ev => {
+              const label = ev.concept || ev.label || ev.action || ev.type || JSON.stringify(ev).slice(0, 80);
+              const ts = ev.ts || ev.time || '';
+              return `<div style="padding:4px 0;border-bottom:1px solid #222;font-size:11px">
+                <div>${escapeHtml(String(label))}</div>
+                ${ts ? `<div style="opacity:0.6">${escapeHtml(String(ts))}</div>` : ''}
+              </div>`;
+            }).join('');
+          }
+        } catch (_) {
+          activityEl.textContent = 'Activity unavailable (offline/fixture)';
+        }
+      }
+    }
+
     window.leg = leg;
     window.onload = () => {
+      const params = new URLSearchParams(location.search);
+      const GLASSBOX = params.get('view') === 'glassbox';
+      if (GLASSBOX) {
+        document.querySelector('.layout')?.setAttribute('hidden', '');
+        const gv = document.getElementById('glassbox-view');
+        if (gv) gv.hidden = false;
+        loadGlassbox(params.get('fixture') === '1').catch(e => console.error('loadGlassbox', e));
+        return;
+      }
       if (COCKPIT_ARIEL_BOOT) {
         document.getElementById('btn-galaxy')?.classList.remove('active');
         document.getElementById('btn-geo-lens')?.classList.add('active');
