@@ -180,6 +180,13 @@ pub fn infer_provlog_splice_mode(concept: &str, new_text: &str) -> ProvlogSplice
     if concept.ends_with("__arc") {
         return ProvlogSpliceMode::Append;
     }
+    // Latest-wins structured packets — never append multi-update noise.
+    if concept == "helper:session_handoff_latest"
+        || concept == "helper:session_sentinel_state"
+        || concept.starts_with("manifest:rehydration_")
+    {
+        return ProvlogSpliceMode::Replace;
+    }
     let append_prefixes = [
         "trace:",
         "design:",
@@ -206,6 +213,27 @@ pub fn infer_provlog_splice_mode(concept: &str, new_text: &str) -> ProvlogSplice
         return ProvlogSpliceMode::Replace;
     }
     ProvlogSpliceMode::Append
+}
+
+#[cfg(test)]
+mod splice_mode_tests {
+    use super::*;
+
+    #[test]
+    fn session_handoff_latest_is_replace() {
+        assert_eq!(
+            infer_provlog_splice_mode("helper:session_handoff_latest", "anything"),
+            ProvlogSpliceMode::Replace
+        );
+        assert_eq!(
+            infer_provlog_splice_mode("manifest:rehydration_123", "{}"),
+            ProvlogSpliceMode::Replace
+        );
+        assert_eq!(
+            infer_provlog_splice_mode("helper:other", "x"),
+            ProvlogSpliceMode::Append
+        );
+    }
 }
 
 fn looks_like_source_snippet(text: &str) -> bool {

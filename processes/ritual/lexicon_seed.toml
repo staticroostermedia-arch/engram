@@ -1,0 +1,80 @@
+# agent:engram.ritual.lexicon-seed
+# Phase 6+ additive ritual: Seeds base knowledge lexicon from high-quality sources
+# (Webster-style dicts, Arxiv summaries, etc.) into atom/word-level .leg3
+# HolographicBlocks with ProvLog (definition + etymology), VSA-bound relations,
+# dynamical CRS ≥ 0.74, and sheaf glue to linguistic_reference_frame + genesis pillars.
+# Additive only — no core .leg3/q/p/CRS/layout changes.
+
+[process]
+name = "agent:engram.ritual.lexicon-seed"
+zedos_type = "ritual"
+phase_seed = "0xLEXSEED202607SEED"
+
+[category]
+object = "lexicon_seed"
+morphism = "OP_BIND"
+sheaf_role = "base knowledge crystallization: word atoms with ProvLog definitions, VSA relations to pillars, CRS >=0.74, homotopy via fibered equiv; NREM/ego promotion ready"
+h1_handler = "OP_GEOMETRIC_PRODUCT"
+
+[mcp_tools]
+list = [
+  "mcp_engram_lexicon_mint_word",
+  "mcp_engram_remember",
+  "mcp_engram_relate",
+  "mcp_engram_record_reasoning_trace",
+  "mcp_engram_context_for_edit",
+  "mcp_linguistic_calculus",
+  "mcp_engram_verify_manifold_integrity",
+  "mcp_engram_quick_trace",
+  "mcp_engram_ingest_reference_frame"
+]
+
+[requires]
+list = [
+  "__system_state__",
+  "ritual:wake_up_anchor",
+  "process:engram.linguistic.linguistic-calculus",
+  "process:engram.ritual.nrem-consolidation",
+  "formal_spec:linguistic_reference_frame_v1"
+]
+
+[produces]
+list = [
+  "lexicon:word:*",
+  "trace:*_lexicon_seed",
+  "NREM_promoted_lexicon"
+]
+
+[invariants]
+list = [
+  "leg3_binary_vector_isomorphism",
+  "crs_0.74_for_lexicon_atoms",
+  "fibered_homotopy_coherence",
+  "VSA_bind_for_definition_relations",
+  "auto_relate_to_genesis_pillars",
+  "provlog_sourceText_contains_definition+etymology",
+  "lyapunov_stable_on_ingest_update",
+  "scar_on_class_mixing_violation"
+]
+
+[timeout_ms]
+value = 120000
+
+[trace]
+at = ["wake_entry", "source_ingest", "word_mint+bind", "crs_verify", "sheaf_glue", "NREM_handoff"]
+tools = ["mcp_engram_quick_trace", "mcp_engram_record_reasoning_trace", "mcp_engram_remember"]
+
+[spatial]
+on = ["dictionary sources", "arxiv summaries", "linguistic toml edits"]
+tools = ["mcp_engram_context_for_edit", "mcp_engram_recall_in_file"]
+
+[handoff]
+ritual = "engram-session-end"
+tools = ["mcp_engram_session_end", "mcp_engram_remember"]
+prepare_compression = true
+next = "ritual:nrem-consolidation"
+
+[notes]
+# Phase 6+ handoff. Reuses linguistic calculus + NREM patterns.
+# Caller supplies word/definition/etymology strings (web/Arxiv ingest is external).
+# Mint path: mcp_engram_lexicon_mint_word → StoreHandle mint_lexicon_word (op_bind + dynamical CRS).

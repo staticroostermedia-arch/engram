@@ -6,15 +6,17 @@
 
 ### You were pointed here — bootstrap checklist
 
+**Stranger default load set (exactly two docs):** this file + [docs/skills/engram-wake-up.md](skills/engram-wake-up.md). Human install only: [FIRST_RUN.md](../FIRST_RUN.md) §1–2. Everything else is optional escalation.
+
 1. **Tools available?** You should see `mcp_engram_session_start`, `mcp_engram_recall`, etc. If not, ask the human to complete [FIRST_RUN.md](../FIRST_RUN.md) §1–2 (build + MCP config + IDE restart).
-2. **First call:** `mcp_engram_session_start(intent="<what you're doing>")`. Read `continuation` in the response (goals, suggested actions, last session preview).
-3. **Every session:** wake → work with the 8 tools below → `session_end(summary=…)`. That handoff is what makes the next wake feel continuous.
-4. **Do not at wake:** `watch_workspace`, `rebuild_bvh`, `summarize`, `list_concepts` — use `context_for_edit(path)` per file instead.
-5. **Need more?** 71 power tools exist; escalate deliberately via [TOOL_DECISION_MAP.md](TOOL_DECISION_MAP.md). Ritual detail: [docs/skills/engram-wake-up.md](skills/engram-wake-up.md), [engram-working-memory.md](skills/engram-working-memory.md), [engram-session-end.md](skills/engram-session-end.md).
+2. **First call:** `mcp_engram_session_start(intent="<what you're doing>")`. Read `continuation` in the response (goals, suggested actions, last session preview). Pair with the wake skill once per restart.
+3. **Every session:** wake → work with the 8 tools / **preferred composites** below → `session_end(summary=…)`. That handoff is what makes the next wake feel continuous.
+4. **Do not at wake:** `watch_workspace`, `rebuild_bvh`, `summarize`, `list_concepts` — use `context_for_edit(path)` or **`safe_edit_and_verify`** per file instead.
+5. **Need more?** ~77 power tools exist (**85 total**); escalate deliberately via [TOOL_DECISION_MAP.md](TOOL_DECISION_MAP.md). Optional skills: [engram-working-memory.md](skills/engram-working-memory.md), [engram-session-end.md](skills/engram-session-end.md).
 
-> **71 more tools exist** (79 total). Power tools (`update`, `ack_wake_queue`, `evolution_at_locus`, `query_with_momentum`, `search_by_relation`, `remember_solution`, `scar`, `thought_tile_create`, …) remain available. This contract is the **Layer 0 highway** — not the full map.
+> **77 more tools exist** (**85 total** — source: `tool_list()` in `mcp.rs`). Power tools (`update`, `ack_wake_queue`, `cold_start_fidelity`, `lexicon_mint_word`, `evolution_at_locus`, `query_with_momentum`, `search_by_relation`, `remember_solution`, `scar`, `thought_tile_create`, …) remain available. This contract is the **Layer 0 highway** — not the full map.
 
-**Full decision map:** [TOOL_DECISION_MAP.md](TOOL_DECISION_MAP.md) — mermaid flows for all 79 tools, write path (`update` vs `remember`), read escalation, and Grok Build vs Cursor throttle. **JIT RSI:** [DEFORMATION_PLAYBOOKS.md](DEFORMATION_PLAYBOOKS.md).
+**Full decision map:** [TOOL_DECISION_MAP.md](TOOL_DECISION_MAP.md) — mermaid flows for the full surface, write path (`update` vs `remember`), read escalation, and Grok Build vs Cursor throttle. **JIT RSI:** [DEFORMATION_PLAYBOOKS.md](DEFORMATION_PLAYBOOKS.md).
 
 ---
 
@@ -31,11 +33,22 @@
 | 7 | `mcp_engram_get_backend_readiness` | **Probe.** BVH/GPU/recall-mode status without heavy side effects. |
 | 8 | `mcp_engram_set_memory_mode` | **Mode.** Switch `lean` ↔ `deep` at runtime (mirrors `ENGRAM_MEMORY_MODE`). |
 
+### Preferred composites (edit / update highway)
+
+Use these **before** hand-rolling multi-step `context_for_edit` → `quick_trace` → `update` chains:
+
+| Prefer | Over | Role |
+|--------|------|------|
+| **`mcp_engram_safe_edit_and_verify`** | raw multi-step context→trace→update | Substantive code edits (context + trace + optional `__arc` + verify + lineage + `tensor:edit_pattern_*`) |
+| **`mcp_engram_update_with_tensor_bond`** | raw `update` alone | Verified memory writes / tile↔tensor sync |
+
+Same preference as [MCP_TOOLS_REFERENCE.md](MCP_TOOLS_REFERENCE.md) safe-composites tier and [TOOL_DECISION_MAP.md](TOOL_DECISION_MAP.md) Layer 1. Harness: `--suite agent-tool-fidelity`.
+
 ### Tool summaries
 
 **`session_start(intent, include_spatial?)`** — Mandatory first call. Mints `session_start_*` episodic block, loads process sheaf, and returns:
 - **After wake:** execute `suggested_actions`, then **`mcp_engram_ack_wake_queue(executed=true)`** before `context_for_edit` when `ENGRAM_PROFILE=agent` (hard gate default). Empty queue auto-acks at wake.
-- **`continuation` (slim by default, `ENGRAM_WAKE_BUNDLE=slim`)** — `primary_goal`, top 5 `suggested_actions` (composite `injection_rank`: CRS + hot + recency + momentum + scar/handoff), `trace_chain_head`, slim `ego_snapshot`, `presentation_stratum` node_count + 5 previews, **`injection_completeness`** (8-slot score + `missing` list), **`nvme_context`** (`recall_mode`, `bvh_ready`, `gpu_hot_resident`, `nvme_recall_ready`, `large_manifold`)
+- **`continuation` (slim by default, `ENGRAM_WAKE_BUNDLE=slim`)** — `primary_goal` (non-null when marker exists), top 5 `suggested_actions` (composite `injection_rank`: CRS + hot + recency + momentum + scar/handoff), `trace_chain_head`, slim `ego_snapshot`, `presentation_stratum` node_count + 5 previews, **`injection_completeness`** (8-slot score + `missing` list), **`nvme_context`** (`recall_mode`, `bvh_ready`, `gpu_hot_resident`, `nvme_recall_ready`, `large_manifold`), **`cold_start_fidelity`** (score ∈ [0,1] from goal/manifest/trace/BVH/hub CRS)
 - **Injection ritual:** If `injection_completeness.score < 0.85` or `missing` contains `nvme_recall_path` / `gpu_hot_resident`, call `mcp_engram_get_continuation_bundle` and poll `mcp_engram_get_backend_readiness` (~25s on large stores for `full_bvh_gpu`). Do not broad-read until completeness is acceptable or you have escalated to full bundle.
 - **Full bundle on demand:** `mcp_engram_get_continuation_bundle` (set `ENGRAM_WAKE_BUNDLE=full` to restore legacy inline payload with `harness_injection` nested)
 - `readiness` in wake packet (bvh_ready, recall_mode, leg_block_count, gpu_hot_resident)
@@ -63,6 +76,16 @@
 **`turn_record`** (power / end-of-turn) — RPT v3 tile + auto episodic extract (`ENGRAM_TURN_EXTRACT=1`) wires `summarizes`/`documents` edges into the navigation graph.
 
 **`set_memory_mode(mode)`** — `lean` or `deep`. Env default: `ENGRAM_MEMORY_MODE=lean`.
+
+### Tool tier (`ENGRAM_TOOL_TIER`) — mid-session discipline
+
+| Value | Behavior |
+|-------|----------|
+| `lean` | **Default** when `ENGRAM_PROFILE=agent` if unset. 8-tool highway + safe composites allowed. Other tools get a soft **`tool_tier_warning`** in the MCP response. Hard-block: `rebuild_bvh` and `force_spatial_ingest` unless `set_memory_mode("deep")` or tier=`power`. |
+| `power` | Full surface, no warn |
+| `all` | Same as power for gate purposes |
+
+Wake lean-avoid (no `watch_workspace` at wake) is separate and still applies. This env extends discipline to the **whole session**, not only wake. See `crates/engram-server/src/tool_tier.rs` and [MCP_TOOLS_REFERENCE.md](MCP_TOOLS_REFERENCE.md).
 
 ---
 
@@ -195,7 +218,7 @@ Reset to lean before ending long meta sessions to protect the next agent's wake 
 
 ## Edit Loop Example
 
-Lean mode edit discipline: prefer **`mcp_engram_safe_edit_and_verify`** for substantive edits (one call: context + trace + optional `__arc` + verify + lineage + `tensor:edit_pattern_*`). Otherwise **`context_for_edit`** once per file, then **`recall`** for gaps, **`quick_trace`** at forks, **`mcp_engram_update_with_tensor_bond`** (preferred) or **`update`** for writes. Harness: `--suite agent-tool-fidelity` asserts ≥95% correct tool usage.
+**Default path:** call **`mcp_engram_safe_edit_and_verify`** for substantive code edits and **`mcp_engram_update_with_tensor_bond`** for verified memory updates (see Preferred composites above). Fall back to multi-step only when the composite is unavailable: **`context_for_edit`** once per file → **`recall`** for gaps → **`quick_trace`** at forks → **`update`**. Harness: `--suite agent-tool-fidelity` asserts ≥95% correct tool usage.
 
 ### 1. Pre-edit — single spatial call
 
@@ -376,7 +399,7 @@ mcp_engram_session_end(summary="<decisions, files, next steps>")
 - [docs/skills/engram-wake-up.md](skills/engram-wake-up.md) — 1-call wake protocol
 - [docs/skills/engram-working-memory.md](skills/engram-working-memory.md) — edit loop with `context_for_edit`
 - [docs/skills/engram-session-end.md](skills/engram-session-end.md) — handoff packet protocol
-- [docs/MCP_TOOLS_REFERENCE.md](MCP_TOOLS_REFERENCE.md) — all 79 tools (8 essential)
+- [docs/MCP_TOOLS_REFERENCE.md](MCP_TOOLS_REFERENCE.md) — full tool surface (8 essential + power)
 - [docs/HARNESS_INJECTION.md](HARNESS_INJECTION.md) — wake queue, ego snapshot, continuity playbook
 
 ---

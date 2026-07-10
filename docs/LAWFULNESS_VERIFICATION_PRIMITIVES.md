@@ -142,3 +142,45 @@ This makes "verify its lawfulness without calling an external server" a concrete
 This document is the living spec for lawfulness verification primitives (foundation for long-sleep agent autonomy).
 
 Once we have working primitives here, the rest of the vision (long-sleep protocols, Praxis as executable objects, etc.) becomes much more credible.
+
+---
+
+## 8. Runtime CRS (Tier-2 — dynamical scorer)
+
+**Source of truth:** `crates/engram-server/src/crs_dynamical.rs`
+
+CRS on high-value write paths is **computed**, not free-painted literals.
+
+### Formula (MVP)
+
+```text
+base = role.base | role_base | 0.86
+score = base
+      + 0.04 * (ego_resonance − 0.85)     // optional
+      − min(0.12, residual_l2 * 0.15)
+      + min(0.05, verify_or_recall_count * 0.01)
+      − min(0.05, age_hours / 720 * 0.05)
+score = clamp(score, KEPLER_GATE=0.74, 0.99)
+pinned → always 1.0
+scar demotion → may floor at SCAR_CRS_FLOOR=0.40 (documented exception)
+```
+
+### Paths that use dynamical CRS
+
+| Path | Role / helper | Notes |
+|------|---------------|-------|
+| `pin` / genesis / praxis solution / protocol | `dynamical_crs_pinned()` → 1.0 | Immortal; scar bounces |
+| Ego-gated `remember` | `dynamical_crs_ego_remember` | Kepler floor; no free `0.50+r*0.44` |
+| `scar` | `dynamical_crs_after_scar` | Floor 0.40 |
+| Relation edges | `CrsRole::Relation` | |
+| Session handoff / rehydration manifest / receipt / sentinel | Session* roles | |
+| Thought tile / tensor mirror | ThoughtTile / TensorMirror | via bridge where wired |
+| Operational mints that call scorer | `CrsRole::Operational` | |
+
+### Remaining policy / literal CRS (justified, not yet migrated)
+
+Episodic session markers, goal mint baselines, TUI projection CRS, scout defaults, compression events, and many MCP handler one-offs still assign constants (see inventory appendix in `docs/plans/tier2-trust-hardware-v1.md`). Agents should treat **pin / praxis / scar / ego-remember / handoff / manifest** as the trustworthy CRS band; treat other literals as operational policy until a later pass.
+
+### Agent trust rule
+
+> If a block claims CRS ≥ 0.95, prefer verifying it was written via pin/praxis/dynamical path (or genesis) rather than assuming all high CRS is computed.

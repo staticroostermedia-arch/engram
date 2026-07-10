@@ -51,85 +51,12 @@ fn stalk_raw_concept(concept: &str) -> &str {
 const SESSION_HANDOFF_LATEST: &str = "helper:session_handoff_latest";
 pub const SESSION_SENTINEL_STATE: &str = "helper:session_sentinel_state";
 
-fn handoff_is_bullet_line(line: &str) -> bool {
-    if line.starts_with("- ")
-        || line.starts_with("* ")
-        || line.starts_with("• ")
-        || line.starts_with("+ ")
-    {
-        return true;
-    }
-    let mut chars = line.chars();
-    let mut saw_digit = false;
-    while let Some(c) = chars.next() {
-        if c.is_ascii_digit() {
-            saw_digit = true;
-        } else if (c == '.' || c == ')') && saw_digit {
-            return chars.next().map(|n| n == ' ').unwrap_or(false);
-        } else {
-            break;
-        }
-    }
-    false
-}
-
-fn handoff_parse_decisions(summary: &str) -> Vec<String> {
-    summary
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty() && handoff_is_bullet_line(line) && !line.contains('?'))
-        .map(|line| line.to_string())
-        .collect()
-}
-
-fn handoff_parse_open_questions(summary: &str) -> Vec<String> {
-    summary
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty() && line.contains('?'))
-        .map(|line| line.to_string())
-        .collect()
-}
-
-fn handoff_extract_files_touched(summary: &str) -> Vec<String> {
-    use std::collections::HashSet;
-
-    let mut seen = HashSet::new();
-    let mut out = Vec::new();
-
-    let mut consider = |candidate: &str| {
-        let cleaned = candidate.trim_matches(|c: char| {
-            c == ','
-                || c == ';'
-                || c == '`'
-                || c == '('
-                || c == ')'
-                || c == '['
-                || c == ']'
-                || c == '"'
-                || c == '\''
-        });
-        if cleaned.is_empty() {
-            return;
-        }
-        let is_path = cleaned.contains("/home/")
-            || cleaned.starts_with("crates/")
-            || cleaned.contains("crates/");
-        if is_path && seen.insert(cleaned.to_string()) {
-            out.push(cleaned.to_string());
-        }
-    };
-
-    for token in summary.split_whitespace() {
-        consider(token);
-    }
-    for (idx, segment) in summary.split('`').enumerate() {
-        if idx % 2 == 1 {
-            consider(segment);
-        }
-    }
-    out
-}
+// Session handoff parse helpers — see `session_packet` module (latest-wins extract + decision parse).
+// Named session_packet (not *handoff*) so the source is not excluded by root .gitignore *handoff*.
+use crate::session_packet::{
+    extract_latest_handoff_section, handoff_extract_files_touched, handoff_parse_decisions,
+    handoff_parse_open_questions, HANDOFF_PACKET_MARKER,
+};
 
 // ── Sheaf Config ──────────────────────────────────────────────────────────────
 
@@ -1291,6 +1218,27 @@ pub fn resolve_active_primary_goal(store: &StoreHandle) -> Option<String> {
     }
 }
 
+/// Primary goal name for wake/continuation: prefer **active** goal; if the marker
+/// exists with a non-unset target, still surface it (cold-start needs a name even
+/// when goal status is stale/inactive).
+pub fn resolve_primary_goal_for_continuation(store: &StoreHandle) -> Option<String> {
+    if let Some(g) = resolve_active_primary_goal(store) {
+        return Some(g);
+    }
+    let marker = store.fetch_block_high_priority("primary_goal")?;
+    primary_goal_marker_target(&marker)
+}
+
+/// Read `helper:session_handoff_latest` body with **latest-wins** section extract
+/// (handles legacy multi-update append dumps).
+pub fn read_session_handoff_latest_text(store: &StoreHandle) -> Option<String> {
+    let block = store
+        .fetch_block_high_priority(SESSION_HANDOFF_LATEST)
+        .or_else(|| store.fetch_block(SESSION_HANDOFF_LATEST))?;
+    let full = engram_core::storage::read_provlog(&block);
+    Some(extract_latest_handoff_section(&full))
+}
+
 /// Recency window for post-clear `recent_fallback` auto-relate (busy sessions mint many episodics).
 pub const RECENT_GOAL_FALLBACK_WINDOW: usize = 32;
 
@@ -1315,7 +1263,22 @@ pub fn resolve_active_or_recent_goal(store: &StoreHandle) -> Option<String> {
 }
 
 /// Rewrite canonical status line; strip legacy `--- Status Update ---` append blocks from MVP path.
+/// Normalize goal concept ids: bare `engram_mvp_v1` → `goal:engram_mvp_v1`.
+/// Leaves `goal:…`, `unset`, and empty unchanged (except trim).
+pub fn normalize_goal_concept(raw: &str) -> String {
+    let g = raw.trim();
+    if g.is_empty() || g.eq_ignore_ascii_case("unset") {
+        return g.to_string();
+    }
+    if g.starts_with("goal:") {
+        g.to_string()
+    } else {
+        format!("goal:{g}")
+    }
+}
+
 /// Read `**goal:**` from the `primary_goal` marker block (None if unset/empty).
+/// Always returns a normalized `goal:*` target when set.
 pub fn primary_goal_marker_target(block: &engram_core::types::HolographicBlock) -> Option<String> {
     let text = goal_block_text(block);
     let g = text
@@ -1325,23 +1288,27 @@ pub fn primary_goal_marker_target(block: &engram_core::types::HolographicBlock) 
     if g.is_empty() || g.eq_ignore_ascii_case("unset") {
         None
     } else {
-        Some(g)
+        Some(normalize_goal_concept(&g))
     }
 }
 
 /// If the marker points at `completed`, re-point to `parent_goal` or clear to unset.
 pub fn restore_primary_goal_marker_payload(completed: &str, parent: Option<&str>) -> String {
     match parent.filter(|p| !p.is_empty()) {
-        Some(parent) => format!(
-            "PRIMARY GOAL\n\n**goal:** {}\n**set_at:** {}\n**restored_from:** {}\n",
-            parent,
-            chrono::Utc::now().to_rfc3339(),
-            completed
-        ),
+        Some(parent) => {
+            let parent = normalize_goal_concept(parent);
+            let completed = normalize_goal_concept(completed);
+            format!(
+                "PRIMARY GOAL\n\n**goal:** {}\n**set_at:** {}\n**restored_from:** {}\n",
+                parent,
+                chrono::Utc::now().to_rfc3339(),
+                completed
+            )
+        }
         None => format!(
             "PRIMARY GOAL\n\n**goal:** unset\n**set_at:** {}\n**cleared_after:** {}\n",
             chrono::Utc::now().to_rfc3339(),
-            completed
+            normalize_goal_concept(completed)
         ),
     }
 }
@@ -1430,7 +1397,33 @@ impl StoreHandle {
 
         let disable_sheaf = std::env::var("ENGRAM_DISABLE_SHEAF").is_ok();
         let _sheaf_lean = std::env::var("ENGRAM_SHEAF_LEAN").as_deref() == Ok("1");
-        let backend = if sheaf_config_path.exists() && !disable_sheaf {
+        // Tier-4a: never attach production sheaf stalks when the open path is not one of them
+        // (temp dirs / unit tests were writing primary_goal into ~/.engram/stalks via sheaf.toml).
+        let path_is_sheaf_stalk = || -> bool {
+            if !sheaf_config_path.exists() {
+                return false;
+            }
+            let Ok(s) = std::fs::read_to_string(&sheaf_config_path) else {
+                return false;
+            };
+            let Ok(config) = toml::from_str::<SheafConfig>(&s) else {
+                return false;
+            };
+            let expanded_canon =
+                std::fs::canonicalize(&expanded).unwrap_or_else(|_| PathBuf::from(&expanded));
+            config.stalks.iter().any(|st| {
+                let p = PathBuf::from(shellexpand::tilde(&st.path).into_owned());
+                let c = std::fs::canonicalize(&p).unwrap_or(p);
+                c == expanded_canon
+            })
+        };
+        let use_sheaf = sheaf_config_path.exists() && !disable_sheaf && path_is_sheaf_stalk();
+        if sheaf_config_path.exists() && !disable_sheaf && !use_sheaf {
+            tracing::info!(
+                "StoreHandle::new({expanded}): path is not a sheaf stalk — single-store isolation (no production sheaf attach)"
+            );
+        }
+        let backend = if use_sheaf {
             match std::fs::read_to_string(&sheaf_config_path)
                 .ok()
                 .and_then(|s| toml::from_str::<SheafConfig>(&s).ok())
@@ -2158,18 +2151,19 @@ impl StoreHandle {
         // confidence. Orthogonal content starts near the autophagy floor.
         //
         //   resonance  = (cosine(q_new, q_ego) + 1.0) / 2.0   ∈ [0, 1]
-        //   CRS_init   = 0.50 + resonance × 0.44              ∈ [0.50, 0.94]
+        //   CRS_init   = dynamical_crs_ego_remember(resonance)  (Kepler floor 0.74)
         //
-        // `mcp_engram_pin()` still grants CRS=1.0 (genesis-tier, explicit only).
+        // `pin()` still grants CRS=1.0 via dynamical_crs_pinned (genesis-tier, explicit only).
         // If ego_q is missing, falls back to encode.rs default (0.74).
         if let Some(ego_q) = &self.ego_q {
             let resonance = engram_core::ops::cosine_similarity(&block.q, ego_q);
             let resonance_norm = (resonance + 1.0) / 2.0; // shift [-1,1] → [0,1]
-            let crs_ego = 0.50 + resonance_norm * 0.44; // range: [0.50, 0.94]
+                                                          // Tier-2: dynamical CRS (replaces free 0.50+resonance*0.44 formula)
+            let crs_ego = crate::crs_dynamical::dynamical_crs_ego_remember(resonance_norm);
             block.crs_score = crs_ego;
             block.energetics.crs = crs_ego;
             tracing::debug!(
-                "[EGO GATE] '{}' — resonance: {:.3} → CRS: {:.3}",
+                "[EGO GATE] '{}' — resonance: {:.3} → CRS: {:.3} (dynamical)",
                 concept,
                 resonance,
                 crs_ego
@@ -3040,7 +3034,7 @@ impl StoreHandle {
     ) -> serde_json::Value {
         let summary_trunc: String = summary.chars().take(2000).collect();
 
-        let primary_goal = resolve_active_primary_goal(self);
+        let primary_goal = resolve_primary_goal_for_continuation(self);
 
         let mut recent_traces: Vec<serde_json::Value> = Vec::new();
         let mut trace_chain_head: Option<String> = None;
@@ -3232,6 +3226,9 @@ impl StoreHandle {
     }
 
     /// Mint or update the stable structured handoff block for the next session.
+    ///
+    /// **Latest-wins:** provlog uses Replace so `read_concept` is not a multi-update dump.
+    /// CRS from [`crate::crs_dynamical`].
     pub fn persist_session_handoff_latest(
         &mut self,
         summary: &str,
@@ -3240,16 +3237,30 @@ impl StoreHandle {
         const HANDOFF_ANCHOR: &str = "handoff:codeland_integration_2026_plan";
         let packet = self.build_handoff_packet(summary, session_end_key);
         let body = format!(
-            "SESSION HANDOFF PACKET v1 (structured JSON for next-wake read_concept)\n\n{}\n",
+            "{HANDOFF_PACKET_MARKER} (structured JSON for next-wake read_concept)\n\n{}\n",
             serde_json::to_string_pretty(&packet).unwrap_or_else(|_| "{}".to_string())
         );
 
+        let handoff_crs = crate::crs_dynamical::dynamical_crs_for_role(
+            crate::crs_dynamical::CrsRole::SessionHandoff,
+        );
         if self.fetch_block(SESSION_HANDOFF_LATEST).is_some() {
-            let _ = self.update(SESSION_HANDOFF_LATEST, &body);
+            // Replace — never append multi-update noise on the latest handoff helper.
+            let _ = self.update_with_provlog_mode(
+                SESSION_HANDOFF_LATEST,
+                &body,
+                Some(engram_core::storage::ProvlogSpliceMode::Replace),
+            );
+            if let Some(mut block) = self.fetch_block(SESSION_HANDOFF_LATEST) {
+                block.crs_score = handoff_crs;
+                block.energetics.crs = handoff_crs;
+                let _ = self.store(SESSION_HANDOFF_LATEST, block);
+            }
         } else {
             let mut block = self.encode(&body);
             block.zedos_tag = engram_core::types::ZEDOS_OPERATIONAL;
-            block.crs_score = 0.94;
+            block.crs_score = handoff_crs;
+            block.energetics.crs = handoff_crs;
             let _ = self.store(SESSION_HANDOFF_LATEST, block);
         }
         let _ = self.promote_tile_to_high_priority(SESSION_HANDOFF_LATEST);
@@ -3268,12 +3279,25 @@ impl StoreHandle {
                     "REHYDRATION MANIFEST v1 (portable continuation kit)\n\n{}\n",
                     serde_json::to_string_pretty(manifest).unwrap_or_else(|_| "{}".to_string())
                 );
+                let manifest_crs = crate::crs_dynamical::dynamical_crs_for_role(
+                    crate::crs_dynamical::CrsRole::RehydrationManifest,
+                );
                 if self.fetch_block(concept).is_some() {
-                    let _ = self.update(concept, &manifest_body);
+                    let _ = self.update_with_provlog_mode(
+                        concept,
+                        &manifest_body,
+                        Some(engram_core::storage::ProvlogSpliceMode::Replace),
+                    );
+                    if let Some(mut block) = self.fetch_block(concept) {
+                        block.crs_score = manifest_crs;
+                        block.energetics.crs = manifest_crs;
+                        let _ = self.store(concept, block);
+                    }
                 } else {
                     let mut block = self.encode(&manifest_body);
                     block.zedos_tag = engram_core::types::ZEDOS_OPERATIONAL;
-                    block.crs_score = 0.92;
+                    block.crs_score = manifest_crs;
+                    block.energetics.crs = manifest_crs;
                     let _ = self.store(concept, block);
                 }
                 let _ =
@@ -3304,9 +3328,13 @@ impl StoreHandle {
                 "SESSION RECEIPT v1 (immutable audit sidecar)\n\n{}\n",
                 serde_json::to_string_pretty(&receipt).unwrap_or_else(|_| "{}".to_string())
             );
+            let receipt_crs = crate::crs_dynamical::dynamical_crs_for_role(
+                crate::crs_dynamical::CrsRole::SessionReceipt,
+            );
             let mut block = self.encode(&receipt_body);
             block.zedos_tag = engram_core::types::ZEDOS_OPERATIONAL;
-            block.crs_score = 0.93;
+            block.crs_score = receipt_crs;
+            block.energetics.crs = receipt_crs;
             let _ = self.store(receipt_concept, block);
             let _ = self.apply_session_boundary_merkle(
                 receipt_concept,
@@ -3351,6 +3379,9 @@ impl StoreHandle {
             "SESSION SENTINEL STATE v1 (turn/time counters for soft rehydrate nudge)\n\n{}\n",
             serde_json::to_string_pretty(state).unwrap_or_else(|_| "{}".to_string())
         );
+        let sentinel_crs = crate::crs_dynamical::dynamical_crs_for_role(
+            crate::crs_dynamical::CrsRole::SentinelState,
+        );
         if self.fetch_block(SESSION_SENTINEL_STATE).is_some() {
             self.update_with_provlog_mode(
                 SESSION_SENTINEL_STATE,
@@ -3360,8 +3391,8 @@ impl StoreHandle {
         } else {
             let mut block = self.encode(&body);
             block.zedos_tag = engram_core::types::ZEDOS_OPERATIONAL;
-            block.crs_score = 0.88;
-            block.energetics.crs = 0.88;
+            block.crs_score = sentinel_crs;
+            block.energetics.crs = sentinel_crs;
             self.store(SESSION_SENTINEL_STATE, block)?;
         }
         let _ = self.promote_tile_to_high_priority(SESSION_SENTINEL_STATE);
@@ -3571,7 +3602,7 @@ impl StoreHandle {
             }
         };
 
-        let primary_goal_name = resolve_active_primary_goal(self);
+        let primary_goal_name = resolve_primary_goal_for_continuation(self);
         if self.fetch_block_high_priority("primary_goal").is_some() {
             push(
                 self,
@@ -3776,9 +3807,17 @@ impl StoreHandle {
             .collect();
 
         let structured_handoff = if session_handoff_present {
+            let latest_text = read_session_handoff_latest_text(self).unwrap_or_default();
+            let preview: String = latest_text.chars().take(400).collect();
             Some(serde_json::json!({
                 "concept": SESSION_HANDOFF_LATEST,
                 "preferred": true,
+                "latest_wins": true,
+                "preview": if latest_text.len() > 400 {
+                    format!("{preview}…")
+                } else {
+                    preview
+                },
             }))
         } else {
             latest_compression_handoff.map(|concept| {
@@ -3897,9 +3936,154 @@ impl StoreHandle {
                 rehydration_manifest,
             );
         }
+        // Cold-start fidelity score from real continuation + readiness fields.
+        let readiness_for_fidelity = self.backend_readiness();
+        let fidelity_inputs =
+            crate::cold_start_fidelity::inputs_from_continuation(&bundle, &readiness_for_fidelity);
+        let fidelity = crate::cold_start_fidelity::cold_start_fidelity_report(&fidelity_inputs);
+
+        // Finalize wake queue: ban lean-avoid tools; inject low-score soft rehydrate nudge.
+        if let Some(obj) = bundle.as_object_mut() {
+            if let Some(harness) = obj.get_mut("harness_injection") {
+                if let Some(hobj) = harness.as_object_mut() {
+                    let actions = hobj
+                        .get("suggested_actions")
+                        .and_then(|v| v.as_array())
+                        .cloned()
+                        .unwrap_or_default();
+                    let finalized = crate::cold_start_fidelity::finalize_wake_suggested_actions(
+                        &actions, &fidelity,
+                    );
+                    hobj.insert(
+                        "suggested_actions".to_string(),
+                        serde_json::Value::Array(finalized),
+                    );
+                }
+            }
+            obj.insert("cold_start_fidelity".to_string(), fidelity);
+        }
         self.continuation_bundle_cached_at = now;
         self.continuation_bundle_cache = Some(bundle.clone());
         bundle
+    }
+
+    /// Compute cold-start fidelity from live continuation + readiness (agent MCP surface).
+    pub fn compute_cold_start_fidelity(&mut self) -> serde_json::Value {
+        let bundle = self.build_continuation_bundle(Some("cold_start_fidelity_probe"));
+        if let Some(f) = bundle.get("cold_start_fidelity") {
+            return f.clone();
+        }
+        let readiness = self.backend_readiness();
+        let inputs = crate::cold_start_fidelity::inputs_from_continuation(&bundle, &readiness);
+        crate::cold_start_fidelity::cold_start_fidelity_report(&inputs)
+    }
+
+    /// Persist cold-start fidelity as `metric:cold_start_fidelity_<unix>` + series helper.
+    /// Call from session_start after continuation is built. Relates to session_key + primary_goal.
+    pub fn persist_cold_start_fidelity_metric(
+        &mut self,
+        session_key: &str,
+        report: &serde_json::Value,
+    ) -> Option<String> {
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let metric_key = format!("metric:cold_start_fidelity_{ts}");
+        let body = format!(
+            "COLD-START FIDELITY METRIC v1\n\nsession_key: {session_key}\n\n{}\n",
+            serde_json::to_string_pretty(report).unwrap_or_else(|_| "{}".to_string())
+        );
+        let crs = crate::crs_dynamical::dynamical_crs_for_role(
+            crate::crs_dynamical::CrsRole::Operational,
+        );
+        let mut block = self.encode(&body);
+        block.zedos_tag = engram_core::types::ZEDOS_OPERATIONAL;
+        block.crs_score = crs;
+        block.energetics.crs = crs;
+        let _ = self.store(&metric_key, block);
+        let _ = self.relate(&metric_key, session_key, "documents");
+        if let Some(goal) = resolve_primary_goal_for_continuation(self) {
+            let _ = self.relate(&metric_key, &goal, "serves");
+        }
+        // Append to series helper (Replace with JSON array of last 20 scores)
+        let entry = serde_json::json!({
+            "ts": ts,
+            "session_key": session_key,
+            "score": report.get("score"),
+            "metric": metric_key,
+            "reasons": report.get("reasons"),
+        });
+        let mut series: Vec<serde_json::Value> = self
+            .fetch_block(crate::cold_start_fidelity::COLD_START_FIDELITY_SERIES)
+            .map(|b| engram_core::storage::read_provlog(&b))
+            .and_then(|t| {
+                // Find last JSON array in body
+                let start = t.rfind('[')?;
+                let end = t.rfind(']')?;
+                if start < end {
+                    serde_json::from_str(&t[start..=end]).ok()
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_default();
+        series.push(entry);
+        if series.len() > 20 {
+            let skip = series.len() - 20;
+            series = series.into_iter().skip(skip).collect();
+        }
+        let series_body = format!(
+            "COLD-START FIDELITY SERIES v1 (last ≤20 scores; latest-wins Replace)\n\n{}\n",
+            serde_json::to_string_pretty(&series).unwrap_or_else(|_| "[]".to_string())
+        );
+        let series_key = crate::cold_start_fidelity::COLD_START_FIDELITY_SERIES;
+        if self.fetch_block(series_key).is_some() {
+            let _ = self.update_with_provlog_mode(
+                series_key,
+                &series_body,
+                Some(engram_core::storage::ProvlogSpliceMode::Replace),
+            );
+        } else {
+            let mut sb = self.encode(&series_body);
+            sb.zedos_tag = engram_core::types::ZEDOS_OPERATIONAL;
+            sb.crs_score = crs;
+            sb.energetics.crs = crs;
+            let _ = self.store(series_key, sb);
+        }
+        let _ = self.promote_tile_to_high_priority(series_key);
+        let _ = self.promote_tile_to_high_priority(&metric_key);
+        Some(metric_key)
+    }
+
+    /// Rewrite `helper:session_handoff_latest` to a single latest-wins structured packet.
+    /// Safe on multi-update dumps: extract latest section then Replace.
+    pub fn rewrite_session_handoff_latest_wins(&mut self) -> Result<String> {
+        let Some(text) = read_session_handoff_latest_text(self) else {
+            return Err(anyhow::anyhow!("helper:session_handoff_latest not found"));
+        };
+        let body = if text.contains(HANDOFF_PACKET_MARKER) {
+            format!("{text}\n")
+        } else {
+            format!("{HANDOFF_PACKET_MARKER}\n\n{text}\n")
+        };
+        if self.fetch_block(SESSION_HANDOFF_LATEST).is_some() {
+            self.update_with_provlog_mode(
+                SESSION_HANDOFF_LATEST,
+                &body,
+                Some(engram_core::storage::ProvlogSpliceMode::Replace),
+            )?;
+        } else {
+            let mut block = self.encode(&body);
+            block.zedos_tag = engram_core::types::ZEDOS_OPERATIONAL;
+            let crs = crate::crs_dynamical::dynamical_crs_for_role(
+                crate::crs_dynamical::CrsRole::SessionHandoff,
+            );
+            block.crs_score = crs;
+            block.energetics.crs = crs;
+            self.store(SESSION_HANDOFF_LATEST, block)?;
+        }
+        Ok(body)
     }
 
     /// Post-session / pre-compression handoff: refresh hydration cache, promote continuity
@@ -4841,6 +5025,22 @@ impl StoreHandle {
     ///
     /// Called by `mcp_engram_scar` (public MCP tool, security: stdio/localhost-bounded).
     /// Also callable by external integrations routing through the Engram MCP bridge.
+    /// Pin a concept to immortal CRS 1.0 via [`crate::crs_dynamical::dynamical_crs_pinned`].
+    /// Autophagy will ignore pinned blocks. Prefer high-priority fetch when available.
+    pub fn pin(&mut self, concept: &str) -> Result<String> {
+        let mut block = self
+            .fetch_block_high_priority(concept)
+            .or_else(|| self.fetch_block(concept))
+            .ok_or_else(|| anyhow::anyhow!("Memory not found: {}", concept))?;
+        let pin_crs = crate::crs_dynamical::dynamical_crs_pinned();
+        block.crs_score = pin_crs;
+        block.energetics.crs = pin_crs;
+        self.store(concept, block)?;
+        Ok(format!(
+            "✓ Pinned concept to CRS {pin_crs} (dynamical_crs). Autophagy will ignore it.: {concept}"
+        ))
+    }
+
     pub fn scar(&mut self, concept: &str, magnitude: f32) -> Result<String> {
         let mut block = self
             .fetch_block(concept)
@@ -4878,7 +5078,9 @@ impl StoreHandle {
 
         // ── Record thermodynamic cost of the scar ─────────────────────────────
         block.energetics.dv = magnitude; // Lyapunov velocity = magnitude of contradiction
-        block.crs_score = (block.crs_score - magnitude * 0.1).max(0.40);
+                                         // Tier-2: dynamical scar demotion (floor SCAR_CRS_FLOOR = 0.40)
+        let prior_crs = block.crs_score;
+        block.crs_score = crate::crs_dynamical::dynamical_crs_after_scar(prior_crs, magnitude);
         let new_crs = block.crs_score;
         block.energetics.crs = block.crs_score;
         block.energetics.heat_dissipated += 5.47e-4; // Scar pays action quantum
@@ -4924,7 +5126,10 @@ impl StoreHandle {
         let mut rel_block = self.encode(label);
         rel_block.q = bound_q;
         rel_block.zedos_tag = ZEDOS_RELATION;
-        rel_block.crs_score = 0.80;
+        let rel_crs =
+            crate::crs_dynamical::dynamical_crs_for_role(crate::crs_dynamical::CrsRole::Relation);
+        rel_block.crs_score = rel_crs;
+        rel_block.energetics.crs = rel_crs;
 
         // Store relation label in concept_ref (32 bytes)
         let label_bytes = label.as_bytes();
@@ -5019,13 +5224,35 @@ impl StoreHandle {
                 .find(|l| l.starts_with("**parent_goal:**"))
                 .map(|l| l.replace("**parent_goal:**", "").trim().to_string())
                 .filter(|p| !p.is_empty())
+                .map(|p| normalize_goal_concept(&p))
         });
+
+        // Re-activate parent if it was demoted/completed so resolve_active_primary_goal works.
+        if let Some(ref p) = parent {
+            if let Some(mut gblock) = self
+                .fetch_block_high_priority(p)
+                .or_else(|| self.fetch_block(p))
+            {
+                let gtext = goal_block_text(&gblock);
+                if !goal_status_is_active(&gtext) {
+                    let rewritten = rewrite_goal_status(&gtext, "active");
+                    let mut fresh = self.encode(&rewritten);
+                    fresh.zedos_tag = gblock.zedos_tag;
+                    fresh.crs_score = gblock.crs_score.max(0.90);
+                    fresh.energetics.crs = fresh.crs_score;
+                    let _ = self.store(p, fresh);
+                }
+            }
+        }
 
         let payload = restore_primary_goal_marker_payload(completed, parent.as_deref());
         let mut new_marker = self.encode(&payload);
         new_marker.zedos_tag = engram_core::types::ZEDOS_OPERATIONAL;
         new_marker.crs_score = 0.95;
         let _ = self.store("primary_goal", new_marker);
+        if let Some(ref p) = parent {
+            let _ = self.relate("primary_goal", p, "serves");
+        }
         self.invalidate_continuation_bundle_cache();
         self.mark_ki_rebake_needed();
         match parent {
@@ -5149,11 +5376,14 @@ impl StoreHandle {
 
         let mut block = self.encode(&payload);
         block.zedos_tag = ZEDOS_PRAXIS;
-        block.crs_score = 1.0; // Immortal — autophagy never touches CRS=1.0
+        // Tier-2: praxis solutions are pin-class immortal via dynamical_crs
+        let pin_crs = crate::crs_dynamical::dynamical_crs_pinned();
+        block.crs_score = pin_crs;
+        block.energetics.crs = pin_crs;
 
         self.store(&key, block)?;
         Ok(format!(
-            "✓ Solution stored as '{}' with ZEDOS_PRAXIS tag and CRS=1.0 (pinned)",
+            "✓ Solution stored as '{}' with ZEDOS_PRAXIS tag and CRS={pin_crs} (pinned via dynamical_crs)",
             key
         ))
     }
@@ -5175,8 +5405,9 @@ impl StoreHandle {
 
         let mut block = self.encode(&String::from_utf8_lossy(&payload));
         block.zedos_tag = ZEDOS_PRAXIS;
-        block.crs_score = 1.0;
-        block.energetics.crs = 1.0;
+        let pin_crs = crate::crs_dynamical::dynamical_crs_pinned();
+        block.crs_score = pin_crs;
+        block.energetics.crs = pin_crs;
 
         // Take explicit control of the contract for executable protocols
         let len = allowed_transforms.len().min(64);
@@ -6297,7 +6528,9 @@ impl StoreHandle {
 
         let mut block = self.encode(&full_payload);
         block.zedos_tag = ZEDOS_EPISODIC;
-        block.crs_score = 1.0; // Pinned — session summaries are immortal
+        let pin_crs = crate::crs_dynamical::dynamical_crs_pinned();
+        block.crs_score = pin_crs; // Pinned — session summaries are immortal
+        block.energetics.crs = pin_crs;
         block
             .footer
             .merkle_sub_root
@@ -6305,7 +6538,7 @@ impl StoreHandle {
 
         self.store(&key, block)?;
         Ok(format!(
-            "✓ Session exported as '{}' — {} concepts fingerprinted, CRS=1.0 (pinned)",
+            "✓ Session exported as '{}' — {} concepts fingerprinted, CRS={pin_crs} (pinned)",
             key,
             concept_list.len()
         ))
@@ -6345,10 +6578,12 @@ impl StoreHandle {
             .map_err(|e| anyhow::anyhow!("genesis.json parse error: {e}"))?;
 
         let mut seeded = 0usize;
+        let pin_crs = crate::crs_dynamical::dynamical_crs_pinned();
         for seed in &config.seeds {
             let mut block = self.encode(&seed.text);
             block.zedos_tag = ZEDOS_PRAXIS;
-            block.crs_score = 1.0;
+            block.crs_score = pin_crs;
+            block.energetics.crs = pin_crs;
             self.store(&seed.concept, block)?;
             self.access_index.touch(&seed.concept);
             seeded += 1;
@@ -7970,6 +8205,662 @@ mod ingest_ast_tests {
         let r = store.backend_readiness();
         assert!(r.get("cufile_transfer_path").is_some());
         assert!(r.get("cufile_hot_requested").is_some());
+        // Honesty: never claim cufile_dma without a successful DMA attempt.
+        let path = r
+            .get("cufile_transfer_path")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        assert!(
+            matches!(path, "cufile_dma" | "h2d_memcpy" | "unavailable" | "off"),
+            "unexpected cufile_transfer_path={path}"
+        );
+        if path == "cufile_dma" {
+            assert!(
+                engram_gpu::cufile::cufile_last_dma_success(),
+                "cufile_dma label requires last DMA success"
+            );
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn handoff_latest_wins_replace_and_primary_on_continuation() {
+        let dir = test_store_dir("handoff_latest_wins");
+        let mut store = StoreHandle::new(&dir.to_string_lossy());
+
+        // Marker only (no active goal block) — continuation must still surface the name.
+        store
+            .remember(
+                "primary_goal",
+                "PRIMARY GOAL\n\n**goal:** goal:engram_mvp_v1\n**set_at:** test\n",
+            )
+            .unwrap();
+        store.promote_tile_to_high_priority("primary_goal").unwrap();
+
+        let p1 = store.persist_session_handoff_latest("first handoff - old", "session_end_100");
+        assert_eq!(
+            p1.get("primary_goal").and_then(|v| v.as_str()),
+            Some("goal:engram_mvp_v1")
+        );
+
+        let p2 = store.persist_session_handoff_latest(
+            "- Second decision for latest packet\n- crates/engram-server/src/store.rs",
+            "session_end_200",
+        );
+        assert_eq!(
+            p2.get("primary_goal").and_then(|v| v.as_str()),
+            Some("goal:engram_mvp_v1")
+        );
+
+        let latest = read_session_handoff_latest_text(&store).expect("handoff text");
+        assert!(
+            latest.contains("session_end_200"),
+            "latest-wins body should be second packet: {latest}"
+        );
+        assert!(
+            !latest.contains("session_end_100"),
+            "replace must not keep first packet: {latest}"
+        );
+        // Single packet marker only
+        assert_eq!(
+            latest.matches(HANDOFF_PACKET_MARKER).count(),
+            1,
+            "exactly one packet after replace"
+        );
+
+        let block = store
+            .fetch_block(SESSION_HANDOFF_LATEST)
+            .expect("handoff block");
+        let handoff_crs = crate::crs_dynamical::dynamical_crs_for_role(
+            crate::crs_dynamical::CrsRole::SessionHandoff,
+        );
+        assert!(
+            (block.crs_score - handoff_crs).abs() < 1e-4,
+            "handoff CRS should use dynamical scorer: got {} want {}",
+            block.crs_score,
+            handoff_crs
+        );
+
+        let bundle = store.build_continuation_bundle(Some("wake after handoff"));
+        assert_eq!(
+            bundle.get("primary_goal").and_then(|v| v.as_str()),
+            Some("goal:engram_mvp_v1"),
+            "continuation primary_goal non-null when marker exists"
+        );
+        let slim = crate::wake_bundle::slim_continuation_bundle(&bundle);
+        assert_eq!(
+            slim.get("primary_goal").and_then(|v| v.as_str()),
+            Some("goal:engram_mvp_v1")
+        );
+
+        let fidelity = bundle
+            .get("cold_start_fidelity")
+            .expect("cold_start_fidelity on bundle");
+        let score = fidelity
+            .get("score")
+            .and_then(|v| v.as_f64())
+            .expect("score") as f32;
+        assert!((0.0..=1.0).contains(&score), "score {score}");
+        assert!(fidelity.get("version").and_then(|v| v.as_str()) == Some("cold_start_fidelity_v1"));
+
+        // Scorer is shipped function — recompute must match (not a hardcoded oracle).
+        let recomputed = store.compute_cold_start_fidelity();
+        let rscore = recomputed.get("score").and_then(|v| v.as_f64()).unwrap() as f32;
+        assert!(
+            (rscore - score).abs() < 1e-4,
+            "recompute {rscore} vs {score}"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn cold_start_fidelity_persists_two_wakes_and_nudge_on_empty() {
+        let dir = test_store_dir("fidelity_habit");
+        let mut store = StoreHandle::new(&dir.to_string_lossy());
+
+        // Empty-ish store: low fidelity, nudge present
+        let b1 = store.build_continuation_bundle(Some("wake1 empty"));
+        let f1 = b1.get("cold_start_fidelity").expect("fidelity");
+        let s1 = f1.get("score").and_then(|v| v.as_f64()).unwrap() as f32;
+        assert!((0.0..=1.0).contains(&s1));
+        let actions = b1
+            .pointer("/harness_injection/suggested_actions")
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default();
+        // Empty store should be below threshold → fidelity nudge
+        if s1 < crate::cold_start_fidelity::LOW_FIDELITY_THRESHOLD {
+            assert!(
+                actions.iter().any(|a| {
+                    a.get("fidelity_nudge")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false)
+                }),
+                "expected fidelity nudge on low score {s1}: {actions:?}"
+            );
+        }
+        // Never lean-avoid in queue
+        for a in &actions {
+            if let Some(t) = a.get("tool").and_then(|x| x.as_str()) {
+                assert!(
+                    !crate::cold_start_fidelity::is_lean_avoid_wake_tool(t),
+                    "lean-avoid tool in wake queue: {t}"
+                );
+            }
+        }
+
+        let m1 = store
+            .persist_cold_start_fidelity_metric("session_start_100", f1)
+            .expect("metric1");
+        assert!(m1.starts_with("metric:cold_start_fidelity_"));
+
+        // Second wake record
+        std::thread::sleep(std::time::Duration::from_millis(1100));
+        let f2 = store.compute_cold_start_fidelity();
+        let m2 = store
+            .persist_cold_start_fidelity_metric("session_start_200", &f2)
+            .expect("metric2");
+        assert_ne!(m1, m2);
+        assert!(store.fetch_block(&m1).is_some());
+        assert!(store.fetch_block(&m2).is_some());
+        assert!(store
+            .fetch_block(crate::cold_start_fidelity::COLD_START_FIDELITY_SERIES)
+            .is_some());
+
+        // Rich store: goal + handoff → higher score
+        store
+            .remember(
+                "primary_goal",
+                "PRIMARY GOAL\n\n**goal:** goal:fidelity_rich\n**set_at:** t\n",
+            )
+            .unwrap();
+        store
+            .remember(
+                "goal:fidelity_rich",
+                "GOAL\n\n**status:** active\n**statement:** rich wake\n",
+            )
+            .unwrap();
+        let _ = store.persist_session_handoff_latest("rich handoff decisions", "session_end_rich");
+        store.invalidate_continuation_bundle_cache();
+        let rich = store.build_continuation_bundle(Some("wake rich"));
+        let rs = rich
+            .pointer("/cold_start_fidelity/score")
+            .and_then(|v| v.as_f64())
+            .unwrap() as f32;
+        assert!(rs > s1, "rich score {rs} should exceed empty {s1}");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn rewrite_handoff_latest_wins_collapses_multi_update() {
+        let dir = test_store_dir("rewrite_handoff");
+        let mut store = StoreHandle::new(&dir.to_string_lossy());
+        // Simulate legacy multi-update dump via raw store + append-like text
+        let multi = r#"old noise
+SESSION HANDOFF PACKET v1
+
+{"session_end_key":"session_end_1","primary_goal":"goal:old"}
+
+--- update @ 100 ---
+SESSION HANDOFF PACKET v1
+
+{"session_end_key":"session_end_2","primary_goal":"goal:new"}
+"#;
+        let mut block = store.encode(multi);
+        block.zedos_tag = engram_core::types::ZEDOS_OPERATIONAL;
+        store.store(SESSION_HANDOFF_LATEST, block).unwrap();
+        let out = store.rewrite_session_handoff_latest_wins().unwrap();
+        assert!(out.contains("session_end_2"), "{out}");
+        assert!(
+            !out.contains("session_end_1") || out.matches("SESSION HANDOFF PACKET").count() == 1
+        );
+        let again = read_session_handoff_latest_text(&store).unwrap();
+        assert_eq!(again.matches(HANDOFF_PACKET_MARKER).count(), 1);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn dynamical_crs_used_on_manifest_mint() {
+        let dir = test_store_dir("manifest_crs");
+        let mut store = StoreHandle::new(&dir.to_string_lossy());
+        store
+            .remember(
+                "primary_goal",
+                "PRIMARY GOAL\n\n**goal:** goal:test_manifest\n**set_at:** t\n",
+            )
+            .unwrap();
+        let packet = store.persist_session_handoff_latest("manifest crs test", "session_end_999");
+        let concept = packet
+            .pointer("/rehydration_manifest/manifest_concept")
+            .and_then(|v| v.as_str())
+            .expect("manifest concept")
+            .to_string();
+        let block = store.fetch_block(&concept).expect("manifest block");
+        let want = crate::crs_dynamical::dynamical_crs_for_role(
+            crate::crs_dynamical::CrsRole::RehydrationManifest,
+        );
+        assert!(
+            (block.crs_score - want).abs() < 1e-4,
+            "manifest CRS {} != dynamical {}",
+            block.crs_score,
+            want
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn normalize_goal_concept_adds_goal_prefix() {
+        assert_eq!(
+            normalize_goal_concept("engram_mvp_v1"),
+            "goal:engram_mvp_v1"
+        );
+        assert_eq!(
+            normalize_goal_concept("goal:engram_mvp_v1"),
+            "goal:engram_mvp_v1"
+        );
+        assert_eq!(normalize_goal_concept("unset"), "unset");
+    }
+
+    /// Live stalk probe (ignored by default). Run:
+    /// `ENGRAM_LIVE_FIDELITY_PROBE=1 cargo test live_fidelity_series_probe -- --ignored --nocapture`
+    #[test]
+    #[ignore = "live stalk side-effect; enable ENGRAM_LIVE_FIDELITY_PROBE=1"]
+    fn live_fidelity_series_probe() {
+        if std::env::var("ENGRAM_LIVE_FIDELITY_PROBE").as_deref() != Ok("1") {
+            return;
+        }
+        // Production stalk path must use sheaf+GPU readiness for realistic fidelity (≥0.85).
+        // Do NOT force CPU/disable sheaf here.
+        std::env::remove_var("ENGRAM_DISABLE_SHEAF");
+        std::env::remove_var("ENGRAM_FORCE_CPU_BACKEND");
+        let store_path = std::env::var("ENGRAM_LIVE_FIDELITY_STORE")
+            .unwrap_or_else(|_| shellexpand::tilde("~/.engram/stalks").into_owned());
+        let n: usize = std::env::var("ENGRAM_LIVE_FIDELITY_N")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(10);
+        let mut store = StoreHandle::new(&store_path);
+        // Ensure correct primary + active mvp goal
+        let mvp = "goal:engram_mvp_v1";
+        if store.fetch_block(mvp).is_none() && store.fetch_block_high_priority(mvp).is_none() {
+            let _ = store.remember(
+                mvp,
+                "GOAL BLOCK\n\n**goal_statement:** Engram MVP v1\n\n**status:** active\n**priority:** high\n",
+            );
+        } else if let Some(mut b) = store
+            .fetch_block_high_priority(mvp)
+            .or_else(|| store.fetch_block(mvp))
+        {
+            let t = goal_block_text(&b);
+            if !goal_status_is_active(&t) {
+                let rewritten = rewrite_goal_status(&t, "active");
+                let mut fresh = store.encode(&rewritten);
+                fresh.zedos_tag = b.zedos_tag;
+                fresh.crs_score = b.crs_score.max(0.90);
+                fresh.energetics.crs = fresh.crs_score;
+                let _ = store.store(mvp, fresh);
+            }
+        }
+        let payload = format!(
+            "PRIMARY GOAL\n\n**goal:** {mvp}\n**set_at:** {}\n**hygiene:** live_fidelity_series_probe\n",
+            chrono::Utc::now().to_rfc3339()
+        );
+        let mut marker = store.encode(&payload);
+        marker.zedos_tag = engram_core::types::ZEDOS_OPERATIONAL;
+        marker.crs_score = 0.95;
+        store.store("primary_goal", marker).unwrap();
+        let _ = store.relate("primary_goal", mvp, "serves");
+        // Promote hub tiles so trusted_tile_count lifts score (same path as session_end hygiene)
+        for c in [
+            "helper:session_handoff_latest",
+            "tile:formal_spec_leg-browser-v0-3--obsidian-like-dynamic-manifold",
+            "tile:formal_spec_provenance-audit---merkle-replay-viewer-prototyp",
+            "tile:formal_spec_additional-must-have-polishes-for-grok-build-mem",
+            "tile:formal_spec_rsi-cycle-13---trajectory-meta-review",
+            mvp,
+            "primary_goal",
+        ] {
+            let _ = store.promote_tile_to_high_priority(c);
+        }
+        // Refresh handoff so rehydration_manifest carries trusted tiles
+        let _ = store.persist_session_handoff_latest(
+            "live fidelity series probe hygiene handoff",
+            &format!(
+                "session_end_fidelity_probe_{}",
+                chrono::Utc::now().timestamp()
+            ),
+        );
+        // Wait for BVH/NVMe readiness (sheaf CUDA path can be warm-up laggy)
+        for attempt in 0..45 {
+            let r = store.backend_readiness();
+            let bvh = r
+                .get("bvh_ready")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            let nvme = r
+                .get("nvme_recall_ready")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            let mode = r.get("recall_mode").and_then(|v| v.as_str()).unwrap_or("?");
+            if attempt == 0 || attempt % 5 == 0 {
+                eprintln!("readiness wait {attempt}: bvh={bvh} nvme={nvme} mode={mode}");
+            }
+            if bvh && (nvme || mode.contains("bvh") || mode == "full_bvh_gpu") {
+                break;
+            }
+            // Force background build if present
+            let _ = store.rebuild_bvh_async();
+            std::thread::sleep(std::time::Duration::from_millis(500));
+        }
+
+        let mut scores = Vec::new();
+        for i in 0..n {
+            let fid = store.compute_cold_start_fidelity();
+            if i == 0 {
+                eprintln!("first_fidelity_report={fid}");
+            }
+            let s = fid
+                .get("score")
+                .and_then(|v| v.as_f64())
+                .expect("score field");
+            scores.push(s);
+            let _ = store.persist_cold_start_fidelity_metric(
+                &format!("live_fidelity_probe_{i}_{}", chrono::Utc::now().timestamp()),
+                &fid,
+            );
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+        assert_eq!(scores.len(), n);
+        let mut sorted = scores.clone();
+        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        let median = sorted[sorted.len() / 2];
+        eprintln!(
+            "live_fidelity_series n={n} median={median:.4} min={:.4} max={:.4} scores={scores:?}",
+            sorted[0],
+            sorted[sorted.len() - 1]
+        );
+        assert!(
+            median >= 0.85,
+            "expected median ≥0.85 after primary+tile hygiene, got median={median} scores={scores:?}"
+        );
+        let resolved = resolve_active_primary_goal(&store);
+        assert_eq!(
+            resolved.as_deref(),
+            Some(mvp),
+            "active primary must resolve to {mvp}, got {resolved:?}"
+        );
+        let cont = resolve_primary_goal_for_continuation(&store);
+        assert_eq!(cont.as_deref(), Some(mvp));
+    }
+
+    #[test]
+    fn restore_primary_normalizes_bare_parent_and_reactivates() {
+        std::env::set_var("ENGRAM_DISABLE_SHEAF", "1");
+        std::env::set_var("ENGRAM_FORCE_CPU_BACKEND", "1");
+        let dir = test_store_dir("primary_bare_parent");
+        let mut store = StoreHandle::new(&dir.to_string_lossy());
+        store
+            .remember(
+                "goal:engram_mvp_v1",
+                "GOAL BLOCK\n\n**goal_statement:** mvp\n\n**status:** demoted\n",
+            )
+            .unwrap();
+        store
+            .remember(
+                "goal:child_bare_parent",
+                "GOAL BLOCK\n\n**goal_statement:** child\n\n**status:** active\n**parent_goal:** engram_mvp_v1\n",
+            )
+            .unwrap();
+        let mut marker =
+            store.encode("PRIMARY GOAL\n\n**goal:** goal:child_bare_parent\n**set_at:** test\n");
+        marker.zedos_tag = engram_core::types::ZEDOS_OPERATIONAL;
+        marker.crs_score = 0.95;
+        store.store("primary_goal", marker).unwrap();
+        let outcome = store.restore_primary_goal_marker_after_complete("goal:child_bare_parent");
+        assert_eq!(
+            outcome,
+            PrimaryMarkerRestore::Restored("goal:engram_mvp_v1".to_string())
+        );
+        assert_eq!(
+            resolve_active_primary_goal(&store).as_deref(),
+            Some("goal:engram_mvp_v1"),
+            "parent must be goal:-prefixed and active"
+        );
+        let payload = restore_primary_goal_marker_payload("goal:child", Some("engram_mvp_v1"));
+        assert!(
+            payload.contains("**goal:** goal:engram_mvp_v1"),
+            "payload missing prefix: {payload}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+        std::env::remove_var("ENGRAM_DISABLE_SHEAF");
+        std::env::remove_var("ENGRAM_FORCE_CPU_BACKEND");
+    }
+
+    /// Tier-4a: temp/test dirs must not attach production sheaf (primary_goal SNR).
+    #[test]
+    fn temp_store_does_not_use_production_sheaf_stalks() {
+        std::env::remove_var("ENGRAM_DISABLE_SHEAF"); // exercise path isolation even when sheaf exists
+        let dir = test_store_dir("sheaf_isolate");
+        let mut store = StoreHandle::new(&dir.to_string_lossy());
+        store
+            .remember(
+                "primary_goal",
+                "PRIMARY GOAL\n\n**goal:** goal:temp_isolation_only\n**set_at:** test\n",
+            )
+            .unwrap();
+        // File must land under tmp dir, not ~/.engram/stalks
+        let local = dir.join("primary_goal.leg");
+        let local3 = dir.join("primary_goal.leg3");
+        assert!(
+            local.exists() || local3.exists(),
+            "primary_goal should be written into temp store {dir:?}"
+        );
+        let prod =
+            PathBuf::from(shellexpand::tilde("~/.engram/stalks/primary_goal.leg").into_owned());
+        let prod3 =
+            PathBuf::from(shellexpand::tilde("~/.engram/stalks/primary_goal.leg3").into_owned());
+        // If prod exists, its mtime must not be "just written" by this test alone —
+        // stronger check: content of temp must match our isolation goal id.
+        let text = store
+            .fetch_block("primary_goal")
+            .map(|b| engram_core::storage::read_provlog(&b))
+            .unwrap_or_default();
+        assert!(
+            text.contains("goal:temp_isolation_only"),
+            "temp store primary should be isolation goal, got {text}"
+        );
+        // Production marker must not become temp_isolation_only as a side effect
+        if prod.exists() || prod3.exists() {
+            // read production via separate handle on real stalk path
+            let prod_path = shellexpand::tilde("~/.engram/stalks").into_owned();
+            // Only open production if it is a sheaf stalk (will use sheaf) — use DISABLE for read of file bytes
+            let raw = std::fs::read(if prod.exists() { &prod } else { &prod3 }).unwrap_or_default();
+            let s = String::from_utf8_lossy(&raw);
+            assert!(
+                !s.contains("goal:temp_isolation_only"),
+                "temp store write leaked into production primary_goal"
+            );
+            let _ = prod_path;
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Tier-4a/c: wake → remember → handoff → wake2 sees single packet + primary.
+    #[test]
+    fn continuity_wake_remember_end_wake2_handoff() {
+        std::env::set_var("ENGRAM_DISABLE_SHEAF", "1");
+        std::env::set_var("ENGRAM_FORCE_CPU_BACKEND", "1");
+        let dir = test_store_dir("continuity_demo");
+        let mut store = StoreHandle::new(&dir.to_string_lossy());
+        store
+            .remember(
+                "primary_goal",
+                "PRIMARY GOAL\n\n**goal:** goal:continuity_demo\n**set_at:** demo\n",
+            )
+            .unwrap();
+        store
+            .remember(
+                "goal:continuity_demo",
+                "GOAL\n\n**status:** active\n**statement:** continuity demo\n",
+            )
+            .unwrap();
+        store
+            .remember("demo:continuity_fact", "hello continuity fact for wake2")
+            .unwrap();
+        let packet = store.persist_session_handoff_latest(
+            "continuity demo session_end summary",
+            "session_end_continuity_demo",
+        );
+        assert!(packet.get("handoff_concept").is_some() || packet.get("session_end_key").is_some());
+        let handoff_text = read_session_handoff_latest_text(&store).unwrap_or_default();
+        let markers = handoff_text.matches("SESSION HANDOFF PACKET").count();
+        assert_eq!(markers, 1, "expected single handoff packet, got {markers}");
+        // Second "wake" via continuation bundle
+        let bundle = store.build_continuation_bundle(Some("continuity wake 2"));
+        let pg = bundle
+            .get("primary_goal")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        assert!(
+            pg.contains("continuity_demo") || pg.contains("goal:continuity_demo"),
+            "wake2 primary_goal={pg}"
+        );
+        let f = bundle
+            .get("cold_start_fidelity")
+            .and_then(|v| v.get("score"))
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.0);
+        assert!((0.0..=1.0).contains(&f), "fidelity score {f}");
+        // Persist fidelity series entries for habit proof
+        let mut scores = Vec::new();
+        for i in 0..10 {
+            let fid = store.compute_cold_start_fidelity();
+            if let Some(s) = fid.get("score").and_then(|v| v.as_f64()) {
+                scores.push(s);
+            }
+            let _ =
+                store.persist_cold_start_fidelity_metric(&format!("session_start_cont_{i}"), &fid);
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+        assert!(
+            store
+                .fetch_block(crate::cold_start_fidelity::COLD_START_FIDELITY_SERIES)
+                .is_some(),
+            "fidelity series helper missing"
+        );
+        assert_eq!(
+            scores.len(),
+            10,
+            "expected 10 fidelity samples, got {scores:?}"
+        );
+        for s in &scores {
+            assert!((0.0..=1.0).contains(s), "score out of range {s}");
+        }
+        // Empty/isolated stores lack BVH+tiles so scores are low by design; habit proof is
+        // series length + persistence. Live stalk median ≥0.85 is ops (cold-start-report).
+        let _ = std::fs::remove_dir_all(&dir);
+        std::env::remove_var("ENGRAM_DISABLE_SHEAF");
+        std::env::remove_var("ENGRAM_FORCE_CPU_BACKEND");
+    }
+
+    #[test]
+    fn pin_sets_crs_one_via_dynamical() {
+        let dir = test_store_dir("pin_crs");
+        let mut store = StoreHandle::new(&dir.to_string_lossy());
+        store
+            .remember("concept:pin_me", "payload for pin CRS test")
+            .unwrap();
+        let before = store
+            .fetch_block("concept:pin_me")
+            .expect("block")
+            .crs_score;
+        assert!(
+            before < 1.0,
+            "pre-pin CRS should not already be immortal: {before}"
+        );
+        let msg = store.pin("concept:pin_me").expect("pin");
+        assert!(msg.contains("dynamical_crs"), "{msg}");
+        let after = store
+            .fetch_block("concept:pin_me")
+            .expect("block")
+            .crs_score;
+        assert_eq!(after, crate::crs_dynamical::dynamical_crs_pinned());
+        assert_eq!(after, 1.0);
+        // Scar must bounce off pin-class
+        let bounce = store.scar("concept:pin_me", 0.9).expect("scar bounce");
+        assert!(
+            bounce.contains("bounced") || bounce.contains("immortal"),
+            "{bounce}"
+        );
+        let still = store.fetch_block("concept:pin_me").unwrap().crs_score;
+        assert_eq!(still, 1.0);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn scar_crs_via_dynamical_below_prior() {
+        let dir = test_store_dir("scar_crs");
+        let mut store = StoreHandle::new(&dir.to_string_lossy());
+        store
+            .remember("concept:scar_me", "payload for scar CRS test")
+            .unwrap();
+        // Boost to a known mid CRS so demotion is measurable
+        {
+            let mut b = store.fetch_block("concept:scar_me").unwrap();
+            b.crs_score = 0.90;
+            b.energetics.crs = 0.90;
+            store.store("concept:scar_me", b).unwrap();
+        }
+        let prior = store.fetch_block("concept:scar_me").unwrap().crs_score;
+        store.scar("concept:scar_me", 0.5).expect("scar");
+        let after = store.fetch_block("concept:scar_me").unwrap().crs_score;
+        let expect = crate::crs_dynamical::dynamical_crs_after_scar(prior, 0.5);
+        assert!(
+            (after - expect).abs() < 1e-4,
+            "scar CRS {after} != dynamical {expect} (prior {prior})"
+        );
+        assert!(after < prior, "scar should lower CRS: {after} vs {prior}");
+        assert!(after >= crate::crs_dynamical::SCAR_CRS_FLOOR);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn remember_solution_praxis_pinned_via_dynamical() {
+        let dir = test_store_dir("praxis_crs");
+        let mut store = StoreHandle::new(&dir.to_string_lossy());
+        let msg = store
+            .remember_solution("error:tier2_test", "solution: use dynamical_crs_pinned")
+            .expect("praxis");
+        assert!(msg.contains("dynamical_crs") || msg.contains("1"), "{msg}");
+        // Key is praxis__ + blake3 prefix
+        let hash = blake3::hash(b"error:tier2_test");
+        let key = format!("praxis__{}", &hash.to_hex()[..8]);
+        let block = store.fetch_block(&key).expect("praxis block");
+        assert_eq!(
+            block.crs_score,
+            crate::crs_dynamical::dynamical_crs_pinned()
+        );
+        assert_eq!(block.crs_score, 1.0);
+        assert_eq!(block.zedos_tag, engram_core::types::ZEDOS_PRAXIS);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn backend_readiness_dual_gpu_device_fields() {
+        let dir = test_store_dir("dual_gpu_ready");
+        let store = StoreHandle::new(&dir.to_string_lossy());
+        let r = store.backend_readiness();
+        assert!(r.get("gpu_hot_device").is_some(), "missing gpu_hot_device");
+        assert!(
+            r.get("gpu_compute_device").is_some(),
+            "missing gpu_compute_device"
+        );
+        // Defaults 0/1 when env unset (test env may set them)
+        let hot = r["gpu_hot_device"].as_str().unwrap_or("");
+        let compute = r["gpu_compute_device"].as_str().unwrap_or("");
+        assert!(!hot.is_empty() && !compute.is_empty());
         let _ = std::fs::remove_dir_all(&dir);
     }
 

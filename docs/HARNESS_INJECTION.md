@@ -64,6 +64,7 @@ flowchart LR
 | `suggested_actions` | Ordered MCP queue: sentinel nudge (if due) → read `manifest:rehydration_*` → read handoff → recall goal → `context_for_edit` on files touched → chain `quick_trace` from trace head → read trusted tiles |
 | `trusted_tiles` | CRS ≥0.85 tiles (`verified_sequence`, `state_machine`, `formal_spec`, `research_offload`) linked to goal or handoff |
 | `rehydration_manifest` | Compact portable kit from last `session_end` (`primary_goal`, `trace_chain_head`, trusted tile refs, hub anchors, `files_touched`) — priority-0 wake seed |
+| `cold_start_fidelity` | Score ∈ [0,1] from goal restore, manifest/tiles, trace head, BVH/NVMe readiness, mean hub CRS (`mcp_engram_cold_start_fidelity`; ritual `process:engram.ritual.cold-start-fidelity`) |
 | `rehydrate_suggested` | Soft sentinel flag (~30 turns / ~120 min) — nudge-only; counters in `ego_snapshot` |
 | `uncertainty_receipts_wake` | Recent `uncertainty:*` blocks for withheld memory claims |
 | `trace_chain` | Head + backward walk via `prev_in_trace` relations (up to 8) |

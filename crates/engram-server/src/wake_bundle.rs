@@ -195,12 +195,13 @@ pub fn slim_continuation_bundle(full: &Value) -> Value {
             "process": local_stratum.get("process"),
         },
         "rehydrate_suggested": rehydrate_suggested,
-        "recall_hint": "Slim wake — call mcp_engram_get_continuation_bundle for full JIT framework, verified_processes, and scars.",
+        "recall_hint": "Slim wake — one-call session_start already injected this packet; call mcp_engram_get_continuation_bundle only for full JIT framework, verified_processes, and scars.",
         "full_bundle_tool": "mcp_engram_get_continuation_bundle",
         "wake_queue_gate": harness.get("wake_queue_gate"),
         "injection_completeness": injection_completeness,
         "nvme_context": nvme_context,
         "open_scars_count": open_scars_wake,
+        "cold_start_fidelity": full.get("cold_start_fidelity"),
     });
     if let Some(obj) = slim.as_object_mut() {
         crate::continuity_spikes::insert_optional(obj, "structured_handoff", structured_handoff);
