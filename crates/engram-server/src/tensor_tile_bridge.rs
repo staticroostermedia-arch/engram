@@ -105,11 +105,14 @@ pub fn ensure_tensor_for_tile(
         }
     }
     let result = tensor_upsert(store, &tensor_concept, &header, &bonds, true)?;
+    // Tier-4b: always set dynamical TensorMirror CRS on shipped mirror path
     if let Some(mut block) = store.fetch_block_high_priority(&result.concept) {
-        if block.crs_score < 0.74 {
-            block.crs_score = 0.85;
-            let _ = store.store(&result.concept, block);
-        }
+        let mirror_crs = crate::crs_dynamical::dynamical_crs_for_role(
+            crate::crs_dynamical::CrsRole::TensorMirror,
+        );
+        block.crs_score = mirror_crs;
+        block.energetics.crs = mirror_crs;
+        let _ = store.store(&result.concept, block);
     }
     let entry = project_tensor_entry(store, &result.concept).ok_or_else(|| {
         anyhow::anyhow!("tensor entry missing after tile mirror: {}", result.concept)
@@ -243,7 +246,10 @@ pub fn propose_improvement(
     );
     let mut block = store.encode(&tile_text);
     block.zedos_tag = engram_core::types::ZEDOS_PRAXIS;
-    block.crs_score = 0.85;
+    let tile_crs =
+        crate::crs_dynamical::dynamical_crs_for_role(crate::crs_dynamical::CrsRole::ThoughtTile);
+    block.crs_score = tile_crs;
+    block.energetics.crs = tile_crs;
     crate::store::assign_reflexive_contract(&mut block);
     if store.store(&tile_key, block).is_err() {
         return json!({ "ok": false, "error": "tile store failed" });
@@ -399,10 +405,51 @@ mod tests {
             ensure_tensor_for_tile(&mut store, tile_key, text, "goal:ttu_test", "", &spatial)
                 .expect("upsert");
         assert!(upsert.concept.starts_with("tensor:tile__"));
-        assert!(upsert.entry.q.crs >= 0.74);
+        let want = crate::crs_dynamical::dynamical_crs_for_role(
+            crate::crs_dynamical::CrsRole::TensorMirror,
+        );
+        let block = store
+            .fetch_block(&upsert.concept)
+            .expect("tensor mirror block");
+        assert!(
+            (block.crs_score - want).abs() < 1e-4,
+            "tensor mirror CRS {} != dynamical {}",
+            block.crs_score,
+            want
+        );
         assert!(!upsert.bonds_created.is_empty());
         assert!(project_tensor_entry(&store, &upsert.concept).is_some());
         assert!(is_tensor_eligible(&upsert.concept));
+    }
+
+    #[test]
+    fn propose_improvement_tile_crs_via_dynamical_thought_tile() {
+        let mut store = test_store();
+        seed_goal(&mut store, "goal:ttu_crs");
+        store
+            .remember("design:ttu_crs_target", "baseline for crs tile test")
+            .expect("remember");
+        let out = propose_improvement(
+            &mut store,
+            "Use dynamical ThoughtTile CRS on mint",
+            "design:ttu_crs_target",
+            "goal:ttu_crs",
+        );
+        assert_eq!(out.get("ok").and_then(|v| v.as_bool()), Some(true), "{out}");
+        let tile = out
+            .get("tile_key")
+            .and_then(|v| v.as_str())
+            .expect("tile_key");
+        let want = crate::crs_dynamical::dynamical_crs_for_role(
+            crate::crs_dynamical::CrsRole::ThoughtTile,
+        );
+        let block = store.fetch_block(tile).expect("tile block");
+        assert!(
+            (block.crs_score - want).abs() < 1e-4,
+            "tile CRS {} != dynamical ThoughtTile {}",
+            block.crs_score,
+            want
+        );
     }
 
     #[test]

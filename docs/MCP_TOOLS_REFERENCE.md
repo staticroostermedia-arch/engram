@@ -1,8 +1,8 @@
 # MCP Tools Reference
 
-Engram exposes **81 MCP tools** (77 `mcp_engram_*` + 4 linguistic). Most agents should use **8** — see [`AGENT_MEMORY_CONTRACT.md`](AGENT_MEMORY_CONTRACT.md). For edit/update fidelity, prefer **safe composites** (Tier 2): `mcp_engram_safe_edit_and_verify`, `mcp_engram_update_with_tensor_bond`.
+Engram exposes **85 MCP tools** (81 `mcp_engram_*` + 4 linguistic) as of the `tool_list()` source of truth in `crates/engram-server/src/mcp.rs` (includes `mcp_engram_lexicon_mint_word`). Most agents should use **8** — see [`AGENT_MEMORY_CONTRACT.md`](AGENT_MEMORY_CONTRACT.md). For edit/update fidelity, prefer **safe composites** (Tier 2): `mcp_engram_safe_edit_and_verify`, `mcp_engram_update_with_tensor_bond`.
 
-**Decision map (all 79):** [`TOOL_DECISION_MAP.md`](TOOL_DECISION_MAP.md) — when to escalate to `update`, `query_with_momentum`, `search_by_relation`, goals, tiles, linguistic tools. **JIT deformation:** [`DEFORMATION_PLAYBOOKS.md`](DEFORMATION_PLAYBOOKS.md).
+**Decision map:** [`TOOL_DECISION_MAP.md`](TOOL_DECISION_MAP.md) — when to escalate to `update`, `query_with_momentum`, `search_by_relation`, goals, tiles, linguistic tools. **JIT deformation:** [`DEFORMATION_PLAYBOOKS.md`](DEFORMATION_PLAYBOOKS.md). **Count single source:** `fn tool_list()` in `mcp.rs` (counted 2026-07-10: 85 names).
 
 Tools are grouped by tier:
 
@@ -35,6 +35,15 @@ session_start → ack_wake_queue → [work: context_for_edit + recall(scope=anch
 ```
 
 With `ENGRAM_PROFILE=agent`, wake gate defaults to **hard** — `ack_wake_queue` is required before `context_for_edit` unless the queue was empty (auto-ack at wake).
+
+### Soft tool tier (`ENGRAM_TOOL_TIER`)
+
+| Env | Default under agent profile | Effect |
+|-----|----------------------------|--------|
+| `ENGRAM_TOOL_TIER=lean` | yes (if unset) | Soft-warn power tools in response meta (`tool_tier_warning`); hard-block `rebuild_bvh` / `force_spatial_ingest` unless deep mode |
+| `ENGRAM_TOOL_TIER=power` / `all` | — | No gate |
+
+Does **not** change the 85-tool list; only response discipline. Implementation: `tool_tier.rs` + early gate in `handle_tool_call`.
 
 ---
 
@@ -74,6 +83,9 @@ With `ENGRAM_PROFILE=agent`, wake gate defaults to **hard** — `ack_wake_queue`
 - Rituals: `process:engram.ritual.thought-tile-to-tensor`, `process:engram.ritual.verified-update-with-consolidation`
 - `promote_hot`, `promote_hot_batch`
 
+### Lexicon seed (word atoms)
+- `lexicon_mint_word` — mint `lexicon:word:*` with definition + etymology ProvLog, VSA OP_BIND of def/etym phases, dynamical CRS ≥ 0.74, relate to genesis pillars + `formal_spec:linguistic_reference_frame_v1`. Ritual: `processes/ritual/lexicon_seed.toml` (`agent:engram.ritual.lexicon-seed`). See [RITUALS.md](RITUALS.md) § Lexicon seed.
+
 ### Verification & health
 - `verify_manifold_integrity`, `verify_block_lawfulness`, `verify_behavior`
 - `genesis`, `spatial_status`, `stats`, `summarize`, `recall_recent`
@@ -89,6 +101,7 @@ With `ENGRAM_PROFILE=agent`, wake gate defaults to **hard** — `ack_wake_queue`
 - `incremental_spatial_ingest`, `force_spatial_ingest`
 
 ### Session / handoff extras
+- `cold_start_fidelity` — score ∈ [0,1] from live continuation + readiness (also emitted on `session_start` / `get_continuation_bundle` as `cold_start_fidelity`). Ritual: `process:engram.ritual.cold-start-fidelity`
 - `rebuild_bvh` — on-demand full index (deep mode; RAM/time cost)
 
 ### Context variables & corpus

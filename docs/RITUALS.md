@@ -53,6 +53,33 @@ See [docs/skills/](skills/), [HARNESS_INJECTION.md](HARNESS_INJECTION.md), [SUBS
 
 For external agents: follow rituals for lawful use of the substrate.
 
+## Lexicon seed (Phase 6+ — word atoms)
+
+**Process:** `processes/ritual/lexicon_seed.toml` → `agent:engram.ritual.lexicon-seed`  
+**MCP:** `mcp_engram_lexicon_mint_word`
+
+Mints base-knowledge **word atoms** as `lexicon:word:*` HolographicBlocks:
+
+| Field | Behavior |
+|-------|----------|
+| Body | ProvLog / source text with **Definition** + `--- etymology ---` |
+| Geometry | `op_bind(word_q, def_q)` then bind etymology; `normalize` → unit hypersphere |
+| CRS | Dynamical `CrsRole::Lexicon` (base 0.78, floor Kepler 0.74) |
+| Relations | `defined_in_frame` → `ref_frame__pillar__*`; `axis_of` → `formal_spec:linguistic_reference_frame_v1` |
+
+**Example:**
+
+```json
+{
+  "word": "engram",
+  "definition": "A durable geometric memory atom in a holographic block manifold.",
+  "etymology": "Greek en- 'in' + gramma 'letter, writing'.",
+  "pillars": ["language", "self"]
+}
+```
+
+Optional: call `mcp_engram_ingest_reference_frame` first so pillars exist. No live web/Arxiv crawl — caller supplies strings. Unit test: `mint_lexicon_word_writes_body_crs_and_relations`. Continuity hygiene scripts (primary restore, fidelity series, continuity demo) live under `scripts/*` and `FIRST_RUN.md`.
+
 ## Phase 5: Linguistic Rituals (ritual_linguistic_wake + NREM/ego.leg3 for calculus; P5 tomls)
 
 Additive P5 (coord + sub5): `processes/ritual/ritual_linguistic_wake.toml` + extensions in `nrem-consolidation.toml` (and sibling `processes/linguistic/*.toml` for sheaf).

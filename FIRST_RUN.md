@@ -3,22 +3,29 @@
 > **For new users and AI agents.** Run through this once on a fresh install.
 > After it, MCP works, your store is seeded, and the **8-tool lean contract** is proven.
 
-**Canonical reference:** [docs/AGENT_MEMORY_CONTRACT.md](docs/AGENT_MEMORY_CONTRACT.md)
+**Default agent load set (exactly two docs after MCP works):**  
+1. [docs/AGENT_MEMORY_CONTRACT.md](docs/AGENT_MEMORY_CONTRACT.md) — 8-tool highway + composites  
+2. [docs/skills/engram-wake-up.md](docs/skills/engram-wake-up.md) — one-call wake protocol  
+
+Do **not** require five other guides at first touch. Power maps and theory are optional later.
 
 ### Who does what?
 
 | Role | Steps |
 |------|-------|
 | **Human** | §1 Build · §2 MCP config in IDE · restart IDE · optional §6 embeddings · optional `./scripts/leg --live` to review memory |
-| **AI agent** | After human completes §2: §3 `session_start` · §4 first `remember`/`recall` · §5 `context_for_edit` when editing code · §7 `session_end` every session · follow [AGENT_MEMORY_CONTRACT](docs/AGENT_MEMORY_CONTRACT.md) thereafter |
+| **AI agent** | After human completes §2: load the **two docs above** only · §3 `session_start` · §4 first `remember`/`recall` · §5 edit via composites (below) · §7 `session_end` every session |
 
 **Paste to your agent (after §2):**
 
 ```
-Engram MCP is configured. Read docs/AGENT_MEMORY_CONTRACT.md.
+Engram MCP is configured.
+Default load (only these two): docs/AGENT_MEMORY_CONTRACT.md + docs/skills/engram-wake-up.md.
 Run mcp_engram_session_start(intent="First session on Engram").
 Execute suggested_actions, then mcp_engram_ack_wake_queue(executed=true).
-Follow the 8-tool loop; do not call watch_workspace at wake.
+8-tool loop. Prefer mcp_engram_safe_edit_and_verify for code edits and
+mcp_engram_update_with_tensor_bond for verified memory updates (not raw multi-step only).
+Do not call watch_workspace, rebuild_bvh, or summarize at wake.
 End with mcp_engram_session_end(summary=...).
 ```
 
@@ -38,6 +45,8 @@ target/debug/engram --version
 ---
 
 ## 2. Configure Your MCP Client (Safe Defaults)
+
+**One MCP process per store.** Only one `engram … mcp` may hold the flock on a given `ENGRAM_STORE` (e.g. `~/.engram/stalks/`). A second launch exits non-zero and names the **holder PID** — restart the IDE/TUI or stop the other process. Do not run harness and TUI MCP against the same store concurrently. Dev recovery: `ENGRAM_MCP_FORCE_STEAL=1` (dead PID / orphan only). Repro: `scripts/repro-mcp-lock.sh`.
 
 Add Engram to your IDE's MCP config. Use **`ENGRAM_PROFILE=agent`** (via `scripts/engram-grok`) — not the legacy 8-var env block.
 
@@ -156,7 +165,7 @@ This produces a structured handoff packet. Your **next** `session_start` will su
 | Tool | When |
 |------|------|
 | `session_start(intent)` | **First call every session** |
-| `context_for_edit(path)` | Before editing a file |
+| `context_for_edit(path)` | Before editing a file (or use composite below) |
 | `recall(query, scope="anchors")` | When stuck; lean default |
 | `quick_trace(decision, why)` | At decision forks |
 | `remember(concept, text)` | New facts (recall first) |
@@ -164,7 +173,14 @@ This produces a structured handoff packet. Your **next** `session_start` will su
 | `get_backend_readiness()` | Check BVH/recall mode |
 | `set_memory_mode("lean"\|"deep")` | Escalate for full recall |
 
-**71 power tools** remain available — see [docs/MCP_TOOLS_REFERENCE.md](docs/MCP_TOOLS_REFERENCE.md). Do not call `watch_workspace`, `rebuild_bvh`, or `summarize` in lean mode unless needed.
+### Preferred composites (use these for edit / update)
+
+| Composite | Prefer over | When |
+|-----------|-------------|------|
+| `mcp_engram_safe_edit_and_verify` | raw `context_for_edit` → `quick_trace` → `update` chain | Substantive code edits |
+| `mcp_engram_update_with_tensor_bond` | raw `update` alone | Verified memory writes / tile sync |
+
+**~77 power tools** remain available (**85 total** — `tool_list()` in `mcp.rs`) — see [docs/MCP_TOOLS_REFERENCE.md](docs/MCP_TOOLS_REFERENCE.md). Do not call `watch_workspace`, `rebuild_bvh`, or `summarize` at wake.
 
 ---
 
@@ -183,9 +199,15 @@ This produces a structured handoff packet. Your **next** `session_start` will su
 
 ## Next Steps
 
-1. Load [SKILLS.md](SKILLS.md) + `docs/skills/engram-wake-up.md` into your agent instructions.
-2. Read [docs/GROK_BUILD_MEMORY.md](docs/GROK_BUILD_MEMORY.md) for Grok Build integration.
-3. Run `examples/hello-engram-agent.py` to see the lean loop.
-4. For deep rituals: [docs/RITUALS.md](docs/RITUALS.md) + [docs/skills/](docs/skills/). Contributors: [docs/internal/MAINTAINER_WORKFLOW.md](docs/internal/MAINTAINER_WORKFLOW.md).
+**Default (stay here):** keep [AGENT_MEMORY_CONTRACT.md](docs/AGENT_MEMORY_CONTRACT.md) + [engram-wake-up.md](docs/skills/engram-wake-up.md) as the only standing instructions.
+
+**Continuity proof (optional scripted):** `scripts/continuity-demo.sh` or `python3 examples/hello-engram-agent.py` — wake → remember → end → wake2 handoff (no power-tool flood). Shipped unit: `cargo test continuity_wake_remember_end_wake2_handoff`.
+
+**Goal-stack discipline:** Keep TUI `/goal` Active and Engram `mcp_engram_goal_set_primary` aligned for the work block; complete both at session end.
+
+**Optional later (not required for first sessions):**
+1. [docs/GROK_BUILD_MEMORY.md](docs/GROK_BUILD_MEMORY.md) — Grok Build pitch  
+2. [SKILLS.md](SKILLS.md) / [docs/RITUALS.md](docs/RITUALS.md) — deep ritual catalog  
+3. Contributors: [docs/internal/MAINTAINER_WORKFLOW.md](docs/internal/MAINTAINER_WORKFLOW.md)
 
 *First-run complete. Your manifold is ready.*

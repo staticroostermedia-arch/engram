@@ -1,0 +1,55 @@
+# agent:engram.ritual.cold-start-fidelity
+# Measure cold-start inheritance quality from continuation + readiness fields.
+
+[process]
+name = "agent:engram.ritual.cold-start-fidelity"
+zedos_type = "ritual"
+phase_seed = "cold-start-fidelity-v1"
+
+[category]
+object = "continuity_metric"
+morphism = "OP_ADD"
+sheaf_role = "Measure cold-start inheritance: goal restore, manifest tiles, CRS, BVH readiness"
+h1_handler = "OP_INVERT"
+
+[mcp_tools]
+list = [
+  "mcp_engram_session_start",
+  "mcp_engram_get_continuation_bundle",
+  "mcp_engram_cold_start_fidelity",
+  "mcp_engram_get_backend_readiness",
+  "mcp_engram_read_concept",
+  "mcp_engram_verify_manifold_integrity",
+]
+
+[requires]
+list = ["process:engram.ritual.wake-up"]
+
+[produces]
+list = [
+  "metric:cold_start_fidelity_*",
+  "trace:*_cold_start_audit",
+  "cold_start_fidelity",
+]
+
+[invariants]
+list = [
+  "crs_0.74_gate",
+  "leg3_binary_vector_isomorphism",
+  "unit_hypersphere",
+]
+
+[metrics]
+goal_restored_weight = 0.25
+manifest_tile_hit_weight = 0.25
+trace_chain_weight = 0.15
+nvme_full_bvh_weight = 0.20
+mean_hub_crs_weight = 0.15
+
+[timeout_ms]
+value = 30000
+
+[notes]
+# Pure scorer lives in crates/engram-server/src/cold_start_fidelity.rs.
+# session_start / get_continuation_bundle emit cold_start_fidelity in the bundle.
+# mcp_engram_cold_start_fidelity recomputes on demand for agents.

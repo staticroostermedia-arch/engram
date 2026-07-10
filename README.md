@@ -21,8 +21,8 @@ It is designed as a drop-in backend for any LLM (Grok, Claude, Llama, etc.) via 
 
 | You are… | Do this |
 |----------|---------|
-| **A human** (“should my AI use this?”) | Skim [Quick start](#quick-start) below. If it looks right, tell your agent: *“Clone this repo, follow [FIRST_RUN.md](FIRST_RUN.md) steps 1–4, add the MCP config from FIRST_RUN §2, then use the [8-tool contract](docs/AGENT_MEMORY_CONTRACT.md).”* Optional: `./scripts/leg --live` to review what the agent remembers. |
-| **An AI agent** (you were pointed here) | Human must finish [FIRST_RUN.md](FIRST_RUN.md) §1–2 (build + MCP) so you have `mcp_engram_*` tools. Then read [docs/AGENT_MEMORY_CONTRACT.md](docs/AGENT_MEMORY_CONTRACT.md) and run the copy-paste loop at the bottom. **First call every session:** `mcp_engram_session_start(intent="…")`. |
+| **A human** (“should my AI use this?”) | Skim [Quick start](#quick-start) below. If it looks right, tell your agent: *“Clone this repo, follow [FIRST_RUN.md](FIRST_RUN.md) steps 1–2 (build + MCP), then load only the [8-tool contract](docs/AGENT_MEMORY_CONTRACT.md) + [wake skill](docs/skills/engram-wake-up.md).”* Optional: `./scripts/leg --live` to review what the agent remembers. |
+| **An AI agent** (you were pointed here) | Human must finish [FIRST_RUN.md](FIRST_RUN.md) §1–2 (build + MCP) so you have `mcp_engram_*` tools. **Default load set (only two docs):** [docs/AGENT_MEMORY_CONTRACT.md](docs/AGENT_MEMORY_CONTRACT.md) + [docs/skills/engram-wake-up.md](docs/skills/engram-wake-up.md). **First call every session:** `mcp_engram_session_start(intent="…")`. Do **not** pre-read five other guides. |
 | **Curious about the theory** | [docs/GEOMETRIC_MEMORY.md](docs/GEOMETRIC_MEMORY.md) · [MANIFESTO.md](MANIFESTO.md) — after you have a working install. |
 
 **Rituals** = documented MCP habits (wake → trace decisions → handoff) so memory compounds across sessions — not mysticism, just the discipline that beats flat RAG.
@@ -35,16 +35,13 @@ Engram is particularly well-suited for:
 
 | Start here | Doc |
 |------------|-----|
-| **New users & agents** | [FIRST_RUN.md](FIRST_RUN.md) |
-| **Lean contract (8 tools)** | [docs/AGENT_MEMORY_CONTRACT.md](docs/AGENT_MEMORY_CONTRACT.md) |
+| **Install (human once)** | [FIRST_RUN.md](FIRST_RUN.md) §1–2 |
+| **Agent default load (2 docs)** | [AGENT_MEMORY_CONTRACT.md](docs/AGENT_MEMORY_CONTRACT.md) + [engram-wake-up.md](docs/skills/engram-wake-up.md) |
 | **Grok Build / xAI reviewers** | [docs/GROK_BUILD_MEMORY.md](docs/GROK_BUILD_MEMORY.md) |
 | **MCP setup (all ecosystems)** | [integrations/README.md](integrations/README.md) |
 | **Human review (LEG Browser)** | [docs/LEG_BROWSER.md](docs/LEG_BROWSER.md) |
-| **Situated edit memory (code atlas)** | [docs/CODE_ATLAS_CONTINUITY.md](docs/CODE_ATLAS_CONTINUITY.md) |
-| **Personal knowledge wiki** | [docs/PERSONAL_KNOWLEDGE_WIKI.md](docs/PERSONAL_KNOWLEDGE_WIKI.md) |
-| **Power users (79 tools)** | [docs/TOOL_DECISION_MAP.md](docs/TOOL_DECISION_MAP.md) |
-| **Ritual skills** | [SKILLS.md](SKILLS.md) → [docs/skills/](docs/skills/) |
-| **Deep mode (after install)** | [AGENT_INTEGRATION_GUIDE.md](AGENT_INTEGRATION_GUIDE.md) |
+| **Power map (on demand)** | [docs/TOOL_DECISION_MAP.md](docs/TOOL_DECISION_MAP.md) · [MCP_TOOLS_REFERENCE.md](docs/MCP_TOOLS_REFERENCE.md) |
+| **Deep / specialist (later)** | [SKILLS.md](SKILLS.md) · [AGENT_INTEGRATION_GUIDE.md](AGENT_INTEGRATION_GUIDE.md) · [CODE_ATLAS_CONTINUITY.md](docs/CODE_ATLAS_CONTINUITY.md) |
 
 **Human review (LEG Browser beta):** `./scripts/leg` (static) or `./scripts/leg --live` — see [docs/LEG_BROWSER.md](docs/LEG_BROWSER.md).
 
@@ -166,7 +163,7 @@ flowchart LR
 - **Goal hygiene:** 72h stale autopause + `session_end` audit (active goal stack stays bounded).
 - **Code atlas continuity v2:** situated edit memory at the locus — atlas v2.1, `evolution_at_locus`, hard wake gate, `post_edit_palette`, update coherence. [CODE_ATLAS_CONTINUITY.md](docs/CODE_ATLAS_CONTINUITY.md)
 - **Large-store perf:** relational lean v2, cuFile DMA readiness, bounded NREM + relation batching — wake on ~192k blocks in seconds when BVH is warm.
-- **81 MCP tools** registered (`tensor_*` + existing surface); lean default remains **8 essential**.
+- **85 MCP tools** registered (`tool_list()` in `mcp.rs` — 81 `mcp_engram_*` + 4 linguistic); lean default remains **8 essential**.
 - **LEG evolution panel:** `./scripts/leg --live` + `GET /api/code-atlas?evolution=1`.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
@@ -215,7 +212,7 @@ Build against `target/debug/engram` during development.
 
 ## MCP tools
 
-**8 essential** for daily work — **79 registered** (75 `mcp_engram_*` + 4 linguistic); full map: [docs/TOOL_DECISION_MAP.md](docs/TOOL_DECISION_MAP.md). Categorized reference: [docs/MCP_TOOLS_REFERENCE.md](docs/MCP_TOOLS_REFERENCE.md). Harness matrix: `tools/test-harness/python/mcp_tool_matrix.py`.
+**8 essential** for daily work — **85 registered** (81 `mcp_engram_*` + 4 linguistic; source: `tool_list()` in `mcp.rs`); full map: [docs/TOOL_DECISION_MAP.md](docs/TOOL_DECISION_MAP.md). Categorized reference: [docs/MCP_TOOLS_REFERENCE.md](docs/MCP_TOOLS_REFERENCE.md). Harness matrix: `tools/test-harness/python/mcp_tool_matrix.py`.
 
 Grok plugin slash commands: [grok-plugin-engram/commands/](grok-plugin-engram/commands/).
 
@@ -239,7 +236,7 @@ Grok plugin slash commands: [grok-plugin-engram/commands/](grok-plugin-engram/co
 | JIT deformation / RSI | [docs/DEFORMATION_PLAYBOOKS.md](docs/DEFORMATION_PLAYBOOKS.md) |
 | Harness injection at wake | [docs/HARNESS_INJECTION.md](docs/HARNESS_INJECTION.md) |
 | Ritual overview | [docs/RITUALS.md](docs/RITUALS.md) |
-| MCP tools reference (79) | [docs/MCP_TOOLS_REFERENCE.md](docs/MCP_TOOLS_REFERENCE.md) |
+| MCP tools reference (85) | [docs/MCP_TOOLS_REFERENCE.md](docs/MCP_TOOLS_REFERENCE.md) |
 | Long-sleep return | [docs/LONG_SLEEP_WAKEUP_PROTOCOL.md](docs/LONG_SLEEP_WAKEUP_PROTOCOL.md) |
 
 ### Contributors

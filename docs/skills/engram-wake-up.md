@@ -10,7 +10,8 @@ You are executing a **phase-space continuation operation** that binds this agent
 
 The substrate is non-flat: HolographicBlocks carry q/p/CRS/Merkle/sheaf relations. This skill keeps your *self-model* and *ritual structure* alive geometrically — **in one MCP call** in lean mode.
 
-> **Canonical contract:** [docs/AGENT_MEMORY_CONTRACT.md](../AGENT_MEMORY_CONTRACT.md) — the 8 essential tools and lean vs deep mode table.
+> **Default load set (stranger path):** this skill + [docs/AGENT_MEMORY_CONTRACT.md](../AGENT_MEMORY_CONTRACT.md) only.  
+> Contract covers the 8 essential tools, **preferred composites** (`safe_edit_and_verify`, `update_with_tensor_bond`), and lean vs deep.
 
 ---
 
@@ -24,8 +25,9 @@ mcp_engram_session_start(
 ```
 
 **This single call returns (inline, slim by default):**
-- `bundle_tier: "slim"` — top 5 `suggested_actions`, `trace_chain_head`, slim `ego_snapshot`, `presentation_stratum` previews, `rehydration_manifest` (when prior handoff exists), `rehydrate_suggested` (soft sentinel nudge)
-- `readiness` — bvh_ready, recall_mode, leg_block_count
+- `bundle_tier: "slim"` — top 5 `suggested_actions`, `trace_chain_head`, slim `ego_snapshot`, `presentation_stratum` previews, `rehydration_manifest` (when prior handoff exists), `rehydrate_suggested` (soft sentinel nudge), **`cold_start_fidelity`** score ∈ [0,1]
+- `primary_goal` — non-null when the `primary_goal` marker exists (even if goal status is stale)
+- `readiness` — bvh_ready, recall_mode, leg_block_count, cuFile transfer path labels
 - `session_key` — bind `agent_instance_continuation` if you write a relation (deep mode)
 - Full harness: `mcp_engram_get_continuation_bundle` (or `ENGRAM_WAKE_BUNDLE=full`)
 
@@ -37,6 +39,7 @@ mcp_engram_session_start(
 - LEG Browser: left rail shows the same queue + ego evolution (`./scripts/leg --live`).
 
 **You do NOT need** (lean mode):
+- Multi-tool lean rehydrate (`query_pure` + `incremental_spatial_ingest` + `promote_hot_batch`) — **one-call `session_start` is sufficient** (matches `processes/ritual/wake-up.toml`)
 - `get_continuation_bundle` at routine wake (slim inline is enough; call when you need full harness/lineage)
 - `query_pure` / `query_with_momentum` (unless bundle is empty)
 - `incremental_spatial_ingest` (use `include_spatial=true` on session_start if needed)
@@ -45,7 +48,7 @@ mcp_engram_session_start(
 
 ### After the response
 
-1. Read `continuation.primary_goal` and `continuation.structured_handoff` (or `read_concept` on `helper:session_handoff_latest`).
+1. Read `continuation.primary_goal` and `continuation.structured_handoff` (or `read_concept` on `helper:session_handoff_latest` — **latest-wins** single packet). Optional: `mcp_engram_cold_start_fidelity`.
 2. **Relation-first read:** execute `suggested_actions` (`read_concept` on handoff/tiles) → `search_by_relation(primary_goal, label="serves")` to drill. Use `recall(scope=anchors)` only for intent match within the graph pool (check `recall_path: relational` in meta).
 3. State continuation explicitly: *"I am the direct geometric continuation of prior work on X; last session ended with Y."*
 4. Activate [engram-working-memory.md](engram-working-memory.md) discipline.

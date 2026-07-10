@@ -940,6 +940,14 @@ fn tool_list() -> Value {
                 }
             },
             {
+                "name": "mcp_engram_cold_start_fidelity",
+                "description": "Compute cold-start fidelity score in [0,1] from live continuation + readiness (goal restore, rehydration manifest/tiles, trace head, BVH/NVMe, mean hub CRS). Also emitted on session_start / get_continuation_bundle as cold_start_fidelity. Ritual: process:engram.ritual.cold-start-fidelity.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {}
+                }
+            },
+            {
                 "name": "mcp_engram_query_pure",
                 "description": "Pure geometric K-NN discovery (no keyword/file-path hybrid fallback, no p-blend). Turns natural language intent -> phase vector (q) -> cosine K-NN over high-priority/hot blocks (or BVH). Used for fast anchor discovery in optimized wake-up (replaces broad list_concepts + search_by_relation for ritual: / trace: / goal: etc). Intent only; returns ranked concepts + scores + CRS. Fast path for hot ritual rehydrate.",
                 "inputSchema": {
@@ -1688,6 +1696,37 @@ fn tool_list() -> Value {
                     "type": "object",
                     "properties": {},
                     "required": []
+                }
+            },
+            {
+                "name": "mcp_engram_lexicon_mint_word",
+                "description": "Lexicon seed — mint a lexicon:word:* atom with definition + etymology ProvLog, VSA OP_BIND of def/etym phases, dynamical CRS ≥ 0.74, and relate to genesis pillars + linguistic_reference_frame. Ritual: process:engram.ritual.lexicon-seed. FEW-SHOT: {\"word\":\"engram\",\"definition\":\"A durable geometric memory atom.\",\"etymology\":\"Greek en- + gramma\",\"pillars\":[\"language\",\"self\"]}",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "word": {
+                            "type": "string",
+                            "description": "Surface form of the word to mint"
+                        },
+                        "definition": {
+                            "type": "string",
+                            "description": "Dictionary-style definition (required in ProvLog body)"
+                        },
+                        "etymology": {
+                            "type": "string",
+                            "description": "Etymology note (required; also accepted as etymology_note)"
+                        },
+                        "etymology_note": {
+                            "type": "string",
+                            "description": "Alias for etymology"
+                        },
+                        "pillars": {
+                            "type": "array",
+                            "items": { "type": "string" },
+                            "description": "Optional genesis pillar names (default: language+self+… full set)"
+                        }
+                    },
+                    "required": ["word", "definition"]
                 }
             },
             {
@@ -2494,7 +2533,40 @@ fn append_consult_warn(mut text: String, warn: Option<String>) -> String {
     text
 }
 
+/// Append soft tool-tier warning to an MCP tool response (does not block).
+fn append_tool_tier_warn(mut resp: Value, warn: &str) -> Value {
+    if let Some(arr) = resp.get_mut("content").and_then(|c| c.as_array_mut()) {
+        if let Some(obj) = arr.first_mut().and_then(|v| v.as_object_mut()) {
+            if let Some(Value::String(s)) = obj.get_mut("text") {
+                s.push_str(&format!("\n\n⚠ tool_tier: {warn}"));
+            }
+        }
+    }
+    if let Some(obj) = resp.as_object_mut() {
+        obj.insert("tool_tier_warning".to_string(), json!(warn));
+        obj.insert(
+            "tool_tier".to_string(),
+            json!(crate::tool_tier::resolve_tool_tier().as_str()),
+        );
+    }
+    resp
+}
+
 pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value {
+    // === Soft tool-tier gate (Tier-2) — lean highway for full session ===
+    let tier_warn = match crate::tool_tier::apply_tier_to_response(name) {
+        Err(block) => return block,
+        Ok(w) => w,
+    };
+    let resp = handle_tool_call_inner(name, args, store);
+    if let Some(w) = tier_warn {
+        append_tool_tier_warn(resp, &w)
+    } else {
+        resp
+    }
+}
+
+fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Value {
     // === Early MCP Ready Path guard (transitional) ===
     // The fast startup uses a lightweight placeholder so Grok (TUI) can get an
     // immediate MCP handshake. Once the real heavy store is ready (or the
@@ -3434,6 +3506,32 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
             })
         }
 
+        "mcp_engram_cold_start_fidelity" => {
+            // Tier-4a: compute + persist series sample so habit dogfood need not thrash session_start
+            let report = {
+                let mut lock = store.lock().unwrap();
+                let report = lock.compute_cold_start_fidelity();
+                let sk = format!(
+                    "fidelity_probe_{}",
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs()
+                );
+                let _ = lock.persist_cold_start_fidelity_metric(&sk, &report);
+                report
+            };
+            let text = serde_json::to_string_pretty(&report).unwrap_or_else(|_| "{}".to_string());
+            json!({
+                "content": [{
+                    "type": "text",
+                    "text": format!(
+                        "COLD-START FIDELITY v1 (score in [0,1] from live continuation+readiness)\n\n{text}"
+                    )
+                }]
+            })
+        }
+
         "mcp_engram_query_pure" => {
             // Pure geometric: intent -> encode q (with geo frame) -> cosine K-NN on q only (no p-momentum blend, no keyword/file fallback).
             // For optimized wake-up anchor discovery (ritual:, trace:, goal: etc). Uses high_priority fetch + probe for large manifolds.
@@ -4145,6 +4243,28 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
             crate::session_lifecycle::on_mcp_session_start(&session_key, &intent);
 
             let bundle_tier = crate::wake_bundle::WakeBundleTier::from_env();
+            // Persist cold-start fidelity metric (habit path) + build mcp_health.
+            let fidelity_report = continuation
+                .get("cold_start_fidelity")
+                .cloned()
+                .unwrap_or_else(
+                    || serde_json::json!({ "score": 0.0, "version": "cold_start_fidelity_v1" }),
+                );
+            {
+                let mut lock = match store.lock() {
+                    Ok(l) => l,
+                    Err(p) => {
+                        return json!({
+                            "content": [{ "type": "text", "text": format!("Error: store mutex poisoned: {}", p) }],
+                            "isError": true
+                        })
+                    }
+                };
+                let _ = lock.persist_cold_start_fidelity_metric(&session_key, &fidelity_report);
+            }
+            let mcp_health =
+                crate::cold_start_fidelity::build_mcp_health(&readiness, &fidelity_report, true);
+
             let continuation_out = match bundle_tier {
                 crate::wake_bundle::WakeBundleTier::Slim => {
                     crate::wake_bundle::slim_continuation_bundle(&continuation)
@@ -4160,6 +4280,7 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                 "bundle_tier": bundle_tier.as_str(),
                 "readiness": readiness,
                 "continuation": continuation_out,
+                "mcp_health": mcp_health,
                 "wake_queue_gate": wake_gate,
                 "edit_arc_gate": edit_arc_gate,
             });
@@ -5391,7 +5512,8 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                 statement, priority, chrono::Utc::now().to_rfc3339()
             );
             if !parent.is_empty() {
-                payload.push_str(&format!("\n**parent_goal:** {}\n", parent));
+                let parent_n = crate::store::normalize_goal_concept(&parent);
+                payload.push_str(&format!("\n**parent_goal:** {}\n", parent_n));
             }
             if !goal_affirm.is_empty() {
                 payload.push_str(&format!("\n**affirm:** {}\n", goal_affirm));
@@ -5410,7 +5532,8 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
             match lock.store(&goal_key, goal_block) {
                 Ok(_) => {
                     if !parent.is_empty() {
-                        let _ = lock.relate(&parent, &goal_key, "decomposes_into");
+                        let parent_n = crate::store::normalize_goal_concept(&parent);
+                        let _ = lock.relate(&parent_n, &goal_key, "decomposes_into");
                     }
                     json!({ "content": [{ "type": "text", "text": format!("✓ Goal created: {}", goal_key) }] })
                 }
@@ -5698,15 +5821,35 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
             json!({ "content": [{ "type": "text", "text": output }] })
         }
         "mcp_engram_goal_set_primary" => {
-            let goal = args_str(args, &["goal", "goal_id", "goal_concept"])
+            let goal_raw = args_str(args, &["goal", "goal_id", "goal_concept"])
                 .unwrap_or("")
                 .to_string();
-            if goal.is_empty() {
+            if goal_raw.is_empty() {
                 return json!({ "content": [{ "type": "text", "text": "Error: goal is required (param: `goal`, alias: `goal_id`)." }], "isError": true });
             }
+            // Tier-4a: always store goal: prefix so resolve_active_primary_goal can fetch
+            let goal = crate::store::normalize_goal_concept(&goal_raw);
 
             let mut lock = store.lock().unwrap();
-            let goal_exists = lock.fetch_block_high_priority(&goal).is_some();
+            let goal_exists = lock.fetch_block_high_priority(&goal).is_some()
+                || lock.fetch_block(&goal).is_some();
+            // Ensure target is active when setting primary
+            if goal_exists {
+                if let Some(mut gblock) = lock
+                    .fetch_block_high_priority(&goal)
+                    .or_else(|| lock.fetch_block(&goal))
+                {
+                    let gtext = crate::store::goal_block_text(&gblock);
+                    if !crate::store::goal_status_is_active(&gtext) {
+                        let rewritten = crate::store::rewrite_goal_status(&gtext, "active");
+                        let mut fresh = lock.encode(&rewritten);
+                        fresh.zedos_tag = gblock.zedos_tag;
+                        fresh.crs_score = gblock.crs_score.max(0.90);
+                        fresh.energetics.crs = fresh.crs_score;
+                        let _ = lock.store(&goal, fresh);
+                    }
+                }
+            }
             let payload = format!(
                 "PRIMARY GOAL\n\n**goal:** {}\n**set_at:** {}",
                 goal,
@@ -5965,7 +6108,12 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
 
             let mut tile_block = lock.encode(&tile_payload);
             tile_block.zedos_tag = engram_core::types::ZEDOS_EPISODIC;
-            tile_block.crs_score = 0.88;
+            // Tier-4b: dynamical ThoughtTile CRS (not free 0.88)
+            let tile_crs = crate::crs_dynamical::dynamical_crs_for_role(
+                crate::crs_dynamical::CrsRole::ThoughtTile,
+            );
+            tile_block.crs_score = tile_crs;
+            tile_block.energetics.crs = tile_crs;
 
             match lock.store(&tile_key, tile_block) {
                 Ok(_) => {
@@ -6236,7 +6384,12 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                 "agent_response" => engram_core::types::ZEDOS_EPISODIC,
                 _ => engram_core::types::ZEDOS_OPERATIONAL, // research, state_machine, tabular, etc.
             };
-            tile_block.crs_score = 0.88;
+            // Tier-4b: dynamical ThoughtTile CRS (not free 0.88)
+            let tile_crs = crate::crs_dynamical::dynamical_crs_for_role(
+                crate::crs_dynamical::CrsRole::ThoughtTile,
+            );
+            tile_block.crs_score = tile_crs;
+            tile_block.energetics.crs = tile_crs;
 
             match lock.store(&tile_key, tile_block) {
                 Ok(_) => {
@@ -6430,7 +6583,12 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
 
             let mut tile_block = lock.encode(&tile_payload);
             tile_block.zedos_tag = engram_core::types::ZEDOS_DECLARATIVE;
-            tile_block.crs_score = 0.87;
+            // Tier-4b: dynamical ThoughtTile CRS (not free 0.87)
+            let tile_crs = crate::crs_dynamical::dynamical_crs_for_role(
+                crate::crs_dynamical::CrsRole::ThoughtTile,
+            );
+            tile_block.crs_score = tile_crs;
+            tile_block.energetics.crs = tile_crs;
 
             match lock.store(&tile_key, tile_block) {
                 Ok(_) => {
@@ -6543,13 +6701,11 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
         "mcp_engram_pin" => {
             let concept = args["concept"].as_str().unwrap_or("").trim().to_string();
             let mut lock = store.lock().unwrap();
-            // Hot path upgrade: pinning is typically done on high-value concepts worth fast-path treatment.
-            if let Some(mut m) = lock.fetch_block_high_priority(&concept) {
-                m.crs_score = 1.0; // Pinned mathematically
-                let _ = lock.store(&concept, m);
-                json!({ "content": [{ "type": "text", "text": format!("✓ Pinned concept to CRS 1.0. Autophagy will ignore it.: {}", concept) }] })
-            } else {
-                json!({ "content": [{ "type": "text", "text": format!("Memory not found: {}", concept) }], "isError": true })
+            match lock.pin(&concept) {
+                Ok(msg) => json!({ "content": [{ "type": "text", "text": msg }] }),
+                Err(e) => {
+                    json!({ "content": [{ "type": "text", "text": format!("{e}") }], "isError": true })
+                }
             }
         }
 
@@ -6834,6 +6990,63 @@ pub fn handle_tool_call(name: &str, args: &Value, store: &SharedStore) -> Value 
                 "isError": true
             }),
         },
+
+        "mcp_engram_lexicon_mint_word" => {
+            let word = args["word"].as_str().unwrap_or("").trim().to_string();
+            let definition = args["definition"].as_str().unwrap_or("").trim().to_string();
+            let etymology = args
+                .get("etymology")
+                .or_else(|| args.get("etymology_note"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            let pillars: Vec<String> = args
+                .get("pillars")
+                .and_then(|v| v.as_array())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|x| x.as_str().map(|s| s.trim().to_string()))
+                        .filter(|s| !s.is_empty())
+                        .collect()
+                })
+                .unwrap_or_default();
+            if word.is_empty() || definition.is_empty() {
+                return json!({
+                    "content": [{ "type": "text", "text": "Error: word and definition required." }],
+                    "isError": true
+                });
+            }
+            if etymology.is_empty() {
+                return json!({
+                    "content": [{ "type": "text", "text": "Error: etymology (or etymology_note) required." }],
+                    "isError": true
+                });
+            }
+            match store.lock() {
+                Ok(mut lock) => {
+                    let payload = crate::lexicon::mint_lexicon_word_json(
+                        &mut lock,
+                        &word,
+                        &definition,
+                        &etymology,
+                        &pillars,
+                    );
+                    let ok = payload.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);
+                    json!({
+                        "content": [{
+                            "type": "text",
+                            "text": serde_json::to_string_pretty(&payload).unwrap_or_else(|_| payload.to_string())
+                        }],
+                        "isError": !ok
+                    })
+                }
+                Err(p) => json!({
+                    "content": [{ "type": "text", "text": format!("Error: store mutex poisoned: {}", p) }],
+                    "isError": true
+                }),
+            }
+        }
 
         "mcp_engram_evolution_at_locus" => {
             let path = args["path"].as_str().unwrap_or("").trim();
@@ -8827,6 +9040,287 @@ mod tests {
     }
 
     #[test]
+    fn tool_list_count_matches_docs_contract_numbers() {
+        // Single source: tool_list() length. Docs must not claim a different total.
+        let list = tool_list();
+        let tools = list
+            .get("tools")
+            .and_then(|v| v.as_array())
+            .expect("tools array");
+        let n = tools.len();
+        assert!(n >= 80, "expected large MCP surface, got {n}");
+        // Spot-check cold_start_fidelity present (habit path)
+        let names: Vec<&str> = tools
+            .iter()
+            .filter_map(|t| t.get("name").and_then(|n| n.as_str()))
+            .collect();
+        assert!(
+            names.contains(&"mcp_engram_cold_start_fidelity"),
+            "cold_start_fidelity tool missing"
+        );
+        assert!(names.contains(&"mcp_engram_session_start"));
+        // Docs must mention live count (parse first **N** / "N total" / "N tools" claims).
+        // Hard-code sync: if this fails, update docs to match `n` (currently 84).
+        assert_eq!(
+            n, 85,
+            "tool_list length {n} != documented 85 — update docs/MCP_TOOLS_REFERENCE.md and AGENT_MEMORY_CONTRACT.md"
+        );
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap();
+        let n_str = n.to_string();
+        for rel in [
+            "docs/MCP_TOOLS_REFERENCE.md",
+            "docs/AGENT_MEMORY_CONTRACT.md",
+            "docs/TOOL_DECISION_MAP.md",
+            "README.md",
+        ] {
+            let text = std::fs::read_to_string(root.join(rel)).unwrap_or_default();
+            assert!(
+                text.contains(&n_str),
+                "{rel} must document tool_list length {n}"
+            );
+        }
+        // Primary stranger entry must not publish stale totals (historical 79).
+        let readme = std::fs::read_to_string(root.join("README.md")).unwrap_or_default();
+        for stale in [
+            "79 registered",
+            "MCP tools reference (79)",
+            "75 `mcp_engram_*` + 4",
+        ] {
+            assert!(
+                !readme.contains(stale),
+                "README still publishes stale tool total phrasing: {stale:?}"
+            );
+        }
+    }
+
+    /// Tier-3: stranger entry docs = two-doc default + composites preferred by name.
+    #[test]
+    fn stranger_onboarding_docs_two_doc_path_and_composites() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap();
+        let contract = std::fs::read_to_string(root.join("docs/AGENT_MEMORY_CONTRACT.md"))
+            .expect("AGENT_MEMORY_CONTRACT");
+        let first_run = std::fs::read_to_string(root.join("FIRST_RUN.md")).expect("FIRST_RUN");
+        let wake = std::fs::read_to_string(root.join("docs/skills/engram-wake-up.md"))
+            .expect("wake skill");
+        let readme = std::fs::read_to_string(root.join("README.md")).expect("README");
+
+        for (label, text) in [
+            ("contract", &contract),
+            ("first_run", &first_run),
+            ("wake", &wake),
+            ("readme", &readme),
+        ] {
+            assert!(
+                text.contains("AGENT_MEMORY_CONTRACT") || text.contains("Agent Memory Contract"),
+                "{label} must point at the contract"
+            );
+        }
+        // Two-doc path explicit on entry surfaces
+        assert!(
+            contract.contains("exactly two docs")
+                || contract.contains("Default load set")
+                || contract.contains("two docs"),
+            "contract must state two-doc stranger path"
+        );
+        assert!(
+            first_run.contains("engram-wake-up.md") && first_run.contains("AGENT_MEMORY_CONTRACT"),
+            "FIRST_RUN must name both default docs"
+        );
+        assert!(
+            readme.contains("engram-wake-up.md") && readme.contains("AGENT_MEMORY_CONTRACT"),
+            "README agent path must name both default docs"
+        );
+        // Composites preferred (verbatim tool names on highway docs)
+        for name in [
+            "mcp_engram_safe_edit_and_verify",
+            "mcp_engram_update_with_tensor_bond",
+        ] {
+            assert!(
+                contract.contains(name),
+                "contract must prefer composite {name}"
+            );
+            assert!(
+                first_run.contains(name),
+                "FIRST_RUN paste/quick ref must mention {name}"
+            );
+        }
+        // Entry docs must not present lean-avoid as mandatory at wake
+        for (label, text) in [
+            ("contract", &contract),
+            ("first_run", &first_run),
+            ("wake", &wake),
+        ] {
+            let lowered = text.to_ascii_lowercase();
+            for line in lowered.lines() {
+                if !line.contains("watch_workspace")
+                    && !line.contains("rebuild_bvh")
+                    && !line.contains("mcp_engram_summarize")
+                {
+                    continue;
+                }
+                let presents_as_mandatory = (line.contains("must call")
+                    || line.contains("required at wake")
+                    || line.contains("mandatory at wake"))
+                    && !line.contains("do not")
+                    && !line.contains("don't")
+                    && !line.contains("never")
+                    && !line.contains("not call")
+                    && !line.contains("avoid");
+                assert!(
+                    !presents_as_mandatory,
+                    "{label} presents lean-avoid as mandatory at wake: {line}"
+                );
+            }
+        }
+    }
+
+    /// Tier-3: agent-profile wake queue (continuation bundle) never includes lean-avoid tools.
+    /// Drives shipped `build_continuation_bundle` → `finalize_wake_suggested_actions`.
+    #[test]
+    fn agent_wake_suggested_actions_never_include_lean_avoid() {
+        let prev_profile = std::env::var("ENGRAM_PROFILE").ok();
+        std::env::set_var("ENGRAM_PROFILE", "agent");
+        // Isolate from production sheaf stalks (Tier-4a SNR)
+        std::env::set_var("ENGRAM_DISABLE_SHEAF", "1");
+        std::env::set_var("ENGRAM_FORCE_CPU_BACKEND", "1");
+        let tmp = unique_tmp("tier3-lean-wake");
+        let mut store = StoreHandle::new(&tmp);
+        store
+            .remember(
+                "primary_goal",
+                "PRIMARY GOAL\n\n**goal:** goal:tier3_wake_test\n**set_at:** test\n",
+            )
+            .unwrap();
+        store
+            .remember(
+                "goal:tier3_wake_test",
+                "GOAL\n\n**status:** active\n**statement:** tier3 lean wake\n",
+            )
+            .unwrap();
+        // Mint handoff so suggested_actions is non-empty on real path
+        let _ =
+            store.persist_session_handoff_latest("tier3 lean wake handoff", "session_end_tier3");
+        let bundle = store.build_continuation_bundle(Some("tier3 lean wake queue check"));
+        let actions = bundle
+            .pointer("/harness_injection/suggested_actions")
+            .or_else(|| bundle.get("suggested_actions"))
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default();
+        // Slim wake path also surfaces top actions under harness_injection
+        assert!(
+            !actions.is_empty(),
+            "expected non-empty suggested_actions after handoff: {}",
+            serde_json::to_string_pretty(&bundle).unwrap_or_default()
+        );
+        for a in &actions {
+            if let Some(tool) = a.get("tool").and_then(|t| t.as_str()) {
+                assert!(
+                    !crate::cold_start_fidelity::is_lean_avoid_wake_tool(tool),
+                    "lean-avoid tool in agent wake suggested_actions: {tool} full={actions:?}"
+                );
+            }
+        }
+        // Hostile synthetic queue through shipped finalizer
+        let hostile: Vec<serde_json::Value> = crate::cold_start_fidelity::LEAN_AVOID_WAKE_TOOLS
+            .iter()
+            .map(|t| serde_json::json!({"tool": *t, "priority": 1}))
+            .chain(std::iter::once(serde_json::json!({
+                "tool": "mcp_engram_read_concept",
+                "priority": 0
+            })))
+            .collect();
+        let fidelity = bundle
+            .get("cold_start_fidelity")
+            .cloned()
+            .unwrap_or_else(|| serde_json::json!({"score": 0.9, "below_threshold": false}));
+        let cleaned =
+            crate::cold_start_fidelity::finalize_wake_suggested_actions(&hostile, &fidelity);
+        for t in crate::cold_start_fidelity::LEAN_AVOID_WAKE_TOOLS {
+            assert!(
+                !cleaned
+                    .iter()
+                    .any(|a| a.get("tool").and_then(|x| x.as_str()) == Some(*t)),
+                "finalize left lean-avoid {t}"
+            );
+        }
+        if let Some(p) = prev_profile {
+            std::env::set_var("ENGRAM_PROFILE", p);
+        } else {
+            std::env::remove_var("ENGRAM_PROFILE");
+        }
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn lean_wake_skills_do_not_mandate_query_pure() {
+        // Structural check: public + grok wake skills are one-call lean, not multi-tool rehydrate.
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap();
+        let public =
+            std::fs::read_to_string(root.join("docs/skills/engram-wake-up.md")).unwrap_or_default();
+        let grok = std::fs::read_to_string(root.join(".grok/skills/engram-wake-up/SKILL.md"))
+            .unwrap_or_default();
+        for (label, text) in [("public", &public), ("grok", &grok)] {
+            assert!(
+                text.contains("one-call")
+                    || text.contains("one call")
+                    || text.contains("One-call")
+                    || text.contains("One call"),
+                "{label} wake skill must mention one-call session_start"
+            );
+            assert!(
+                text.contains("session_start") || text.contains("mcp_engram_session_start"),
+                "{label} must reference session_start"
+            );
+            assert!(
+                text.contains("ack_wake_queue") || text.contains("ack_wake"),
+                "{label} must reference ack_wake_queue"
+            );
+            let lowered = text.to_ascii_lowercase();
+            assert!(
+                !lowered.contains("mandatory multi-tool lean rehydrate"),
+                "{label} still describes mandatory multi-tool lean rehydrate"
+            );
+            // Forbid lines that require query_pure at lean wake (allow "do not … query_pure")
+            for line in lowered.lines() {
+                if line.contains("query_pure") || line.contains("mcp_engram_query_pure") {
+                    let banned = (line.contains("must call")
+                        || line.contains("required")
+                        || line.contains("mandatory"))
+                        && !line.contains("do not")
+                        && !line.contains("don't")
+                        && !line.contains("optional")
+                        && !line.contains("unless");
+                    assert!(
+                        !banned,
+                        "{label} lean skill still requires query_pure: {line}"
+                    );
+                }
+            }
+        }
+        // Grok skill explicitly bans multi-tool lean rehydrate
+        assert!(
+            grok.contains("Do not")
+                || grok.contains("do not")
+                || grok.contains("one-call")
+                || grok.contains("one call"),
+            "grok skill must lean one-call / do-not multi-tool"
+        );
+    }
+
+    #[test]
     fn test_dispatch_basic_paths() {
         let tmp = unique_tmp("dispatch");
         let store: SharedStore = open_store_placeholder_for_mcp(&tmp);
@@ -8889,6 +9383,18 @@ mod tests {
                     .is_some()
         };
         assert!(has_registered, "load_process_sheaf must have parsed real *.toml (incl. processes/monitor/* for self_improvement) and stored/registered process:engram.* keys + created relates");
+        // Cold-start fidelity ritual (P0–D roadmap) must register from processes/ritual/cold-start-fidelity.toml
+        {
+            let lock = store.lock().unwrap();
+            assert!(
+                lock.fetch_block_high_priority("process:engram.ritual.cold-start-fidelity")
+                    .is_some()
+                    || lock
+                        .fetch_block("process:engram.ritual.cold-start-fidelity")
+                        .is_some(),
+                "process:engram.ritual.cold-start-fidelity must be registered by load_process_sheaf"
+            );
+        }
 
         // Unique [process].name per subvisor + meta sheaf (no monitor.unknown collision)
         let unique_keys = [
@@ -9255,6 +9761,105 @@ mod tests {
                 .expect("join big-stack MCP thread")
         }
 
+        /// Tier-1 dogfood: two successive session_start on shipped MCP path → fidelity + health + metrics.
+        #[test]
+        fn tier1_two_session_starts_emit_fidelity_health_and_metrics() {
+            let _lock = CONTINUITY_TEST_LOCK
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            let tmp = unique_tmp("tier1-two-wake");
+            let store = prep_store(&tmp);
+            {
+                let mut lock = store.lock().unwrap();
+                let _ = lock.remember(
+                    "primary_goal",
+                    "PRIMARY GOAL\n\n**goal:** goal:tier1_dogfood\n**set_at:** test\n",
+                );
+                let _ = lock.remember(
+                    "goal:tier1_dogfood",
+                    "GOAL\n\n**status:** active\n**statement:** tier1 multi-wake\n",
+                );
+                let _ = lock.promote_tile_to_high_priority("primary_goal");
+            }
+
+            let start1 = handle_tool_on_big_stack(
+                "mcp_engram_session_start",
+                &serde_json::json!({ "intent": "tier1 wake 1" }),
+                &store,
+            );
+            let j1: serde_json::Value =
+                serde_json::from_str(&mcp_text(&start1)).expect("wake1 json");
+            assert_eq!(j1["status"], "started");
+            let score1 = j1["continuation"]["cold_start_fidelity"]["score"]
+                .as_f64()
+                .or_else(|| j1["mcp_health"]["cold_start_fidelity"].as_f64())
+                .expect("score1");
+            assert!((0.0..=1.0).contains(&score1), "score1={score1}");
+            assert!(
+                j1.get("mcp_health").is_some(),
+                "mcp_health required on wake"
+            );
+            let sk1 = j1["session_key"].as_str().unwrap_or("").to_string();
+            assert!(sk1.starts_with("session_start_"), "{sk1}");
+
+            std::thread::sleep(std::time::Duration::from_millis(1100));
+
+            let start2 = handle_tool_on_big_stack(
+                "mcp_engram_session_start",
+                &serde_json::json!({ "intent": "tier1 wake 2" }),
+                &store,
+            );
+            let j2: serde_json::Value =
+                serde_json::from_str(&mcp_text(&start2)).expect("wake2 json");
+            let score2 = j2["continuation"]["cold_start_fidelity"]["score"]
+                .as_f64()
+                .or_else(|| j2["mcp_health"]["cold_start_fidelity"].as_f64())
+                .expect("score2");
+            assert!((0.0..=1.0).contains(&score2), "score2={score2}");
+            let sk2 = j2["session_key"].as_str().unwrap_or("").to_string();
+            assert_ne!(sk1, sk2);
+
+            let metrics: Vec<String> = {
+                let lock = store.lock().unwrap();
+                lock.list()
+                    .into_iter()
+                    .filter(|c| c.starts_with("metric:cold_start_fidelity_"))
+                    .collect()
+            };
+            assert!(
+                metrics.len() >= 2,
+                "expected ≥2 fidelity metrics, got {metrics:?}"
+            );
+            {
+                let lock = store.lock().unwrap();
+                assert!(
+                    lock.fetch_block(crate::cold_start_fidelity::COLD_START_FIDELITY_SERIES)
+                        .is_some(),
+                    "series helper missing after wakes"
+                );
+            }
+            if let Some(actions) = j2
+                .pointer("/continuation/suggested_actions")
+                .and_then(|v| v.as_array())
+            {
+                for a in actions {
+                    if let Some(tool) = a.get("tool").and_then(|t| t.as_str()) {
+                        assert!(
+                            !crate::cold_start_fidelity::is_lean_avoid_wake_tool(tool),
+                            "lean-avoid in wake queue: {tool}"
+                        );
+                    }
+                }
+            }
+            append_evidence(
+                "tier1-fidelity-dogfood.txt",
+                &format!(
+                    "wake1 score={score1} session={sk1}\nwake2 score={score2} session={sk2}\nmetrics={metrics:?}\n"
+                ),
+            );
+            let _ = std::fs::remove_dir_all(&tmp);
+        }
+
         fn spawn_mock_llm_server(facts: &str) -> (String, std::thread::JoinHandle<()>) {
             let listener = TcpListener::bind("127.0.0.1:0").expect("bind mock llm");
             let addr = listener.local_addr().unwrap();
@@ -9389,6 +9994,10 @@ mod tests {
 
         #[test]
         fn verify_auto_relate_post_clear_mcp_entrypoint() {
+            // Serialize against consult_before_write env races from parallel gate tests.
+            let _consult_guard = crate::consult_before_write_gate::env_test_lock();
+            std::env::set_var("ENGRAM_CONSULT_BEFORE_WRITE", "off");
+
             let tmp = unique_tmp("auto-relate");
             let store = prep_store(&tmp);
             setup_post_clear_goals(&store);
