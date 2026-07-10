@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://engram.dev/schemas/dual_loop_state_v1.json",
+  "title": "dual_loop_state_v1",
+  "description": "Control register for helper:rsi_dual_loop_state (Glass-Box RSI). Python validator in scripts/validate_dual_loop_schema.py is source of truth for tests.",
+  "type": "object",
+  "required": ["version", "track_next", "mcp_restart_required", "parents"],
+  "properties": {
+    "version": {
+      "const": 1,
+      "description": "Schema version; must be integer 1"
+    },
+    "track_next": {
+      "type": "string",
+      "enum": ["S", "G", "M"],
+      "description": "Next Dual RSI track to fire"
+    },
+    "track_last": {
+      "type": "string",
+      "enum": ["S", "G", "M"],
+      "description": "Last Dual RSI track that completed a fire"
+    },
+    "open_pr": {
+      "type": ["string", "null"],
+      "description": "Open ship PR URL, or null if none"
+    },
+    "mcp_restart_required": {
+      "type": "boolean",
+      "description": "True when binary_vs_proc verify found STALE binary vs process"
+    },
+    "last_fire_goal": {
+      "type": ["string", "null"],
+      "description": "Most recent child goal:fire_* id"
+    },
+    "last_verify": {
+      "type": "object",
+      "description": "Summary of last typed verify packet",
+      "required": ["type", "status"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "description": "verify_type from fire packet (e.g. substrate_local)"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["pending", "pass", "fail"]
+        },
+        "at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO-8601 timestamp of verify"
+        }
+      },
+      "additionalProperties": true
+    },
+    "parents": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Durable parent goal ids (dual_rsi_program, ship_substrate, glassbox_leg)"
+    },
+    "gemma": {
+      "type": "object",
+      "description": "Gemma track stage machine snapshot",
+      "properties": {
+        "stage": { "type": "string" },
+        "adapter_path": { "type": "string" },
+        "sft_rows": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

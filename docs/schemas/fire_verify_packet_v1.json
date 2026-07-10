@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://engram.dev/schemas/fire_verify_packet_v1.json",
+  "title": "fire_verify_packet_v1",
+  "description": "Per-fire verify payload embedded in child goal:fire_* (Glass-Box RSI §2). Python validator in scripts/validate_dual_loop_schema.py is source of truth for tests.",
+  "type": "object",
+  "required": [
+    "parent",
+    "loop",
+    "track",
+    "intent",
+    "verify_type",
+    "verify_status",
+    "verify_evidence",
+    "falsify"
+  ],
+  "properties": {
+    "parent": {
+      "type": "string",
+      "description": "Durable parent goal id (e.g. goal:dual_rsi_program)"
+    },
+    "loop": {
+      "type": "string",
+      "description": "Loop id: dual_rsi | ship_gate | pr_watch | mcp_stale | aliveness | …"
+    },
+    "track": {
+      "type": ["string", "null"],
+      "enum": ["S", "G", "M", null],
+      "description": "Dual RSI track when loop=dual_rsi; null for other loops"
+    },
+    "intent": {
+      "type": "string",
+      "minLength": 1,
+      "description": "One-line fire intent"
+    },
+    "verify_type": {
+      "type": "string",
+      "enum": [
+        "substrate_local",
+        "gemma_stage",
+        "meta_policy",
+        "ship_local",
+        "ship_skip",
+        "ci_status",
+        "binary_vs_proc",
+        "metrics_atom"
+      ],
+      "description": "Typed gate id"
+    },
+    "verify_status": {
+      "type": "string",
+      "enum": ["pending", "pass", "fail"]
+    },
+    "verify_evidence": {
+      "type": "string",
+      "description": "Paths, test summary, CI URL, or metric concept"
+    },
+    "falsify": {
+      "type": "string",
+      "description": "What would reverse this fire"
+    }
+  },
+  "additionalProperties": true
+}
