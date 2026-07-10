@@ -9262,17 +9262,23 @@ mod tests {
 
     #[test]
     fn lean_wake_skills_do_not_mandate_query_pure() {
-        // Structural check: public + grok wake skills are one-call lean, not multi-tool rehydrate.
+        // Structural check: public wake skill is one-call lean, not multi-tool rehydrate.
+        // Optional local overlay `.grok/skills/...` is gitignored — assert only when present
+        // (developers with Grok Build skills installed still get the local check).
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .parent()
             .unwrap()
             .parent()
             .unwrap();
-        let public =
-            std::fs::read_to_string(root.join("docs/skills/engram-wake-up.md")).unwrap_or_default();
-        let grok = std::fs::read_to_string(root.join(".grok/skills/engram-wake-up/SKILL.md"))
-            .unwrap_or_default();
-        for (label, text) in [("public", &public), ("grok", &grok)] {
+        let public = std::fs::read_to_string(root.join("docs/skills/engram-wake-up.md"))
+            .expect("public docs/skills/engram-wake-up.md must exist in the repo");
+        let grok_path = root.join(".grok/skills/engram-wake-up/SKILL.md");
+        let grok = std::fs::read_to_string(&grok_path).ok();
+        let mut checks: Vec<(&str, &str)> = vec![("public", public.as_str())];
+        if let Some(ref g) = grok {
+            checks.push(("grok", g.as_str()));
+        }
+        for (label, text) in checks {
             assert!(
                 text.contains("one-call")
                     || text.contains("one call")
@@ -9310,14 +9316,16 @@ mod tests {
                 }
             }
         }
-        // Grok skill explicitly bans multi-tool lean rehydrate
-        assert!(
-            grok.contains("Do not")
-                || grok.contains("do not")
-                || grok.contains("one-call")
-                || grok.contains("one call"),
-            "grok skill must lean one-call / do-not multi-tool"
-        );
+        // When local Grok skill is installed, it must stay lean one-call.
+        if let Some(ref g) = grok {
+            assert!(
+                g.contains("Do not")
+                    || g.contains("do not")
+                    || g.contains("one-call")
+                    || g.contains("one call"),
+                "grok skill must lean one-call / do-not multi-tool"
+            );
+        }
     }
 
     #[test]
