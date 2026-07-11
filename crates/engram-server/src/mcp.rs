@@ -9870,26 +9870,42 @@ mod tests {
 
         fn spawn_mock_llm_server(facts: &str) -> (String, std::thread::JoinHandle<()>) {
             let listener = TcpListener::bind("127.0.0.1:0").expect("bind mock llm");
+            listener
+                .set_nonblocking(false)
+                .expect("mock llm blocking accept");
             let addr = listener.local_addr().unwrap();
-            let facts_json = facts.replace('\n', "\\n");
+            // Escape for JSON string content (not a full JSON encoder — facts are plain ASCII prose).
+            let facts_json = facts
+                .replace('\\', "\\\\")
+                .replace('"', "\\\"")
+                .replace('\n', "\\n")
+                .replace('\r', "\\r");
             let handle = std::thread::spawn(move || {
-                for _ in 0..2 {
-                    if let Ok((mut stream, _)) = listener.accept() {
-                        let mut buf = vec![0u8; 1 << 16];
-                        let _ = stream.read(&mut buf);
-                        let body = format!(
-                            r#"{{"choices":[{{"message":{{"content":"{facts_json}"}}}}]}}"#
-                        );
-                        let resp = format!(
-                            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-                            body.len(),
-                            body
-                        );
-                        let _ = stream.write_all(resp.as_bytes());
+                // Serve a few requests (turn_record may call twice + stray probes).
+                // Blocking accept is fine — test drops JoinHandle and does not join.
+                for _ in 0..8 {
+                    match listener.accept() {
+                        Ok((mut stream, _)) => {
+                            let mut buf = vec![0u8; 1 << 16];
+                            let _ = stream.read(&mut buf);
+                            let body = format!(
+                                r#"{{"choices":[{{"message":{{"content":"{facts_json}"}}}}]}}"#
+                            );
+                            let resp = format!(
+                                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                                body.len(),
+                                body
+                            );
+                            let _ = stream.write_all(resp.as_bytes());
+                            let _ = stream.flush();
+                        }
+                        Err(_) => break,
                     }
                 }
             });
-            (format!("http://{}", addr), handle)
+            // Brief settle so accept() is parked before client dials (CI scheduler noise).
+            std::thread::sleep(std::time::Duration::from_millis(20));
+            (format!("http://{addr}"), handle)
         }
 
         fn setup_post_clear_goals(store: &SharedStore) {
@@ -9914,6 +9930,16 @@ mod tests {
 
         #[test]
         fn verify_turn_record_llm_mcp_entrypoint() {
+            // Serialize against parallel tests that clobber ENGRAM_LLM_URL / TURN_LLM_EXTRACT
+            // (CI flake: heuristic fallback when env is stolen mid-test).
+            let _guard = CONTINUITY_TEST_LOCK
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+
+            let prev_llm = std::env::var("ENGRAM_LLM_URL").ok();
+            let prev_extract = std::env::var("ENGRAM_TURN_EXTRACT").ok();
+            let prev_llm_extract = std::env::var("ENGRAM_TURN_LLM_EXTRACT").ok();
+
             let tmp = unique_tmp("turn-llm");
             let store = prep_store(&tmp);
 
@@ -9973,7 +9999,7 @@ mod tests {
                     block_bodies.push_str(&format!("\n--- {concept} ---\n{body}\n"));
                     assert!(
                         body.contains("**extraction:** llm"),
-                        "expected LLM extract marker: {body}"
+                        "expected LLM extract marker (CI flake if env race): {body}"
                     );
                     assert!(
                         body.contains("Relational recall") || body.contains("Auto-relate"),
@@ -9986,6 +10012,9 @@ mod tests {
                 &format!("LLM-extracted normalized statements in minted blocks:{block_bodies}"),
             );
 
+            // Re-assert env before second call (defense against any async cleanup).
+            std::env::set_var("ENGRAM_LLM_URL", &base_url);
+            std::env::set_var("ENGRAM_TURN_LLM_EXTRACT", "1");
             let resp2 = handle_tool_on_big_stack("mcp_engram_turn_record", &turn_args, &store);
             append_evidence(
                 "turn_extract_llm.txt",
@@ -9993,11 +10022,23 @@ mod tests {
             );
             assert!(!mcp_text(&resp2).is_empty());
 
-            let _ = mock_handle.join();
+            // Mock thread may still be in accept timeout — don't block test exit.
+            let _ = mock_handle;
             let _ = std::fs::remove_dir_all(&tmp);
-            std::env::remove_var("ENGRAM_LLM_URL");
-            std::env::remove_var("ENGRAM_TURN_EXTRACT");
-            std::env::remove_var("ENGRAM_TURN_LLM_EXTRACT");
+
+            // Restore env (do not clobber neighboring tests after unlock).
+            match prev_llm {
+                Some(v) => std::env::set_var("ENGRAM_LLM_URL", v),
+                None => std::env::remove_var("ENGRAM_LLM_URL"),
+            }
+            match prev_extract {
+                Some(v) => std::env::set_var("ENGRAM_TURN_EXTRACT", v),
+                None => std::env::remove_var("ENGRAM_TURN_EXTRACT"),
+            }
+            match prev_llm_extract {
+                Some(v) => std::env::set_var("ENGRAM_TURN_LLM_EXTRACT", v),
+                None => std::env::remove_var("ENGRAM_TURN_LLM_EXTRACT"),
+            }
         }
 
         #[test]
