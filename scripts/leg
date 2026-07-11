@@ -53,6 +53,7 @@ HTTP_PORT=8765
 LIVE_MODE=false
 DEMO_EMITTER=false
 OPEN_BROWSER=true
+GLASSBOX_MODE=false
 VERBOSE=false
 SERVE_PORT=3456
 SERVE_PROFILE="cockpit"
@@ -89,6 +90,7 @@ Usage:
 
 Options:
   --live, -l          Start engram serve (background) for full LIVE dynamic mode (cockpit profile)
+  --glassbox, -g      Open Glass-Box RSI view (?view=glassbox) — dual_loop strip + fire goals
   --ui                Legacy CPU-only serve profile (ui; was --light)
   --light             Deprecated alias for --ui (legacy CPU-only)
   --demo-emitter      Also run bg demo tile emitter (presenter mode only; pollutes /api/recent)
@@ -96,6 +98,10 @@ Options:
   --no-open           Do not auto-open browser
   --verbose, -v       Show raw server logs in foreground (advanced)
   --help, -h          This help
+
+Glass-Box RSI watch (recommended with --live):
+  ./scripts/leg --live --glassbox
+  # → http://127.0.0.1:8765/?view=glassbox
 
 Modes explained:
   STATIC (default):  Curated snapshot + all review tiles / handoff deltas /
@@ -124,6 +130,7 @@ EOF
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --live|-l) LIVE_MODE=true; shift ;;
+    --glassbox|-g) GLASSBOX_MODE=true; shift ;;
     --ui) SERVE_PROFILE="ui"; shift ;;
     --light)
       echo -e "${YELLOW}WARNING: --light is deprecated; use --ui for legacy CPU-only serve.${RESET}" >&2
@@ -477,7 +484,13 @@ open_browser() {
   # when using python http.server. This is the most reliable way to beat stubborn caching
   # during active development of a single-file static UI.
   local cache_buster=$(date +%s%N | cut -b1-13)
-  local url="http://localhost:$HTTP_PORT/?v=$cache_buster"
+  local url
+  if $GLASSBOX_MODE; then
+    # Glass-Box RSI split-home: dual_loop chips + parent goals + last fire + activity
+    url="http://localhost:$HTTP_PORT/?view=glassbox&v=$cache_buster"
+  else
+    url="http://localhost:$HTTP_PORT/?v=$cache_buster"
+  fi
 
   local cmd
 
@@ -489,7 +502,11 @@ open_browser() {
   esac
 
   if command -v "$cmd" >/dev/null 2>&1; then
-    echo -e "${CYAN}→ Opening browser (with cache-buster)...${RESET}"
+    if $GLASSBOX_MODE; then
+      echo -e "${CYAN}→ Opening Glass-Box RSI view (?view=glassbox)...${RESET}"
+    else
+      echo -e "${CYAN}→ Opening browser (with cache-buster)...${RESET}"
+    fi
     ($cmd "$url" >/dev/null 2>&1 || true) &
     sleep 0.4
   else
@@ -555,11 +572,21 @@ else
   echo -e "        Use 'Empty cache and hard reload' (right-click reload button with DevTools open)"
   echo -e "        or open a fresh Incognito window."
 fi
+if $GLASSBOX_MODE; then
+  echo -e "  ${MAGENTA}GLASS-BOX RSI${RESET}  —  http://localhost:$HTTP_PORT/?view=glassbox"
+  echo -e "        dual_loop strip · parent goals · last fire verify · activity (read-only)"
+fi
 echo -e "${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
 echo ""
-echo -e "Use the sidebar: click any block cube to open it (tiles, traces, goals, handoffs)."
-echo -e "  • Green = tile  • Blue = trace  • Gold = goal  • Purple = handoff/helper"
-echo -e "  • Relations at bottom of each block are clickable backlinks"
+if $GLASSBOX_MODE; then
+  echo -e "Glass-Box: chips from helper:rsi_dual_loop_state; click parent/fire for detail panel."
+  echo -e "  Offline smoke: serve tools/leg-browser + ?view=glassbox&fixture=1"
+else
+  echo -e "Use the sidebar: click any block cube to open it (tiles, traces, goals, handoffs)."
+  echo -e "  • Green = tile  • Blue = trace  • Gold = goal  • Purple = handoff/helper"
+  echo -e "  • Relations at bottom of each block are clickable backlinks"
+  echo -e "  • RSI process view: re-run with ${BOLD}--glassbox${RESET} (or --live --glassbox)"
+fi
 echo ""
 echo -e "PIDs (for manual inspection):  http=$HTTP_PID  serve=${SERVE_PID:-none}  emitter=${EMITTER_PID:-none}"
 echo -e "Logs: $HTTP_LOG  /  $SERVE_LOG  /  leg-consciousness-emitter.log"
@@ -570,7 +597,11 @@ if $OPEN_BROWSER; then
   open_browser
 fi
 
-echo -e "${GREEN}Ready. Your geometric mind state is now visible.${RESET}"
+if $GLASSBOX_MODE; then
+  echo -e "${GREEN}Ready. Glass-Box RSI process surface is visible.${RESET}"
+else
+  echo -e "${GREEN}Ready. Your geometric mind state is now visible.${RESET}"
+fi
 echo ""
 
 # Keep the launcher alive so the trap fires on Ctrl-C and we can show nice shutdown.

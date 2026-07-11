@@ -89,6 +89,14 @@ Wake lean-avoid (no `watch_workspace` at wake) is separate and still applies. Th
 
 ---
 
+## Glass-Box RSI (scheduled fires)
+
+Scheduled Dual RSI / Ship / PR / Stale / Aliveness fires **mint a child `goal:fire_*`**, run a **typed verify**, then update `helper:rsi_dual_loop_state.last_verify`. Do not flip stages or claim ship/PR ready without `verify_status=pass`.
+
+See: [docs/skills/engram-glassbox-rsi.md](skills/engram-glassbox-rsi.md), [docs/superpowers/specs/2026-07-10-glassbox-rsi-design.md](superpowers/specs/2026-07-10-glassbox-rsi-design.md).
+
+---
+
 ## Manage resume (TUI / MCP restart)
 
 After **TUI restart**, **MCP transport death**, or **`cargo build`** on `engram-server`, the live MCP may run a stale binary until restart. Resume without re-briefing:

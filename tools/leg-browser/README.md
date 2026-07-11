@@ -35,8 +35,11 @@ To restart the serve process without killing your IDE/TUI MCP session:
 - **Block inspector** — click any concept for full payload and relations
 - **Consciousness surface** — distilled goals, traces, and tiles at a glance
 - **Agent Mirror** (right rail) — live trace fork chain with justification, alternatives, and falsifiability; polls `/api/agent-mirror` every 1s and prefers SSE `trace_fork` for instant updates
+- **Glass-Box RSI view** — `?view=glassbox` after `./scripts/leg --live` (open http://127.0.0.1:8765/?view=glassbox). Health strip (`dual_loop` + aliveness), parent program goals, last fire verify, and activity. Read-only; process contract needed for full fidelity (else chips show unknown). Offline: `?view=glassbox&fixture=1` → `fixtures/glassbox-sample.json`
 
 Glass-box tagline: *Substrate interface visible; model weights opaque by design.*
+
+If live multi-fetch is slow on large stalks (~80k), consider a follow-up `GET /api/glassbox` aggregation endpoint — not required for B1 acceptance. Full notes: [docs/LEG_BROWSER.md](../../docs/LEG_BROWSER.md#glass-box-rsi-view).
 
 The viewer is a single-file SPA (`index.html`) — vanilla JS + dark cockpit theme. Fork and improve freely.
 

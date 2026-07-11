@@ -26,6 +26,7 @@ Load the ritual skills in `docs/skills/` for full protocol detail (all aligned t
 - [docs/skills/engram-session-end.md](docs/skills/engram-session-end.md) — Structured handoff packet (`session_end` JSON, COMPRESS, anchors).
 - [docs/skills/engram-thought-tiles.md](docs/skills/engram-thought-tiles.md) — Structured offload (mandatory for meta, promote_hot for re-hydration).
 - [docs/skills/engram-leg-wiki-starter.md](docs/skills/engram-leg-wiki-starter.md) — Bootstrap a personal knowledge wiki (LEG Browser + tiles).
+- [docs/skills/engram-glassbox-rsi.md](docs/skills/engram-glassbox-rsi.md) — Hybrid fire goals + typed verify for scheduled loops + LEG glass box.
 
 ## Declarative Process Sheaf
 

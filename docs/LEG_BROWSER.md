@@ -43,6 +43,21 @@ Override the router tile explicitly: `?geo_lens=tile:formal_spec_geo-lens-router
 
 ---
 
+## Glass-Box RSI view
+
+```bash
+./scripts/leg --live
+# open http://127.0.0.1:8765/?view=glassbox
+```
+
+Shows health strip (`dual_loop` + aliveness), parent program goals, last fire verify, and activity. Read-only. Requires process contract (fire goals + `dual_loop` fields) for full fidelity; otherwise chips show unknown.
+
+Offline fixture: serve `tools/leg-browser` and open `?view=glassbox&fixture=1` (loads `tools/leg-browser/fixtures/glassbox-sample.json`).
+
+**Optional API decision:** Live mode multi-fetches existing endpoints (`/health`, anchors/goals, activity, etc.). If that multi-fetch is >3s on large stalks (~80k blocks) in practice, file a follow-up to implement `GET /api/glassbox` in `serve.rs` returning `dual_loop` + parents + last_fire only. **Not required for B1 acceptance.**
+
+---
+
 ## Modes
 
 | Mode | Command | Backend | What you see |
@@ -68,6 +83,7 @@ Live mode uses the same `ENGRAM_STORE` as `scripts/engram-grok` (MCP). TUI, Curs
 - **Ariel cockpit** — `?cockpit=ariel` or `LEG_DEFAULT_GEO_LENS` boots Property Lens; ops strip (camera, Pi stream, YouTube) with labels from `/api/block/` or placeholders
 - **Hygiene strip** — demote sprawl, condensation hints, wake/edit-arc debt (beta)
 - **Code atlas + evolution timeline** — file-scoped loci, `__arc` segments, trace chain via `GET /api/code-atlas?evolution=1`
+- **Glass-Box RSI view** — `?view=glassbox` (health / dual_loop, parent goals, last fire, activity); offline via `?fixture=1`
 
 ---
 

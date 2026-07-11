@@ -25,6 +25,7 @@ These are the operational skills and rituals that power the Engram geometric mem
 
 - Thought Tiles (`engram-thought-tiles`): For structured offload of plans, policies, knowledge graphs. Mandatory for meta-work.
 - Personal wiki (`engram-leg-wiki-starter`): Bootstrap and maintain a compounding knowledge wiki with LEG Browser. See [docs/PERSONAL_KNOWLEDGE_WIKI.md](../PERSONAL_KNOWLEDGE_WIKI.md).
+- Glass-Box RSI (`engram-glassbox-rsi`): Hybrid fire goals + typed verify for scheduled Dual RSI / Ship / PR / Stale / Aliveness loops; LEG glass box. See [engram-glassbox-rsi.md](engram-glassbox-rsi.md); loop bodies in [loop-prompts/](loop-prompts/).
 - Goal Stack (`engram-goal`): First-class intentional self-model. Primary goal auto-links to traces.
 - Spatial (Item 1.5): **lean:** `context_for_edit(path)`; **deep:** optional `watch_workspace` once per project.
 - Lawfulness: `mcp_engram_verify_manifold_integrity`, block lawfulness.

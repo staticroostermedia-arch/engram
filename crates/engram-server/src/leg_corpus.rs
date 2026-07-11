@@ -63,6 +63,8 @@ pub struct CorpusBuildResult {
     pub candidates: usize,
     pub export: ScrubExportResult,
     pub homotopy: HomotopyReport,
+    /// Absolute path of full pack dump written for PEFT export (if any).
+    pub disk_export_path: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -124,6 +126,10 @@ pub fn build_training_corpus(
     );
     let homotopy = verify_pack_homotopy(&export.packs, config.coherence_min);
 
+    // Full pack dump for PEFT (chat MCP truncates large packs arrays).
+    // ENGRAM_LORA_EXPORT_DIR overrides; else data/lora-export under cwd if present.
+    let disk_export_path = write_full_pack_export(corpus_concept, &export.packs, &homotopy);
+
     if persist_manifest {
         let manifest = json!({
             "format": "leg_corpus_manifest_v1",
@@ -132,6 +138,7 @@ pub fn build_training_corpus(
             "candidate_count": candidates.len(),
             "pack_count": export.packs.len(),
             "denied_count": export.denied.len(),
+            "disk_export_path": disk_export_path,
             "homotopy": {
                 "checked": homotopy.checked,
                 "passed": homotopy.passed,
@@ -162,6 +169,67 @@ pub fn build_training_corpus(
         candidates: candidates.len(),
         export,
         homotopy,
+        disk_export_path,
+    }
+}
+
+/// Write full `leg_corpus_batch_v1` JSON to disk for PEFT JSONL export.
+/// Returns absolute path string when successful.
+fn write_full_pack_export(
+    corpus_concept: &str,
+    packs: &[Value],
+    homotopy: &HomotopyReport,
+) -> Option<String> {
+    let dir = std::env::var("ENGRAM_LORA_EXPORT_DIR").unwrap_or_else(|_| {
+        let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+        let candidate = cwd.join("data/lora-export");
+        if candidate.is_dir() || cwd.join("data").is_dir() {
+            candidate.to_string_lossy().into_owned()
+        } else {
+            // Fall back under store-adjacent default in home
+            dirs_fallback_lora_dir()
+        }
+    });
+    let dir_path = std::path::PathBuf::from(&dir);
+    if let Err(e) = std::fs::create_dir_all(&dir_path) {
+        eprintln!("[leg_corpus] mkdir {dir}: {e}");
+        return None;
+    }
+    let safe_name = corpus_concept.replace([':', '/', '\\'], "_");
+    let file = dir_path.join(format!("{safe_name}_batch.json"));
+    let batch = json!({
+        "format": "leg_corpus_batch_v1",
+        "corpus_concept": corpus_concept,
+        "pack_format": PACK_FORMAT,
+        "pack_count": packs.len(),
+        "homotopy": {
+            "checked": homotopy.checked,
+            "passed": homotopy.passed,
+            "mean_coherence": homotopy.mean_coherence,
+            "min_coherence": homotopy.min_coherence,
+        },
+        "packs": packs,
+    });
+    match serde_json::to_vec_pretty(&batch) {
+        Ok(bytes) => {
+            if let Err(e) = std::fs::write(&file, bytes) {
+                eprintln!("[leg_corpus] write {}: {e}", file.display());
+                return None;
+            }
+            Some(file.to_string_lossy().into_owned())
+        }
+        Err(e) => {
+            eprintln!("[leg_corpus] serialize packs: {e}");
+            None
+        }
+    }
+}
+
+fn dirs_fallback_lora_dir() -> String {
+    if let Ok(home) = std::env::var("HOME") {
+        format!("{home}/.engram/lora-export")
+    } else {
+        "/tmp/engram-lora-export".into()
     }
 }
 
@@ -175,6 +243,7 @@ pub fn corpus_response(result: &CorpusBuildResult) -> Value {
         "denied_count": result.export.denied.len(),
         "failed_coherence_count": result.export.failed_coherence.len(),
         "minted_derivatives": result.export.minted,
+        "disk_export_path": result.disk_export_path,
         "homotopy": {
             "checked": result.homotopy.checked,
             "passed": result.homotopy.passed,
@@ -182,7 +251,15 @@ pub fn corpus_response(result: &CorpusBuildResult) -> Value {
             "min_coherence": result.homotopy.min_coherence,
             "failed": result.homotopy.failed,
         },
-        "packs": result.export.packs,
+        // Omit full packs from MCP chat path when disk dump exists (token economy).
+        // Clients that need packs: read disk_export_path or set ENGRAM_LORA_EXPORT_INLINE=1.
+        "packs": if result.disk_export_path.is_some()
+            && std::env::var("ENGRAM_LORA_EXPORT_INLINE").ok().as_deref() != Some("1")
+        {
+            Value::Array(vec![])
+        } else {
+            Value::Array(result.export.packs.clone())
+        },
         "denied": result.export.denied,
         "failed_coherence": result.export.failed_coherence,
     })
