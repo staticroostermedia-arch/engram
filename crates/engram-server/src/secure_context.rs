@@ -279,11 +279,44 @@ pub fn authorized_full_open(store: &mut StoreHandle, concept: &str) -> Result<St
 #[cfg(test)]
 mod tests {
     use super::*;
-    use engram_core::payload_crypto::unwrap_provlog;
+    use engram_core::payload_crypto::{is_sealed_provlog, unwrap_provlog};
     use std::sync::Mutex;
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     /// Serialize env-touching tests (process-global ENGRAM_* vars).
     static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    const TEST_KEY_HEX: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+    fn open_iso_store() -> (std::path::PathBuf, StoreHandle) {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir =
+            std::env::temp_dir().join(format!("engram-secure-{}-{}", std::process::id(), nanos));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::env::set_var("ENGRAM_DISABLE_SHEAF", "1");
+        std::env::set_var("ENGRAM_FORCE_CPU_BACKEND", "1");
+        std::env::set_var("ENGRAM_STORE", dir.to_string_lossy().as_ref());
+        let store = StoreHandle::new(&dir.to_string_lossy());
+        (dir, store)
+    }
+
+    fn enable_encrypt() {
+        std::env::set_var("ENGRAM_ENCRYPT_AT_REST", "1");
+        std::env::set_var("ENGRAM_SECURE_CONTEXT", "1");
+        std::env::set_var("ENGRAM_SOVEREIGNTY_KEY", TEST_KEY_HEX);
+    }
+
+    fn disable_encrypt() {
+        std::env::remove_var("ENGRAM_ENCRYPT_AT_REST");
+        std::env::remove_var("ENGRAM_SECURE_CONTEXT");
+        std::env::remove_var("ENGRAM_SOVEREIGNTY_KEY");
+        std::env::remove_var("ENGRAM_DISABLE_SHEAF");
+        std::env::remove_var("ENGRAM_FORCE_CPU_BACKEND");
+        std::env::remove_var("ENGRAM_STORE");
+    }
 
     #[test]
     fn encrypt_flag_off_by_default() {
@@ -295,30 +328,20 @@ mod tests {
     #[test]
     fn maybe_seal_roundtrip_when_enabled() {
         let _g = ENV_LOCK.lock().unwrap();
-        std::env::set_var("ENGRAM_ENCRYPT_AT_REST", "1");
-        std::env::set_var(
-            "ENGRAM_SOVEREIGNTY_KEY",
-            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-        );
+        enable_encrypt();
         let sealed = maybe_seal_for_store("c:test", "hello selective world").unwrap();
         assert!(is_sealed_provlog(&sealed));
         assert!(!sealed.contains("hello selective"));
         let key = resolve_key().unwrap();
         let open = unwrap_provlog(&key, "c:test", &sealed).unwrap();
         assert_eq!(open, "hello selective world");
-        std::env::remove_var("ENGRAM_ENCRYPT_AT_REST");
-        std::env::remove_var("ENGRAM_SOVEREIGNTY_KEY");
+        disable_encrypt();
     }
 
     #[test]
     fn redact_json_selective_on_sealed_preview() {
         let _g = ENV_LOCK.lock().unwrap();
-        std::env::set_var("ENGRAM_ENCRYPT_AT_REST", "1");
-        std::env::set_var("ENGRAM_SECURE_CONTEXT", "1");
-        std::env::set_var(
-            "ENGRAM_SOVEREIGNTY_KEY",
-            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-        );
+        enable_encrypt();
         let sealed = maybe_seal_for_store(
             "lexicon:word:needtoknow",
             "SECRET definition about selective disclosure windows",
@@ -335,8 +358,226 @@ mod tests {
         let preview = out["related_anchors"][0]["preview"].as_str().unwrap();
         assert!(preview.contains("SECURE PAYLOAD") || preview.contains("sealed"));
         assert!(!preview.contains("SECRET definition about selective"));
-        std::env::remove_var("ENGRAM_ENCRYPT_AT_REST");
-        std::env::remove_var("ENGRAM_SECURE_CONTEXT");
-        std::env::remove_var("ENGRAM_SOVEREIGNTY_KEY");
+        disable_encrypt();
+    }
+
+    fn evidence_dir() -> std::path::PathBuf {
+        // Prefer harness SCRATCH when set; else goal implementer dir.
+        if let Ok(p) = std::env::var("ENGRAM_GOAL_SCRATCH") {
+            let d = std::path::PathBuf::from(p);
+            let _ = std::fs::create_dir_all(&d);
+            return d;
+        }
+        let d = std::path::PathBuf::from("/tmp/grok-goal-3d899e7dc527/implementer");
+        let _ = std::fs::create_dir_all(&d);
+        d
+    }
+
+    fn append_evidence(name: &str, line: &str) {
+        use std::io::Write;
+        let path = evidence_dir().join(name);
+        if let Ok(mut f) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&path)
+        {
+            let _ = writeln!(f, "{line}");
+        }
+        // Always also print so cargo --nocapture captures it.
+        println!("{line}");
+    }
+
+    /// Real path: encrypt write → store → provision selective open → audit block.
+    #[test]
+    fn provision_selective_open_and_audit_on_real_store() {
+        let _g = ENV_LOCK.lock().unwrap();
+        enable_encrypt();
+        let (dir, mut store) = open_iso_store();
+
+        let concept = "lexicon:word:sovereignty-test";
+        let plaintext = "LEXICON WORD\n\n**surface:** sovereignty-test\n\n\
+             ## Definition\nLocal encrypted memory control with need-to-know windows.\n\n\
+             --- etymology ---\nOld French soverain + test fixture\n\
+             UNIQUE_SECRET_TOKEN_xyz789\n";
+        let sealed = maybe_seal_for_store(concept, plaintext).expect("seal");
+        assert!(is_sealed_provlog(&sealed));
+        assert!(
+            !sealed.contains("UNIQUE_SECRET_TOKEN_xyz789"),
+            "ciphertext must not contain plaintext secret"
+        );
+        store.remember(concept, &sealed).expect("store sealed");
+
+        // Drive shipped provision() (same path as mcp_engram_secure_context_provision).
+        let out = provision(&mut store, concept, "need-to-know", 256).expect("provision");
+        append_evidence(
+            "selective_mcp.log",
+            &format!("SELECTIVE_MCP provision response: {out}"),
+        );
+        assert_eq!(out["ok"], true);
+        assert_eq!(out["sealed"], true);
+        assert_eq!(out["concept"], concept);
+        let snippet = out["snippet"].as_str().unwrap_or("");
+        assert!(
+            snippet.to_ascii_lowercase().contains("need-to-know")
+                || snippet.contains("encrypted memory"),
+            "snippet should window around query: {snippet}"
+        );
+        assert!(
+            !snippet.contains("UNIQUE_SECRET_TOKEN_xyz789") || snippet.len() < plaintext.len(),
+            "selective window must be bounded (not full dump unless tiny body)"
+        );
+        let proof = out["merkle_related_proof"].as_str().unwrap_or("");
+        assert!(
+            proof.contains("payload_blake3") || proof.contains("concept:"),
+            "missing merkle-related proof: {proof}"
+        );
+        let audit = out["audit"].as_str().unwrap_or("");
+        assert!(
+            audit.starts_with("audit:access_"),
+            "expected audit:access_* concept, got {audit}"
+        );
+
+        // Audit block exists on store and is sealed when encrypt-at-rest on.
+        let audit_block = store
+            .fetch_block(audit)
+            .unwrap_or_else(|| panic!("audit block missing: {audit}"));
+        let audit_body = crate::store::goal_block_text(&audit_block);
+        assert!(
+            is_sealed_provlog(&audit_body) || audit_body.contains("SECURE ACCESS AUDIT"),
+            "audit body unexpected: {}",
+            audit_body.chars().take(200).collect::<String>()
+        );
+        append_evidence(
+            "selective_mcp.log",
+            &format!(
+                "SELECTIVE_MCP audit_concept={audit} sealed_audit={} proof={proof}",
+                is_sealed_provlog(&audit_body)
+            ),
+        );
+
+        // context_for_edit-style redaction of sealed preview (real redact path).
+        let cfe_path = "/home/a/Documents/Engram/crates/engram-core/src/payload_crypto.rs";
+        let cfe_payload = json!({
+            "atlas_version": "v2.1",
+            "file_path": cfe_path,
+            "related_anchors": [{
+                "concept": concept,
+                "crs": 0.78,
+                "preview": sealed.clone()
+            }]
+        });
+        let redacted = redact_sealed_fields_in_json(cfe_payload, cfe_path);
+        let prev = redacted["related_anchors"][0]["preview"]
+            .as_str()
+            .unwrap_or("");
+        append_evidence(
+            "selective_mcp.log",
+            &format!("CONTEXT_FOR_EDIT_REDACT path={cfe_path} preview={prev}"),
+        );
+        assert!(
+            prev.contains("SECURE PAYLOAD") || prev.contains("sealed"),
+            "context_for_edit redaction must mark sealed: {prev}"
+        );
+        assert!(
+            !prev.contains("UNIQUE_SECRET_TOKEN_xyz789"),
+            "full secret must not leak via context_for_edit path"
+        );
+        assert!(
+            !prev.contains("Local encrypted memory control with need-to-know"),
+            "full definition must not dump in path-hint redaction"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+        disable_encrypt();
+    }
+
+    /// Encrypted lexicon mint via real mint_lexicon_word + provision.
+    #[test]
+    fn encrypted_lexicon_mint_then_provision() {
+        let _g = ENV_LOCK.lock().unwrap();
+        enable_encrypt();
+        let (dir, mut store) = open_iso_store();
+
+        let concept = crate::lexicon::mint_lexicon_word(
+            &mut store,
+            "payload-aead",
+            "Authenticated encryption of ProvLog bodies with XChaCha20-Poly1305 for sovereign local memory.",
+            "From AEAD (authenticated encryption with associated data) + payload storage layer.",
+            &["code", "local_block", "language"],
+        )
+        .expect("mint");
+        append_evidence(
+            "lexicon_mint.log",
+            &format!("LEXICON_MINT concept={concept}"),
+        );
+        assert_eq!(concept, "lexicon:word:payload-aead");
+
+        let block = store.fetch_block(&concept).expect("block");
+        assert!(block.crs_score >= 0.74, "CRS {} < 0.74", block.crs_score);
+        append_evidence(
+            "lexicon_mint.log",
+            &format!("LEXICON_MINT crs={}", block.crs_score),
+        );
+        let body = engram_core::storage::read_provlog(&block);
+        assert!(
+            is_sealed_provlog(&body),
+            "mint under ENCRYPT_AT_REST must seal ProvLog; body head: {}",
+            body.chars().take(120).collect::<String>()
+        );
+        assert!(
+            !body.contains("Authenticated encryption of ProvLog"),
+            "plaintext definition must not appear in sealed ProvLog"
+        );
+        append_evidence(
+            "lexicon_mint.log",
+            &format!(
+                "LEXICON_MINT sealed=true body_has_payload_enc={} body_head={}",
+                body.contains("payload_enc"),
+                body.chars()
+                    .take(160)
+                    .collect::<String>()
+                    .replace('\n', " | ")
+            ),
+        );
+
+        let edges = store.relation_index.query(&concept, None, "from");
+        let labels: Vec<&str> = edges.iter().map(|(l, _)| l.as_str()).collect();
+        assert!(
+            labels.contains(&"defined_in_frame") || labels.contains(&"axis_of"),
+            "expected pillar/frame relations, got {labels:?}"
+        );
+        append_evidence(
+            "lexicon_mint.log",
+            &format!("LEXICON_MINT relations={labels:?}"),
+        );
+
+        let prov = provision(&mut store, &concept, "XChaCha20", 200).expect("provision");
+        append_evidence(
+            "lexicon_mint.log",
+            &format!("LEXICON_MINT_PROVISION {prov}"),
+        );
+        append_evidence(
+            "selective_mcp.log",
+            &format!("SELECTIVE_MCP_FROM_LEXICON_MINT {prov}"),
+        );
+        assert_eq!(prov["ok"], true);
+        assert_eq!(prov["sealed"], true);
+        let snip = prov["snippet"].as_str().unwrap_or("");
+        assert!(
+            snip.to_ascii_lowercase().contains("xchacha")
+                || snip.to_ascii_lowercase().contains("poly1305")
+                || snip.to_ascii_lowercase().contains("encryption"),
+            "provision snippet should hit query window: {snip}"
+        );
+        assert!(
+            prov["audit"]
+                .as_str()
+                .unwrap_or("")
+                .starts_with("audit:access_"),
+            "provision must mint audit"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+        disable_encrypt();
     }
 }
