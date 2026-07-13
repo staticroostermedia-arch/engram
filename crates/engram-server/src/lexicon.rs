@@ -142,12 +142,10 @@ pub fn mint_lexicon_word_json(
             let sealed = engram_core::payload_crypto::is_sealed_provlog(&body);
             // When sealed, plaintext definition is intentionally absent from ProvLog;
             // geometry still bound definition/etymology via OP_BIND at mint time.
-            let has_definition = sealed
-                || body.contains(definition)
-                || body.contains("## Definition");
-            let has_etymology = sealed
-                || body.contains(etymology_note)
-                || body.contains("--- etymology ---");
+            let has_definition =
+                sealed || body.contains(definition) || body.contains("## Definition");
+            let has_etymology =
+                sealed || body.contains(etymology_note) || body.contains("--- etymology ---");
             json!({
                 "ok": true,
                 "concept": concept,

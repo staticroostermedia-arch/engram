@@ -118,15 +118,9 @@ pub fn provision(
         }));
     }
 
-    let snip: SelectiveSnippet = selective_open(&key, concept, &text, query, max_chars)
-        .map_err(|e| e.to_string())?;
-    let audit = log_access_audit(
-        store,
-        concept,
-        query,
-        true,
-        &snip.merkle_related_proof,
-    );
+    let snip: SelectiveSnippet =
+        selective_open(&key, concept, &text, query, max_chars).map_err(|e| e.to_string())?;
+    let audit = log_access_audit(store, concept, query, true, &snip.merkle_related_proof);
     Ok(json!({
         "ok": true,
         "concept": snip.concept,
@@ -164,7 +158,8 @@ pub fn redact_for_context(concept: &str, text: &str, query: &str) -> String {
 
     // File paths are not content queries — never auto-open plaintext in context_for_edit.
     let q = query.trim();
-    let looks_like_path = q.contains('/') || q.ends_with(".rs") || q.ends_with(".toml") || q.ends_with(".md");
+    let looks_like_path =
+        q.contains('/') || q.ends_with(".rs") || q.ends_with(".toml") || q.ends_with(".md");
     if q.is_empty() || looks_like_path {
         return format!(
             "SECURE PAYLOAD (encrypted at rest)\n\n\
@@ -267,10 +262,7 @@ fn redact_value_recursive(value: &mut Value, parent_concept: Option<&str>, path_
 
 /// Full open for authorized ops (lexicon verify / lawfulness) — still logs audit.
 #[allow(dead_code)]
-pub fn authorized_full_open(
-    store: &mut StoreHandle,
-    concept: &str,
-) -> Result<String, String> {
+pub fn authorized_full_open(store: &mut StoreHandle, concept: &str) -> Result<String, String> {
     let key = resolve_key()?;
     let block = store
         .fetch_block_high_priority(concept)

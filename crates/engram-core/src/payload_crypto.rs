@@ -54,7 +54,8 @@ impl PayloadKey {
         if s.len() == 64 && s.chars().all(|c| c.is_ascii_hexdigit()) {
             let mut out = [0u8; KEY_LEN];
             for i in 0..KEY_LEN {
-                out[i] = u8::from_str_radix(&s[i * 2..i * 2 + 2], 16).map_err(|_| CryptoError::BadKey)?;
+                out[i] = u8::from_str_radix(&s[i * 2..i * 2 + 2], 16)
+                    .map_err(|_| CryptoError::BadKey)?;
             }
             return Ok(Self(out));
         }
@@ -110,18 +111,16 @@ pub fn open(key: &PayloadKey, sealed: &[u8], aad: &[u8]) -> Result<Vec<u8>, Cryp
     let cipher = XChaCha20Poly1305::new(Key::from_slice(&key.0));
     let nonce = XNonce::from_slice(nonce_bytes);
     cipher
-        .decrypt(
-            nonce,
-            Payload {
-                msg: ct,
-                aad,
-            },
-        )
+        .decrypt(nonce, Payload { msg: ct, aad })
         .map_err(|_| CryptoError::Decrypt)
 }
 
 /// Wrap plaintext into a sealed ProvLog envelope (UTF-8 text for store).
-pub fn wrap_provlog(key: &PayloadKey, concept: &str, plaintext: &str) -> Result<String, CryptoError> {
+pub fn wrap_provlog(
+    key: &PayloadKey,
+    concept: &str,
+    plaintext: &str,
+) -> Result<String, CryptoError> {
     let aad = concept.as_bytes();
     let sealed = seal(key, plaintext.as_bytes(), aad)?;
     let b64 = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &sealed);
@@ -155,7 +154,11 @@ pub fn extract_ciphertext_b64(text: &str) -> Option<&str> {
 }
 
 /// Open sealed ProvLog to full plaintext (authorized full open).
-pub fn unwrap_provlog(key: &PayloadKey, concept: &str, sealed_text: &str) -> Result<String, CryptoError> {
+pub fn unwrap_provlog(
+    key: &PayloadKey,
+    concept: &str,
+    sealed_text: &str,
+) -> Result<String, CryptoError> {
     let b64 = extract_ciphertext_b64(sealed_text).ok_or(CryptoError::BadEnvelope)?;
     let sealed = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, b64)
         .map_err(|_| CryptoError::BadEnvelope)?;
@@ -264,7 +267,10 @@ mod tests {
     #[test]
     fn empty_plaintext_rejected() {
         let key = PayloadKey::derive_for_tests("empty");
-        assert!(matches!(seal(&key, b"", b"x"), Err(CryptoError::EmptyPlaintext)));
+        assert!(matches!(
+            seal(&key, b"", b"x"),
+            Err(CryptoError::EmptyPlaintext)
+        ));
     }
 
     #[test]

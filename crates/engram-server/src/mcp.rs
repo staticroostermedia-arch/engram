@@ -6992,7 +6992,11 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
             if crate::secure_context::secure_context_mode() {
                 payload = crate::secure_context::redact_sealed_fields_in_json(payload, path);
                 if let Ok(mut l) = store.lock() {
-                    l.log_activity("ritual:secure_context", "context_for_edit_redact", Some(path));
+                    l.log_activity(
+                        "ritual:secure_context",
+                        "context_for_edit_redact",
+                        Some(path),
+                    );
                 }
             }
             json!({
@@ -7022,20 +7026,17 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
                 });
             }
             match store.lock() {
-                Ok(mut lock) => match crate::secure_context::provision(
-                    &mut lock,
-                    &concept,
-                    &query,
-                    max_chars,
-                ) {
-                    Ok(payload) => json!({
-                        "content": [{ "type": "text", "text": payload.to_string() }]
-                    }),
-                    Err(e) => json!({
-                        "content": [{ "type": "text", "text": format!("Error: {e}") }],
-                        "isError": true
-                    }),
-                },
+                Ok(mut lock) => {
+                    match crate::secure_context::provision(&mut lock, &concept, &query, max_chars) {
+                        Ok(payload) => json!({
+                            "content": [{ "type": "text", "text": payload.to_string() }]
+                        }),
+                        Err(e) => json!({
+                            "content": [{ "type": "text", "text": format!("Error: {e}") }],
+                            "isError": true
+                        }),
+                    }
+                }
                 Err(p) => json!({
                     "content": [{ "type": "text", "text": format!("Error: store mutex poisoned: {p}") }],
                     "isError": true
