@@ -211,7 +211,7 @@ pub fn selective_open(
     })
 }
 
-fn extract_field<'a>(text: &'a str, field: &str) -> Option<String> {
+fn extract_field(text: &str, field: &str) -> Option<String> {
     for line in text.lines() {
         let line = line.trim();
         if let Some(rest) = line.strip_prefix(field) {
