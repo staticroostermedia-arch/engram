@@ -37,6 +37,7 @@ pub mod genesis;
 pub mod index;
 pub mod mmap;
 pub mod ops;
+pub mod payload_crypto;
 pub mod storage;
 pub mod types;
 

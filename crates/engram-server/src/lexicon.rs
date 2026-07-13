@@ -65,8 +65,12 @@ pub fn mint_lexicon_word(
          **frame:** {REFERENCE_FRAME_SPEC}\n\
          **ritual:** process:engram.ritual.lexicon-seed\n"
     );
+    // Optional encrypted-at-rest envelope (ENGRAM_ENCRYPT_AT_REST=1).
+    let store_text = crate::secure_context::maybe_seal_for_store(&concept, &source_text)
+        .unwrap_or_else(|_| source_text.clone());
 
     // Phase encode: word surface as role, definition + etymology as fillers via OP_BIND
+    // (geometry always binds plaintext definition/etymology for VSA — ciphertext is storage-only)
     let word_block = store.encode(word);
     let def_block = store.encode(definition);
     let etym_block = store.encode(etymology_note);
@@ -74,7 +78,7 @@ pub fn mint_lexicon_word(
     let bound_all = op_bind(&bound_def, &etym_block.q);
     let q = normalize(&bound_all);
 
-    let mut block = store.encode(&source_text);
+    let mut block = store.encode(&store_text);
     block.q = q;
     block.zedos_tag = ZEDOS_BODY;
     let crs = dynamical_crs_for_role(CrsRole::Lexicon);
@@ -135,12 +139,22 @@ pub fn mint_lexicon_word_json(
                 .fetch_block(&concept)
                 .map(|b| engram_core::storage::read_provlog(&b))
                 .unwrap_or_default();
+            let sealed = engram_core::payload_crypto::is_sealed_provlog(&body);
+            // When sealed, plaintext definition is intentionally absent from ProvLog;
+            // geometry still bound definition/etymology via OP_BIND at mint time.
+            let has_definition = sealed
+                || body.contains(definition)
+                || body.contains("## Definition");
+            let has_etymology = sealed
+                || body.contains(etymology_note)
+                || body.contains("--- etymology ---");
             json!({
                 "ok": true,
                 "concept": concept,
                 "crs": crs,
-                "has_definition": body.contains(definition) || body.contains("## Definition"),
-                "has_etymology": body.contains(etymology_note) || body.contains("--- etymology ---"),
+                "sealed": sealed,
+                "has_definition": has_definition,
+                "has_etymology": has_etymology,
                 "frame": REFERENCE_FRAME_SPEC,
             })
         }

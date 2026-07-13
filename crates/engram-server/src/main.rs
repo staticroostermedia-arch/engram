@@ -57,6 +57,7 @@ mod scaffold_versioning;
 pub mod scout;
 pub mod scout_supervisor;
 mod scrub_export;
+mod secure_context;
 mod serve;
 mod session_lifecycle;
 mod session_packet;

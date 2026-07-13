@@ -1,8 +1,8 @@
 # MCP Tools Reference
 
-Engram exposes **85 MCP tools** (81 `mcp_engram_*` + 4 linguistic) as of the `tool_list()` source of truth in `crates/engram-server/src/mcp.rs` (includes `mcp_engram_lexicon_mint_word`). Most agents should use **8** — see [`AGENT_MEMORY_CONTRACT.md`](AGENT_MEMORY_CONTRACT.md). For edit/update fidelity, prefer **safe composites** (Tier 2): `mcp_engram_safe_edit_and_verify`, `mcp_engram_update_with_tensor_bond`.
+Engram exposes **86 MCP tools** (82 `mcp_engram_*` + 4 linguistic) as of the `tool_list()` source of truth in `crates/engram-server/src/mcp.rs` (includes `mcp_engram_lexicon_mint_word` + `mcp_engram_secure_context_provision`). Most agents should use **8** — see [`AGENT_MEMORY_CONTRACT.md`](AGENT_MEMORY_CONTRACT.md). For edit/update fidelity, prefer **safe composites** (Tier 2): `mcp_engram_safe_edit_and_verify`, `mcp_engram_update_with_tensor_bond`.
 
-**Decision map:** [`TOOL_DECISION_MAP.md`](TOOL_DECISION_MAP.md) — when to escalate to `update`, `query_with_momentum`, `search_by_relation`, goals, tiles, linguistic tools. **JIT deformation:** [`DEFORMATION_PLAYBOOKS.md`](DEFORMATION_PLAYBOOKS.md). **Count single source:** `fn tool_list()` in `mcp.rs` (counted 2026-07-10: 85 names).
+**Decision map:** [`TOOL_DECISION_MAP.md`](TOOL_DECISION_MAP.md) — when to escalate to `update`, `query_with_momentum`, `search_by_relation`, goals, tiles, linguistic tools. **JIT deformation:** [`DEFORMATION_PLAYBOOKS.md`](DEFORMATION_PLAYBOOKS.md). **Count single source:** `fn tool_list()` in `mcp.rs` (counted 2026-07-13: 86 names).
 
 Tools are grouped by tier:
 
@@ -43,7 +43,7 @@ With `ENGRAM_PROFILE=agent`, wake gate defaults to **hard** — `ack_wake_queue`
 | `ENGRAM_TOOL_TIER=lean` | yes (if unset) | Soft-warn power tools in response meta (`tool_tier_warning`); hard-block `rebuild_bvh` / `force_spatial_ingest` unless deep mode |
 | `ENGRAM_TOOL_TIER=power` / `all` | — | No gate |
 
-Does **not** change the 85-tool list; only response discipline. Implementation: `tool_tier.rs` + early gate in `handle_tool_call`.
+Does **not** change the 86-tool list; only response discipline. Implementation: `tool_tier.rs` + early gate in `handle_tool_call`.
 
 ---
 
@@ -68,6 +68,10 @@ Does **not** change the 85-tool list; only response discipline. Implementation: 
 - `remember_solution` — crystallize working fixes to praxis
 - `record_reasoning_trace` — full A/D/R trace (use `quick_trace` for daily work)
 - `scar` — repulsion for dead-ends / doom loops
+
+### Sovereignty / selective disclosure
+- `secure_context_provision` — need-to-know open of XChaCha20-Poly1305 sealed ProvLog (snippet + `payload_blake3` proof + `audit:access_*`). Ritual: `processes/ritual/secure-context-provision.toml`. Env: `ENGRAM_ENCRYPT_AT_REST`, `ENGRAM_SOVEREIGNTY_KEY`, `ENGRAM_SECURE_CONTEXT` (also redacts sealed previews in `context_for_edit`).
+- `lexicon_mint_word` — when encrypt-at-rest is on, stores sealed ProvLog; VSA binds plaintext at mint for geometry.
 
 ### Goals
 - `goal_create`, `goal_set_primary`, `goal_list`, `goal_status`, `goal_update_status`

@@ -50,6 +50,9 @@ clap        = { version = "4", features = ["derive", "env"] }
 shellexpand = "3"
 walkdir     = "2"
 libc         = "0.2"
+chacha20poly1305 = "0.10"
+getrandom = "0.2"
+base64 = "0.22"
 
 [profile.release]
 opt-level     = 3
