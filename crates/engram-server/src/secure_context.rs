@@ -257,11 +257,9 @@ fn redact_value_recursive(value: &mut Value, parent_concept: Option<&str>, path_
                 redact_value_recursive(item, parent_concept, path_hint);
             }
         }
-        Value::String(s) => {
-            if is_sealed_provlog(s) {
-                let concept = parent_concept.unwrap_or(path_hint);
-                *s = redact_for_context(concept, s, path_hint);
-            }
+        Value::String(s) if is_sealed_provlog(s) => {
+            let concept = parent_concept.unwrap_or(path_hint);
+            *s = redact_for_context(concept, s, path_hint);
         }
         _ => {}
     }
