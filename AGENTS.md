@@ -6,7 +6,7 @@ This file + CLAUDE.md + docs/ + `docs/skills/` + processes/*.toml define the con
 
 ## Start Here — 8-Tool Agent Memory Contract (Lean Default)
 
-**Read first:** [docs/AGENT_MEMORY_CONTRACT.md](docs/AGENT_MEMORY_CONTRACT.md) · **All 79 tools:** [docs/TOOL_DECISION_MAP.md](docs/TOOL_DECISION_MAP.md) · **JIT deformation:** [docs/DEFORMATION_PLAYBOOKS.md](docs/DEFORMATION_PLAYBOOKS.md) · **Harness injection:** [docs/HARNESS_INJECTION.md](docs/HARNESS_INJECTION.md) · **Harness (shipped):** [docs/HARNESS_INJECTION.md](docs/HARNESS_INJECTION.md) · [docs/SUBSTRATE_WINS_PLAN.md](docs/SUBSTRATE_WINS_PLAN.md) (historical)
+**Read first:** [docs/AGENT_MEMORY_CONTRACT.md](docs/AGENT_MEMORY_CONTRACT.md) · **All 86 tools:** [docs/TOOL_DECISION_MAP.md](docs/TOOL_DECISION_MAP.md) · **JIT deformation:** [docs/DEFORMATION_PLAYBOOKS.md](docs/DEFORMATION_PLAYBOOKS.md) · **Harness injection:** [docs/HARNESS_INJECTION.md](docs/HARNESS_INJECTION.md) · **Harness (shipped):** [docs/HARNESS_INJECTION.md](docs/HARNESS_INJECTION.md) · [docs/SUBSTRATE_WINS_PLAN.md](docs/SUBSTRATE_WINS_PLAN.md) (historical)
 
 | Phase | Tools |
 |-------|-------|
@@ -75,7 +75,7 @@ See processes/, mcp.rs, docs/RITUALS.md.
 - Use todo_write for complex multi-step.
 - For MCP in harnesses: ALWAYS `search_tool` first (exact schema), then `use_tool` (qualified name e.g. engram__mcp_engram_...).
 - Hot promotion for high-value artifacts: `promote_hot`.
-- **Do not delete MCP tools** — tier in documentation only; 79 tools remain for power users (75 `mcp_engram_*` + 4 linguistic).
+- **Do not delete MCP tools** — tier in documentation only; 86 tools remain for power users (82 `mcp_engram_*` + 4 linguistic).
 
 ## Agent discipline — tools must be called
 

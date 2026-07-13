@@ -1,0 +1,84 @@
+# agent:engram.ritual.secure-context-provision
+# Sovereign selective disclosure for encrypted-at-rest ProvLog bodies.
+# XChaCha20-Poly1305 AEAD (engram-core::payload_crypto); need-to-know snippets only.
+# Audit trail as audit:access_* blocks (optionally sealed). Additive — no .leg3 layout change.
+
+[process]
+name = "agent:engram.ritual.secure-context-provision"
+zedos_type = "ritual"
+phase_seed = "0xSECCONTEXT20260713"
+
+[category]
+object = "secure_context_provision"
+morphism = "OP_BIND"
+sheaf_role = "selective decrypt of sealed ProvLog: AAD=concept, snippet window, Merkle-related blake3 proof, encrypted audit trail; context_for_edit redaction under ENGRAM_SECURE_CONTEXT"
+h1_handler = "OP_INVERT"
+
+[mcp_tools]
+list = [
+  "mcp_engram_secure_context_provision",
+  "mcp_engram_context_for_edit",
+  "mcp_engram_lexicon_mint_word",
+  "mcp_engram_quick_trace",
+  "mcp_engram_verify_manifold_integrity",
+  "mcp_engram_verify_block_lawfulness",
+  "mcp_engram_scar",
+]
+
+[requires]
+list = [
+  "__system_state__",
+  "ritual:wake_up_anchor",
+  "ENGRAM_ENCRYPT_AT_REST optional",
+  "ENGRAM_SOVEREIGNTY_KEY optional (host-derived fallback for dogfood)",
+]
+
+[produces]
+list = [
+  "audit:access_*",
+  "selective_snippet+proof",
+  "trace:*_secure_context",
+]
+
+[invariants]
+list = [
+  "local_only_no_cloud_upload",
+  "xchacha20poly1305_aead",
+  "fail_closed_on_tamper_or_wrong_key",
+  "aad_is_concept_name",
+  "need_to_know_snippet_only",
+  "audit_every_provision",
+  "crs_0.74_gate_unchanged",
+  "unit_hypersphere_geometry_unencrypted",
+  "no_full_plaintext_in_mcp_default",
+]
+
+[timeout_ms]
+value = 30000
+
+[env]
+ENGRAM_ENCRYPT_AT_REST = "1 seals new sensitive writes (lexicon mint path)"
+ENGRAM_SOVEREIGNTY_KEY = "32-byte hex or base64; else host-local derivation from ENGRAM_STORE"
+ENGRAM_SECURE_CONTEXT = "1 redacts sealed bodies in context_for_edit"
+
+[sequence]
+steps = [
+  { order = 1, tool = "mcp_engram_lexicon_mint_word", note = "Optional: mint with ENGRAM_ENCRYPT_AT_REST=1 → sealed ProvLog" },
+  { order = 2, tool = "mcp_engram_secure_context_provision", note = "Selective open: concept + optional query + max_chars" },
+  { order = 3, tool = "mcp_engram_context_for_edit", note = "Under secure mode, sealed previews redacted automatically" },
+  { order = 4, tool = "mcp_engram_quick_trace", note = "Record authorized access fork if policy-sensitive" },
+]
+
+[trace]
+at = ["provision", "redact", "audit_mint", "decrypt_fail"]
+tools = ["mcp_engram_quick_trace", "mcp_engram_scar"]
+
+[handoff]
+ritual = "engram-session-end"
+tools = ["mcp_engram_session_end"]
+prepare_compression = true
+
+[notes]
+# Geometry (q/p/CRS) remains on the unit hypersphere unencrypted for recall/BVH.
+# Only ProvLog body text is sealed. Merkle parentCids + payload_blake3 remain public integrity pointers.
+# Never export raw sealed blobs to cloud. Scar any cloud-sync temptation immediately.

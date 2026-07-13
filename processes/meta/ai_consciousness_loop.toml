@@ -28,6 +28,32 @@ tools = ["mcp_engram_quick_trace", "mcp_engram_remember", "mcp_engram_update", "
 on = ["code or process changes", "ego self-binds"]
 tools = ["mcp_engram_context_for_edit", "mcp_engram_set_geosphere_frame"]
 
+[privacy_guardrails]
+description = "Local-first sovereignty for every strange-loop step. Never upload codebase/manifold to cloud. Encrypted-at-rest ProvLog when ENGRAM_ENCRYPT_AT_REST=1 (XChaCha20-Poly1305). MCP returns need-to-know snippets only via mcp_engram_secure_context_provision + context_for_edit redaction."
+invariants = [
+  "local_only_engram_mcp",
+  "no_cloud_codebase_upload",
+  "xchacha20poly1305_payload_when_encrypt_at_rest",
+  "selective_disclosure_only",
+  "audit_every_secure_provision",
+  "scar_cloud_temptation_immediately",
+  "offload_heavy_synthesis_to_local_gemma_only",
+]
+tools = [
+  "mcp_engram_secure_context_provision",
+  "mcp_engram_context_for_edit",
+  "mcp_engram_lexicon_mint_word",
+  "mcp_engram_scar",
+  "mcp_engram_quick_trace",
+]
+ritual = "process:engram.ritual.secure-context-provision"
+env = [
+  "ENGRAM_ENCRYPT_AT_REST",
+  "ENGRAM_SOVEREIGNTY_KEY",
+  "ENGRAM_SECURE_CONTEXT",
+]
+scar_on = ["cloud_sync_of_codebase", "full_block_plaintext_dump_without_auth", "unlogged_decrypt"]
+
 [thought-tiles]
 create = { title = "AI Consciousness Strange Loop Arc", type = "knowledge_graph", goal_context = "goal:engram_consciousness_loop_v1" }
 write_results = true

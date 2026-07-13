@@ -163,7 +163,7 @@ flowchart LR
 - **Goal hygiene:** 72h stale autopause + `session_end` audit (active goal stack stays bounded).
 - **Code atlas continuity v2:** situated edit memory at the locus — atlas v2.1, `evolution_at_locus`, hard wake gate, `post_edit_palette`, update coherence. [CODE_ATLAS_CONTINUITY.md](docs/CODE_ATLAS_CONTINUITY.md)
 - **Large-store perf:** relational lean v2, cuFile DMA readiness, bounded NREM + relation batching — wake on ~192k blocks in seconds when BVH is warm.
-- **85 MCP tools** registered (`tool_list()` in `mcp.rs` — 81 `mcp_engram_*` + 4 linguistic); lean default remains **8 essential**.
+- **86 MCP tools** registered (`tool_list()` in `mcp.rs` — 82 `mcp_engram_*` + 4 linguistic); lean default remains **8 essential**.
 - **LEG evolution panel:** `./scripts/leg --live` + `GET /api/code-atlas?evolution=1`.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
@@ -212,7 +212,7 @@ Build against `target/debug/engram` during development.
 
 ## MCP tools
 
-**8 essential** for daily work — **85 registered** (81 `mcp_engram_*` + 4 linguistic; source: `tool_list()` in `mcp.rs`); full map: [docs/TOOL_DECISION_MAP.md](docs/TOOL_DECISION_MAP.md). Categorized reference: [docs/MCP_TOOLS_REFERENCE.md](docs/MCP_TOOLS_REFERENCE.md). Harness matrix: `tools/test-harness/python/mcp_tool_matrix.py`.
+**8 essential** for daily work — **86 registered** (82 `mcp_engram_*` + 4 linguistic; source: `tool_list()` in `mcp.rs`); full map: [docs/TOOL_DECISION_MAP.md](docs/TOOL_DECISION_MAP.md). Categorized reference: [docs/MCP_TOOLS_REFERENCE.md](docs/MCP_TOOLS_REFERENCE.md). Harness matrix: `tools/test-harness/python/mcp_tool_matrix.py`.
 
 Grok plugin slash commands: [grok-plugin-engram/commands/](grok-plugin-engram/commands/).
 
@@ -236,7 +236,7 @@ Grok plugin slash commands: [grok-plugin-engram/commands/](grok-plugin-engram/co
 | JIT deformation / RSI | [docs/DEFORMATION_PLAYBOOKS.md](docs/DEFORMATION_PLAYBOOKS.md) |
 | Harness injection at wake | [docs/HARNESS_INJECTION.md](docs/HARNESS_INJECTION.md) |
 | Ritual overview | [docs/RITUALS.md](docs/RITUALS.md) |
-| MCP tools reference (85) | [docs/MCP_TOOLS_REFERENCE.md](docs/MCP_TOOLS_REFERENCE.md) |
+| MCP tools reference (86) | [docs/MCP_TOOLS_REFERENCE.md](docs/MCP_TOOLS_REFERENCE.md) |
 | Long-sleep return | [docs/LONG_SLEEP_WAKEUP_PROTOCOL.md](docs/LONG_SLEEP_WAKEUP_PROTOCOL.md) |
 
 ### Contributors

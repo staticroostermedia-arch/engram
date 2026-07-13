@@ -1730,6 +1730,28 @@ fn tool_list() -> Value {
                 }
             },
             {
+                "name": "mcp_engram_secure_context_provision",
+                "description": "Sovereign selective disclosure: open an encrypted-at-rest ProvLog (XChaCha20-Poly1305) for need-to-know only. Returns bounded snippet + Merkle-related integrity pointer + audit concept. Ritual: process:engram.ritual.secure-context-provision. Env: ENGRAM_ENCRYPT_AT_REST, ENGRAM_SOVEREIGNTY_KEY, ENGRAM_SECURE_CONTEXT. FEW-SHOT: {\"concept\":\"lexicon:word:sovereignty\",\"query\":\"encrypted\",\"max_chars\":512}",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "concept": {
+                            "type": "string",
+                            "description": "Target concept (required)"
+                        },
+                        "query": {
+                            "type": "string",
+                            "description": "Optional substring to window around (case-insensitive)"
+                        },
+                        "max_chars": {
+                            "type": "integer",
+                            "description": "Max plaintext chars in snippet (default 512, clamp 32–16384)"
+                        }
+                    },
+                    "required": ["concept"]
+                }
+            },
+            {
                 "name": "mcp_engram_evolution_at_locus",
                 "description": "Code atlas v2 — bounded evolution bundle at a file locus. Returns loci (spatial concepts in range), arcs (edit-arc provlog segments with --- update @ --- markers), trace_chain (prev_in_trace walk from traces_at_locus head), scars_at_locus, latest chain_summary tile, and var_handles for program trace context. Auto-ingests single file when loci empty (same resolution as context_for_edit; safe on large stores via bounded stem prefix + force_ingest).",
                 "inputSchema": {
@@ -6966,12 +6988,60 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
             let _ = crate::edit_arc_gate::register_from_context(path, &payload);
             payload = crate::wake_queue_gate::inject_gate_warning(payload, &wake_gate);
             payload = crate::edit_arc_gate::inject_gate_warning(payload, &arc_gate);
+            // Selective disclosure: redact sealed ProvLog previews under secure mode.
+            if crate::secure_context::secure_context_mode() {
+                payload = crate::secure_context::redact_sealed_fields_in_json(payload, path);
+                if let Ok(mut l) = store.lock() {
+                    l.log_activity(
+                        "ritual:secure_context",
+                        "context_for_edit_redact",
+                        Some(path),
+                    );
+                }
+            }
             json!({
                 "content": [{
                     "type": "text",
                     "text": payload.to_string()
                 }]
             })
+        }
+
+        "mcp_engram_secure_context_provision" => {
+            let concept = args["concept"].as_str().unwrap_or("").trim().to_string();
+            let query = args
+                .get("query")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            let max_chars = args
+                .get("max_chars")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(512) as usize;
+            if concept.is_empty() {
+                return json!({
+                    "content": [{ "type": "text", "text": "Error: concept required." }],
+                    "isError": true
+                });
+            }
+            match store.lock() {
+                Ok(mut lock) => {
+                    match crate::secure_context::provision(&mut lock, &concept, &query, max_chars) {
+                        Ok(payload) => json!({
+                            "content": [{ "type": "text", "text": payload.to_string() }]
+                        }),
+                        Err(e) => json!({
+                            "content": [{ "type": "text", "text": format!("Error: {e}") }],
+                            "isError": true
+                        }),
+                    }
+                }
+                Err(p) => json!({
+                    "content": [{ "type": "text", "text": format!("Error: store mutex poisoned: {p}") }],
+                    "isError": true
+                }),
+            }
         }
 
         "mcp_engram_ingest_reference_frame" => match store.lock() {
@@ -9062,8 +9132,12 @@ mod tests {
         // Docs must mention live count (parse first **N** / "N total" / "N tools" claims).
         // Hard-code sync: if this fails, update docs to match `n` (currently 84).
         assert_eq!(
-            n, 85,
-            "tool_list length {n} != documented 85 — update docs/MCP_TOOLS_REFERENCE.md and AGENT_MEMORY_CONTRACT.md"
+            n, 86,
+            "tool_list length {n} != documented 86 — update docs/MCP_TOOLS_REFERENCE.md and AGENT_MEMORY_CONTRACT.md"
+        );
+        assert!(
+            names.contains(&"mcp_engram_secure_context_provision"),
+            "secure_context_provision tool missing from tool_list"
         );
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .parent()
