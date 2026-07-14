@@ -41,6 +41,8 @@ list = [
   "lexicon:word:hyperspace-vsa",
   "lexicon:word:langevin-autophagy",
   "lexicon:word:adaptive-memory-distillation",
+  "lexicon:word:crs-precision-recall",
+  "lexicon:word:dirichlet-fisher-governor",
 ]
 
 [execute]
