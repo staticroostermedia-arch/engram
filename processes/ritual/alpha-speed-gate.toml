@@ -30,6 +30,7 @@ master_switch = "ENGRAM_ALPHA_SPEED_GATE"
 default = "on"
 disable_values = ["0", "false", "no", "off"]
 presentation_hop_budget = "ENGRAM_PRESENTATION_HOP_BUDGET"
+crs_alpha_joint = "ENGRAM_CRS_ALPHA_JOINT"
 
 [surfaces]
 list = [
@@ -39,6 +40,7 @@ list = [
   "presentation_alpha_cost",
   "injection_rank_alpha",
   "momentum_alpha_weight",
+  "crs_alpha_joint_recall",
 ]
 
 [invariants]
