@@ -50,6 +50,8 @@ list = [
   "lexicon:word:relation-hop-cost",
   "lexicon:word:presentation-alpha-cost",
   "lexicon:word:hop-budget-walk",
+  "lexicon:word:injection-alpha-cost",
+  "lexicon:word:edge-volatility-scale",
 ]
 
 [execute]

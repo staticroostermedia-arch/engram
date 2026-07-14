@@ -1119,7 +1119,30 @@ pub fn build_suggested_actions(
     actions
 }
 
-/// Re-rank wake queue by composite injection score (CRS + hot + recency + momentum + scar/handoff).
+/// Lowest RoMem α on any edge between `concept` and primary_goal / active goal (0 = unset).
+fn concept_edge_volatility_to_goal(store: &StoreHandle, concept: &str) -> f32 {
+    if concept.is_empty() || concept == "primary_goal" {
+        return 0.0;
+    }
+    let mut best = 0.0_f32;
+    let active_goal = crate::store::resolve_active_primary_goal(store);
+    let mut seeds: Vec<&str> = vec!["primary_goal"];
+    if let Some(ref g) = active_goal {
+        if !g.is_empty() && g != "primary_goal" {
+            seeds.push(g.as_str());
+        }
+    }
+    for seed in seeds {
+        for (_lbl, other, vol) in store.search_relations_ranked(seed, None, "both", true) {
+            if other == concept && (best <= 0.0 || vol < best) {
+                best = vol;
+            }
+        }
+    }
+    best
+}
+
+/// Re-rank wake queue by composite injection score (CRS + hot + recency + momentum + α + scar/handoff).
 fn rank_suggested_actions(store: &StoreHandle, actions: &mut [Value]) {
     let recency_rank = crate::injection_priority::recency_rank_map(&store.access_index.recent(120));
 
@@ -1168,6 +1191,7 @@ fn rank_suggested_actions(store: &StoreHandle, actions: &mut [Value]) {
         } else {
             "wake_queue"
         };
+        let edge_vol = concept_edge_volatility_to_goal(store, concept);
         let art = crate::injection_priority::artifact_for_concept(
             concept,
             crs,
@@ -1176,6 +1200,7 @@ fn rank_suggested_actions(store: &StoreHandle, actions: &mut [Value]) {
             momentum,
             source,
             SESSION_HANDOFF_LATEST,
+            edge_vol,
         );
         crate::injection_priority::injection_rank_score(&art)
     }
