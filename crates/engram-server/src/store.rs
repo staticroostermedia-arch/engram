@@ -2059,6 +2059,8 @@ impl StoreHandle {
             "alpha_speed_gate_env": "ENGRAM_ALPHA_SPEED_GATE",
             "alpha_speed_gate_process": "process:engram.ritual.alpha-speed-gate",
             "presentation_hop_budget": crate::presentation_stratum::presentation_hop_budget(),
+            "crs_alpha_joint_enabled": crate::injection_priority::crs_alpha_joint_enabled(),
+            "crs_alpha_joint_env": "ENGRAM_CRS_ALPHA_JOINT",
         })
     }
 
@@ -2690,12 +2692,24 @@ impl StoreHandle {
                 let block = self
                     .fetch_block_high_priority(name)
                     .or_else(|| self.backend.fetch_block(raw))?;
-                Some(engram_core::backend::score_memory(
-                    name.clone(),
-                    effective_q,
-                    &block,
-                    ego,
-                ))
+                let mut mem =
+                    engram_core::backend::score_memory(name.clone(), effective_q, &block, ego);
+                // RSI Cycle 27: CRS×α joint — Dirichlet score × edge_volatility_scale(min goal α)
+                if crate::injection_priority::crs_alpha_joint_enabled() {
+                    let vol = self.min_goal_edge_volatility(name);
+                    let before = mem.score;
+                    mem.score =
+                        crate::injection_priority::apply_crs_alpha_joint(mem.score, vol, name);
+                    if (mem.score - before).abs() > 1e-6 {
+                        mem.explain = format!(
+                            "{} [crs_alpha_joint α={:.2} scale={:.3}]",
+                            mem.explain,
+                            vol,
+                            crate::injection_priority::edge_volatility_scale(vol)
+                        );
+                    }
+                }
+                Some(mem)
             })
             .collect();
         if anchor_boost {
@@ -9188,6 +9202,17 @@ SESSION HANDOFF PACKET v1
             Some(false)
         );
         std::env::remove_var("ENGRAM_ALPHA_SPEED_GATE");
+        std::env::remove_var("ENGRAM_CRS_ALPHA_JOINT");
+        let r2 = store.backend_readiness();
+        assert_eq!(
+            r2.get("crs_alpha_joint_enabled").and_then(|v| v.as_bool()),
+            Some(true),
+            "CRS×α joint default on when α gate on"
+        );
+        assert_eq!(
+            r2.get("crs_alpha_joint_env").and_then(|v| v.as_str()),
+            Some("ENGRAM_CRS_ALPHA_JOINT")
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 

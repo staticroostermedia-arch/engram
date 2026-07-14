@@ -66,6 +66,30 @@ pub fn protect_alpha_damp(concept: &str) -> bool {
         || concept.starts_with("compression_handoff_")
 }
 
+/// CRS×α joint reweight for Dirichlet recall (RSI Cycle 27).
+/// Env `ENGRAM_CRS_ALPHA_JOINT`: unset/1/true → on; 0/false/off → off.
+/// When on and α gate on, multiplies score by `edge_volatility_scale(edge_vol)`.
+pub fn crs_alpha_joint_enabled() -> bool {
+    if !alpha_speed_gate_enabled() {
+        return false;
+    }
+    match std::env::var("ENGRAM_CRS_ALPHA_JOINT") {
+        Ok(v) => {
+            let t = v.trim().to_ascii_lowercase();
+            !(t == "0" || t == "false" || t == "no" || t == "off")
+        }
+        Err(_) => true,
+    }
+}
+
+/// Apply CRS×α joint scale to a Dirichlet recall score.
+pub fn apply_crs_alpha_joint(score: f32, edge_volatility: f32, concept: &str) -> f32 {
+    if !crs_alpha_joint_enabled() || protect_alpha_damp(concept) {
+        return score;
+    }
+    score * edge_volatility_scale(edge_volatility)
+}
+
 /// 80/20 q/p momentum blend, optionally re-weighted by RoMem edge α (RSI Cycle 24).
 pub fn momentum_alpha_score(
     q_score: f32,
@@ -305,6 +329,22 @@ mod tests {
     }
 
     #[test]
+    fn crs_alpha_joint_prefers_static_edges() {
+        std::env::remove_var("ENGRAM_ALPHA_SPEED_GATE");
+        std::env::remove_var("ENGRAM_CRS_ALPHA_JOINT");
+        assert!(crs_alpha_joint_enabled());
+        let base = 0.80_f32;
+        let static_s = apply_crs_alpha_joint(base, 0.12, "tile:static");
+        let dyn_s = apply_crs_alpha_joint(base, 0.85, "tile:dyn");
+        assert!(static_s > dyn_s);
+        assert!((apply_crs_alpha_joint(base, 0.99, "scar:x") - base).abs() < 1e-5);
+        std::env::set_var("ENGRAM_CRS_ALPHA_JOINT", "0");
+        assert!(!crs_alpha_joint_enabled());
+        assert!((apply_crs_alpha_joint(base, 0.85, "tile:x") - base).abs() < 1e-5);
+        std::env::remove_var("ENGRAM_CRS_ALPHA_JOINT");
+    }
+
+    #[test]
     fn momentum_alpha_score_damps_high_vol_non_anchors() {
         let q = 0.9_f32;
         let p = 0.5_f32;
@@ -324,6 +364,8 @@ mod tests {
 
     #[test]
     fn high_alpha_damps_injection_rank_for_non_anchors() {
+        std::env::remove_var("ENGRAM_ALPHA_SPEED_GATE");
+        std::env::remove_var("ENGRAM_CRS_ALPHA_JOINT");
         let mut static_tile = artifact("tile:static_spec", 0.88, true, 2);
         static_tile.edge_volatility = 0.12;
         let mut dynamic_tile = artifact("tile:churn_spec", 0.88, true, 2);

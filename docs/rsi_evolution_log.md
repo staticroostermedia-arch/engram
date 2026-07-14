@@ -947,4 +947,40 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 2. Encrypt-at-rest live MCP dogfood.
 3. Optional CRS×α joint score on recall Dirichlet path.
 
+---
+
+## Cycle 27 — CRS×α joint score on Dirichlet recall (2026-07-14)
+
+### Master baseline
+
+- Post Cycle 26: PR **#72** `ced32e1c` — readiness α surface.
+- Hub CRS ~0.895 · CSF ~0.939 · ~88.7k blocks · avg CRS ~0.858 · integrity healthy.
+
+### Research synthesis
+
+| Source | Insight |
+|--------|---------|
+| Cycle 19 Fisher CRS×sim | Precision term inside Dirichlet; still α-blind to edge class. |
+| Cycles 20–26 α stack | Temporal edge economics available via min_goal_edge_volatility. |
+| SLM-V3 Fisher–Rao map | Multiplicative precision channels stack; α is discrete temporal precision. |
+
+### Hypothesis
+
+**CRS×α joint:** after Dirichlet(+Fisher) score, multiply by `edge_volatility_scale(min_goal_α)` when `ENGRAM_CRS_ALPHA_JOINT` on (default) and master α gate on; continuity protect undamped.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Code | `crs_alpha_joint_enabled`, `apply_crs_alpha_joint`; `score_recall_candidates` reweight |
+| Readiness | `crs_alpha_joint_enabled` + env key |
+| Tests | static α > dynamic at equal base score; gate/opt-out |
+| Lexicon | `crs-alpha-joint`, `dirichlet-alpha-precision` CRS 0.78 |
+
+### Next vectors
+
+1. Per-dimension σ² / variance tensors (full Fisher) if metrics warrant.
+2. Encrypt-at-rest live MCP dogfood.
+3. Relation-label α in score_memory for ZEDOS_RELATION blocks without goal edges.
+
 

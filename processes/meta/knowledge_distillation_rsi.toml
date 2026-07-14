@@ -59,6 +59,8 @@ list = [
   "lexicon:word:resolve-alpha-weighted",
   "lexicon:word:readiness-alpha-surface",
   "lexicon:word:wake-alpha-visibility",
+  "lexicon:word:crs-alpha-joint",
+  "lexicon:word:dirichlet-alpha-precision",
 ]
 
 [execute]
