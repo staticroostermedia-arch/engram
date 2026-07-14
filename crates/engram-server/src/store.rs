@@ -2179,7 +2179,8 @@ impl StoreHandle {
         concept: &str,
         block: &mut engram_core::types::Leg3Pointer,
     ) {
-        if !crate::secure_context::encrypt_at_rest_enabled() || !Self::encrypt_seal_eligible(concept)
+        if !crate::secure_context::encrypt_at_rest_enabled()
+            || !Self::encrypt_seal_eligible(concept)
         {
             return;
         }
