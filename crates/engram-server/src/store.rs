@@ -540,7 +540,12 @@ impl RelationIndex {
                     .then_with(|| a.to.cmp(&b.to))
             });
             for e in outgoing {
-                let hop = Self::relation_hop_cost(e);
+                // Master α gate off → unit hops (classic BFS economics). Cycle 25.
+                let hop = if crate::injection_priority::alpha_speed_gate_enabled() {
+                    Self::relation_hop_cost(e)
+                } else {
+                    1.0
+                };
                 let next_cost = cost + hop;
                 if next_cost > budget + 1e-5 {
                     continue;

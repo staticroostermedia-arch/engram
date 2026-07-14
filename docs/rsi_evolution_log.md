@@ -874,4 +874,40 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 2. Encrypt-at-rest live MCP dogfood.
 3. Unified α policy doc / env master switch.
 
+---
+
+## Cycle 25 — unified α policy / ENGRAM_ALPHA_SPEED_GATE (2026-07-14)
+
+### Master baseline
+
+- Post Cycle 24: PR **#70** `b4c0f6b2` — momentum α re-weight.
+- Hub CRS ~0.892 · CSF ~0.938 · ~88.5k blocks · avg CRS ~0.858 · integrity healthy.
+
+### Research synthesis
+
+| Source | Insight |
+|--------|---------|
+| Cycles 20–24 α stack | Five surfaces; defaults scattered as hard-coded `true`. |
+| Ops A/B need | Single env to disable temporal edge economics without code edits. |
+| Per-tool override | Explicit `alpha_weighted` still wins over master. |
+
+### Hypothesis
+
+**Master switch:** `ENGRAM_ALPHA_SPEED_GATE` (default on) + `resolve_alpha_weighted(Option)` + gate-aware `edge_volatility_scale` / hop costs; ritual process sheaf documents policy.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Code | `alpha_speed_gate_enabled`, `resolve_alpha_weighted`; gate in scale, injection, BFS hops, presentation, MCP defaults |
+| Process | `processes/ritual/alpha-speed-gate.toml` |
+| Tests | env defaults on; off → scale=1; resolve override |
+| Lexicon | `alpha-speed-gate-master`, `resolve-alpha-weighted` CRS 0.78 |
+
+### Next vectors
+
+1. Per-dimension σ² / variance tensors (full Fisher) if metrics warrant.
+2. Encrypt-at-rest live MCP dogfood.
+3. Expose α gate in backend_readiness / wake packet.
+
 

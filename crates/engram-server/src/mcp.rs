@@ -2155,7 +2155,7 @@ fn tool_list() -> Value {
             },
             {
                 "name": "mcp_engram_visualize",
-                "description": "Render a BFS subgraph from a seed concept as a Mermaid diagram. Default α-weighted: edge cost=1+volatility so high-α (supersedes/scar) paths burn depth budget faster than static implements edges. Set alpha_weighted=false for classic unit-hop BFS.",
+                "description": "Render a BFS subgraph from a seed concept as a Mermaid diagram. Default α-weighted (ENGRAM_ALPHA_SPEED_GATE master switch, default on): edge cost=1+volatility so high-α paths burn depth budget faster. Set alpha_weighted=false or ENGRAM_ALPHA_SPEED_GATE=0 for classic unit-hop BFS.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -2277,7 +2277,7 @@ fn tool_list() -> Value {
                         },
                         "alpha_weighted": {
                             "type": "boolean",
-                            "description": "If true (default), re-weight 80/20 blend by RoMem edge α to primary goal. If false, pure q/p blend.",
+                            "description": "Optional override. Omit → ENGRAM_ALPHA_SPEED_GATE master (default on). true: re-weight 80/20 by goal-edge α; false: pure q/p blend.",
                             "default": true
                         }
                     },
@@ -8370,10 +8370,9 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
         "mcp_engram_visualize" => {
             let concept = args["concept"].as_str().unwrap_or("").trim().to_string();
             let depth = args["depth"].as_u64().unwrap_or(2).min(5) as usize;
-            let alpha_weighted = args
-                .get("alpha_weighted")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(true);
+            let alpha_weighted = crate::injection_priority::resolve_alpha_weighted(
+                args.get("alpha_weighted").and_then(|v| v.as_bool()),
+            );
 
             if concept.is_empty() {
                 return json!({ "content": [{ "type": "text", "text": "Error: concept is required." }], "isError": true });
@@ -8698,10 +8697,9 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
             let zedos_filter = args["zedos_filter"]
                 .as_str()
                 .map(|s| s.trim().to_lowercase());
-            let alpha_weighted = args
-                .get("alpha_weighted")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(true);
+            let alpha_weighted = crate::injection_priority::resolve_alpha_weighted(
+                args.get("alpha_weighted").and_then(|v| v.as_bool()),
+            );
 
             if query.is_empty() {
                 return json!({ "content": [{ "type": "text", "text": "Error: query is required." }], "isError": true });

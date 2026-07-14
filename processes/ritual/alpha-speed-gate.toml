@@ -1,0 +1,66 @@
+# agent:engram.ritual.alpha-speed-gate
+# Unified RoMem semantic speed-gate policy (RSI Cycles 20–25).
+# Master env: ENGRAM_ALPHA_SPEED_GATE (default on). Surfaces: relate α, visualize BFS,
+# presentation multi-hop, injection re-rank, query_with_momentum blend.
+
+[process]
+name = "agent:engram.ritual.alpha-speed-gate"
+zedos_type = "ritual"
+phase_seed = "0xALPHASG20260714"
+
+[category]
+object = "semantic_speed_gate_policy"
+morphism = "OP_BIND"
+sheaf_role = "edge volatility α temporal economics across agent navigation surfaces"
+h1_handler = "OP_INVERT"
+
+[mcp_tools]
+list = [
+  "mcp_engram_relate",
+  "mcp_engram_search_by_relation",
+  "mcp_engram_visualize",
+  "mcp_engram_query_with_momentum",
+  "mcp_engram_session_start",
+  "mcp_engram_quick_trace",
+]
+
+[env]
+master_switch = "ENGRAM_ALPHA_SPEED_GATE"
+default = "on"
+disable_values = ["0", "false", "no", "off"]
+presentation_hop_budget = "ENGRAM_PRESENTATION_HOP_BUDGET"
+
+[surfaces]
+list = [
+  "relation_edge_volatility",
+  "prefer_static_rank",
+  "alpha_weighted_bfs_visualize",
+  "presentation_alpha_cost",
+  "injection_rank_alpha",
+  "momentum_alpha_weight",
+]
+
+[invariants]
+list = [
+  "continuity_anchors_never_damped",
+  "per_tool_alpha_weighted_override",
+  "unit_hypersphere_unchanged",
+  "local_only_sovereignty",
+]
+
+[requires]
+list = [
+  "lexicon:word:semantic-speed-gate",
+  "lexicon:word:edge-volatility-scale",
+  "process:engram.ritual.bi-temporal-supersedes",
+]
+
+[produces]
+list = [
+  "policy:alpha_speed_gate",
+  "env:ENGRAM_ALPHA_SPEED_GATE",
+]
+
+[notes]
+# Default ON. Set ENGRAM_ALPHA_SPEED_GATE=0 for legacy flat ranking (tests / A-B).
+# Explicit MCP alpha_weighted=true|false overrides master when provided.
