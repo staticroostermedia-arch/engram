@@ -2061,6 +2061,8 @@ impl StoreHandle {
             "presentation_hop_budget": crate::presentation_stratum::presentation_hop_budget(),
             "crs_alpha_joint_enabled": crate::injection_priority::crs_alpha_joint_enabled(),
             "crs_alpha_joint_env": "ENGRAM_CRS_ALPHA_JOINT",
+            "incident_alpha_scan_cap": Self::incident_alpha_scan_cap(),
+            "incident_alpha_scan_cap_env": "ENGRAM_INCIDENT_ALPHA_CAP",
         })
     }
 
@@ -6910,23 +6912,56 @@ impl StoreHandle {
         best
     }
 
-    /// Lowest α among any incident edges (both directions). Uses stored volatility or label heuristic.
+    /// Max incident edges examined when probing α (default 64).
+    /// Env: `ENGRAM_INCIDENT_ALPHA_CAP`. RSI Cycle 29 ultra-hub guard.
+    pub fn incident_alpha_scan_cap() -> usize {
+        if let Ok(v) = std::env::var("ENGRAM_INCIDENT_ALPHA_CAP") {
+            if let Ok(n) = v.parse::<usize>() {
+                return n.clamp(8, 512);
+            }
+        }
+        64
+    }
+
+    /// Structural-static early-exit threshold (implements/defined_in band).
+    pub const INCIDENT_ALPHA_STATIC_FLOOR: f32 = 0.12;
+
+    /// Lowest α among incident edges (both directions). Uses stored volatility or label heuristic.
     /// RSI Cycle 28: fallback when concept has no goal-graph edge.
+    /// RSI Cycle 29: scans at most `incident_alpha_scan_cap()` matches; early-exits if α ≤ 0.12.
     pub fn min_incident_edge_volatility(&self, concept: &str) -> f32 {
         if concept.is_empty() {
             return 0.0;
         }
-        let mut best = 0.0_f32;
-        for (_lbl, _other, vol) in self.search_relations_ranked(concept, None, "both", true) {
-            if best <= 0.0 || vol < best {
+        let cap = Self::incident_alpha_scan_cap();
+        let mut best = f32::MAX;
+        let mut seen = 0usize;
+        for e in &self.relation_index.entries {
+            if e.from != concept && e.to != concept {
+                continue;
+            }
+            let vol = effective_relation_volatility(e);
+            if vol < best {
                 best = vol;
             }
+            seen += 1;
+            // Found structural static — no need to keep scanning for lower
+            if best <= Self::INCIDENT_ALPHA_STATIC_FLOOR + 1e-5 {
+                break;
+            }
+            if seen >= cap {
+                break;
+            }
         }
-        best
+        if best == f32::MAX {
+            0.0
+        } else {
+            best
+        }
     }
 
     /// Preferred α for ranking: goal-edge α if any, else min incident-edge α (label/stored).
-    /// 0 = unset (no damping). Shared by injection, momentum, CRS×α joint (Cycles 23–28).
+    /// 0 = unset (no damping). Shared by injection, momentum, CRS×α joint (Cycles 23–29).
     pub fn concept_edge_volatility(&self, concept: &str) -> f32 {
         let goal = self.min_goal_edge_volatility(concept);
         if goal > 0.0 {
@@ -9238,6 +9273,17 @@ SESSION HANDOFF PACKET v1
             r2.get("crs_alpha_joint_env").and_then(|v| v.as_str()),
             Some("ENGRAM_CRS_ALPHA_JOINT")
         );
+        assert_eq!(
+            r2.get("incident_alpha_scan_cap_env")
+                .and_then(|v| v.as_str()),
+            Some("ENGRAM_INCIDENT_ALPHA_CAP")
+        );
+        assert!(
+            r2.get("incident_alpha_scan_cap")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0)
+                >= 8
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -9396,6 +9442,68 @@ SESSION HANDOFF PACKET v1
         );
         let preferred = store.concept_edge_volatility("a:solo");
         assert!((preferred - 0.12).abs() < 1e-5);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn incident_alpha_scan_cap_env_and_static_early_exit() {
+        std::env::remove_var("ENGRAM_INCIDENT_ALPHA_CAP");
+        assert_eq!(StoreHandle::incident_alpha_scan_cap(), 64);
+        std::env::set_var("ENGRAM_INCIDENT_ALPHA_CAP", "16");
+        assert_eq!(StoreHandle::incident_alpha_scan_cap(), 16);
+        std::env::remove_var("ENGRAM_INCIDENT_ALPHA_CAP");
+
+        let dir = test_store_dir("incident_alpha_cap");
+        let mut store = StoreHandle::new(&dir.to_string_lossy());
+        store.remember("hub:cap", "hub").unwrap();
+        // Many dynamic edges first in insertion order, then one static
+        for i in 0..20 {
+            let n = format!("d:peer{i}");
+            store.remember(&n, "dyn peer").unwrap();
+            store
+                .relate_with_volatility("hub:cap", &n, "supersedes", Some(0.85))
+                .unwrap();
+        }
+        store.remember("s:peer", "static").unwrap();
+        store
+            .relate_with_volatility("hub:cap", "s:peer", "implements", Some(0.12))
+            .unwrap();
+        // Without early-exit, min is 0.12; with cap=8 only dyn edges may be seen
+        std::env::set_var("ENGRAM_INCIDENT_ALPHA_CAP", "8");
+        let capped = store.min_incident_edge_volatility("hub:cap");
+        assert!(
+            (capped - 0.85).abs() < 1e-5,
+            "cap=8 should only see supersedes edges first: {}",
+            capped
+        );
+        std::env::set_var("ENGRAM_INCIDENT_ALPHA_CAP", "64");
+        let full = store.min_incident_edge_volatility("hub:cap");
+        assert!(
+            (full - 0.12).abs() < 1e-5,
+            "higher cap should reach implements static: {}",
+            full
+        );
+        // Early-exit: put static first via new hub with static as first edge
+        store.remember("hub:early", "early").unwrap();
+        store.remember("s2", "s").unwrap();
+        store
+            .relate_with_volatility("hub:early", "s2", "implements", Some(0.12))
+            .unwrap();
+        for i in 0..30 {
+            let n = format!("dx{i}");
+            store.remember(&n, "d").unwrap();
+            store
+                .relate_with_volatility("hub:early", &n, "supersedes", Some(0.90))
+                .unwrap();
+        }
+        std::env::set_var("ENGRAM_INCIDENT_ALPHA_CAP", "8");
+        let early = store.min_incident_edge_volatility("hub:early");
+        assert!(
+            (early - 0.12).abs() < 1e-5,
+            "static first should early-exit at 0.12: {}",
+            early
+        );
+        std::env::remove_var("ENGRAM_INCIDENT_ALPHA_CAP");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

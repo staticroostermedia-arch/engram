@@ -63,6 +63,8 @@ list = [
   "lexicon:word:dirichlet-alpha-precision",
   "lexicon:word:concept-edge-volatility",
   "lexicon:word:incident-edge-alpha",
+  "lexicon:word:incident-alpha-cap",
+  "lexicon:word:static-alpha-early-exit",
 ]
 
 [execute]
