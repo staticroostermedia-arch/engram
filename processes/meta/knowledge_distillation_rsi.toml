@@ -39,6 +39,8 @@ list = [
   "lexicon:word:selective-disclosure",
   "lexicon:word:generalized-hrr",
   "lexicon:word:hyperspace-vsa",
+  "lexicon:word:langevin-autophagy",
+  "lexicon:word:adaptive-memory-distillation",
 ]
 
 [execute]
