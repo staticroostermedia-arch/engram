@@ -805,9 +805,14 @@ fn score_block(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+
+    /// Process-global ENGRAM_FISHER_* env — serialize tests that touch it.
+    static FISHER_ENV_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn fisher_precision_prefers_higher_crs_at_equal_cosine() {
+        let _g = FISHER_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         std::env::set_var("ENGRAM_FISHER_PRECISION", "1");
         std::env::set_var("ENGRAM_FISHER_INVVAR", "0"); // isolate CRS-only path
         let dir = tempfile::tempdir().unwrap();
@@ -841,6 +846,7 @@ mod tests {
 
     #[test]
     fn fisher_invvar_prefers_low_drift_at_equal_crs_cosine() {
+        let _g = FISHER_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         std::env::set_var("ENGRAM_FISHER_PRECISION", "1");
         std::env::set_var("ENGRAM_FISHER_INVVAR", "1");
         let dir = tempfile::tempdir().unwrap();
