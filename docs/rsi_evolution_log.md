@@ -1055,4 +1055,42 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 2. Encrypt-at-rest live MCP dogfood.
 3. Degree-index for O(deg) incident lookup without full scan.
 
+---
+
+## Cycle 30 — RelationIndex degree-index O(deg) incident α (2026-07-14)
+
+### Master baseline
+
+- Post Cycle 29: PR **#75** `bf8ece74` — incident α scan cap + static early-exit.
+- Hub CRS ~0.858 · CSF ~0.93 · ~89k blocks · integrity: pre-existing PRAXIS contract noise only.
+
+### Research synthesis
+
+| Source | Insight |
+|--------|---------|
+| Cycle 29 cap | Still O(E) worst-case if every candidate hits the full-index walk before matching. |
+| Graph engines | Adjacency lists make incident queries O(deg) standard. |
+| Prefer-static + cap | Still apply on the adj-list walk (bounded + early-exit). |
+
+### Hypothesis
+
+**Degree index:** maintain non-serialized `HashMap<concept, Vec<entry_idx>>` on `RelationIndex`; rebuild on load/refresh/remove; incremental push on add. `min_incident_edge_volatility` walks only adj[concept].
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Code | `RelationIndex.adj`, `rebuild_adj`, incremental `add`, rebuild on `remove`/`refresh`/`load` |
+| Query | `min_incident_edge_volatility` O(deg) + cap + static early-exit |
+| Readiness | `relation_adj_nodes`, `relation_edge_count` |
+| Tests | `relation_adj_degree_index_o_deg_and_rebuild` (both dirs, remove, reload) |
+| Lexicon | `relation-degree-index`, `incident-alpha-o-deg` CRS 0.78 |
+
+### Next vectors
+
+1. CSR / mmap adj for multi-million edge stalks if metrics show HashMap pressure.
+2. Per-dimension σ² / variance tensors (full Fisher) if warranted.
+3. Encrypt-at-rest live MCP dogfood.
+4. Prefer-static sort of adj lists (static edges first) to maximize early-exit hit rate.
+
 

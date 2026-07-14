@@ -271,6 +271,9 @@ pub struct RelationIndex {
     /// When > 0, `add`/`remove` defer disk flush until the outer batch ends.
     defer_flush_depth: u32,
     flush_pending: bool,
+    /// Concept → entry indices where concept is `from` or `to` (RSI Cycle 30 degree index).
+    /// Not serialized — rebuilt on load/refresh/remove; updated incrementally on add.
+    adj: std::collections::HashMap<String, Vec<usize>>,
 }
 
 impl RelationIndex {
@@ -290,13 +293,32 @@ impl RelationIndex {
             path
         );
         let mtime = relation_index_mtime(&path);
-        Self {
+        let mut idx = Self {
             entries,
             path,
             last_sync_mtime: mtime,
             defer_flush_depth: 0,
             flush_pending: false,
+            adj: std::collections::HashMap::new(),
+        };
+        idx.rebuild_adj();
+        idx
+    }
+
+    /// Rebuild adjacency lists from `entries` (O(E)).
+    pub fn rebuild_adj(&mut self) {
+        self.adj.clear();
+        for (i, e) in self.entries.iter().enumerate() {
+            self.adj.entry(e.from.clone()).or_default().push(i);
+            if e.to != e.from {
+                self.adj.entry(e.to.clone()).or_default().push(i);
+            }
         }
+    }
+
+    /// Number of concepts with at least one incident edge (for readiness/metrics).
+    pub fn adj_node_count(&self) -> usize {
+        self.adj.len()
     }
 
     /// Coalesce relation_index.json writes during batch ingest (force_ingest, glue, …).
@@ -324,6 +346,7 @@ impl RelationIndex {
         if let Ok(entries) = serde_json::from_str::<Vec<RelationEntry>>(&data) {
             self.entries = entries;
             self.last_sync_mtime = mtime;
+            self.rebuild_adj();
         }
     }
 
@@ -335,6 +358,8 @@ impl RelationIndex {
             .position(|e| e.from == from && e.label == label && e.to == to)
         {
             self.entries.remove(pos);
+            // Indices after `pos` shift — full rebuild is correct and rare.
+            self.rebuild_adj();
             self.flush_if_needed();
             true
         } else {
@@ -365,12 +390,17 @@ impl RelationIndex {
             return;
         }
         {
+            let idx = self.entries.len();
             self.entries.push(RelationEntry {
                 from: from.to_string(),
                 label: label.to_string(),
                 volatility: vol,
                 to: to.to_string(),
             });
+            self.adj.entry(from.to_string()).or_default().push(idx);
+            if to != from {
+                self.adj.entry(to.to_string()).or_default().push(idx);
+            }
             self.flush_if_needed();
         }
     }
@@ -2063,6 +2093,8 @@ impl StoreHandle {
             "crs_alpha_joint_env": "ENGRAM_CRS_ALPHA_JOINT",
             "incident_alpha_scan_cap": Self::incident_alpha_scan_cap(),
             "incident_alpha_scan_cap_env": "ENGRAM_INCIDENT_ALPHA_CAP",
+            "relation_adj_nodes": self.relation_index.adj_node_count(),
+            "relation_edge_count": self.relation_index.entries.len(),
         })
     }
 
@@ -6928,24 +6960,27 @@ impl StoreHandle {
 
     /// Lowest α among incident edges (both directions). Uses stored volatility or label heuristic.
     /// RSI Cycle 28: fallback when concept has no goal-graph edge.
-    /// RSI Cycle 29: scans at most `incident_alpha_scan_cap()` matches; early-exits if α ≤ 0.12.
+    /// RSI Cycle 29: cap + static early-exit.
+    /// RSI Cycle 30: O(deg) via RelationIndex adjacency (no full E scan).
     pub fn min_incident_edge_volatility(&self, concept: &str) -> f32 {
         if concept.is_empty() {
             return 0.0;
         }
+        let Some(idxs) = self.relation_index.adj.get(concept) else {
+            return 0.0;
+        };
         let cap = Self::incident_alpha_scan_cap();
         let mut best = f32::MAX;
         let mut seen = 0usize;
-        for e in &self.relation_index.entries {
-            if e.from != concept && e.to != concept {
+        for &i in idxs {
+            let Some(e) = self.relation_index.entries.get(i) else {
                 continue;
-            }
+            };
             let vol = effective_relation_volatility(e);
             if vol < best {
                 best = vol;
             }
             seen += 1;
-            // Found structural static — no need to keep scanning for lower
             if best <= Self::INCIDENT_ALPHA_STATIC_FLOOR + 1e-5 {
                 break;
             }
@@ -6961,7 +6996,7 @@ impl StoreHandle {
     }
 
     /// Preferred α for ranking: goal-edge α if any, else min incident-edge α (label/stored).
-    /// 0 = unset (no damping). Shared by injection, momentum, CRS×α joint (Cycles 23–29).
+    /// 0 = unset (no damping). Shared by injection, momentum, CRS×α joint (Cycles 23–30).
     pub fn concept_edge_volatility(&self, concept: &str) -> f32 {
         let goal = self.min_goal_edge_volatility(concept);
         if goal > 0.0 {
@@ -9504,6 +9539,68 @@ SESSION HANDOFF PACKET v1
             early
         );
         std::env::remove_var("ENGRAM_INCIDENT_ALPHA_CAP");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn relation_adj_degree_index_o_deg_and_rebuild() {
+        let dir = test_store_dir("relation_adj_deg");
+        let mut store = StoreHandle::new(&dir.to_string_lossy());
+        store.remember("hub:adj", "hub").unwrap();
+        store.remember("p1", "peer1").unwrap();
+        store.remember("p2", "peer2").unwrap();
+        store.remember("p3", "peer3").unwrap();
+        // Outgoing static + dynamic, and incoming edge (concept as `to`)
+        store
+            .relate_with_volatility("hub:adj", "p1", "implements", Some(0.12))
+            .unwrap();
+        store
+            .relate_with_volatility("hub:adj", "p2", "supersedes", Some(0.90))
+            .unwrap();
+        store
+            .relate_with_volatility("p3", "hub:adj", "implements", Some(0.15))
+            .unwrap();
+
+        assert!(
+            store.relation_index.adj_node_count() >= 4,
+            "adj should index hub + peers"
+        );
+        assert_eq!(store.relation_index.entries.len(), 3);
+
+        let min_hub = store.min_incident_edge_volatility("hub:adj");
+        assert!(
+            (min_hub - 0.12).abs() < 1e-5,
+            "O(deg) min over out+in edges: {}",
+            min_hub
+        );
+        let min_p1 = store.min_incident_edge_volatility("p1");
+        assert!((min_p1 - 0.12).abs() < 1e-5, "peer as `to`: {}", min_p1);
+        assert_eq!(store.min_incident_edge_volatility("missing:x"), 0.0);
+
+        // Remove shifts indices — rebuild must keep min correct
+        assert!(store
+            .relation_index
+            .remove("hub:adj", "implements", "p1"));
+        let after_rm = store.min_incident_edge_volatility("hub:adj");
+        assert!(
+            (after_rm - 0.15).abs() < 1e-5,
+            "after remove static out, min is incoming 0.15: {}",
+            after_rm
+        );
+        assert_eq!(store.min_incident_edge_volatility("p1"), 0.0);
+        assert_eq!(store.relation_index.entries.len(), 2);
+
+        // Reload from disk rebuilds adj
+        let path = dir.to_string_lossy().to_string();
+        drop(store);
+        let store2 = StoreHandle::new(&path);
+        assert!(store2.relation_index.adj_node_count() >= 3);
+        let reloaded = store2.min_incident_edge_volatility("hub:adj");
+        assert!(
+            (reloaded - 0.15).abs() < 1e-5,
+            "load rebuild_adj: {}",
+            reloaded
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
