@@ -31,6 +31,7 @@ default = "on"
 disable_values = ["0", "false", "no", "off"]
 presentation_hop_budget = "ENGRAM_PRESENTATION_HOP_BUDGET"
 crs_alpha_joint = "ENGRAM_CRS_ALPHA_JOINT"
+incident_alpha_cap = "ENGRAM_INCIDENT_ALPHA_CAP"
 
 [surfaces]
 list = [

@@ -1019,4 +1019,40 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 2. Encrypt-at-rest live MCP dogfood.
 3. Cap incident scan cost for ultra-hub concepts (k-bound).
 
+---
+
+## Cycle 29 — incident α scan cap + static early-exit (2026-07-14)
+
+### Master baseline
+
+- Post Cycle 28: PR **#74** `5d506edf` — concept edge α fallback.
+- Hub CRS ~0.885–0.896 · CSF variable · ~89k blocks · integrity mostly healthy.
+
+### Research synthesis
+
+| Source | Insight |
+|--------|---------|
+| Cycle 28 incident scan | Full `relation_index` walk per candidate is O(E) on hubs. |
+| Prefer-static floor | implements/defined_in α≈0.12 is the ranking minimum of interest. |
+| Ops caps | Bounded samples (presentation k, search k) already Engram pattern. |
+
+### Hypothesis
+
+**Bounded probe:** examine at most `ENGRAM_INCIDENT_ALPHA_CAP` (default 64) incident edges; early-exit when α ≤ 0.12 (structural static found).
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Code | `incident_alpha_scan_cap`, optimized `min_incident_edge_volatility` |
+| Readiness | cap + env key |
+| Tests | cap truncates before static; early-exit when static first |
+| Lexicon | `incident-alpha-cap`, `static-alpha-early-exit` CRS 0.78 |
+
+### Next vectors
+
+1. Per-dimension σ² / variance tensors (full Fisher) if metrics warrant.
+2. Encrypt-at-rest live MCP dogfood.
+3. Degree-index for O(deg) incident lookup without full scan.
+
 
