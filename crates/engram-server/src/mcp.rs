@@ -1619,10 +1619,9 @@ fn tool_list() -> Value {
                 "name": "mcp_engram_relate",
                 "description": "Create a directional knowledge graph edge between two concepts using VSA OP_BIND. \
                                 Stores the edge as a ZEDOS_RELATION block linking concept_a →[label]→ concept_b. \
-                                WHEN TO USE: When you discover a meaningful relationship between two memories — \
-                                'depends_on', 'implements', 'contradicts', 'derived_from', 'same_category', etc. \
-                                This builds a navigable knowledge graph. Use mcp_engram_search_by_relation to traverse it \
-                                and mcp_engram_visualize to render a Mermaid diagram of the subgraph. \
+                                Optional volatility α ∈ (0,1] is the RoMem semantic speed gate (static≈0.1, dynamic≈0.85); \
+                                omit to auto-infer from label. WHEN TO USE: When you discover a meaningful relationship — \
+                                'depends_on', 'implements', 'contradicts', 'supersedes', etc. \
                                 Both concepts must already exist in memory before relating them.",
                 "inputSchema": {
                     "type": "object",
@@ -1637,7 +1636,11 @@ fn tool_list() -> Value {
                         },
                         "label": {
                             "type": "string",
-                            "description": "Relation label (e.g. 'depends_on', 'implements')"
+                            "description": "Relation label (e.g. 'depends_on', 'implements', 'supersedes')"
+                        },
+                        "volatility": {
+                            "type": "number",
+                            "description": "Optional semantic-speed-gate α in (0,1]: low=static fact, high=temporally volatile. Default: label heuristic."
                         }
                     },
                     "required": ["concept_a", "concept_b", "label"]
@@ -2118,7 +2121,7 @@ fn tool_list() -> Value {
             },
             {
                 "name": "mcp_engram_search_by_relation",
-                "description": "Traverse the knowledge graph. Find concepts related to a seed, filtered by optional label and direction. IMPORTANT FOR SCOPING (avoids data overload on high-relation nodes like primary goals with 100+ 'serves' from history): use label (e.g. 'serves'), direction, and k (limit) to keep results small. Start narrow; drill down with visualize(depth) or context/recall on results if larger context needed. See wake-up skill for process.",
+                "description": "Traverse the knowledge graph. Find concepts related to a seed, filtered by optional label and direction. Results include RoMem semantic-speed-gate α per edge and are ranked by prefer_static (default true: static edges first). IMPORTANT FOR SCOPING: use label, direction, and k to keep results small on high-relation hubs.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -2140,6 +2143,11 @@ fn tool_list() -> Value {
                             "type": "integer",
                             "description": "Max results to return (default 50, max 200). Use to scope and prevent huge outputs on central concepts.",
                             "default": 50
+                        },
+                        "prefer_static": {
+                            "type": "boolean",
+                            "description": "If true (default), rank by ascending volatility α (static facts first). If false, dynamic/high-α edges first.",
+                            "default": true
                         }
                     },
                     "required": ["concept"]
@@ -6851,13 +6859,17 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
             let label = args_str(args, &["label", "relation", "rel"])
                 .unwrap_or("")
                 .to_string();
+            let volatility = args
+                .get("volatility")
+                .and_then(|v| v.as_f64())
+                .map(|v| v as f32);
 
             if concept_a.is_empty() || concept_b.is_empty() || label.is_empty() {
                 return json!({
                     "content": [{ "type": "text", "text":
                         "Error: relate requires concept_a, concept_b, label \
-                         (aliases: from/to/relation). Example: \
-                         {\"concept_a\":\"goal:x\",\"concept_b\":\"trace:y\",\"label\":\"advances\"}"
+                         (aliases: from/to/relation). Optional: volatility α in (0,1]. Example: \
+                         {\"concept_a\":\"goal:x\",\"concept_b\":\"trace:y\",\"label\":\"advances\",\"volatility\":0.35}"
                     }],
                     "isError": true
                 });
@@ -6880,7 +6892,7 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
                     })
                 }
             };
-            match s.relate(raw_a, raw_b, &label) {
+            match s.relate_with_volatility(raw_a, raw_b, &label, volatility) {
                 Ok(msg) => json!({ "content": [{ "type": "text", "text": msg }] }),
                 Err(e) => {
                     json!({ "content": [{ "type": "text", "text": format!("Error adding relation: {e}") }], "isError": true })
@@ -8287,16 +8299,22 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
                 .trim()
                 .to_string();
             let k = args["k"].as_u64().unwrap_or(50).min(200) as usize;
+            // Default true: static / low-α edges first (RoMem semantic speed gate).
+            let prefer_static = args
+                .get("prefer_static")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(true);
 
             if concept.is_empty() {
                 return json!({ "content": [{ "type": "text", "text": "Error: concept is required." }], "isError": true });
             }
 
-            let mut results =
-                store
-                    .lock()
-                    .unwrap()
-                    .search_relations(&concept, label.as_deref(), &direction);
+            let mut results = store.lock().unwrap().search_relations_ranked(
+                &concept,
+                label.as_deref(),
+                &direction,
+                prefer_static,
+            );
 
             // Scope to prevent data overload/huge chains on high-relation nodes (e.g. primary goal with 100+ 'serves' from prep history).
             // Drill down process (per wake-up skill): use label/direction/k for narrow scope first; if need larger context use visualize(depth) or context/recall on specific results.
@@ -8309,27 +8327,34 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
                 return json!({ "content": [{ "type": "text", "text": format!("No '{}' relations found for '{}' (direction: {}, k={}).", label_str, concept, direction, k) }] });
             }
 
-            let arrow = match direction.as_str() {
-                "to" => "→",
-                _ => "→",
+            let rank_mode = if prefer_static {
+                "prefer_static"
+            } else {
+                "prefer_dynamic"
             };
             let mut out = format!(
-                "🕸️  Relations for '{}' (direction: {}, k={}):\n\n",
-                concept, direction, k
+                "🕸️  Relations for '{}' (direction: {}, k={}, rank: {}):\n\n",
+                concept, direction, k, rank_mode
             );
-            for (lbl, other) in &results {
+            for (lbl, other, vol) in &results {
                 match direction.as_str() {
-                    "to" => out.push_str(&format!("  {} --[{}]--> {}\n", other, lbl, concept)),
-                    _ => out.push_str(&format!("  {} --[{}]--> {}\n", concept, lbl, other)),
+                    "to" => out.push_str(&format!(
+                        "  {} --[{} α={:.2}]--> {}\n",
+                        other, lbl, vol, concept
+                    )),
+                    _ => out.push_str(&format!(
+                        "  {} --[{} α={:.2}]--> {}\n",
+                        concept, lbl, vol, other
+                    )),
                 }
             }
-            let _ = arrow;
             info!(
-                "search_by_relation '{}' {} {} (k={}) -> {} results (scoped)",
+                "search_by_relation '{}' {} {} (k={}, {}) -> {} results (scoped)",
                 concept,
                 direction,
                 label.as_deref().unwrap_or("*"),
                 k,
+                rank_mode,
                 results.len()
             );
             json!({ "content": [{ "type": "text", "text": out.trim() }] })

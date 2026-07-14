@@ -43,6 +43,8 @@ list = [
   "lexicon:word:adaptive-memory-distillation",
   "lexicon:word:crs-precision-recall",
   "lexicon:word:dirichlet-fisher-governor",
+  "lexicon:word:relation-edge-volatility",
+  "lexicon:word:prefer-static-rank",
 ]
 
 [execute]
