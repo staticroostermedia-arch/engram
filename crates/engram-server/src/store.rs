@@ -6862,6 +6862,30 @@ impl StoreHandle {
         self.relation_index.query(concept, label, direction)
     }
 
+    /// Lowest RoMem α on edges between `concept` and primary_goal / active goal (0 = unset).
+    /// Used by wake injection re-rank and query_with_momentum α re-weight (Cycles 23–24).
+    pub fn min_goal_edge_volatility(&self, concept: &str) -> f32 {
+        if concept.is_empty() || concept == "primary_goal" {
+            return 0.0;
+        }
+        let mut best = 0.0_f32;
+        let active_goal = resolve_active_primary_goal(self);
+        let mut seeds: Vec<&str> = vec!["primary_goal"];
+        if let Some(ref g) = active_goal {
+            if !g.is_empty() && g != "primary_goal" {
+                seeds.push(g.as_str());
+            }
+        }
+        for seed in seeds {
+            for (_lbl, other, vol) in self.search_relations_ranked(seed, None, "both", true) {
+                if other == concept && (best <= 0.0 || vol < best) {
+                    best = vol;
+                }
+            }
+        }
+        best
+    }
+
     /// Relation query with RoMem semantic-speed-gate α and optional static-first ranking.
     /// Returns (label, other, volatility). When `prefer_static` is true, lower α ranks first;
     /// when false, higher α (dynamic edges) rank first. Default ranking path for MCP search.

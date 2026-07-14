@@ -2256,12 +2256,9 @@ fn tool_list() -> Value {
             {
                 "name": "mcp_engram_query_with_momentum",
                 "description": "Momentum-assisted recall: blends semantic similarity (q tensor, 80%) with conceptual trajectory (p tensor, 20%). \
-                                WHEN TO USE INSTEAD OF recall: When you want to find concepts that are actively \
-                                changing or evolving, not just ones that statically match your query right now. \
-                                Example: use this when asking 'what has been changing in the auth system?' \
-                                because momentum detects blocks whose p tensor is accelerating toward your query topic. \
-                                Use regular recall when you want stable, crystallized knowledge. \
-                                Supports zedos_filter (incl. 'training' for Phase 2 NREM-biased richer CLS blocks).",
+                                Optional α re-weight (default true): multiplies blend by edge_volatility_scale(min goal-edge α) so static structure ranks above high-churn succession edges (RSI Cycle 24). \
+                                WHEN TO USE INSTEAD OF recall: When you want concepts that are actively changing or evolving. \
+                                Use regular recall for stable crystallized knowledge. Supports zedos_filter incl. 'training'.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -2277,6 +2274,11 @@ fn tool_list() -> Value {
                         "zedos_filter": {
                             "type": "string",
                             "description": "Optional: filter by memory type (same values as mcp_engram_recall, including 'training' for ZEDOS_TRAINING / richer CLS blocks). Leave unset for all types."
+                        },
+                        "alpha_weighted": {
+                            "type": "boolean",
+                            "description": "If true (default), re-weight 80/20 blend by RoMem edge α to primary goal. If false, pure q/p blend.",
+                            "default": true
                         }
                     },
                      "required": ["query"]
@@ -8689,17 +8691,17 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
 
         "mcp_engram_query_with_momentum" => {
             // Phase 3: Momentum-assisted recall — blend q (80%) + p (20%) scores
-            // Quick Win 1 (user-prioritized highest-leverage): tiny LRU for recent blended results.
-            // Hits on repeated hot concepts (wake-up rehydration, sub-agent polling) avoid the
-            // full 154k-block linear scan + 8192d cosines. Capacity 24; keyed by query+filter.
-            // Pre-edit recon: context_for_file + recall_in_file on containing mcp__fn__handle_tool_call
-            // (1203-3744) + multiple forces; intent trace 1780285926; harness baseline (subagent 019e80ff)
-            // shows 0 failures / sub-10ms on sequences including this tool against stable ac3509a9.
+            // RSI Cycle 24: optional α re-weight via min_goal_edge_volatility.
+            // Quick Win 1: tiny LRU for recent blended results. Capacity 24; keyed by query+filter+α.
             let query = args["query"].as_str().unwrap_or("").trim().to_string();
             let k = args["k"].as_u64().unwrap_or(5).min(20) as usize;
             let zedos_filter = args["zedos_filter"]
                 .as_str()
                 .map(|s| s.trim().to_lowercase());
+            let alpha_weighted = args
+                .get("alpha_weighted")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(true);
 
             if query.is_empty() {
                 return json!({ "content": [{ "type": "text", "text": "Error: query is required." }], "isError": true });
@@ -8707,9 +8709,10 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
 
             // LRU check (outside heavy lock where possible)
             let cache_key = format!(
-                "{}|{}",
+                "{}|{}|a{}",
                 query.to_lowercase(),
-                zedos_filter.as_deref().unwrap_or("")
+                zedos_filter.as_deref().unwrap_or(""),
+                if alpha_weighted { 1 } else { 0 }
             );
             if let Some(cached) = MOMENTUM_LRU.lock().ok().and_then(|mut lru| {
                 lru.iter()
@@ -8752,7 +8755,7 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
                     .collect()
             };
 
-            let mut scored: Vec<(String, f32, f32)> = probe
+            let mut scored: Vec<(String, f32, f32, f32)> = probe
                 .into_iter()
                 .filter_map(|concept| {
                     // Hot path upgrade (Tier 2 broader adoption): query_with_momentum is one of the most used ritual entry points.
@@ -8764,9 +8767,20 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
                     }
                     let q_score = engram_core::ops::cosine_similarity(&effective_q, &block.q);
                     let p_score = engram_core::ops::cosine_similarity(&effective_q, &block.p);
-                    // Blend: 80% position (where it is now) + 20% momentum (where it's heading)
-                    let score = (0.80 * q_score + 0.20 * p_score).clamp(-1.0, 1.0);
-                    Some((concept, score, block.energetics.dv))
+                    let edge_vol = if alpha_weighted {
+                        lock.min_goal_edge_volatility(&concept)
+                    } else {
+                        0.0
+                    };
+                    // Blend 80/20 + optional RoMem α re-weight (Cycle 24)
+                    let score = crate::injection_priority::momentum_alpha_score(
+                        q_score,
+                        p_score,
+                        edge_vol,
+                        alpha_weighted,
+                        &concept,
+                    );
+                    Some((concept, score, block.energetics.dv, edge_vol))
                 })
                 .collect();
 
@@ -8778,12 +8792,17 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
                 if let Some(pos) = lru.iter().position(|(k, _)| k == &cache_key) {
                     lru.remove(pos);
                 }
-                let _top = scored.first().map(|(c, s, d)| (c.clone(), *s, *d));
+                let mode = if alpha_weighted {
+                    "α-weighted"
+                } else {
+                    "q/p only"
+                };
                 let output = if scored.is_empty() {
                     "No memories found.".to_string()
                 } else {
-                    let mut out = format!("Momentum-weighted results for '{}':\n\n", query);
-                    for (i, (concept, score, dv)) in scored.iter().enumerate() {
+                    let mut out =
+                        format!("Momentum-weighted results for '{}' ({mode}):\n\n", query);
+                    for (i, (concept, score, dv, vol)) in scored.iter().enumerate() {
                         let tag_str = if let Some(b) = lock.fetch_block_high_priority(concept) {
                             match b.zedos_tag {
                                 0xD => "DECL",
@@ -8798,11 +8817,12 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
                             "?"
                         };
                         out.push_str(&format!(
-                            "**[{}] {}** (momentum score: {:.3}, drift: {:.3}, tag:{}) \n",
+                            "**[{}] {}** (momentum score: {:.3}, drift: {:.3}, α={:.2}, tag:{}) \n",
                             i + 1,
                             concept,
                             score,
                             dv,
+                            vol,
                             tag_str
                         ));
                     }
@@ -8820,8 +8840,13 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
                 return json!({ "content": [{ "type": "text", "text": "No memories found." }] });
             }
 
-            let mut output = format!("Momentum-weighted results for '{}':\n\n", query);
-            for (i, (concept, score, dv)) in scored.iter().enumerate() {
+            let mode = if alpha_weighted {
+                "α-weighted"
+            } else {
+                "q/p only"
+            };
+            let mut output = format!("Momentum-weighted results for '{}' ({mode}):\n\n", query);
+            for (i, (concept, score, dv, vol)) in scored.iter().enumerate() {
                 // Re-fetch lightweight for tag display (post-filter; hot path makes this cheap for small k)
                 let tag_str = if let Some(b) = lock.fetch_block_high_priority(concept) {
                     match b.zedos_tag {
@@ -8837,11 +8862,12 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
                     "?"
                 };
                 output.push_str(&format!(
-                    "**[{}] {}** (momentum score: {:.3}, drift: {:.3}, tag:{}) \n",
+                    "**[{}] {}** (momentum score: {:.3}, drift: {:.3}, α={:.2}, tag:{}) \n",
                     i + 1,
                     concept,
                     score,
                     dv,
+                    vol,
                     tag_str
                 ));
             }
