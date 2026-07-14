@@ -68,6 +68,7 @@ list = [
   "lexicon:word:relation-degree-index",
   "lexicon:word:incident-alpha-o-deg",
   "lexicon:word:adj-prefer-static-sort",
+  "lexicon:word:wake-latency-budget",
 ]
 
 [execute]
