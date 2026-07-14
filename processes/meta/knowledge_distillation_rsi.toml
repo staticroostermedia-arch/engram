@@ -52,6 +52,8 @@ list = [
   "lexicon:word:hop-budget-walk",
   "lexicon:word:injection-alpha-cost",
   "lexicon:word:edge-volatility-scale",
+  "lexicon:word:momentum-alpha-weight",
+  "lexicon:word:min-goal-edge-volatility",
 ]
 
 [execute]

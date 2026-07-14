@@ -36,6 +36,29 @@ pub fn edge_volatility_scale(volatility: f32) -> f32 {
     1.0 / (1.0 + 0.35 * vol)
 }
 
+/// Continuity anchors never receive α damping (wake + momentum paths).
+pub fn protect_alpha_damp(concept: &str) -> bool {
+    concept == "primary_goal"
+        || concept.starts_with("scar:")
+        || concept.starts_with("helper:session_handoff")
+        || concept.starts_with("compression_handoff_")
+}
+
+/// 80/20 q/p momentum blend, optionally re-weighted by RoMem edge α (RSI Cycle 24).
+pub fn momentum_alpha_score(
+    q_score: f32,
+    p_score: f32,
+    edge_volatility: f32,
+    apply_alpha: bool,
+    concept: &str,
+) -> f32 {
+    let base = (0.80 * q_score + 0.20 * p_score).clamp(-1.0, 1.0);
+    if !apply_alpha || protect_alpha_damp(concept) {
+        return base;
+    }
+    (base * edge_volatility_scale(edge_volatility)).clamp(-1.0, 1.0)
+}
+
 /// Composite rank for right-time delivery: CRS + hot + recency + momentum + anchor/scar boosts.
 /// Non-anchor artifacts are damped by `edge_volatility_scale` (α speed-gate).
 pub fn injection_rank_score(a: &InjectionArtifact) -> f32 {
@@ -235,6 +258,24 @@ mod tests {
         assert!((edge_volatility_scale(0.0) - 1.0).abs() < 1e-6);
         assert!(edge_volatility_scale(0.12) > edge_volatility_scale(0.85));
         assert!((edge_volatility_scale(0.12) - 1.0 / (1.0 + 0.35 * 0.12)).abs() < 1e-5);
+    }
+
+    #[test]
+    fn momentum_alpha_score_damps_high_vol_non_anchors() {
+        let q = 0.9_f32;
+        let p = 0.5_f32;
+        let base = momentum_alpha_score(q, p, 0.0, true, "tile:x");
+        let static_s = momentum_alpha_score(q, p, 0.12, true, "tile:x");
+        let dyn_s = momentum_alpha_score(q, p, 0.85, true, "tile:x");
+        assert!((base - (0.80 * q + 0.20 * p)).abs() < 1e-5);
+        assert!(static_s > dyn_s);
+        assert!(static_s < base + 1e-5);
+        // Continuity protect
+        let scar = momentum_alpha_score(q, p, 0.99, true, "scar:dead");
+        assert!((scar - base).abs() < 1e-5);
+        // Opt-out
+        let off = momentum_alpha_score(q, p, 0.85, false, "tile:x");
+        assert!((off - base).abs() < 1e-5);
     }
 
     #[test]

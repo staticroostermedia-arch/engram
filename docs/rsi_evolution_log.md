@@ -838,4 +838,40 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 2. Encrypt-at-rest live MCP dogfood.
 3. Optional α re-weight on query_with_momentum result blend.
 
+---
+
+## Cycle 24 — query_with_momentum α re-weight (2026-07-14)
+
+### Master baseline
+
+- Post Cycle 23: PR **#69** `8464ca27` — injection re-rank α-cost.
+- Hub CRS ~0.891 · CSF ~0.937 · ~88.4k blocks · avg CRS ~0.857 · integrity healthy.
+
+### Research synthesis
+
+| Source | Insight |
+|--------|---------|
+| Cycles 20–23 α stack | Graph, visualize, presentation, injection all α-aware; momentum recall still pure 80/20. |
+| 80/20 q/p blend | Trajectory signal stays; multiply by `edge_volatility_scale` for temporal fidelity. |
+| Continuity protect | Reuse `protect_alpha_damp` for scar/handoff/primary. |
+
+### Hypothesis
+
+**Momentum α re-weight:** default `alpha_weighted=true` on `query_with_momentum` applies `momentum_alpha_score` using `min_goal_edge_volatility`; opt-out restores legacy blend.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Code | `momentum_alpha_score`, `StoreHandle::min_goal_edge_volatility` (shared with harness) |
+| MCP | `query_with_momentum.alpha_weighted` (default true); output shows α |
+| Tests | pure momentum_alpha_score static>dyn + protect + opt-out |
+| Lexicon | `momentum-alpha-weight`, `min-goal-edge-volatility` CRS 0.78 |
+
+### Next vectors
+
+1. Per-dimension σ² / variance tensors (full Fisher) if metrics warrant.
+2. Encrypt-at-rest live MCP dogfood.
+3. Unified α policy doc / env master switch.
+
 
