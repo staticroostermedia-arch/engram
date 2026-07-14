@@ -70,6 +70,7 @@ list = [
   "lexicon:word:adj-prefer-static-sort",
   "lexicon:word:wake-latency-budget",
   "lexicon:word:fisher-invvar-precision",
+  "lexicon:word:encrypt-remember-dogfood",
 ]
 
 [execute]

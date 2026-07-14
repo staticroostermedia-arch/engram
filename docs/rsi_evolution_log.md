@@ -1209,4 +1209,43 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 3. Encrypt-at-rest MCP dogfood.
 4. True wake path cost reduction.
 
+---
+
+## Cycle 34 — encrypt-at-rest remember/update dogfood (2026-07-14)
+
+### Master baseline
+
+- Post Cycle 33: PR **#79** `95fd185a` — Fisher inv-var precision.
+- Encrypt path existed for lexicon mint + provision; general `remember` stored plaintext ProvLog.
+
+### Research synthesis
+
+| Source | Insight |
+|--------|---------|
+| Sovereignty mandate | 100% local; sensitive blocks XChaCha20-Poly1305 at rest. |
+| Gap | Lexicon sealed; agent `remember`/`update` did not auto-seal. |
+| Geometry | Seal word-channel only after q encode from plaintext (VSA unchanged). |
+
+### Hypothesis
+
+**Dogfood wire:** `remember` seals ProvLog when `ENGRAM_ENCRYPT_AT_REST=1`; `update` unwraps → splices → reseals. Readiness exposes encrypt flags for ops.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Code | `maybe_seal_block_provlog`, `plain_provlog_for_update` on StoreHandle |
+| Paths | remember auto-seal; update unwrap/splice/reseal |
+| Readiness | encrypt_at_rest, secure_context, sovereignty_key_configured |
+| Tests | `remember_auto_seals_provlog_when_encrypt_on` |
+| Ritual | secure-context-provision surfaces + env block |
+| Lexicon | `encrypt-remember-dogfood` |
+
+### Next vectors
+
+1. Banded/chunked σ².
+2. CSR/mmap adj.
+3. Wake path cost reduction.
+4. Default-on encrypt for agent profile (opt-in remains safer for now).
+
 
