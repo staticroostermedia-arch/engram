@@ -21,9 +21,23 @@ pub struct InjectionArtifact {
     pub is_scar: bool,
     pub is_handoff: bool,
     pub is_primary_anchor: bool,
+    /// RoMem relation edge volatility α ∈ [0,1]. 0 = unset (no damping).
+    /// High α damps injection rank so static structure surfaces first (RSI Cycle 23).
+    pub edge_volatility: f32,
+}
+
+/// Scale injection weight by edge volatility α (aligned with presentation `score_alpha_scale`).
+/// `0` / unset → 1.0 (no damping). Static α≈0.12 → ~0.96; dynamic α≈0.85 → ~0.77.
+pub fn edge_volatility_scale(volatility: f32) -> f32 {
+    if volatility <= 0.0 {
+        return 1.0;
+    }
+    let vol = volatility.clamp(0.01, 1.0);
+    1.0 / (1.0 + 0.35 * vol)
 }
 
 /// Composite rank for right-time delivery: CRS + hot + recency + momentum + anchor/scar boosts.
+/// Non-anchor artifacts are damped by `edge_volatility_scale` (α speed-gate).
 pub fn injection_rank_score(a: &InjectionArtifact) -> f32 {
     let crs_w = a.crs.clamp(0.0, 1.0) * 0.35;
     let hot_w = if a.hot { 0.18 } else { 0.0 };
@@ -38,7 +52,14 @@ pub fn injection_rank_score(a: &InjectionArtifact) -> f32 {
     } else {
         0.0
     };
-    (crs_w + hot_w + recency_w + momentum_w + anchor_w).clamp(0.0, 1.5)
+    let base = crs_w + hot_w + recency_w + momentum_w + anchor_w;
+    // Load-bearing continuity slots are never α-damped.
+    let scaled = if a.is_scar || a.is_handoff || a.is_primary_anchor {
+        base
+    } else {
+        base * edge_volatility_scale(a.edge_volatility)
+    };
+    scaled.clamp(0.0, 1.5)
 }
 
 /// Build recency rank map from access-index tuples (0 = freshest).
@@ -51,6 +72,7 @@ pub fn recency_rank_map(recent: &[(String, u64)]) -> HashMap<String, u32> {
 }
 
 /// Build an artifact for ranking from concept metadata.
+/// Set `edge_volatility` on the result when RoMem α is known (0 = unset / no damping).
 pub fn artifact_for_concept(
     concept: &str,
     crs: f32,
@@ -70,6 +92,7 @@ pub fn artifact_for_concept(
         is_scar: concept.starts_with("scar:"),
         is_handoff: concept == handoff_concept || concept.starts_with("compression_handoff_"),
         is_primary_anchor: concept == "primary_goal",
+        edge_volatility: 0.0,
     }
 }
 
@@ -184,6 +207,7 @@ mod tests {
             is_scar: false,
             is_handoff: false,
             is_primary_anchor: false,
+            edge_volatility: 0.0,
         }
     }
 
@@ -204,6 +228,35 @@ mod tests {
         let tile = artifact("tile:spec", 0.88, true, 2);
         let ranked = prioritize_artifacts(vec![tile.clone(), scar.clone()]);
         assert_eq!(ranked[0].concept, "scar:dead_approach");
+    }
+
+    #[test]
+    fn edge_volatility_scale_prefers_static() {
+        assert!((edge_volatility_scale(0.0) - 1.0).abs() < 1e-6);
+        assert!(edge_volatility_scale(0.12) > edge_volatility_scale(0.85));
+        assert!((edge_volatility_scale(0.12) - 1.0 / (1.0 + 0.35 * 0.12)).abs() < 1e-5);
+    }
+
+    #[test]
+    fn high_alpha_damps_injection_rank_for_non_anchors() {
+        let mut static_tile = artifact("tile:static_spec", 0.88, true, 2);
+        static_tile.edge_volatility = 0.12;
+        let mut dynamic_tile = artifact("tile:churn_spec", 0.88, true, 2);
+        dynamic_tile.edge_volatility = 0.85;
+        assert!(
+            injection_rank_score(&static_tile) > injection_rank_score(&dynamic_tile),
+            "static α should outrank high-α at equal CRS/hot"
+        );
+        // Handoff never damped even with high α
+        let mut handoff = artifact("helper:session_handoff_latest", 0.94, true, 1);
+        handoff.is_handoff = true;
+        handoff.edge_volatility = 0.99;
+        let undamped = {
+            let mut h = handoff.clone();
+            h.edge_volatility = 0.0;
+            injection_rank_score(&h)
+        };
+        assert!((injection_rank_score(&handoff) - undamped).abs() < 1e-5);
     }
 
     fn completeness_input(

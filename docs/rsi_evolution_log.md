@@ -802,4 +802,40 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 2. Encrypt-at-rest live binary dogfood (ops: ENGRAM_ENCRYPT_AT_REST on MCP).
 3. α-cost on query_with_momentum / injection re-rank.
 
+---
+
+## Cycle 23 — injection re-rank α-cost (edge volatility damp) (2026-07-14)
+
+### Master baseline
+
+- Post Cycle 22: PR **#68** `66ecb36e` — presentation α-cost multi-hop.
+- Hub CRS ~0.890 · CSF ~0.936 · ~88.2k blocks · avg CRS ~0.858 · integrity healthy.
+
+### Research synthesis
+
+| Source | Insight |
+|--------|---------|
+| Cycle 20–22 α stack | Edge volatility ranks graph tools + presentation; wake **injection_rank** still α-blind. |
+| Injection composite (CRS/hot/recency/momentum) | Natural place to multiply `edge_volatility_scale` for non-anchors. |
+| Continuity invariants | Never damp scar / handoff / primary_goal — still surface first. |
+
+### Hypothesis
+
+**Injection α-cost:** `injection_rank_score *= edge_volatility_scale(α)` for non-anchors; harness probes lowest α on edges to primary_goal/active goal when ranking wake queue concepts.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Code | `InjectionArtifact.edge_volatility`, `edge_volatility_scale`, damped `injection_rank_score` |
+| Harness | `concept_edge_volatility_to_goal` + wake `rank_suggested_actions` |
+| Tests | scale prefers static; high-α damps tiles; handoff undamped |
+| Lexicon | `injection-alpha-cost`, `edge-volatility-scale` CRS 0.78 |
+
+### Next vectors
+
+1. Per-dimension σ² / variance tensors (full Fisher) if metrics warrant.
+2. Encrypt-at-rest live MCP dogfood.
+3. Optional α re-weight on query_with_momentum result blend.
+
 
