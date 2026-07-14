@@ -1093,4 +1093,42 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 3. Encrypt-at-rest live MCP dogfood.
 4. Prefer-static sort of adj lists (static edges first) to maximize early-exit hit rate.
 
+---
+
+## Cycle 31 — prefer-static adj sort for early-exit under cap (2026-07-14)
+
+### Master baseline
+
+- Post Cycle 30: PR **#76** `36369645` — RelationIndex O(deg) degree-index.
+- Hub CRS ~0.888 · CSF ~0.79–0.93 · ~89k blocks.
+
+### Research synthesis
+
+| Source | Insight |
+|--------|---------|
+| Cycle 29–30 | Cap + early-exit only help if static edges appear early in the walk. |
+| Insertion-order adj | Static last → cap truncates before true min α. |
+| Prefer-static rank | Same RoMem α economics as `search_relations_ranked(prefer_static)`. |
+
+### Hypothesis
+
+**Sort adj by effective α ascending** on rebuild and after add/re-relate so structural-static edges are probed first → early-exit under small `ENGRAM_INCIDENT_ALPHA_CAP`.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Code | `sort_adj_prefer_static`, `sort_all_adj_prefer_static`; rebuild + add + re-relate |
+| Query | `min_incident` finds static under tiny caps even when static inserted last |
+| Readiness | `relation_adj_prefer_static: true` |
+| Tests | Updated cap test; `adj_prefer_static_sort_static_first_under_cap` |
+| Lexicon | `adj-prefer-static-sort` |
+
+### Next vectors
+
+1. CSR / mmap adj for multi-million edge stalks if HashMap pressure.
+2. Per-dimension Fisher σ² / variance tensors.
+3. Encrypt-at-rest live MCP dogfood.
+4. Optional: heap-select top-k static without full deg sort on ultra-hubs.
+
 

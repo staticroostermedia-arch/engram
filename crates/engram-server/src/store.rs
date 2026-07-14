@@ -273,6 +273,8 @@ pub struct RelationIndex {
     flush_pending: bool,
     /// Concept → entry indices where concept is `from` or `to` (RSI Cycle 30 degree index).
     /// Not serialized — rebuilt on load/refresh/remove; updated incrementally on add.
+    /// RSI Cycle 31: each list is prefer-static sorted (ascending effective α) so
+    /// `min_incident_edge_volatility` early-exits at the structural floor under cap.
     adj: std::collections::HashMap<String, Vec<usize>>,
 }
 
@@ -305,7 +307,7 @@ impl RelationIndex {
         idx
     }
 
-    /// Rebuild adjacency lists from `entries` (O(E)).
+    /// Rebuild adjacency lists from `entries` (O(E)), then prefer-static sort (Cycle 31).
     pub fn rebuild_adj(&mut self) {
         self.adj.clear();
         for (i, e) in self.entries.iter().enumerate() {
@@ -314,11 +316,44 @@ impl RelationIndex {
                 self.adj.entry(e.to.clone()).or_default().push(i);
             }
         }
+        self.sort_all_adj_prefer_static();
     }
 
     /// Number of concepts with at least one incident edge (for readiness/metrics).
     pub fn adj_node_count(&self) -> usize {
         self.adj.len()
+    }
+
+    /// Sort every adj list by effective α ascending (static first).
+    fn sort_all_adj_prefer_static(&mut self) {
+        let keys: Vec<String> = self.adj.keys().cloned().collect();
+        for k in keys {
+            self.sort_adj_prefer_static(&k);
+        }
+    }
+
+    /// Prefer-static order for one concept's incident indices (O(deg log deg)).
+    fn sort_adj_prefer_static(&mut self, concept: &str) {
+        let Some(idxs) = self.adj.get(concept).cloned() else {
+            return;
+        };
+        let mut idxs = idxs;
+        idxs.sort_by(|&a, &b| {
+            let va = self
+                .entries
+                .get(a)
+                .map(effective_relation_volatility)
+                .unwrap_or(1.0);
+            let vb = self
+                .entries
+                .get(b)
+                .map(effective_relation_volatility)
+                .unwrap_or(1.0);
+            va.partial_cmp(&vb).unwrap_or(std::cmp::Ordering::Equal)
+        });
+        if let Some(slot) = self.adj.get_mut(concept) {
+            *slot = idxs;
+        }
     }
 
     /// Coalesce relation_index.json writes during batch ingest (force_ingest, glue, …).
@@ -386,6 +421,11 @@ impl RelationIndex {
         {
             // Refresh volatility on re-relate (append-only edge, mutable α)
             e.volatility = vol;
+            // Cycle 31: α change may reorder prefer-static adj
+            self.sort_adj_prefer_static(from);
+            if to != from {
+                self.sort_adj_prefer_static(to);
+            }
             self.flush_if_needed();
             return;
         }
@@ -400,6 +440,11 @@ impl RelationIndex {
             self.adj.entry(from.to_string()).or_default().push(idx);
             if to != from {
                 self.adj.entry(to.to_string()).or_default().push(idx);
+            }
+            // Cycle 31: keep static-first order under incremental add
+            self.sort_adj_prefer_static(from);
+            if to != from {
+                self.sort_adj_prefer_static(to);
             }
             self.flush_if_needed();
         }
@@ -2095,6 +2140,7 @@ impl StoreHandle {
             "incident_alpha_scan_cap_env": "ENGRAM_INCIDENT_ALPHA_CAP",
             "relation_adj_nodes": self.relation_index.adj_node_count(),
             "relation_edge_count": self.relation_index.entries.len(),
+            "relation_adj_prefer_static": true,
         })
     }
 
@@ -6962,6 +7008,7 @@ impl StoreHandle {
     /// RSI Cycle 28: fallback when concept has no goal-graph edge.
     /// RSI Cycle 29: cap + static early-exit.
     /// RSI Cycle 30: O(deg) via RelationIndex adjacency (no full E scan).
+    /// RSI Cycle 31: adj lists prefer-static sorted so early-exit hits under cap.
     pub fn min_incident_edge_volatility(&self, concept: &str) -> f32 {
         if concept.is_empty() {
             return 0.0;
@@ -6996,7 +7043,7 @@ impl StoreHandle {
     }
 
     /// Preferred α for ranking: goal-edge α if any, else min incident-edge α (label/stored).
-    /// 0 = unset (no damping). Shared by injection, momentum, CRS×α joint (Cycles 23–30).
+    /// 0 = unset (no damping). Shared by injection, momentum, CRS×α joint (Cycles 23–31).
     pub fn concept_edge_volatility(&self, concept: &str) -> f32 {
         let goal = self.min_goal_edge_volatility(concept);
         if goal > 0.0 {
@@ -9503,19 +9550,19 @@ SESSION HANDOFF PACKET v1
         store
             .relate_with_volatility("hub:cap", "s:peer", "implements", Some(0.12))
             .unwrap();
-        // Without early-exit, min is 0.12; with cap=8 only dyn edges may be seen
+        // Cycle 31: prefer-static adj sort puts implements first even when inserted last
         std::env::set_var("ENGRAM_INCIDENT_ALPHA_CAP", "8");
         let capped = store.min_incident_edge_volatility("hub:cap");
         assert!(
-            (capped - 0.85).abs() < 1e-5,
-            "cap=8 should only see supersedes edges first: {}",
+            (capped - 0.12).abs() < 1e-5,
+            "prefer-static adj: static first under cap=8: {}",
             capped
         );
         std::env::set_var("ENGRAM_INCIDENT_ALPHA_CAP", "64");
         let full = store.min_incident_edge_volatility("hub:cap");
         assert!(
             (full - 0.12).abs() < 1e-5,
-            "higher cap should reach implements static: {}",
+            "higher cap still finds static min: {}",
             full
         );
         // Early-exit: put static first via new hub with static as first edge
@@ -9599,6 +9646,65 @@ SESSION HANDOFF PACKET v1
             "load rebuild_adj: {}",
             reloaded
         );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn adj_prefer_static_sort_static_first_under_cap() {
+        std::env::remove_var("ENGRAM_INCIDENT_ALPHA_CAP");
+        let dir = test_store_dir("adj_prefer_static");
+        let mut store = StoreHandle::new(&dir.to_string_lossy());
+        store.remember("hub:ps", "hub").unwrap();
+        // Insert many dynamic edges first, static last
+        for i in 0..12 {
+            let n = format!("dyn{i}");
+            store.remember(&n, "d").unwrap();
+            store
+                .relate_with_volatility("hub:ps", &n, "supersedes", Some(0.90))
+                .unwrap();
+        }
+        store.remember("stat", "s").unwrap();
+        store
+            .relate_with_volatility("hub:ps", "stat", "implements", Some(0.12))
+            .unwrap();
+        // Adj head should be static after prefer-static sort
+        let idxs = store
+            .relation_index
+            .adj
+            .get("hub:ps")
+            .cloned()
+            .expect("adj for hub");
+        assert!(!idxs.is_empty());
+        let head_vol = effective_relation_volatility(
+            store
+                .relation_index
+                .entries
+                .get(idxs[0])
+                .expect("head entry"),
+        );
+        assert!(
+            (head_vol - 0.12).abs() < 1e-5,
+            "adj[0] should be static α: {}",
+            head_vol
+        );
+        std::env::set_var("ENGRAM_INCIDENT_ALPHA_CAP", "4");
+        let minv = store.min_incident_edge_volatility("hub:ps");
+        assert!(
+            (minv - 0.12).abs() < 1e-5,
+            "cap=4 still finds static via sort: {}",
+            minv
+        );
+        // Re-relate dynamic down to static-like α and re-sort
+        store
+            .relate_with_volatility("hub:ps", "dyn0", "supersedes", Some(0.11))
+            .unwrap();
+        let min2 = store.min_incident_edge_volatility("hub:ps");
+        assert!(
+            (min2 - 0.11).abs() < 1e-5,
+            "re-relate reorders adj: {}",
+            min2
+        );
+        std::env::remove_var("ENGRAM_INCIDENT_ALPHA_CAP");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
