@@ -626,4 +626,38 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 2. Fisher variance-augmented recall experiment.
 3. Discrete Langevin access bias for forget_old.
 
+---
+
+## Cycle 18 — Langevin autophagy + adaptive memory distillation (2026-07-14)
+
+### Master baseline
+
+- Post Cycle 17: PR **#63** `6e42f7a5` — `supersedes_of` on update + GHRR lexicon.
+- Manifold ~87.1k · mean hub CRS ~0.888 · CSF ~0.936.
+
+### Research synthesis
+
+| Source | Insight |
+|--------|---------|
+| [arXiv:2508.03341](https://arxiv.org/abs/2508.03341) — *Adaptive Memory Distillation for LLM Agents* | Distill prediction-error insights into memory layer; agnostic to downstream. |
+| Cycle 15 SLM-V3 Langevin lifecycle | Discrete score (threshold−CRS)×√cold_secs for forget_old ranking. |
+| RetriKT-style retrieval transfer (agent routing lit) | Store geometric distillate; query at inference — Engram native. |
+
+### Hypothesis
+
+**Langevin autophagy step:** rank CRS-threshold candidates by cold×deficit; optional `max_evict` for bounded cleanup without unordered mass forget.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Code | `mcp_engram_forget_old`: `langevin_rank` (default true), `max_evict` |
+| Lexicon | `langevin-autophagy`, `adaptive-memory-distillation` CRS 0.78 |
+
+### Next vectors
+
+1. Fisher / CRS-precision blend on recall scores.
+2. Relation α (semantic-speed-gate) re-rank experiment.
+3. Dogfood ENGRAM_ENCRYPT_AT_REST on live MCP binary swap.
+
 

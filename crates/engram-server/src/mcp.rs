@@ -2085,11 +2085,13 @@ fn tool_list() -> Value {
             },
             {
                 "name": "mcp_engram_forget_old",
-                "description": "Manually trigger autophagy: evict all non-pinned memories below a CRS threshold. \
+                "description": "Manually trigger autophagy: evict non-pinned memories below a CRS threshold. \
                                 WHEN TO USE: After a long project phase ends, after distill runs, or when the manifold \
                                 is growing too large. Start conservative (min_crs_threshold=0.3) and increase if needed. \
                                 Pinned blocks (CRS=1.0) are ALWAYS exempt and will never be evicted. \
                                 Use older_than_days to target stale memories while preserving recently-accessed ones. \
+                                Langevin ranking (default on): candidates ordered by eviction_score = (threshold−CRS)×√cold_secs \
+                                so low-CRS + long-cold blocks go first (discrete Langevin lifecycle). max_evict caps batch size. \
                                 Preview what would be evicted with mcp_engram_stats first.",
                 "inputSchema": {
                     "type": "object",
@@ -2102,6 +2104,14 @@ fn tool_list() -> Value {
                         "older_than_days": {
                             "type": "integer",
                             "description": "If set, only evict memories not accessed in this many days"
+                        },
+                        "max_evict": {
+                            "type": "integer",
+                            "description": "Optional cap on number of blocks to evict (after Langevin ranking). Omit = no cap."
+                        },
+                        "langevin_rank": {
+                            "type": "boolean",
+                            "description": "If true (default), rank eviction by (threshold−CRS)×√seconds_since_access. If false, unsorted candidate order."
                         }
                     }
                 }
@@ -8200,6 +8210,11 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
         "mcp_engram_forget_old" => {
             let min_crs = args["min_crs_threshold"].as_f64().unwrap_or(0.2) as f32;
             let older_than_days = args["older_than_days"].as_u64();
+            let max_evict = args["max_evict"].as_u64().map(|n| n as usize);
+            let langevin_rank = args
+                .get("langevin_rank")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(true);
             let now_secs = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .map(|d| d.as_secs())
@@ -8207,39 +8222,60 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
 
             let mut lock = store.lock().unwrap();
             let concepts = lock.list();
-            let mut to_evict: Vec<String> = Vec::new();
+            // (concept, eviction_score) — higher score = more evictable under Langevin discrete step
+            let mut candidates: Vec<(String, f64)> = Vec::new();
             for name in &concepts {
-                if let Some(block) =
-                    lock.fetch_block(name.split_once("::").map_or(name.as_str(), |(_, r)| r))
-                {
+                let raw = name.split_once("::").map_or(name.as_str(), |(_, r)| r);
+                if let Some(block) = lock.fetch_block(raw) {
                     if block.crs_score >= 1.0 {
                         continue;
                     } // Never evict pinned
-                    let age_ok = older_than_days.is_none_or(|days| {
-                        now_secs.saturating_sub(block.last_accessed_timestamp) >= days * 86400
-                    });
+                    let cold_secs = now_secs.saturating_sub(block.last_accessed_timestamp);
+                    let age_ok = older_than_days.is_none_or(|days| cold_secs >= days * 86400);
                     if block.crs_score < min_crs && age_ok {
-                        to_evict.push(
-                            name.split_once("::")
-                                .map_or(name.as_str(), |(_, r)| r)
-                                .to_string(),
-                        );
+                        // Discrete Langevin: low CRS + long cold-time → high eviction score
+                        let deficit = (min_crs - block.crs_score).max(0.0) as f64;
+                        let cold = (cold_secs as f64).max(1.0).sqrt();
+                        let score = deficit * cold;
+                        candidates.push((raw.to_string(), score));
                     }
                 }
             }
             drop(lock);
 
-            let total = to_evict.len();
+            if langevin_rank {
+                candidates
+                    .sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+            }
+            if let Some(cap) = max_evict {
+                if candidates.len() > cap {
+                    candidates.truncate(cap);
+                }
+            }
+
+            let total = candidates.len();
             let mut evicted = 0usize;
-            for name in &to_evict {
+            for (name, _) in &candidates {
                 if store.lock().unwrap().forget(name).is_ok() {
                     evicted += 1;
                 }
             }
             let age_label =
                 older_than_days.map_or(String::new(), |d| format!(", older than {}d", d));
-            info!("forget_old: evicted {}/{} candidates", evicted, total);
-            json!({ "content": [{ "type": "text", "text": format!("\u{2713} Autophagy complete. Evicted {} memories (CRS < {:.2}{}).", evicted, min_crs, age_label) }] })
+            let cap_label = max_evict.map_or(String::new(), |c| format!(", max_evict={c}"));
+            let rank_label = if langevin_rank {
+                ", langevin_rank=on"
+            } else {
+                ", langevin_rank=off"
+            };
+            info!(
+                "forget_old: evicted {}/{} candidates{age_label}{cap_label}{rank_label}",
+                evicted, total
+            );
+            json!({ "content": [{ "type": "text", "text": format!(
+                "\u{2713} Autophagy complete. Evicted {} memories (CRS < {:.2}{}{}{}).",
+                evicted, min_crs, age_label, cap_label, rank_label
+            ) }] })
         }
 
         "mcp_engram_search_by_relation" => {
