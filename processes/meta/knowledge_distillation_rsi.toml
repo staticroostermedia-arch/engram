@@ -65,6 +65,8 @@ list = [
   "lexicon:word:incident-edge-alpha",
   "lexicon:word:incident-alpha-cap",
   "lexicon:word:static-alpha-early-exit",
+  "lexicon:word:relation-degree-index",
+  "lexicon:word:incident-alpha-o-deg",
 ]
 
 [execute]
