@@ -16,6 +16,7 @@ h1_handler = "OP_INVERT"
 
 [mcp_tools]
 list = [
+  "mcp_engram_get_backend_readiness",
   "mcp_engram_relate",
   "mcp_engram_search_by_relation",
   "mcp_engram_visualize",
@@ -64,3 +65,4 @@ list = [
 [notes]
 # Default ON. Set ENGRAM_ALPHA_SPEED_GATE=0 for legacy flat ranking (tests / A-B).
 # Explicit MCP alpha_weighted=true|false overrides master when provided.
+# Cycle 26: readiness JSON + session_start.readiness expose alpha_speed_gate_enabled.

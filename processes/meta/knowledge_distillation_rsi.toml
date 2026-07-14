@@ -57,6 +57,8 @@ list = [
   "lexicon:word:min-goal-edge-volatility",
   "lexicon:word:alpha-speed-gate-master",
   "lexicon:word:resolve-alpha-weighted",
+  "lexicon:word:readiness-alpha-surface",
+  "lexicon:word:wake-alpha-visibility",
 ]
 
 [execute]

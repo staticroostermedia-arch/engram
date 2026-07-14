@@ -1880,7 +1880,7 @@ fn tool_list() -> Value {
             },
             {
                 "name": "mcp_engram_get_backend_readiness",
-                "description": "Returns backend readiness: fully_initialized, bvh_ready, recall_mode (sampled_bounded | full_bvh_gpu | cpu_linear), backend_kind, gpu_accel_available, leg_block_count, profile (agent|deep|ui|dev|unknown), memory_mode (lean|deep), defer flags. Use after wake to see whether recall is bounded or full GPU/BVH.",
+                "description": "Returns backend readiness: fully_initialized, bvh_ready, recall_mode, backend_kind, gpu fields, leg_block_count, profile, memory_mode, defer flags, plus α policy surface (alpha_speed_gate_enabled, ENGRAM_ALPHA_SPEED_GATE, process:engram.ritual.alpha-speed-gate, presentation_hop_budget). Use after wake to see whether recall is full GPU/BVH and whether RoMem α speed-gate is active.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {}
