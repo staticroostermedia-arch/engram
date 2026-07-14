@@ -1,8 +1,8 @@
 # agent:engram.ritual.alpha-speed-gate
-# Unified RoMem semantic speed-gate policy (RSI Cycles 20–30).
+# Unified RoMem semantic speed-gate policy (RSI Cycles 20–31).
 # Master env: ENGRAM_ALPHA_SPEED_GATE (default on). Surfaces: relate α, visualize BFS,
 # presentation multi-hop, injection re-rank, query_with_momentum blend,
-# concept/incident α (cap + O(deg) adj index).
+# concept/incident α (cap + O(deg) adj + prefer-static sort).
 
 [process]
 name = "agent:engram.ritual.alpha-speed-gate"
@@ -44,6 +44,9 @@ list = [
   "momentum_alpha_weight",
   "crs_alpha_joint_recall",
   "concept_edge_volatility_probe",
+  "incident_alpha_scan_cap",
+  "relation_degree_index_o_deg",
+  "adj_prefer_static_sort",
 ]
 
 [invariants]

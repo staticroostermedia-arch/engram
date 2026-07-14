@@ -67,6 +67,7 @@ list = [
   "lexicon:word:static-alpha-early-exit",
   "lexicon:word:relation-degree-index",
   "lexicon:word:incident-alpha-o-deg",
+  "lexicon:word:adj-prefer-static-sort",
 ]
 
 [execute]
