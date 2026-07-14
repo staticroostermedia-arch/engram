@@ -1191,8 +1191,7 @@ fn rank_suggested_actions(store: &StoreHandle, actions: &mut [Value]) {
         } else {
             "wake_queue"
         };
-        let edge_vol = concept_edge_volatility_to_goal(store, concept);
-        let art = crate::injection_priority::artifact_for_concept(
+        let mut art = crate::injection_priority::artifact_for_concept(
             concept,
             crs,
             hot,
@@ -1200,8 +1199,8 @@ fn rank_suggested_actions(store: &StoreHandle, actions: &mut [Value]) {
             momentum,
             source,
             SESSION_HANDOFF_LATEST,
-            edge_vol,
         );
+        art.edge_volatility = concept_edge_volatility_to_goal(store, concept);
         crate::injection_priority::injection_rank_score(&art)
     }
 

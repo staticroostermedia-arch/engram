@@ -72,7 +72,7 @@ pub fn recency_rank_map(recent: &[(String, u64)]) -> HashMap<String, u32> {
 }
 
 /// Build an artifact for ranking from concept metadata.
-/// `edge_volatility`: RoMem α from a relation edge to this concept (0 = unset).
+/// Set `edge_volatility` on the result when RoMem α is known (0 = unset / no damping).
 pub fn artifact_for_concept(
     concept: &str,
     crs: f32,
@@ -81,7 +81,6 @@ pub fn artifact_for_concept(
     momentum_score: f32,
     source: &str,
     handoff_concept: &str,
-    edge_volatility: f32,
 ) -> InjectionArtifact {
     InjectionArtifact {
         concept: concept.to_string(),
@@ -93,7 +92,7 @@ pub fn artifact_for_concept(
         is_scar: concept.starts_with("scar:"),
         is_handoff: concept == handoff_concept || concept.starts_with("compression_handoff_"),
         is_primary_anchor: concept == "primary_goal",
-        edge_volatility,
+        edge_volatility: 0.0,
     }
 }
 

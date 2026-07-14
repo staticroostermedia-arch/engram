@@ -3943,7 +3943,6 @@ impl StoreHandle {
                     },
                     &e.source,
                     SESSION_HANDOFF_LATEST,
-                    0.0, // edge α optional; wake queue harness probes primary_goal graph
                 )
             })
             .collect();
