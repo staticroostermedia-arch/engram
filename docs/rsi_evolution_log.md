@@ -730,4 +730,40 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 2. Encrypt-at-rest live binary dogfood.
 3. Optional α-weighted BFS depth cost in visualize / momentum paths.
 
+---
+
+## Cycle 21 — α-weighted BFS depth cost for visualize (2026-07-14)
+
+### Master baseline
+
+- Post Cycle 20: PR **#66** `3be7d242` — relation edge volatility α + prefer_static rank.
+- Hub CRS ~0.888 · CSF ~0.936 · ~87.5k blocks · avg CRS ~0.857.
+
+### Research synthesis
+
+| Source | Insight |
+|--------|---------|
+| Cycle 20 edge α | Volatility is stored; multi-hop navigation still treated all hops equal. |
+| Multi-hop KG retrieval (edge-cost / temporal volatility) | Paths through high-churn edges should consume more budget than static structure. |
+| Dijkstra over unit-hop BFS | Continuous budget = depth; cost = 1+α preserves hop semantics while biasing static. |
+
+### Hypothesis
+
+**α-weighted depth cost:** expand relation graph with edge cost `1+α` and budget `depth` so dynamic succession paths exhaust budget before static two-hop chains of similar length; Mermaid labels show α.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Code | `RelationIndex::bfs_with_options`, `relation_hop_cost`; `visualize_graph_with_options` |
+| MCP | `mcp_engram_visualize.alpha_weighted` (default true); edges `|label α=0.xx|` |
+| Tests | hop cost; budget prefers static second hop over dynamic second hop |
+| Lexicon | `alpha-weighted-bfs`, `relation-hop-cost` CRS 0.78 |
+
+### Next vectors
+
+1. Per-dimension σ² / variance tensors (full Fisher) if metrics warrant.
+2. Encrypt-at-rest live binary dogfood.
+3. α-cost on momentum / presentation-stratum multi-hop expansion.
+
 

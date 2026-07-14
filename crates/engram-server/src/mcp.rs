@@ -2155,7 +2155,7 @@ fn tool_list() -> Value {
             },
             {
                 "name": "mcp_engram_visualize",
-                "description": "Render a BFS subgraph from a seed concept as a Mermaid diagram. Shows how concepts are related to each other.",
+                "description": "Render a BFS subgraph from a seed concept as a Mermaid diagram. Default α-weighted: edge cost=1+volatility so high-α (supersedes/scar) paths burn depth budget faster than static implements edges. Set alpha_weighted=false for classic unit-hop BFS.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -2165,8 +2165,13 @@ fn tool_list() -> Value {
                         },
                         "depth": {
                             "type": "integer",
-                            "description": "BFS depth (default: 2, max: 5)",
+                            "description": "BFS depth / α-budget (default: 2, max: 5). With alpha_weighted, budget is continuous (cost=1+α per edge).",
                             "default": 2
+                        },
+                        "alpha_weighted": {
+                            "type": "boolean",
+                            "description": "If true (default), use RoMem α-weighted hop costs. If false, classic unit-hop BFS.",
+                            "default": true
                         }
                     },
                     "required": ["concept"]
@@ -8363,13 +8368,24 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
         "mcp_engram_visualize" => {
             let concept = args["concept"].as_str().unwrap_or("").trim().to_string();
             let depth = args["depth"].as_u64().unwrap_or(2).min(5) as usize;
+            let alpha_weighted = args
+                .get("alpha_weighted")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(true);
 
             if concept.is_empty() {
                 return json!({ "content": [{ "type": "text", "text": "Error: concept is required." }], "isError": true });
             }
 
-            let mermaid = store.lock().unwrap().visualize_graph(&concept, depth);
-            info!("visualize '{}' depth {}", concept, depth);
+            let mermaid =
+                store
+                    .lock()
+                    .unwrap()
+                    .visualize_graph_with_options(&concept, depth, alpha_weighted);
+            info!(
+                "visualize '{}' depth {} alpha_weighted={}",
+                concept, depth, alpha_weighted
+            );
             json!({ "content": [{ "type": "text", "text": mermaid }] })
         }
 

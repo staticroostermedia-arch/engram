@@ -21,6 +21,7 @@ list = [
   "time_as_geometry_temporal_channel",
   "continuous_phase_rotation_geometric_shadowing",
   "semantic_speed_gate_relation_volatility",
+  "alpha_weighted_bfs_depth_cost",
   "bi_temporal_supersedes_append_only",
   "zero_llm_local_sovereignty",
 ]
@@ -45,6 +46,8 @@ list = [
   "lexicon:word:dirichlet-fisher-governor",
   "lexicon:word:relation-edge-volatility",
   "lexicon:word:prefer-static-rank",
+  "lexicon:word:alpha-weighted-bfs",
+  "lexicon:word:relation-hop-cost",
 ]
 
 [execute]
