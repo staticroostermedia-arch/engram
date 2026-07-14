@@ -1,0 +1,84 @@
+# agent:engram.meta.knowledge-distillation-rsi
+# Ultimate memory backend loop: research → lexicon distill → sheaf/temporal glue → verify → ship.
+# Complements ai_consciousness_loop + self_improvement_loop. Local-first + secure_context.
+
+[workflow]
+name = "knowledge_distillation_rsi"
+description = "Recursive self-improvement toward ultimate AGI memory backend: distill external research (info-geometry, sheaf H¹, Langevin lifecycle, VSA/holographic memory) into lexicon:word:* + relations + optional process/code; preserve sovereignty (XChaCha20-Poly1305 selective provision); raise CRS/relation density without flattening."
+primary_goal = "goal:engram_mvp_v1"
+max_iterations = 1
+
+[wake]
+ritual = "engram-wake-up"
+tools = ["mcp_engram_session_start", "mcp_engram_ack_wake_queue", "mcp_engram_stats", "mcp_engram_verify_manifold_integrity"]
+
+[research_vectors]
+# Distilled from SuperLocalMemory V3 arXiv:2603.14588 + Engram substrate gaps
+list = [
+  "fisher_rao_retrieval_vs_vsa_cosine",
+  "sheaf_h1_contradiction_as_scar_supersedes",
+  "riemannian_langevin_vs_crs_nrem_forget",
+  "time_as_geometry_temporal_channel",
+  "zero_llm_local_sovereignty",
+]
+
+[lexicon_atoms]
+# Minted in RSI 2026-07-14 ultimate-memory iteration
+list = [
+  "lexicon:word:fisher-rao-retrieval",
+  "lexicon:word:sheaf-cohomological-consistency",
+  "lexicon:word:riemannian-langevin-lifecycle",
+  "lexicon:word:xchacha20-poly1305",
+  "lexicon:word:selective-disclosure",
+]
+
+[execute]
+steps = [
+  { name = "rehydrate", desc = "session_start + ack_wake_queue; read handoff + secure_context state", tools = ["mcp_engram_session_start", "mcp_engram_ack_wake_queue"] },
+  { name = "observe", desc = "stats + verify_manifold_integrity sample; lawfulness on new lexicon", tools = ["mcp_engram_stats", "mcp_engram_verify_manifold_integrity", "mcp_engram_verify_block_lawfulness"] },
+  { name = "research_distill", desc = "Arxiv/web or local Gemma summary → mint_lexicon_word (optional ENGRAM_ENCRYPT_AT_REST) → relate pillars", tools = ["mcp_engram_lexicon_mint_word", "mcp_engram_relate_batch", "mcp_engram_quick_trace"] },
+  { name = "sheaf_glue", desc = "relate new atoms to formal_spec:linguistic_reference_frame_v1 + process:engram.ritual.secure-context-provision + ego anchors", tools = ["mcp_engram_relate", "mcp_engram_promote_hot_batch"] },
+  { name = "optional_code", desc = "Only if hypothesis needs substrate change: context_for_edit + safe_edit_and_verify; never cloud upload", tools = ["mcp_engram_safe_edit_and_verify"] },
+  { name = "verify", desc = "manifold integrity + CRS≥0.74 on new blocks + scar productive failures", tools = ["mcp_engram_verify_manifold_integrity", "mcp_engram_scar"] },
+  { name = "ship", desc = "feature branch → PR master → CI → squash merge when green", tools = [] },
+  { name = "handoff", desc = "session_end prepare_compression; update docs/rsi_evolution_log.md", tools = ["mcp_engram_session_end"] },
+]
+subvisor = "consciousness_loop"
+
+[privacy_guardrails]
+invariants = [
+  "local_only_engram_mcp",
+  "no_cloud_codebase_upload",
+  "xchacha20poly1305_when_encrypt_at_rest",
+  "selective_disclosure_only",
+  "audit_secure_provision",
+]
+ritual = "process:engram.ritual.secure-context-provision"
+
+[mcp_tools]
+list = [
+  "mcp_engram_session_start",
+  "mcp_engram_lexicon_mint_word",
+  "mcp_engram_secure_context_provision",
+  "mcp_engram_verify_manifold_integrity",
+  "mcp_engram_quick_trace",
+  "mcp_engram_session_end",
+]
+
+[invariants]
+list = [
+  "unit_hypersphere_vsa",
+  "crs_0.74_new_blocks",
+  "provlog_merkle_provenance",
+  "minimal_context_aabb",
+  "trace_research_sources",
+  "manifold_health_primary",
+]
+
+[timeout_ms]
+value = 900000
+
+[notes]
+# Research anchor: SuperLocalMemory V3 arXiv:2603.14588 (Fisher–Rao retrieval, sheaf H¹ consistency, Langevin lifecycle, zero-LLM sovereignty).
+# Engram already exceeds flat cosine RAG on VSA/CRS/sheaf processes; this loop distills peer systems into geometric atoms rather than reimplementing them wholesale.
+# Next code vectors (gated): variance-aware recall scoring experiment; supersedes relation on update; discrete Langevin access bias in forget_old.

@@ -498,3 +498,52 @@ git commit -m "feat(scaffold): RSI Cycle 14 versioning + gated promotion v0.7.0-
 **Cumulative gains (cycles 10–14):** turn protocol, metamemory KPIs, consult gate, trajectory review, scaffold registry with gated hot promotion — all on geometric `.leg3` substrate.
 
 **Version history:** beta.10 (Batch 4) → **beta.11** (Batch 5 cycle 14)
+
+---
+
+## Cycle 15 — Ultimate memory backend knowledge distillation (2026-07-14)
+
+### Master baseline
+
+- Post crypto sovereignty: PRs **#59** / **#60** on `master` (`c921cd5a`, `3fffdd54`) — XChaCha20-Poly1305, `secure_context_provision`, real-path provision tests.
+- Manifold: ~86.7k blocks · avg CRS ~0.855 · `verify_manifold_integrity` sample **healthy** (0 issues).
+- CSF wake ~0.93 · local_only stratum present.
+
+### Research synthesis (≥2 cited sources)
+
+| Source | Insight integrated |
+|--------|-------------------|
+| [arXiv:2603.14588](https://arxiv.org/abs/2603.14588) — *SuperLocalMemory V3: Information-Geometric Foundations for Zero-LLM Enterprise Agent Memory* | Fisher–Rao retrieval vs cosine; sheaf H¹ as contradiction; Riemannian Langevin lifecycle; zero-LLM sovereignty (+12.7pp LoCoMo). |
+| Engram substrate (living) | Already: unit hypersphere VSA, CRS floors, Lyapunov `dv`, process sheaf + subvisor H¹, NREM/`forget_old`, selective AEAD disclosure. Map peer math → lexicon + process, not rewrite. |
+
+### Hypothesis selected
+
+**Distill-then-map:** Mint high-CRS lexicon atoms for Fisher–Rao / sheaf-H¹ / Langevin lifecycle with explicit Engram mapping; register `processes/meta/knowledge_distillation_rsi.toml` as the ultimate-memory RSI sheaf so 15m loop fires stay local-first and research-grounded.
+
+### Distillation delivered
+
+| Lexicon atom | CRS | Notes |
+|--------------|-----|--------|
+| `lexicon:word:fisher-rao-retrieval` | 0.78 | Optional variance-aware recall channel |
+| `lexicon:word:sheaf-cohomological-consistency` | 0.78 | H¹ ↔ scars / supersedes |
+| `lexicon:word:riemannian-langevin-lifecycle` | 0.78 | Langevin ↔ CRS/NREM/p-momentum |
+
+### Files touched
+
+- `processes/meta/knowledge_distillation_rsi.toml` (new)
+- `docs/rsi_evolution_log.md` (this cycle)
+
+### Evaluation scores
+
+| Metric | Score |
+|--------|-------|
+| CRS (new atoms) | 0.78 (≥0.74) |
+| Manifold integrity | healthy |
+| Sovereignty | local-only + AEAD path retained |
+| RSI-accel | 0.86 |
+
+### Next research vectors (gated code)
+
+1. Variance-augmented recall experiment (Fisher channel) without breaking unit-q BVH.
+2. `supersedes` edge on `update` when contradiction detected.
+3. Discrete Langevin step on access counts for `forget_old` ranking.
