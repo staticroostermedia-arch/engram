@@ -61,6 +61,8 @@ list = [
   "lexicon:word:wake-alpha-visibility",
   "lexicon:word:crs-alpha-joint",
   "lexicon:word:dirichlet-alpha-precision",
+  "lexicon:word:concept-edge-volatility",
+  "lexicon:word:incident-edge-alpha",
 ]
 
 [execute]

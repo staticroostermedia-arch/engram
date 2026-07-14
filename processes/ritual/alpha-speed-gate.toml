@@ -41,6 +41,7 @@ list = [
   "injection_rank_alpha",
   "momentum_alpha_weight",
   "crs_alpha_joint_recall",
+  "concept_edge_volatility_probe",
 ]
 
 [invariants]

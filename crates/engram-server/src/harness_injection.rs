@@ -1177,7 +1177,7 @@ fn rank_suggested_actions(store: &StoreHandle, actions: &mut [Value]) {
             source,
             SESSION_HANDOFF_LATEST,
         );
-        art.edge_volatility = store.min_goal_edge_volatility(concept);
+        art.edge_volatility = store.concept_edge_volatility(concept);
         crate::injection_priority::injection_rank_score(&art)
     }
 
