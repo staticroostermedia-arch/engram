@@ -2157,14 +2157,30 @@ impl StoreHandle {
         })
     }
 
+    /// Continuity helpers stay plaintext so hot paths parse JSON without a key.
+    pub(crate) fn encrypt_seal_eligible(concept: &str) -> bool {
+        if concept == SESSION_SENTINEL_STATE || concept == SESSION_HANDOFF_LATEST {
+            return false;
+        }
+        if concept.starts_with("helper:session_")
+            || concept.starts_with("helper:cold_start")
+            || concept.starts_with("manifest:rehydration_")
+            || concept.starts_with("compression_handoff_")
+        {
+            return false;
+        }
+        true
+    }
+
     /// Seal ProvLog at rest when `ENGRAM_ENCRYPT_AT_REST` is on (RSI Cycle 34).
     /// Geometry (q) already encoded from plaintext; only the word-channel is sealed.
-    /// Skips if body already sealed (no double-envelope).
+    /// Skips if body already sealed (no double-envelope) or continuity-critical concepts.
     pub(crate) fn maybe_seal_block_provlog(
         concept: &str,
         block: &mut engram_core::types::Leg3Pointer,
     ) {
-        if !crate::secure_context::encrypt_at_rest_enabled() {
+        if !crate::secure_context::encrypt_at_rest_enabled() || !Self::encrypt_seal_eligible(concept)
+        {
             return;
         }
         let plain = engram_core::storage::read_provlog(block);
@@ -3698,7 +3714,9 @@ impl StoreHandle {
         else {
             return crate::continuity_spikes::SentinelState::default();
         };
-        let text = engram_core::storage::read_provlog(&block);
+        let raw = engram_core::storage::read_provlog(&block);
+        // Defense: unwrap if a prior encrypt race sealed the helper block.
+        let text = Self::plain_provlog_for_update(SESSION_SENTINEL_STATE, &raw).unwrap_or(raw);
         if let (Some(end), Some(start)) = (text.rfind('}'), text.rfind('{')) {
             if start <= end {
                 if let Ok(state) = serde_json::from_str::<crate::continuity_spikes::SentinelState>(
