@@ -766,4 +766,40 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 2. Encrypt-at-rest live binary dogfood.
 3. α-cost on momentum / presentation-stratum multi-hop expansion.
 
+---
+
+## Cycle 22 — α-cost presentation multi-hop + serves re-rank (2026-07-14)
+
+### Master baseline
+
+- Post Cycle 21: PR **#67** `6e0a4eae` — α-weighted BFS visualize.
+- Hub CRS ~0.888 · CSF ~0.936 · ~88k blocks · avg CRS ~0.857 · integrity healthy.
+
+### Research synthesis
+
+| Source | Insight |
+|--------|---------|
+| Cycle 20–21 edge α + hop cost | Graph tools rank/expand by α; wake presentation still uniform 1-hop. |
+| Agent rehydration surface | `serves` + `prev_in_trace` dominate presentation stratum — apply same speed-gate. |
+| Continuous hop budget | Default 2.5 ≈ two static hops; `ENGRAM_PRESENTATION_HOP_BUDGET` override. |
+
+### Hypothesis
+
+**Presentation α-cost:** re-score goal `serves` by `1/(1+0.35α)`; multi-hop `prev_in_trace` under hop budget with depth penalty; edges emit `volatility` + `hop_cost`.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Code | `score_alpha_scale`, `expand_labeled_alpha`, `presentation_hop_budget` |
+| Presentation | α-ranked serves; multi-hop trace_prev_alpha; edges with α |
+| Tests | scale prefers static; hop budget admits static 2-hop not dyn first at 1.5 |
+| Lexicon | `presentation-alpha-cost`, `hop-budget-walk` CRS 0.78 |
+
+### Next vectors
+
+1. Per-dimension σ² / variance tensors (full Fisher) if metrics warrant.
+2. Encrypt-at-rest live binary dogfood (ops: ENGRAM_ENCRYPT_AT_REST on MCP).
+3. α-cost on query_with_momentum / injection re-rank.
+
 
