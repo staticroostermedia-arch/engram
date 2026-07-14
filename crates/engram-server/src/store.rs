@@ -9578,9 +9578,7 @@ SESSION HANDOFF PACKET v1
         assert_eq!(store.min_incident_edge_volatility("missing:x"), 0.0);
 
         // Remove shifts indices — rebuild must keep min correct
-        assert!(store
-            .relation_index
-            .remove("hub:adj", "implements", "p1"));
+        assert!(store.relation_index.remove("hub:adj", "implements", "p1"));
         let after_rm = store.min_incident_edge_volatility("hub:adj");
         assert!(
             (after_rm - 0.15).abs() < 1e-5,
