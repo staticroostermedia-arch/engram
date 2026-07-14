@@ -13,21 +13,28 @@ ritual = "engram-wake-up"
 tools = ["mcp_engram_session_start", "mcp_engram_ack_wake_queue", "mcp_engram_stats", "mcp_engram_verify_manifold_integrity"]
 
 [research_vectors]
-# Distilled from SuperLocalMemory V3 arXiv:2603.14588 + Engram substrate gaps
+# Distilled from SuperLocalMemory V3 arXiv:2603.14588 + RoMem arXiv:2604.11544 + Engram gaps
 list = [
   "fisher_rao_retrieval_vs_vsa_cosine",
   "sheaf_h1_contradiction_as_scar_supersedes",
   "riemannian_langevin_vs_crs_nrem_forget",
   "time_as_geometry_temporal_channel",
+  "continuous_phase_rotation_geometric_shadowing",
+  "semantic_speed_gate_relation_volatility",
+  "bi_temporal_supersedes_append_only",
   "zero_llm_local_sovereignty",
 ]
 
 [lexicon_atoms]
-# Minted in RSI 2026-07-14 ultimate-memory iteration
+# Minted in RSI ultimate-memory iterations 15–16
 list = [
   "lexicon:word:fisher-rao-retrieval",
   "lexicon:word:sheaf-cohomological-consistency",
   "lexicon:word:riemannian-langevin-lifecycle",
+  "lexicon:word:continuous-phase-rotation",
+  "lexicon:word:semantic-speed-gate",
+  "lexicon:word:bi-temporal-supersedes",
+  "lexicon:word:time-as-geometry",
   "lexicon:word:xchacha20-poly1305",
   "lexicon:word:selective-disclosure",
 ]

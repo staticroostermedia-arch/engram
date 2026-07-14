@@ -547,3 +547,47 @@ git commit -m "feat(scaffold): RSI Cycle 14 versioning + gated promotion v0.7.0-
 1. Variance-augmented recall experiment (Fisher channel) without breaking unit-q BVH.
 2. `supersedes` edge on `update` when contradiction detected.
 3. Discrete Langevin step on access counts for `forget_old` ranking.
+
+---
+
+## Cycle 16 — Time-as-geometry + bi-temporal supersedes (2026-07-14)
+
+### Master baseline
+
+- Post Cycle 15: PR **#61** `ae0cd374` — knowledge_distillation_rsi + Fisher/sheaf/Langevin lexicon.
+- Manifold ~86.9k · avg CRS ~0.855 · CSF ~0.93 · pre-existing PRAXIS gap only.
+
+### Research synthesis (≥2 cited sources)
+
+| Source | Insight integrated |
+|--------|-------------------|
+| [arXiv:2604.11544](https://arxiv.org/abs/2604.11544) — *Time is Not a Label: Continuous Phase Rotation (RoMem)* | Continuous phase rotation + Semantic Speed Gate; geometric shadowing; append-only; 2–3× temporal MRR. |
+| [arXiv:2501.13956](https://arxiv.org/abs/2501.13956) — *Zep: Temporal Knowledge Graph for Agent Memory* | Validity timeline of facts; non-lossy graph updates. |
+| Cycle 15 SLM-V3 sheaf H¹ | Supersedes + scar as operational H¹ when peers cannot glue. |
+
+### Hypothesis selected
+
+**Time-as-geometry distill:** Mint RoMem phase/speed-gate + bi-temporal supersedes lexicon; ship `processes/ritual/bi-temporal-supersedes.toml` so succession is append-only (relate + ProvLog validity fields) without DELETE — maps to Engram no-annihilation update law.
+
+### Distillation delivered
+
+| Lexicon atom | CRS |
+|--------------|-----|
+| `lexicon:word:continuous-phase-rotation` | 0.78 |
+| `lexicon:word:semantic-speed-gate` | 0.78 |
+| `lexicon:word:bi-temporal-supersedes` | 0.78 |
+| `lexicon:word:time-as-geometry` | 0.78 |
+
+Process: `processes/ritual/bi-temporal-supersedes.toml`  
+Updated: `processes/meta/knowledge_distillation_rsi.toml` research_vectors + lexicon_atoms
+
+### Evaluation scores
+
+CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS only
+
+### Next research vectors (gated code)
+
+1. Optional phase re-rank experiment on relation edges with α volatility (semantic-speed-gate).
+2. Wire `supersedes` auto-emit from `update` when recall finds peer claim (ritual already declarative).
+3. Variance-augmented recall (Fisher) + discrete Langevin forget_old (still open from Cycle 15).
+

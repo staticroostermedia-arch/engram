@@ -1,0 +1,67 @@
+# agent:engram.ritual.bi-temporal-supersedes
+# Non-destructive succession for evolving facts (Zep/Graphiti + RoMem geometric shadowing map).
+# Append-only: never forget superseded truth; relate + ProvLog validity fields + optional CRS demote.
+
+[process]
+name = "agent:engram.ritual.bi-temporal-supersedes"
+zedos_type = "ritual"
+phase_seed = "0xBITIME20260714"
+
+[category]
+object = "bi_temporal_memory_update"
+morphism = "OP_BIND"
+sheaf_role = "valid_at/recorded_at/invalid_at ProvLog + supersedes edge; H¹ scar if peers irreconcilable without succession"
+h1_handler = "OP_INVERT"
+
+[mcp_tools]
+list = [
+  "mcp_engram_recall",
+  "mcp_engram_update",
+  "mcp_engram_relate",
+  "mcp_engram_scar",
+  "mcp_engram_quick_trace",
+  "mcp_engram_verify_block_lawfulness",
+]
+
+[requires]
+list = [
+  "__system_state__",
+  "ritual:wake_up_anchor",
+  "process:engram.ritual.verified-memory-update",
+]
+
+[produces]
+list = [
+  "relation:supersedes",
+  "provlog_valid_at_invalid_at",
+  "trace:*_supersedes",
+]
+
+[invariants]
+list = [
+  "append_only_no_destructive_forget_of_history",
+  "update_preserves_p_momentum",
+  "crs_0.74_gate",
+  "supersedes_edge_new_to_old",
+  "local_only_no_cloud",
+  "scar_on_irreconcilable_peer_claims",
+]
+
+[sequence]
+steps = [
+  { order = 1, tool = "mcp_engram_recall", note = "Find prior claim for same entity/relation before write" },
+  { order = 2, tool = "mcp_engram_update", note = "Lawful evolution of winning concept; append ProvLog **valid_at:** **recorded_at:**" },
+  { order = 3, tool = "mcp_engram_relate", note = "relate(new, old, supersedes); optional demote old CRS soft" },
+  { order = 4, tool = "mcp_engram_update", note = "On old block append **invalid_at:** when superseded" },
+  { order = 5, tool = "mcp_engram_quick_trace", note = "Trace succession with research source" },
+  { order = 6, tool = "mcp_engram_scar", note = "If two peers cannot supersede — scar contradiction axis" },
+]
+
+[timeout_ms]
+value = 60000
+
+[notes]
+# RoMem (arXiv:2604.11544) prefers geometric shadowing over DELETE; Engram already forbids annihilating updates.
+# Relation label convention: supersedes (new -[supersedes]-> old).
+# ProvLog fields (optional until substrate parser specializes): **valid_at:** ISO/epoch, **recorded_at:**, **invalid_at:**.
+# Complements lexicon:word:bi-temporal-supersedes + continuous-phase-rotation + semantic-speed-gate.
