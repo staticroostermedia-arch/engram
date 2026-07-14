@@ -26,9 +26,31 @@ pub struct InjectionArtifact {
     pub edge_volatility: f32,
 }
 
+/// Master switch for RoMem α speed-gate (Cycles 20–25).
+/// Env `ENGRAM_ALPHA_SPEED_GATE`: unset / `1` / `true` / `yes` / `on` → enabled (default).
+/// `0` / `false` / `no` / `off` → disabled globally for surfaces that honor the gate.
+pub fn alpha_speed_gate_enabled() -> bool {
+    match std::env::var("ENGRAM_ALPHA_SPEED_GATE") {
+        Ok(v) => {
+            let t = v.trim().to_ascii_lowercase();
+            !(t.is_empty() || t == "0" || t == "false" || t == "no" || t == "off")
+        }
+        Err(_) => true,
+    }
+}
+
+/// Per-call `alpha_weighted` override, else master switch default.
+pub fn resolve_alpha_weighted(explicit: Option<bool>) -> bool {
+    explicit.unwrap_or_else(alpha_speed_gate_enabled)
+}
+
 /// Scale injection weight by edge volatility α (aligned with presentation `score_alpha_scale`).
 /// `0` / unset → 1.0 (no damping). Static α≈0.12 → ~0.96; dynamic α≈0.85 → ~0.77.
+/// When master gate is off, always returns 1.0.
 pub fn edge_volatility_scale(volatility: f32) -> f32 {
+    if !alpha_speed_gate_enabled() {
+        return 1.0;
+    }
     if volatility <= 0.0 {
         return 1.0;
     }
@@ -76,8 +98,9 @@ pub fn injection_rank_score(a: &InjectionArtifact) -> f32 {
         0.0
     };
     let base = crs_w + hot_w + recency_w + momentum_w + anchor_w;
-    // Load-bearing continuity slots are never α-damped.
-    let scaled = if a.is_scar || a.is_handoff || a.is_primary_anchor {
+    // Load-bearing continuity slots are never α-damped; honor master gate.
+    let scaled = if a.is_scar || a.is_handoff || a.is_primary_anchor || !alpha_speed_gate_enabled()
+    {
         base
     } else {
         base * edge_volatility_scale(a.edge_volatility)
@@ -254,10 +277,31 @@ mod tests {
     }
 
     #[test]
+    fn alpha_speed_gate_env_defaults_on() {
+        std::env::remove_var("ENGRAM_ALPHA_SPEED_GATE");
+        assert!(alpha_speed_gate_enabled());
+        assert!(resolve_alpha_weighted(None));
+        assert!(!resolve_alpha_weighted(Some(false)));
+        assert!(resolve_alpha_weighted(Some(true)));
+        std::env::set_var("ENGRAM_ALPHA_SPEED_GATE", "0");
+        assert!(!alpha_speed_gate_enabled());
+        assert!(!resolve_alpha_weighted(None));
+        // Explicit tool override still wins when master off
+        assert!(resolve_alpha_weighted(Some(true)));
+        std::env::set_var("ENGRAM_ALPHA_SPEED_GATE", "true");
+        assert!(alpha_speed_gate_enabled());
+        std::env::remove_var("ENGRAM_ALPHA_SPEED_GATE");
+    }
+
+    #[test]
     fn edge_volatility_scale_prefers_static() {
+        std::env::remove_var("ENGRAM_ALPHA_SPEED_GATE");
         assert!((edge_volatility_scale(0.0) - 1.0).abs() < 1e-6);
         assert!(edge_volatility_scale(0.12) > edge_volatility_scale(0.85));
         assert!((edge_volatility_scale(0.12) - 1.0 / (1.0 + 0.35 * 0.12)).abs() < 1e-5);
+        std::env::set_var("ENGRAM_ALPHA_SPEED_GATE", "off");
+        assert!((edge_volatility_scale(0.85) - 1.0).abs() < 1e-6);
+        std::env::remove_var("ENGRAM_ALPHA_SPEED_GATE");
     }
 
     #[test]

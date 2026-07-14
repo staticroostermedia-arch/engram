@@ -113,9 +113,9 @@ pub fn presentation_hop_budget() -> f32 {
 
 /// Score multiplier for an edge with volatility α: static edges keep more weight.
 /// `score_alpha_scale(0.12) ≈ 0.96`; `score_alpha_scale(0.85) ≈ 0.77`.
+/// Honors `ENGRAM_ALPHA_SPEED_GATE` master switch (Cycle 25).
 pub fn score_alpha_scale(volatility: f32) -> f32 {
-    let vol = volatility.clamp(0.01, 1.0);
-    1.0 / (1.0 + 0.35 * vol)
+    crate::injection_priority::edge_volatility_scale(volatility)
 }
 
 /// Multi-hop labeled walk with edge cost `1+α` and continuous budget (Cycle 21/22).
@@ -175,7 +175,11 @@ pub fn expand_labeled_alpha(
         let mut edges = store.search_relations_ranked(&concept, Some(label), direction, true);
         edges.retain(|(_, other, _)| other != &concept);
         for (_lbl, other, vol) in edges {
-            let hop = 1.0 + vol;
+            let hop = if crate::injection_priority::alpha_speed_gate_enabled() {
+                1.0 + vol
+            } else {
+                1.0
+            };
             let next_cost = cost + hop;
             if next_cost > budget + 1e-5 {
                 continue;

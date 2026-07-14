@@ -22,6 +22,7 @@ list = [
   "continuous_phase_rotation_geometric_shadowing",
   "semantic_speed_gate_relation_volatility",
   "alpha_weighted_bfs_depth_cost",
+  "alpha_speed_gate_master_switch",
   "bi_temporal_supersedes_append_only",
   "zero_llm_local_sovereignty",
 ]
@@ -54,6 +55,8 @@ list = [
   "lexicon:word:edge-volatility-scale",
   "lexicon:word:momentum-alpha-weight",
   "lexicon:word:min-goal-edge-volatility",
+  "lexicon:word:alpha-speed-gate-master",
+  "lexicon:word:resolve-alpha-weighted",
 ]
 
 [execute]
