@@ -433,31 +433,131 @@ impl RelationIndex {
         out
     }
 
-    /// BFS up to `depth` hops from `seed`. Returns all (from, label, to) edges traversed.
+    /// Uniform hop BFS up to `depth` hops from `seed`. Returns all (from, label, to) edges traversed.
     pub fn bfs(&self, seed: &str, depth: usize) -> Vec<RelationEntry> {
-        use std::collections::HashSet;
-        let mut visited: HashSet<String> = HashSet::new();
-        let mut frontier = vec![seed.to_string()];
-        let mut result: Vec<RelationEntry> = Vec::new();
-        for _ in 0..depth {
-            if frontier.is_empty() {
-                break;
-            }
-            let mut next: Vec<String> = Vec::new();
-            for concept in &frontier {
-                if !visited.insert(concept.clone()) {
-                    continue;
+        self.bfs_with_options(seed, depth, false)
+    }
+
+    /// Hop cost for α-weighted expansion: base 1.0 + semantic-speed-gate volatility.
+    /// Static edges (~0.12) cost ~1.12; dynamic supersedes (~0.85) cost ~1.85.
+    pub fn relation_hop_cost(entry: &RelationEntry) -> f32 {
+        1.0 + effective_relation_volatility(entry)
+    }
+
+    /// BFS from `seed` with optional RoMem α-weighted depth cost.
+    ///
+    /// When `alpha_weighted` is false: classic unit-hop BFS (depth = hop count).
+    /// When true: Dijkstra expansion with edge cost `1+α` and budget = `depth` as f32 —
+    /// high-volatility paths exhaust the budget sooner, so static topology fills more of
+    /// the multi-hop neighborhood (RSI Cycle 21).
+    pub fn bfs_with_options(
+        &self,
+        seed: &str,
+        depth: usize,
+        alpha_weighted: bool,
+    ) -> Vec<RelationEntry> {
+        if !alpha_weighted {
+            use std::collections::HashSet;
+            let mut visited: HashSet<String> = HashSet::new();
+            let mut frontier = vec![seed.to_string()];
+            let mut result: Vec<RelationEntry> = Vec::new();
+            for _ in 0..depth {
+                if frontier.is_empty() {
+                    break;
                 }
-                for e in &self.entries {
-                    if &e.from == concept {
-                        result.push(e.clone());
-                        if !visited.contains(&e.to) {
-                            next.push(e.to.clone());
+                let mut next: Vec<String> = Vec::new();
+                for concept in &frontier {
+                    if !visited.insert(concept.clone()) {
+                        continue;
+                    }
+                    for e in &self.entries {
+                        if &e.from == concept {
+                            result.push(e.clone());
+                            if !visited.contains(&e.to) {
+                                next.push(e.to.clone());
+                            }
                         }
                     }
                 }
+                frontier = next;
             }
-            frontier = next;
+            return result;
+        }
+
+        use std::cmp::Ordering;
+        use std::collections::{BinaryHeap, HashMap, HashSet};
+
+        #[derive(Clone)]
+        struct State {
+            cost: f32,
+            concept: String,
+        }
+        impl PartialEq for State {
+            fn eq(&self, other: &Self) -> bool {
+                self.concept == other.concept && (self.cost - other.cost).abs() < 1e-6
+            }
+        }
+        impl Eq for State {}
+        impl PartialOrd for State {
+            fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+                Some(self.cmp(other))
+            }
+        }
+        impl Ord for State {
+            fn cmp(&self, other: &Self) -> Ordering {
+                // Min-heap on cost
+                other
+                    .cost
+                    .partial_cmp(&self.cost)
+                    .unwrap_or(Ordering::Equal)
+                    .then_with(|| self.concept.cmp(&other.concept))
+            }
+        }
+
+        let budget = depth as f32;
+        let mut best: HashMap<String, f32> = HashMap::new();
+        best.insert(seed.to_string(), 0.0);
+        let mut heap = BinaryHeap::new();
+        heap.push(State {
+            cost: 0.0,
+            concept: seed.to_string(),
+        });
+        let mut result: Vec<RelationEntry> = Vec::new();
+        let mut seen_edges: HashSet<(String, String, String)> = HashSet::new();
+
+        while let Some(State { cost, concept }) = heap.pop() {
+            if cost > best.get(&concept).copied().unwrap_or(f32::MAX) + 1e-5 {
+                continue;
+            }
+            // Expand low-α edges first at this node for stable ordering
+            let mut outgoing: Vec<&RelationEntry> =
+                self.entries.iter().filter(|e| e.from == concept).collect();
+            outgoing.sort_by(|a, b| {
+                effective_relation_volatility(a)
+                    .partial_cmp(&effective_relation_volatility(b))
+                    .unwrap_or(Ordering::Equal)
+                    .then_with(|| a.label.cmp(&b.label))
+                    .then_with(|| a.to.cmp(&b.to))
+            });
+            for e in outgoing {
+                let hop = Self::relation_hop_cost(e);
+                let next_cost = cost + hop;
+                if next_cost > budget + 1e-5 {
+                    continue;
+                }
+                let edge_key = (e.from.clone(), e.label.clone(), e.to.clone());
+                if seen_edges.insert(edge_key) {
+                    result.push(e.clone());
+                }
+                let prev = best.get(&e.to).copied().unwrap_or(f32::MAX);
+                if next_cost + 1e-5 < prev {
+                    best.insert(e.to.clone(), next_cost);
+                    heap.push(State {
+                        cost: next_cost,
+                        concept: e.to.clone(),
+                    });
+                }
+            }
         }
         result
     }
@@ -6802,11 +6902,31 @@ impl StoreHandle {
     /// Non-AST nodes are rendered as plain nodes outside any subgraph.
     /// All directed edges are emitted after the subgraph declarations.
     pub fn visualize_graph(&self, seed: &str, depth: usize) -> String {
+        self.visualize_graph_with_options(seed, depth, true)
+    }
+
+    /// Mermaid BFS subgraph; `alpha_weighted` uses RoMem hop cost `1+α` (default true).
+    pub fn visualize_graph_with_options(
+        &self,
+        seed: &str,
+        depth: usize,
+        alpha_weighted: bool,
+    ) -> String {
         use std::collections::{HashMap, HashSet};
 
-        let edges = self.relation_index.bfs(seed, depth);
+        let edges = self
+            .relation_index
+            .bfs_with_options(seed, depth, alpha_weighted);
         if edges.is_empty() {
-            return format!("No outgoing relations found for '{}'.", seed);
+            let mode = if alpha_weighted {
+                "α-weighted"
+            } else {
+                "uniform-hop"
+            };
+            return format!(
+                "No outgoing relations found for '{}' (depth={}, {}).",
+                seed, depth, mode
+            );
         }
 
         // ── Collect every unique node name referenced in the BFS result ──────
@@ -6874,11 +6994,17 @@ impl StoreHandle {
             lines.push(format!("  {}[\"{}\"]", id, name));
         }
 
-        // Emit edges
+        // Emit edges (label includes α when speed-gate known)
         for e in &edges {
             let f = sanitise(&e.from);
             let t = sanitise(&e.to);
-            lines.push(format!("  {} -->|{}| {}", f, e.label, t));
+            let vol = effective_relation_volatility(e);
+            lines.push(format!("  {} -->|{} α={:.2}| {}", f, e.label, vol, t));
+        }
+        if alpha_weighted {
+            lines.push(format!(
+                "  %% α-weighted BFS: edge cost=1+α, budget=depth({depth})"
+            ));
         }
         lines.push("```".to_string());
         lines.join("\n")
@@ -9119,6 +9245,74 @@ SESSION HANDOFF PACKET v1
         let dynamic_first = store.search_relations_ranked("seed:vol", None, "from", false);
         assert_eq!(dynamic_first[0].1, "n:dynamic");
         assert_eq!(dynamic_first[2].1, "n:static");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn relation_hop_cost_is_one_plus_alpha() {
+        let e = RelationEntry {
+            from: "a".into(),
+            label: "implements".into(),
+            to: "b".into(),
+            volatility: 0.12,
+        };
+        assert!((RelationIndex::relation_hop_cost(&e) - 1.12).abs() < 1e-5);
+        let e2 = RelationEntry {
+            from: "a".into(),
+            label: "supersedes".into(),
+            to: "c".into(),
+            volatility: 0.85,
+        };
+        assert!((RelationIndex::relation_hop_cost(&e2) - 1.85).abs() < 1e-5);
+    }
+
+    #[test]
+    fn alpha_weighted_bfs_prefers_static_paths_within_budget() {
+        let dir = test_store_dir("bfs_alpha_weight");
+        let mut store = StoreHandle::new(&dir.to_string_lossy());
+        for c in ["seed:bfs", "s1", "s2", "d1", "d2"] {
+            store.remember(c, &format!("node {c}")).unwrap();
+        }
+        store
+            .relate_with_volatility("seed:bfs", "s1", "implements", Some(0.12))
+            .unwrap();
+        store
+            .relate_with_volatility("s1", "s2", "implements", Some(0.12))
+            .unwrap();
+        store
+            .relate_with_volatility("seed:bfs", "d1", "supersedes", Some(0.85))
+            .unwrap();
+        store
+            .relate_with_volatility("d1", "d2", "supersedes", Some(0.85))
+            .unwrap();
+
+        let edges = store.relation_index.bfs_with_options("seed:bfs", 2, true);
+        let tos: Vec<&str> = edges.iter().map(|e| e.to.as_str()).collect();
+        assert!(tos.contains(&"s1"), "static first hop: {:?}", tos);
+        assert!(tos.contains(&"d1"), "dynamic first hop: {:?}", tos);
+        assert!(
+            !tos.contains(&"d2"),
+            "dynamic second hop should exhaust budget: {:?}",
+            tos
+        );
+
+        let edges3 = store.relation_index.bfs_with_options("seed:bfs", 3, true);
+        let tos3: Vec<&str> = edges3.iter().map(|e| e.to.as_str()).collect();
+        assert!(
+            tos3.contains(&"s2"),
+            "static two-hop under budget 3: {:?}",
+            tos3
+        );
+        assert!(
+            !tos3.contains(&"d2"),
+            "dynamic two-hop still over budget 3: {:?}",
+            tos3
+        );
+
+        let classic = store.relation_index.bfs("seed:bfs", 2);
+        let classic_tos: Vec<&str> = classic.iter().map(|e| e.to.as_str()).collect();
+        assert!(classic_tos.contains(&"s2") && classic_tos.contains(&"d2"));
 
         let _ = std::fs::remove_dir_all(&dir);
     }
