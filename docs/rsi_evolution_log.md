@@ -660,4 +660,38 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 2. Relation α (semantic-speed-gate) re-rank experiment.
 3. Dogfood ENGRAM_ENCRYPT_AT_REST on live MCP binary swap.
 
+---
+
+## Cycle 19 — Fisher CRS-precision recall (2026-07-14)
+
+### Master baseline
+
+- Post Cycle 18: PR **#64** `53f15be1` — Langevin `forget_old`.
+- Hub CRS ~0.886 · CSF ~0.93 · ~87.2k blocks.
+
+### Research synthesis
+
+| Source | Insight |
+|--------|---------|
+| SLM-V3 arXiv:2603.14588 Fisher–Rao retrieval | Weight dimensions/matches by precision; Engram uses CRS as scalar precision proxy. |
+| Existing Dirichlet scorer (D1–D4) | Already had additive CRS (D2=0.14); add multiplicative sim×CRS term. |
+
+### Hypothesis
+
+**CRS-precision product:** `score += D_fisher × (sim_norm × crs)` with D1 reduced 0.74→0.62 so weights still sum to 1. Default ON; `ENGRAM_FISHER_PRECISION=0` restores legacy.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Code | `engram-core` `score_memory` / `fisher_precision_enabled` |
+| Test | `fisher_precision_prefers_higher_crs_at_equal_cosine` |
+| Lexicon | `crs-precision-recall`, `dirichlet-fisher-governor` CRS 0.78 |
+
+### Next vectors
+
+1. Relation α (semantic-speed-gate) re-rank on edges.
+2. Per-dimension σ² / variance tensors (full Fisher) if warranted by metrics.
+3. Encrypt-at-rest live binary dogfood.
+
 

@@ -655,6 +655,19 @@ pub fn score_memory(
     score_block(concept, query, block, ego_q)
 }
 
+/// Fisher-inspired CRS×sim precision term (default on).
+/// Set `ENGRAM_FISHER_PRECISION=0|false|off` for legacy Dirichlet weights.
+pub fn fisher_precision_enabled() -> bool {
+    match std::env::var("ENGRAM_FISHER_PRECISION") {
+        Ok(v) => {
+            let v = v.to_ascii_lowercase();
+            !matches!(v.as_str(), "0" | "false" | "off" | "no")
+        }
+        // Default ON — RSI Cycle 19 ultimate-memory Fisher map
+        Err(_) => true,
+    }
+}
+
 fn score_block(
     concept: String,
     query: &[Complex32; 8192],
@@ -679,16 +692,23 @@ fn score_block(
     // Universal Dirichlet Governor Weights (must sum to 1.0)
     //
     // D1 (Semantic Resonance)  — drives meaningful recall. Primary term.
-    // D2 (Epistemic Coherence) — CRS confidence gate.
+    // D_fisher (Precision×sim) — Fisher–Rao inspired: weight semantic match by CRS
+    //                            as precision proxy (SLM-V3 / arXiv:2603.14588 map).
+    // D2 (Epistemic Coherence) — CRS confidence gate (additive).
     // D3 (Interpretive Frame)  — split: 60% stability + 40% Ego recognition.
-    //                            When Ego loaded: D3 = 0.6*stability + 0.4*ego_norm
-    //                            When no Ego:     D3 = stability (backward compat)
     // D4 (Superposition Mass)  — kept small; deep blocks should NOT outrank
     //                            semantically stronger fresh blocks.
-    const D1: f32 = 0.74; // Semantic Resonance
-    const D2: f32 = 0.14; // Epistemic Coherence
-    const D3: f32 = 0.10; // Interpretive Frame (stability + ego blend)
-    const D4: f32 = 0.02; // Superposition Mass
+    //
+    // Fisher precision blend (default ON via ENGRAM_FISHER_PRECISION=1):
+    //   D1=0.62, D_fisher=0.12, D2=0.14, D3=0.10, D4=0.02
+    // Legacy (ENGRAM_FISHER_PRECISION=0):
+    //   D1=0.74, D_fisher=0,    D2=0.14, D3=0.10, D4=0.02
+    let fisher_on = fisher_precision_enabled();
+    let (d1, d_fisher, d2, d3, d4) = if fisher_on {
+        (0.62_f32, 0.12_f32, 0.14_f32, 0.10_f32, 0.02_f32)
+    } else {
+        (0.74_f32, 0.00_f32, 0.14_f32, 0.10_f32, 0.02_f32)
+    };
 
     // D3 composite: when ego available, blend stability with Ego recognition
     let d3_value = if ego_q.is_some() {
@@ -697,17 +717,32 @@ fn score_block(
         stability_norm
     };
 
-    let score = (base_sim_norm * D1) + (crs_norm * D2) + (d3_value * D3) + (depth_norm * D4);
+    // Precision-weighted semantic: high-CRS blocks get more credit for the same cosine
+    // (inverse-variance intuition without per-dimension σ² tensors yet).
+    let precision_sim = base_sim_norm * crs_norm;
+
+    let score = (base_sim_norm * d1)
+        + (precision_sim * d_fisher)
+        + (crs_norm * d2)
+        + (d3_value * d3)
+        + (depth_norm * d4);
 
     let provlog_full = crate::storage::read_provlog(block);
     let provlog = provlog_full.chars().take(512).collect();
 
-    let explain =
+    let explain = if fisher_on {
         format!(
-        "Dirichlet[ego={}]: sim={:.3}*{} + crs={:.3}*{} + frame={:.3}*{} + mass={:.3}*{} => {:.4}",
-        ego_q.is_some(),
-        base_sim_norm, D1, crs_norm, D2, d3_value, D3, depth_norm, D4, score
-    );
+            "Dirichlet+Fisher[ego={}]: sim={:.3}*{} + prec_sim={:.3}*{} + crs={:.3}*{} + frame={:.3}*{} + mass={:.3}*{} => {:.4}",
+            ego_q.is_some(),
+            base_sim_norm, d1, precision_sim, d_fisher, crs_norm, d2, d3_value, d3, depth_norm, d4, score
+        )
+    } else {
+        format!(
+            "Dirichlet[ego={}]: sim={:.3}*{} + crs={:.3}*{} + frame={:.3}*{} + mass={:.3}*{} => {:.4}",
+            ego_q.is_some(),
+            base_sim_norm, d1, crs_norm, d2, d3_value, d3, depth_norm, d4, score
+        )
+    };
     Memory {
         concept,
         score,
@@ -728,6 +763,35 @@ fn score_block(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fisher_precision_prefers_higher_crs_at_equal_cosine() {
+        std::env::set_var("ENGRAM_FISHER_PRECISION", "1");
+        let dir = tempfile::tempdir().unwrap();
+        let backend = CpuBackend::new(dir.path());
+        let encoded = backend.encode("identical phase content for fisher test");
+        let mut low = encoded.clone();
+        low.crs_score = 0.74;
+        low.energetics.crs = 0.74;
+        let mut high = encoded.clone();
+        high.crs_score = 0.95;
+        high.energetics.crs = 0.95;
+        // Query shares phase with both → equal cosine
+        let m_low = score_memory("low".into(), &encoded.q, &low, None);
+        let m_high = score_memory("high".into(), &encoded.q, &high, None);
+        assert!(
+            m_high.score > m_low.score,
+            "high CRS should outrank low CRS at equal cosine: high={} low={}",
+            m_high.score,
+            m_low.score
+        );
+        assert!(
+            m_high.explain.contains("Fisher") || m_high.explain.contains("prec_sim"),
+            "explain should note Fisher precision: {}",
+            m_high.explain
+        );
+        std::env::remove_var("ENGRAM_FISHER_PRECISION");
+    }
 
     #[test]
     fn test_verify_hypothesis() {
