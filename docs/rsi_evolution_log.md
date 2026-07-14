@@ -910,4 +910,41 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 2. Encrypt-at-rest live MCP dogfood.
 3. Expose α gate in backend_readiness / wake packet.
 
+---
+
+## Cycle 26 — α gate in backend_readiness / wake packet (2026-07-14)
+
+### Master baseline
+
+- Post Cycle 25: PR **#71** `6de46bff` — ENGRAM_ALPHA_SPEED_GATE master.
+- Hub CRS ~0.894 · CSF ~0.939 · ~88.6k blocks · avg CRS ~0.858 · integrity healthy.
+
+### Research synthesis
+
+| Source | Insight |
+|--------|---------|
+| Cycle 25 master switch | Policy exists but agents only learn via code/docs. |
+| session_start readiness | Already injects `backend_readiness` — ideal ops surface. |
+| Presentation stratum | Hard-coded `alpha_weighted: true` → gate live value. |
+
+### Hypothesis
+
+**Ops visibility:** emit `alpha_speed_gate_enabled`, env key, process ritual id, and `presentation_hop_budget` on readiness so wake agents can condition tools without env probe.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Code | `backend_readiness` α fields; presentation stratum live gate flag |
+| MCP | get_backend_readiness description updated |
+| Process | alpha-speed-gate.toml notes + readiness tool |
+| Tests | `backend_readiness_exposes_alpha_speed_gate` |
+| Lexicon | `readiness-alpha-surface`, `wake-alpha-visibility` CRS 0.78 |
+
+### Next vectors
+
+1. Per-dimension σ² / variance tensors (full Fisher) if metrics warrant.
+2. Encrypt-at-rest live MCP dogfood.
+3. Optional CRS×α joint score on recall Dirichlet path.
+
 

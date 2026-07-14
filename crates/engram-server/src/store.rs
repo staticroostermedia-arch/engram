@@ -2054,6 +2054,11 @@ impl StoreHandle {
             "cufile_hot_ready": self.backend_cufile_hot_ready(),
             "cufile_driver_detected": self.backend_cufile_driver_detected(),
             "cufile_transfer_path": self.backend_cufile_transfer_path(),
+            // RSI Cycle 26: surface unified α policy for wake/ops (Cycles 20–25 stack)
+            "alpha_speed_gate_enabled": crate::injection_priority::alpha_speed_gate_enabled(),
+            "alpha_speed_gate_env": "ENGRAM_ALPHA_SPEED_GATE",
+            "alpha_speed_gate_process": "process:engram.ritual.alpha-speed-gate",
+            "presentation_hop_budget": crate::presentation_stratum::presentation_hop_budget(),
         })
     }
 
@@ -9146,6 +9151,43 @@ SESSION HANDOFF PACKET v1
         let hot = r["gpu_hot_device"].as_str().unwrap_or("");
         let compute = r["gpu_compute_device"].as_str().unwrap_or("");
         assert!(!hot.is_empty() && !compute.is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn backend_readiness_exposes_alpha_speed_gate() {
+        std::env::remove_var("ENGRAM_ALPHA_SPEED_GATE");
+        let dir = test_store_dir("alpha_gate_ready");
+        let store = StoreHandle::new(&dir.to_string_lossy());
+        let r = store.backend_readiness();
+        assert_eq!(
+            r.get("alpha_speed_gate_enabled").and_then(|v| v.as_bool()),
+            Some(true),
+            "default α gate should be on"
+        );
+        assert_eq!(
+            r.get("alpha_speed_gate_env").and_then(|v| v.as_str()),
+            Some("ENGRAM_ALPHA_SPEED_GATE")
+        );
+        assert_eq!(
+            r.get("alpha_speed_gate_process").and_then(|v| v.as_str()),
+            Some("process:engram.ritual.alpha-speed-gate")
+        );
+        assert!(
+            r.get("presentation_hop_budget")
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.0)
+                > 0.0
+        );
+        std::env::set_var("ENGRAM_ALPHA_SPEED_GATE", "0");
+        let r_off = store.backend_readiness();
+        assert_eq!(
+            r_off
+                .get("alpha_speed_gate_enabled")
+                .and_then(|v| v.as_bool()),
+            Some(false)
+        );
+        std::env::remove_var("ENGRAM_ALPHA_SPEED_GATE");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
