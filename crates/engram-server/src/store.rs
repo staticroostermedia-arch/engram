@@ -2694,9 +2694,9 @@ impl StoreHandle {
                     .or_else(|| self.backend.fetch_block(raw))?;
                 let mut mem =
                     engram_core::backend::score_memory(name.clone(), effective_q, &block, ego);
-                // RSI Cycle 27: CRS×α joint — Dirichlet score × edge_volatility_scale(min goal α)
+                // RSI Cycle 27–28: CRS×α joint — goal α preferred, else incident-edge label α
                 if crate::injection_priority::crs_alpha_joint_enabled() {
-                    let vol = self.min_goal_edge_volatility(name);
+                    let vol = self.concept_edge_volatility(name);
                     let before = mem.score;
                     mem.score =
                         crate::injection_priority::apply_crs_alpha_joint(mem.score, vol, name);
@@ -6910,6 +6910,31 @@ impl StoreHandle {
         best
     }
 
+    /// Lowest α among any incident edges (both directions). Uses stored volatility or label heuristic.
+    /// RSI Cycle 28: fallback when concept has no goal-graph edge.
+    pub fn min_incident_edge_volatility(&self, concept: &str) -> f32 {
+        if concept.is_empty() {
+            return 0.0;
+        }
+        let mut best = 0.0_f32;
+        for (_lbl, _other, vol) in self.search_relations_ranked(concept, None, "both", true) {
+            if best <= 0.0 || vol < best {
+                best = vol;
+            }
+        }
+        best
+    }
+
+    /// Preferred α for ranking: goal-edge α if any, else min incident-edge α (label/stored).
+    /// 0 = unset (no damping). Shared by injection, momentum, CRS×α joint (Cycles 23–28).
+    pub fn concept_edge_volatility(&self, concept: &str) -> f32 {
+        let goal = self.min_goal_edge_volatility(concept);
+        if goal > 0.0 {
+            return goal;
+        }
+        self.min_incident_edge_volatility(concept)
+    }
+
     /// Relation query with RoMem semantic-speed-gate α and optional static-first ranking.
     /// Returns (label, other, volatility). When `prefer_static` is true, lower α ranks first;
     /// when false, higher α (dynamic edges) rank first. Default ranking path for MCP search.
@@ -9342,6 +9367,35 @@ SESSION HANDOFF PACKET v1
         assert_eq!(dynamic_first[0].1, "n:dynamic");
         assert_eq!(dynamic_first[2].1, "n:static");
 
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn concept_edge_volatility_falls_back_to_incident_edges() {
+        let dir = test_store_dir("concept_edge_vol_fb");
+        let mut store = StoreHandle::new(&dir.to_string_lossy());
+        store.remember("a:solo", "no goal edge").unwrap();
+        store.remember("b:static", "static peer").unwrap();
+        store.remember("c:dyn", "dyn peer").unwrap();
+        // No primary_goal serves — only incident edges on a:solo
+        store
+            .relate_with_volatility("a:solo", "b:static", "implements", Some(0.12))
+            .unwrap();
+        store
+            .relate_with_volatility("a:solo", "c:dyn", "supersedes", Some(0.90))
+            .unwrap();
+        assert!(
+            (store.min_goal_edge_volatility("a:solo") - 0.0).abs() < 1e-5,
+            "no goal edge expected"
+        );
+        let incident = store.min_incident_edge_volatility("a:solo");
+        assert!(
+            (incident - 0.12).abs() < 1e-5,
+            "min incident should prefer static α: {}",
+            incident
+        );
+        let preferred = store.concept_edge_volatility("a:solo");
+        assert!((preferred - 0.12).abs() < 1e-5);
         let _ = std::fs::remove_dir_all(&dir);
     }
 

@@ -8690,7 +8690,7 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
 
         "mcp_engram_query_with_momentum" => {
             // Phase 3: Momentum-assisted recall — blend q (80%) + p (20%) scores
-            // RSI Cycle 24: optional α re-weight via min_goal_edge_volatility.
+            // RSI Cycle 24/28: optional α re-weight via concept_edge_volatility (goal or incident).
             // Quick Win 1: tiny LRU for recent blended results. Capacity 24; keyed by query+filter+α.
             let query = args["query"].as_str().unwrap_or("").trim().to_string();
             let k = args["k"].as_u64().unwrap_or(5).min(20) as usize;
@@ -8766,7 +8766,7 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
                     let q_score = engram_core::ops::cosine_similarity(&effective_q, &block.q);
                     let p_score = engram_core::ops::cosine_similarity(&effective_q, &block.p);
                     let edge_vol = if alpha_weighted {
-                        lock.min_goal_edge_volatility(&concept)
+                        lock.concept_edge_volatility(&concept)
                     } else {
                         0.0
                     };

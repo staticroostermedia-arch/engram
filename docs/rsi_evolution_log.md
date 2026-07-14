@@ -983,4 +983,40 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 2. Encrypt-at-rest live MCP dogfood.
 3. Relation-label α in score_memory for ZEDOS_RELATION blocks without goal edges.
 
+---
+
+## Cycle 28 — relation-label α fallback (concept_edge_volatility) (2026-07-14)
+
+### Master baseline
+
+- Post Cycle 27: PR **#73** `51f30fc6` — CRS×α joint recall.
+- Hub CRS ~0.896 · CSF ~0.940 · ~88.9k blocks · avg CRS ~0.858 · integrity healthy.
+
+### Research synthesis
+
+| Source | Insight |
+|--------|---------|
+| Cycle 27 CRS×α joint | min_goal_edge_volatility often returns 0 for non-goal-linked tiles → joint no-op. |
+| Cycle 20 label heuristics | `default_relation_volatility` already maps implements vs supersedes. |
+| Prefer-static ranking | Incident edges already carry α via RelationEntry / label. |
+
+### Hypothesis
+
+**concept_edge_volatility:** prefer goal-edge α; else min α among any incident edges (stored or label heuristic). Wire injection, momentum, CRS×α joint to this probe.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Code | `min_incident_edge_volatility`, `concept_edge_volatility` |
+| Call sites | score_recall_candidates, harness injection, query_with_momentum |
+| Tests | incident min prefers static; no goal edge |
+| Lexicon | `concept-edge-volatility`, `incident-edge-alpha` CRS 0.78 |
+
+### Next vectors
+
+1. Per-dimension σ² / variance tensors (full Fisher) if metrics warrant.
+2. Encrypt-at-rest live MCP dogfood.
+3. Cap incident scan cost for ultra-hub concepts (k-bound).
+
 
