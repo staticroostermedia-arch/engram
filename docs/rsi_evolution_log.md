@@ -591,3 +591,39 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 2. Wire `supersedes` auto-emit from `update` when recall finds peer claim (ritual already declarative).
 3. Variance-augmented recall (Fisher) + discrete Langevin forget_old (still open from Cycle 15).
 
+---
+
+## Cycle 17 — supersedes_of update wire + GHRR/VSA distill (2026-07-14)
+
+### Master baseline
+
+- Post Cycle 16: PR **#62** `78748926` — bi-temporal ritual + time-as-geometry lexicon.
+- Manifold ~87k · avg CRS ~0.855 · CSF ~0.93.
+
+### Research synthesis (≥2 cited sources)
+
+| Source | Insight integrated |
+|--------|-------------------|
+| [arXiv:2405.09689](https://arxiv.org/abs/2405.09689) — *Generalized Holographic Reduced Representations* | Non-commutative bind flexibility for ordered structures; Engram OP_BIND already production VSA. |
+| HyperSpace VSA analysis (HRR/FHRR capacity tradeoffs) | Dimension/capacity framing for unit hypersphere backend. |
+| Cycle 16 bi-temporal ritual | Implement `supersedes_of` on `mcp_engram_update` (append-only succession). |
+
+### Hypothesis selected
+
+**Wire succession:** optional `supersedes_of` on update → `relate(new, old, supersedes)` + append `invalid_at`/`superseded_by` on old — no `forget`. Distill GHRR/HyperSpace lexicon for VSA depth.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Code | `mcp_engram_update` + `supersedes_of` (mcp.rs) |
+| Ritual | bi-temporal-supersedes.toml sequence prefers supersedes_of |
+| Lexicon | `generalized-hrr`, `hyperspace-vsa` CRS 0.78 |
+
+### Next vectors
+
+1. Phase re-rank with α (semantic-speed-gate) on relation edges.
+2. Fisher variance-augmented recall experiment.
+3. Discrete Langevin access bias for forget_old.
+
+

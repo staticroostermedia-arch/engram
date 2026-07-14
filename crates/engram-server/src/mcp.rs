@@ -1866,6 +1866,10 @@ fn tool_list() -> Value {
                             "type": "string",
                             "enum": ["append", "replace"],
                             "description": "Optional — default inferred from concept (append for __arc/trace:*; replace for AST __fn__/* with source-shaped text)"
+                        },
+                        "supersedes_of": {
+                            "type": "string",
+                            "description": "Optional bi-temporal succession: after update, relate(this, old, supersedes) and append invalid_at on old. Append-only — never forgets history. Ritual: process:engram.ritual.bi-temporal-supersedes."
                         }
                     },
                     "required": ["concept", "new_text"]
@@ -7470,6 +7474,12 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
                 .get("provlog_mode")
                 .and_then(|v| v.as_str())
                 .and_then(engram_core::storage::parse_provlog_splice_mode);
+            let supersedes_of = args
+                .get("supersedes_of")
+                .and_then(|v| v.as_str())
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(|s| s.to_string());
             let mut lock = store.lock().unwrap();
             let gate = crate::consult_before_write_gate::check_write(
                 lock.metamemory.recall_gate_open(),
@@ -7490,6 +7500,40 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
                         crate::edit_arc_gate::on_arc_updated(&concept);
                         lock.log_activity("ritual:edit_arc_gate", "arc_updated", Some(&concept));
                     }
+                    // Bi-temporal succession (ritual: bi-temporal-supersedes): append-only edge.
+                    let mut supersedes_note = String::new();
+                    if let Some(ref old) = supersedes_of {
+                        if old.as_str() != concept.as_str() {
+                            match lock.relate(&concept, old, "supersedes") {
+                                Ok(_) => {
+                                    let ts = std::time::SystemTime::now()
+                                        .duration_since(std::time::UNIX_EPOCH)
+                                        .map(|d| d.as_secs())
+                                        .unwrap_or(0);
+                                    let invalid_delta = format!(
+                                        "**invalid_at:** {ts}\n**superseded_by:** {concept}\n\
+                                         **ritual:** process:engram.ritual.bi-temporal-supersedes\n"
+                                    );
+                                    if let Err(e) = lock.update(old, &invalid_delta) {
+                                        warn!(
+                                            "supersedes: related {concept}->{old} but invalid_at splice failed: {e}"
+                                        );
+                                    }
+                                    lock.log_activity(
+                                        "ritual:bi_temporal_supersedes",
+                                        "supersedes_edge",
+                                        Some(old),
+                                    );
+                                    supersedes_note =
+                                        format!(" | supersedes→{old} (append-only succession)");
+                                }
+                                Err(e) => {
+                                    warn!("supersedes_of relate failed {concept}->{old}: {e}");
+                                    supersedes_note = format!(" | supersedes_of failed: {e}");
+                                }
+                            }
+                        }
+                    }
                     info!("updated: {concept}");
                     let tensor_json = if concept.starts_with("tile:") {
                         crate::tensor_tile_bridge::plain_tile_update_tensor_extras(
@@ -7499,7 +7543,10 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
                         Value::Null
                     };
                     let body = if tensor_json.is_null() {
-                        format!("✓ Updated memory '{concept}': {}", result.message)
+                        format!(
+                            "✓ Updated memory '{concept}': {}{}",
+                            result.message, supersedes_note
+                        )
                     } else {
                         serde_json::to_string_pretty(&json!({
                             "ok": tensor_json.get("lineage")
@@ -7508,6 +7555,7 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
                                 .unwrap_or(true),
                             "concept": concept,
                             "message": result.message,
+                            "supersedes_of": supersedes_of,
                             "trace_id": tensor_json.get("trace_id"),
                             "lineage": tensor_json.get("lineage"),
                             "tensor_unification": tensor_json,
