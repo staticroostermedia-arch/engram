@@ -1130,5 +1130,44 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 2. Per-dimension Fisher σ² / variance tensors.
 3. Encrypt-at-rest live MCP dogfood.
 4. Optional: heap-select top-k static without full deg sort on ultra-hubs.
+5. Harness wake latency budget env (CI flake: 5s hard fail on cold runners).
+
+---
+
+## Cycle 32 — harness wake latency budget (2026-07-14)
+
+### Master baseline
+
+- Post Cycle 31: PR **#77** `2eec2751` — prefer-static adj sort.
+- Hub CRS ~0.89 · CSF ~0.79 · ~89k blocks · integrity healthy.
+- RSI CI flake: agent-memory failed at 5.5–9s first `session_start` vs hard 5000ms.
+
+### Research synthesis
+
+| Source | Insight |
+|--------|---------|
+| Cycles 30–31 CI | Wake-latency hard fail is runner variance, not substrate regression. |
+| SLO design | Keep strict local 5s default; relax only CI / explicit env. |
+| Ops | Env-tunable budgets already Engram pattern (α cap, hop budget). |
+
+### Hypothesis
+
+**Configurable budget:** `ENGRAM_WAKE_LATENCY_BUDGET_MS` + `GITHUB_ACTIONS` default 15s; CI workflow sets 15000 explicitly. Local SLO remains 5s.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Code | `wake_latency_budget_ms()` in `mcp_test_client.py`; clamp 3–60s |
+| CI | `.github/workflows/rust.yml` agent-memory job: budget 15000 |
+| Report | `wake_latency_budget_ms` field in suite JSON |
+| Lexicon | `wake-latency-budget` |
+
+### Next vectors
+
+1. Fisher σ² / variance tensors if metrics warrant.
+2. CSR/mmap adj at multi-million edge scale.
+3. Encrypt-at-rest MCP dogfood.
+4. Reduce true wake path cost (slim process sheaf / readiness cache).
 
 

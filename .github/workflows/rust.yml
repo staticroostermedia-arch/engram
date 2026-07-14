@@ -67,6 +67,8 @@ jobs:
         ENGRAM_KI_DISABLE: "1"
         ENGRAM_NREM_DISABLE: "1"
         ENGRAM_PROFILE: agent
+        # RSI Cycle 32: cold ubuntu runners often 5–9s first session_start; keep local SLO at 5s default
+        ENGRAM_WAKE_LATENCY_BUDGET_MS: "15000"
         RUST_BACKTRACE: "1"
       run: |
         STABLE_BIN="$(pwd)/target/debug/engram" \

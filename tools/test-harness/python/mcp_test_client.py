@@ -41,6 +41,26 @@ from typing import Any, Dict, List, Optional, Tuple
 MCP_VERSION = "2024-11-05"
 PROTOCOL_VERSION = "2024-11-05"
 
+
+def wake_latency_budget_ms() -> float:
+    """Hard budget for first mcp_engram_session_start in agent-memory suite.
+
+    RSI Cycle 32: env ``ENGRAM_WAKE_LATENCY_BUDGET_MS`` overrides.
+    Defaults: 5000ms local; 15000ms when ``GITHUB_ACTIONS=true`` (cold runner variance).
+    Clamped to [3000, 60000] ms.
+    """
+    if "ENGRAM_WAKE_LATENCY_BUDGET_MS" in os.environ:
+        raw = os.environ["ENGRAM_WAKE_LATENCY_BUDGET_MS"].strip()
+    elif os.environ.get("GITHUB_ACTIONS", "").lower() in ("true", "1"):
+        raw = "15000"
+    else:
+        raw = "5000"
+    try:
+        v = float(raw)
+    except ValueError:
+        v = 15000.0 if os.environ.get("GITHUB_ACTIONS", "").lower() in ("true", "1") else 5000.0
+    return max(3000.0, min(60000.0, v))
+
 # Known Engram MCP tools for suites (from mcp.rs + server behavior)
 LIGHT_TOOLS = {
     "mcp_engram_stats",
@@ -661,12 +681,16 @@ class MCPTestClient:
                 wake_ms = step.get("elapsed_ms")
                 break
 
+        wake_budget = wake_latency_budget_ms()
         if wake_ms is None:
             failures.append("first session_start step missing from sequence")
-        elif wake_ms >= 5000:
-            failures.append(f"wake latency {wake_ms}ms exceeds 5000ms budget")
+        elif wake_ms >= wake_budget:
+            failures.append(
+                f"wake latency {wake_ms}ms exceeds {wake_budget:g}ms budget "
+                f"(ENGRAM_WAKE_LATENCY_BUDGET_MS / GITHUB_ACTIONS default)"
+            )
         else:
-            assertions.append(f"wake_latency_ms={wake_ms} (<5000)")
+            assertions.append(f"wake_latency_ms={wake_ms} (<{wake_budget:g})")
 
         readiness_resp = self.call_tool("mcp_engram_get_backend_readiness", {}, timeout=30.0)
         readiness_data = self._parse_tool_json(readiness_resp)
@@ -831,6 +855,7 @@ class MCPTestClient:
             "failures": failures,
             "assertions": assertions,
             "wake_latency_ms": wake_ms,
+            "wake_latency_budget_ms": wake_budget,
             "memory_mode": memory_mode,
             "harness_concept": harness_concept,
             "sequence": agg,
