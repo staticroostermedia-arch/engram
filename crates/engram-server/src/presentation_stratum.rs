@@ -3,6 +3,9 @@
 //! Cold manifold (187k+ blocks) stays on NVMe. Wake, harness, and consciousness-surface
 //! materialize only a budget-ranked stratum of process/ritual/trace/tile distillates with
 //! explicit lineage (summarizes_chain, prev_in_trace, serves).
+//!
+//! RSI Cycle 22: multi-hop / serves scoring uses RoMem edge volatility α (cost ≈ 1+α)
+//! so static structure outranks high-churn succession edges in the wake surface.
 
 use crate::harness_injection::SESSION_HANDOFF_LATEST;
 use crate::store::StoreHandle;
@@ -95,6 +98,102 @@ fn trusted_tile_bonus(tile_type: Option<&str>) -> f32 {
         Some("progress") | Some("knowledge_graph") => 0.14,
         _ => 0.0,
     }
+}
+
+/// Continuous hop budget for α-weighted multi-hop walks in presentation (default 2.5).
+/// Override: `ENGRAM_PRESENTATION_HOP_BUDGET`. ≈ two static hops (1.12×2) or one dynamic.
+pub fn presentation_hop_budget() -> f32 {
+    if let Ok(v) = std::env::var("ENGRAM_PRESENTATION_HOP_BUDGET") {
+        if let Ok(n) = v.parse::<f32>() {
+            return n.clamp(1.0, 8.0);
+        }
+    }
+    2.5
+}
+
+/// Score multiplier for an edge with volatility α: static edges keep more weight.
+/// `score_alpha_scale(0.12) ≈ 0.96`; `score_alpha_scale(0.85) ≈ 0.77`.
+pub fn score_alpha_scale(volatility: f32) -> f32 {
+    let vol = volatility.clamp(0.01, 1.0);
+    1.0 / (1.0 + 0.35 * vol)
+}
+
+/// Multi-hop labeled walk with edge cost `1+α` and continuous budget (Cycle 21/22).
+/// Returns (neighbor, path_cost, edge_α) in visit order, prefer_static expansion first.
+pub fn expand_labeled_alpha(
+    store: &StoreHandle,
+    seed: &str,
+    label: &str,
+    direction: &str,
+    budget: f32,
+) -> Vec<(String, f32, f32)> {
+    use std::cmp::Ordering;
+    use std::collections::{BinaryHeap, HashMap, HashSet};
+
+    #[derive(Clone)]
+    struct State {
+        cost: f32,
+        concept: String,
+    }
+    impl PartialEq for State {
+        fn eq(&self, other: &Self) -> bool {
+            self.concept == other.concept && (self.cost - other.cost).abs() < 1e-6
+        }
+    }
+    impl Eq for State {}
+    impl PartialOrd for State {
+        fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+            Some(self.cmp(other))
+        }
+    }
+    impl Ord for State {
+        fn cmp(&self, other: &Self) -> Ordering {
+            other
+                .cost
+                .partial_cmp(&self.cost)
+                .unwrap_or(Ordering::Equal)
+                .then_with(|| self.concept.cmp(&other.concept))
+        }
+    }
+
+    let mut best: HashMap<String, f32> = HashMap::new();
+    best.insert(seed.to_string(), 0.0);
+    let mut heap = BinaryHeap::new();
+    heap.push(State {
+        cost: 0.0,
+        concept: seed.to_string(),
+    });
+    let mut out: Vec<(String, f32, f32)> = Vec::new();
+    let mut seen: HashSet<String> = HashSet::new();
+    seen.insert(seed.to_string());
+
+    while let Some(State { cost, concept }) = heap.pop() {
+        if cost > best.get(&concept).copied().unwrap_or(f32::MAX) + 1e-5 {
+            continue;
+        }
+        // prefer_static: ascending α
+        let mut edges = store.search_relations_ranked(&concept, Some(label), direction, true);
+        edges.retain(|(_, other, _)| other != &concept);
+        for (_lbl, other, vol) in edges {
+            let hop = 1.0 + vol;
+            let next_cost = cost + hop;
+            if next_cost > budget + 1e-5 {
+                continue;
+            }
+            if seen.insert(other.clone()) {
+                out.push((other.clone(), next_cost, vol));
+            }
+            let prev = best.get(&other).copied().unwrap_or(f32::MAX);
+            if next_cost + 1e-5 < prev {
+                best.insert(other.clone(), next_cost);
+                heap.push(State {
+                    cost: next_cost,
+                    concept: other,
+                });
+            }
+        }
+    }
+    out
 }
 
 fn push_candidate(
@@ -222,15 +321,18 @@ pub fn gather_surface_ranked(
     }
 
     if let Some(ref goal) = primary_goal {
-        for (_label, other) in store.search_relations(goal, Some("serves"), "to") {
+        // α-ranked serves: static edges keep higher base score (Cycle 22).
+        for (_label, other, vol) in store.search_relations_ranked(goal, Some("serves"), "to", true)
+        {
             if let Some(b) = store.fetch_block_high_priority(&other) {
                 let text = storage::read_provlog(&b);
                 let tt = tile_type_from_provlog(&text);
                 let bonus = trusted_tile_bonus(tt.as_deref());
+                let base = (0.72 + bonus) * score_alpha_scale(vol);
                 push_candidate(
                     &mut candidates,
                     &other,
-                    0.72 + bonus,
+                    base,
                     b.crs_score,
                     store.is_hot(&other),
                     "goal_serves",
@@ -238,13 +340,16 @@ pub fn gather_surface_ranked(
                 );
             }
         }
-        for (_label, other) in store.search_relations(goal, Some("serves"), "from") {
+        for (_label, other, vol) in
+            store.search_relations_ranked(goal, Some("serves"), "from", true)
+        {
             if is_surface_eligible(&other) {
                 if let Some(b) = store.fetch_block_high_priority(&other) {
+                    let base = 0.64 * score_alpha_scale(vol);
                     push_candidate(
                         &mut candidates,
                         &other,
-                        0.64,
+                        base,
                         b.crs_score,
                         store.is_hot(&other),
                         "goal_served_by",
@@ -255,7 +360,8 @@ pub fn gather_surface_ranked(
         }
     }
 
-    // Trace breadcrumb: one hop along prev_in_trace from the most recent trace head.
+    // Trace breadcrumb: α-weighted multi-hop along prev_in_trace from recent head.
+    let hop_budget = presentation_hop_budget();
     for (concept, _) in store.access_index.recent(40) {
         if concept.starts_with("trace:") {
             push_candidate(
@@ -270,16 +376,21 @@ pub fn gather_surface_ranked(
                 "trace_head",
                 "warm",
             );
-            for (_label, prev) in store.search_relations(&concept, Some("prev_in_trace"), "to") {
+            for (prev, path_cost, vol) in
+                expand_labeled_alpha(store, &concept, "prev_in_trace", "to", hop_budget)
+            {
                 if is_surface_eligible(&prev) {
                     if let Some(b) = store.fetch_block_high_priority(&prev) {
+                        // Deeper / higher-α paths lose base score
+                        let depth_pen = (path_cost / hop_budget.max(1.0)).clamp(0.0, 1.0);
+                        let base = 0.60 * score_alpha_scale(vol) * (1.0 - 0.25 * depth_pen);
                         push_candidate(
                             &mut candidates,
                             &prev,
-                            0.60,
+                            base,
                             b.crs_score,
                             store.is_hot(&prev),
-                            "trace_prev",
+                            "trace_prev_alpha",
                             "warm",
                         );
                     }
@@ -463,37 +574,47 @@ pub fn build_presentation_stratum(
     let mut edges: Vec<Value> = Vec::new();
     if selected.contains("primary_goal") {
         for c in selected.iter().filter(|id| *id != "primary_goal") {
-            if store
-                .search_relations("primary_goal", Some("serves"), "to")
-                .iter()
-                .any(|(_, t)| t == c)
+            if let Some((_, _, vol)) = store
+                .search_relations_ranked("primary_goal", Some("serves"), "to", true)
+                .into_iter()
+                .find(|(_, t, _)| t == c)
             {
                 edges.push(json!({
                     "from": "primary_goal",
                     "to": c,
                     "label": "serves",
+                    "volatility": vol,
+                    "hop_cost": 1.0 + vol,
                 }));
             }
         }
     }
     for id in selected.iter().filter(|c| c.starts_with("trace:")) {
-        for (_label, other) in store.search_relations(id, Some("prev_in_trace"), "both") {
+        for (_label, other, vol) in
+            store.search_relations_ranked(id, Some("prev_in_trace"), "both", true)
+        {
             if selected.contains(&other) {
                 edges.push(json!({
                     "from": id,
                     "to": other,
                     "label": "prev_in_trace",
+                    "volatility": vol,
+                    "hop_cost": 1.0 + vol,
                 }));
             }
         }
     }
     for id in selected.iter().filter(|c| c.starts_with("tile:")) {
-        for (_label, member) in store.search_relations(id, Some("summarizes_chain"), "to") {
+        for (_label, member, vol) in
+            store.search_relations_ranked(id, Some("summarizes_chain"), "to", true)
+        {
             if selected.contains(&member) {
                 edges.push(json!({
                     "from": id,
                     "to": member,
                     "label": "summarizes_chain",
+                    "volatility": vol,
+                    "hop_cost": 1.0 + vol,
                 }));
             }
         }
@@ -506,6 +627,8 @@ pub fn build_presentation_stratum(
         "version": "v1",
         "praxis": "distilled process/ritual continuation — cold manifold excluded from presentation",
         "budget": budget,
+        "hop_budget": presentation_hop_budget(),
+        "alpha_weighted": true,
         "memory_mode": memory_mode,
         "node_count": nodes.len(),
         "primary_goal": primary_goal,
@@ -540,5 +663,80 @@ mod tests {
         assert_eq!(presentation_budget(), 40);
         std::env::set_var("ENGRAM_MEMORY_MODE", "deep");
         assert_eq!(presentation_budget(), 64);
+    }
+
+    #[test]
+    fn score_alpha_scale_prefers_static() {
+        let static_s = score_alpha_scale(0.12);
+        let dynamic_s = score_alpha_scale(0.85);
+        assert!(static_s > dynamic_s);
+        assert!((static_s - 1.0 / (1.0 + 0.35 * 0.12)).abs() < 1e-5);
+        assert!(score_alpha_scale(0.40) < static_s);
+        assert!(score_alpha_scale(0.40) > dynamic_s);
+    }
+
+    fn test_store_dir(suffix: &str) -> std::path::PathBuf {
+        std::env::set_var("ENGRAM_DISABLE_SHEAF", "1");
+        std::env::set_var("ENGRAM_FORCE_CPU_BACKEND", "1");
+        std::env::set_var("ENGRAM_KI_DISABLE", "1");
+        let dir = std::env::temp_dir().join(format!(
+            "pres_stratum_{}_{}_{}",
+            suffix,
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).ok();
+        dir
+    }
+
+    #[test]
+    fn expand_labeled_alpha_respects_hop_budget() {
+        let dir = test_store_dir("alpha_hop");
+        let mut store = StoreHandle::new(&dir.to_string_lossy());
+        for c in ["trace:head", "trace:mid", "trace:tail", "trace:dyn"] {
+            store.remember(c, &format!("body {c}")).unwrap();
+        }
+        // Canonical: prev --prev_in_trace--> current (walk with direction "to")
+        store
+            .relate_with_volatility("trace:mid", "trace:head", "prev_in_trace", Some(0.12))
+            .unwrap();
+        store
+            .relate_with_volatility("trace:tail", "trace:mid", "prev_in_trace", Some(0.12))
+            .unwrap();
+        store
+            .relate_with_volatility("trace:dyn", "trace:head", "prev_in_trace", Some(0.90))
+            .unwrap();
+
+        let hop1 = expand_labeled_alpha(&store, "trace:head", "prev_in_trace", "to", 1.5);
+        let names1: Vec<&str> = hop1.iter().map(|(c, _, _)| c.as_str()).collect();
+        assert!(
+            names1.contains(&"trace:mid"),
+            "static first hop: {:?}",
+            names1
+        );
+        assert!(
+            !names1.contains(&"trace:tail"),
+            "second hop over 1.5: {:?}",
+            names1
+        );
+        assert!(
+            !names1.contains(&"trace:dyn"),
+            "dyn hop cost 1.90 > 1.5: {:?}",
+            names1
+        );
+
+        let hop2 = expand_labeled_alpha(&store, "trace:head", "prev_in_trace", "to", 2.5);
+        let names2: Vec<&str> = hop2.iter().map(|(c, _, _)| c.as_str()).collect();
+        assert!(names2.contains(&"trace:mid"));
+        assert!(
+            names2.contains(&"trace:tail"),
+            "static two-hop under 2.5: {:?}",
+            names2
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -48,6 +48,8 @@ list = [
   "lexicon:word:prefer-static-rank",
   "lexicon:word:alpha-weighted-bfs",
   "lexicon:word:relation-hop-cost",
+  "lexicon:word:presentation-alpha-cost",
+  "lexicon:word:hop-budget-walk",
 ]
 
 [execute]
