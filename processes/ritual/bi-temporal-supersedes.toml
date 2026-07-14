@@ -50,9 +50,9 @@ list = [
 [sequence]
 steps = [
   { order = 1, tool = "mcp_engram_recall", note = "Find prior claim for same entity/relation before write" },
-  { order = 2, tool = "mcp_engram_update", note = "Lawful evolution of winning concept; append ProvLog **valid_at:** **recorded_at:**" },
-  { order = 3, tool = "mcp_engram_relate", note = "relate(new, old, supersedes); optional demote old CRS soft" },
-  { order = 4, tool = "mcp_engram_update", note = "On old block append **invalid_at:** when superseded" },
+  { order = 2, tool = "mcp_engram_update", note = "Preferred one-shot: update(concept, new_text, supersedes_of=old) — emits supersedes edge + invalid_at on old" },
+  { order = 3, tool = "mcp_engram_relate", note = "Manual fallback: relate(new, old, supersedes) if not using supersedes_of" },
+  { order = 4, tool = "mcp_engram_update", note = "Manual: on old block append **invalid_at:** when not using supersedes_of" },
   { order = 5, tool = "mcp_engram_quick_trace", note = "Trace succession with research source" },
   { order = 6, tool = "mcp_engram_scar", note = "If two peers cannot supersede — scar contradiction axis" },
 ]

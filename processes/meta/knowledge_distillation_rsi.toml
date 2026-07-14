@@ -37,6 +37,8 @@ list = [
   "lexicon:word:time-as-geometry",
   "lexicon:word:xchacha20-poly1305",
   "lexicon:word:selective-disclosure",
+  "lexicon:word:generalized-hrr",
+  "lexicon:word:hyperspace-vsa",
 ]
 
 [execute]
