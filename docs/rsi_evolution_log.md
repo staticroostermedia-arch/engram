@@ -694,4 +694,40 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 2. Per-dimension σ² / variance tensors (full Fisher) if warranted by metrics.
 3. Encrypt-at-rest live binary dogfood.
 
+---
+
+## Cycle 20 — Relation edge volatility α + prefer_static rank (2026-07-14)
+
+### Master baseline
+
+- Post Cycle 19: PR **#65** `a5b8f6c1` — Fisher CRS-precision recall.
+- Hub CRS ~0.887 · CSF ~0.935 · ~87.4k blocks · avg CRS ~0.857.
+
+### Research synthesis
+
+| Source | Insight |
+|--------|---------|
+| RoMem / semantic speed-gate (prior distill `lexicon:word:semantic-speed-gate`) | Relation edges have temporal volatility; static facts should not compete equally with high-churn succession edges. |
+| Cycle 16–17 bi-temporal + supersedes | High-α labels (`supersedes`, scars) vs structural (`implements`, `defined_in`). |
+| Time-as-geometry channel | α is a discrete proxy for continuous phase rotation rate on edges. |
+
+### Hypothesis
+
+**Edge α on relation index:** store `RelationEntry.volatility`; label heuristic when unset; MCP `relate(volatility=…)` + `search_by_relation(prefer_static)` re-ranks by α so static topology surfaces first for agent navigation.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Code | `RelationEntry.volatility`, `default_relation_volatility`, `relate_with_volatility`, `search_relations_ranked` |
+| MCP | `mcp_engram_relate.volatility`; `mcp_engram_search_by_relation.prefer_static` (default true) + α in output |
+| Tests | heuristic bands; effective vol; prefer_static/dynamic order |
+| Lexicon | `relation-edge-volatility`, `prefer-static-rank` CRS 0.78 |
+
+### Next vectors
+
+1. Per-dimension σ² / variance tensors (full Fisher) if metrics warrant.
+2. Encrypt-at-rest live binary dogfood.
+3. Optional α-weighted BFS depth cost in visualize / momentum paths.
+
 

@@ -225,6 +225,43 @@ pub struct RelationEntry {
     pub from: String,
     pub label: String,
     pub to: String,
+    /// Semantic speed-gate α ∈ [0,1]: 0≈static (born_in), 1≈dynamic (president_of).
+    /// Legacy edges deserialize as 0.0 → effective volatility uses label heuristic.
+    #[serde(default)]
+    pub volatility: f32,
+}
+
+/// RoMem-style semantic speed gate heuristic from relation label text.
+/// Returns α ∈ (0,1] — higher = more temporally volatile / faster phase rotation.
+pub fn default_relation_volatility(label: &str) -> f32 {
+    let l = label.to_ascii_lowercase();
+    if l.contains("supersedes") || l.contains("replaces") || l.contains("invalid") {
+        0.85
+    } else if l.contains("contradict") || l.contains("ruled_out") || l.contains("scar") {
+        0.70
+    } else if l.contains("serves") || l.contains("documents") || l.contains("advances") {
+        0.35
+    } else if l.contains("defined_in")
+        || l.contains("axis_of")
+        || l.contains("implements")
+        || l.contains("governs")
+        || l.contains("realizes")
+    {
+        0.12
+    } else if l.contains("complements") || l.contains("related") || l.contains("depends") {
+        0.40
+    } else {
+        0.45 // mid default for unknown labels
+    }
+}
+
+/// Effective α for ranking: stored value if set, else label heuristic.
+pub fn effective_relation_volatility(entry: &RelationEntry) -> f32 {
+    if entry.volatility > 0.0 {
+        entry.volatility.clamp(0.01, 1.0)
+    } else {
+        default_relation_volatility(&entry.label)
+    }
 }
 
 pub struct RelationIndex {
@@ -307,14 +344,31 @@ impl RelationIndex {
 
     /// Add a directed edge, deduplicating and flushing immediately.
     pub fn add(&mut self, from: &str, label: &str, to: &str) {
-        let dup = self
+        self.add_with_volatility(from, label, to, default_relation_volatility(label));
+    }
+
+    /// Add edge with explicit semantic-speed-gate volatility α ∈ [0,1].
+    pub fn add_with_volatility(&mut self, from: &str, label: &str, to: &str, volatility: f32) {
+        let vol = if volatility > 0.0 {
+            volatility.clamp(0.01, 1.0)
+        } else {
+            default_relation_volatility(label)
+        };
+        if let Some(e) = self
             .entries
-            .iter()
-            .any(|e| e.from == from && e.label == label && e.to == to);
-        if !dup {
+            .iter_mut()
+            .find(|e| e.from == from && e.label == label && e.to == to)
+        {
+            // Refresh volatility on re-relate (append-only edge, mutable α)
+            e.volatility = vol;
+            self.flush_if_needed();
+            return;
+        }
+        {
             self.entries.push(RelationEntry {
                 from: from.to_string(),
                 label: label.to_string(),
+                volatility: vol,
                 to: to.to_string(),
             });
             self.flush_if_needed();
@@ -337,21 +391,40 @@ impl RelationIndex {
         filter_label: Option<&str>,
         direction: &str,
     ) -> Vec<(String, String)> {
+        self.query_with_volatility(concept, filter_label, direction)
+            .into_iter()
+            .map(|(label, other, _vol)| (label, other))
+            .collect()
+    }
+
+    /// Query edges with semantic-speed-gate α per edge.
+    /// Returns (label, other_concept, effective_volatility).
+    pub fn query_with_volatility(
+        &self,
+        concept: &str,
+        filter_label: Option<&str>,
+        direction: &str,
+    ) -> Vec<(String, String, f32)> {
         let mut out = Vec::new();
         for e in &self.entries {
             let label_ok = filter_label.is_none_or(|l| e.label == l);
             if !label_ok {
                 continue;
             }
+            let vol = effective_relation_volatility(e);
             match direction {
-                "from" if e.from == concept => out.push((e.label.clone(), e.to.clone())),
-                "to" if e.to == concept => out.push((e.label.clone(), e.from.clone())),
+                "from" if e.from == concept => {
+                    out.push((e.label.clone(), e.to.clone(), vol));
+                }
+                "to" if e.to == concept => {
+                    out.push((e.label.clone(), e.from.clone(), vol));
+                }
                 "both" => {
                     if e.from == concept {
-                        out.push((e.label.clone(), e.to.clone()));
+                        out.push((e.label.clone(), e.to.clone(), vol));
                     }
                     if e.to == concept {
-                        out.push((e.label.clone(), e.from.clone()));
+                        out.push((e.label.clone(), e.from.clone(), vol));
                     }
                 }
                 _ => {}
@@ -5110,6 +5183,18 @@ impl StoreHandle {
     /// Bind two concepts via op_bind and store the relation as a new ZEDOS_RELATION block.
     /// The relation block's merkle_sub_root links both parent block signatures.
     pub fn relate(&mut self, concept_a: &str, concept_b: &str, label: &str) -> Result<String> {
+        self.relate_with_volatility(concept_a, concept_b, label, None)
+    }
+
+    /// Like [`Self::relate`] with optional semantic-speed-gate volatility α ∈ [0,1].
+    /// When `None`, α is inferred from the label (RoMem-style heuristic).
+    pub fn relate_with_volatility(
+        &mut self,
+        concept_a: &str,
+        concept_b: &str,
+        label: &str,
+        volatility: Option<f32>,
+    ) -> Result<String> {
         // Freshly stored blocks (e.g. trace:*) may not be visible via cold fetch_block on
         // O_DIRECT paths until promoted; fall back to high_priority for immediate chaining.
         let block_a = self
@@ -5122,8 +5207,18 @@ impl StoreHandle {
             .ok_or_else(|| anyhow::anyhow!("Concept '{}' not found", concept_b))?;
 
         let bound_q = op_bind(&block_a.q, &block_b.q);
+        let vol = volatility
+            .filter(|v| *v > 0.0)
+            .map(|v| v.clamp(0.01, 1.0))
+            .unwrap_or_else(|| default_relation_volatility(label));
 
-        let mut rel_block = self.encode(label);
+        let rel_text = format!(
+            "RELATION\n\n**label:** {label}\n**volatility:** {vol:.4}\n\
+             **semantic_speed_gate:** true\n\
+             **from:** {concept_a}\n**to:** {concept_b}\n\
+             **ritual:** process:engram.ritual.bi-temporal-supersedes / RoMem α map\n"
+        );
+        let mut rel_block = self.encode(&rel_text);
         rel_block.q = bound_q;
         rel_block.zedos_tag = ZEDOS_RELATION;
         let rel_crs =
@@ -5148,16 +5243,20 @@ impl StoreHandle {
 
         let rel_key = format!("rel__{concept_a}__{concept_b}");
         self.store(&rel_key, rel_block)?;
-        // Update the knowledge-graph sidecar
-        self.relation_index.add(concept_a, label, concept_b);
+        // Update the knowledge-graph sidecar with speed-gate α
+        self.relation_index
+            .add_with_volatility(concept_a, label, concept_b, vol);
         self.log_activity(
             concept_b,
             "relate",
-            Some(&format!("{} --[{}]--> {}", concept_a, label, concept_b)),
+            Some(&format!(
+                "{} --[{} α={:.2}]--> {}",
+                concept_a, label, vol, concept_b
+            )),
         );
         Ok(format!(
-            "✓ Relation stored: {} →[{}]→ {} as '{}'",
-            concept_a, label, concept_b, rel_key
+            "✓ Relation stored: {} →[{} α={:.2}]→ {} as '{}'",
+            concept_a, label, vol, concept_b, rel_key
         ))
     }
 
@@ -6661,6 +6760,37 @@ impl StoreHandle {
         direction: &str,
     ) -> Vec<(String, String)> {
         self.relation_index.query(concept, label, direction)
+    }
+
+    /// Relation query with RoMem semantic-speed-gate α and optional static-first ranking.
+    /// Returns (label, other, volatility). When `prefer_static` is true, lower α ranks first;
+    /// when false, higher α (dynamic edges) rank first. Default ranking path for MCP search.
+    pub fn search_relations_ranked(
+        &self,
+        concept: &str,
+        label: Option<&str>,
+        direction: &str,
+        prefer_static: bool,
+    ) -> Vec<(String, String, f32)> {
+        let mut out = self
+            .relation_index
+            .query_with_volatility(concept, label, direction);
+        if prefer_static {
+            out.sort_by(|a, b| {
+                a.2.partial_cmp(&b.2)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+                    .then_with(|| a.0.cmp(&b.0))
+                    .then_with(|| a.1.cmp(&b.1))
+            });
+        } else {
+            out.sort_by(|a, b| {
+                b.2.partial_cmp(&a.2)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+                    .then_with(|| a.0.cmp(&b.0))
+                    .then_with(|| a.1.cmp(&b.1))
+            });
+        }
+        out
     }
 
     /// BFS over the relation graph from a seed concept. Returns Mermaid graph LR source.
@@ -8920,6 +9050,76 @@ SESSION HANDOFF PACKET v1
         let edges =
             store.search_relations("goal:recent_active_fallback", Some("documents"), "from");
         assert!(edges.iter().any(|(_, c)| c == "design:post_clear_block"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn default_relation_volatility_romem_speed_gate_heuristics() {
+        // Static / structural edges → low α
+        assert!(default_relation_volatility("implements") < 0.2);
+        assert!(default_relation_volatility("defined_in") < 0.2);
+        assert!(default_relation_volatility("governs") < 0.2);
+        // Dynamic / succession / scars → high α
+        assert!(default_relation_volatility("supersedes") > 0.7);
+        assert!(default_relation_volatility("scar_of") > 0.5);
+        assert!(default_relation_volatility("contradicts") > 0.5);
+        // Mid band
+        let mid = default_relation_volatility("depends_on");
+        assert!((0.3..=0.5).contains(&mid));
+        let serves = default_relation_volatility("serves");
+        assert!((0.2..=0.5).contains(&serves));
+    }
+
+    #[test]
+    fn effective_volatility_uses_stored_then_heuristic() {
+        let mut e = RelationEntry {
+            from: "a".into(),
+            label: "implements".into(),
+            to: "b".into(),
+            volatility: 0.0,
+        };
+        assert!(
+            (effective_relation_volatility(&e) - default_relation_volatility("implements")).abs()
+                < 1e-5
+        );
+        e.volatility = 0.9;
+        assert!((effective_relation_volatility(&e) - 0.9).abs() < 1e-5);
+    }
+
+    #[test]
+    fn search_relations_ranked_prefer_static_orders_by_alpha() {
+        let dir = test_store_dir("rel_vol_rank");
+        let mut store = StoreHandle::new(&dir.to_string_lossy());
+        store
+            .remember("seed:vol", "seed for volatility rank")
+            .unwrap();
+        store.remember("n:static", "static neighbor").unwrap();
+        store.remember("n:dynamic", "dynamic neighbor").unwrap();
+        store.remember("n:mid", "mid neighbor").unwrap();
+        store
+            .relate_with_volatility("seed:vol", "n:static", "implements", Some(0.12))
+            .unwrap();
+        store
+            .relate_with_volatility("seed:vol", "n:dynamic", "supersedes", Some(0.85))
+            .unwrap();
+        store
+            .relate_with_volatility("seed:vol", "n:mid", "depends_on", Some(0.40))
+            .unwrap();
+
+        let static_first = store.search_relations_ranked("seed:vol", None, "from", true);
+        assert_eq!(static_first.len(), 3);
+        assert!(
+            static_first[0].2 <= static_first[1].2 && static_first[1].2 <= static_first[2].2,
+            "prefer_static should ascend α: {:?}",
+            static_first
+        );
+        assert_eq!(static_first[0].1, "n:static");
+        assert_eq!(static_first[2].1, "n:dynamic");
+
+        let dynamic_first = store.search_relations_ranked("seed:vol", None, "from", false);
+        assert_eq!(dynamic_first[0].1, "n:dynamic");
+        assert_eq!(dynamic_first[2].1, "n:static");
+
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
