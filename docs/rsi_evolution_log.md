@@ -1170,4 +1170,43 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 3. Encrypt-at-rest MCP dogfood.
 4. Reduce true wake path cost (slim process sheaf / readiness cache).
 
+---
+
+## Cycle 33 — Fisher scalar inverse-variance precision (2026-07-14)
+
+### Master baseline
+
+- Post Cycle 32: PR **#78** `93bd9248` — harness wake latency budget.
+- Hub CRS ~0.89 · CSF ~0.79 · ~89k blocks · integrity healthy.
+
+### Research synthesis
+
+| Source | Insight |
+|--------|---------|
+| Cycle 19 Fisher | Precision = CRS alone (scalar proxy for 1/σ²). |
+| SLM-V3 Fisher–Rao | Weight by inverse variance; Engram drift `dv` is live uncertainty. |
+| Full σ² tensors | 8192-d storage deferred; scalar inv-var is intermediate. |
+
+### Hypothesis
+
+**Inv-var precision:** `precision_weight = CRS × (1−dv)` when `ENGRAM_FISHER_INVVAR` on (default with Fisher). Stable high-CRS blocks outrank equal-CRS high-drift blocks on the Fisher channel.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Code | `fisher_invvar_enabled`, `fisher_precision_weight` in `backend.rs` |
+| Score | `precision_sim = sim × prec_w` in Dirichlet+Fisher blend |
+| Env | `ENGRAM_FISHER_INVVAR` (default on when Fisher on) |
+| Readiness | `fisher_precision_enabled`, `fisher_invvar_enabled` + env keys |
+| Tests | inv-var prefers low drift; CRS-only path preserved |
+| Lexicon | `fisher-invvar-precision` |
+
+### Next vectors
+
+1. Banded / chunked σ² (not full 8192) if metrics warrant.
+2. CSR/mmap adj at multi-million edge scale.
+3. Encrypt-at-rest MCP dogfood.
+4. True wake path cost reduction.
+
 

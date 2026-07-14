@@ -668,6 +668,36 @@ pub fn fisher_precision_enabled() -> bool {
     }
 }
 
+/// Scalar inverse-variance precision: weight by CRS×(1−dv) instead of CRS alone.
+/// RSI Cycle 33 — intermediate step toward full per-dimension σ² tensors.
+/// Only active when [`fisher_precision_enabled`]. Default ON.
+/// Set `ENGRAM_FISHER_INVVAR=0|false|off` for Cycle-19 CRS-only precision.
+pub fn fisher_invvar_enabled() -> bool {
+    if !fisher_precision_enabled() {
+        return false;
+    }
+    match std::env::var("ENGRAM_FISHER_INVVAR") {
+        Ok(v) => {
+            let v = v.to_ascii_lowercase();
+            !matches!(v.as_str(), "0" | "false" | "off" | "no")
+        }
+        Err(_) => true,
+    }
+}
+
+/// Scalar Fisher precision weight ∈ [0.05, 1].
+/// Inv-var mode: CRS × stability (high CRS + low drift → high precision).
+/// CRS-only mode (Cycle 19): CRS alone.
+pub fn fisher_precision_weight(crs_norm: f32, stability_norm: f32) -> f32 {
+    let crs = crs_norm.clamp(0.0, 1.0);
+    if fisher_invvar_enabled() {
+        let stab = stability_norm.clamp(0.0, 1.0);
+        (crs * stab).clamp(0.05, 1.0)
+    } else {
+        crs.clamp(0.05, 1.0)
+    }
+}
+
 fn score_block(
     concept: String,
     query: &[Complex32; 8192],
@@ -717,9 +747,16 @@ fn score_block(
         stability_norm
     };
 
-    // Precision-weighted semantic: high-CRS blocks get more credit for the same cosine
-    // (inverse-variance intuition without per-dimension σ² tensors yet).
-    let precision_sim = base_sim_norm * crs_norm;
+    // Precision-weighted semantic (Fisher channel).
+    // Cycle 19: precision = CRS (scalar proxy).
+    // Cycle 33: precision = CRS×(1−dv) inv-var proxy when ENGRAM_FISHER_INVVAR on.
+    // Full per-dimension σ² tensors still deferred.
+    let prec_w = if fisher_on {
+        fisher_precision_weight(crs_norm, stability_norm)
+    } else {
+        1.0
+    };
+    let precision_sim = base_sim_norm * prec_w;
 
     let score = (base_sim_norm * d1)
         + (precision_sim * d_fisher)
@@ -731,10 +768,15 @@ fn score_block(
     let provlog = provlog_full.chars().take(512).collect();
 
     let explain = if fisher_on {
+        let inv = if fisher_invvar_enabled() {
+            "invvar"
+        } else {
+            "crs"
+        };
         format!(
-            "Dirichlet+Fisher[ego={}]: sim={:.3}*{} + prec_sim={:.3}*{} + crs={:.3}*{} + frame={:.3}*{} + mass={:.3}*{} => {:.4}",
+            "Dirichlet+Fisher[{inv},ego={}]: sim={:.3}*{} + prec_sim={:.3}*{} (w={:.3}) + crs={:.3}*{} + frame={:.3}*{} + mass={:.3}*{} => {:.4}",
             ego_q.is_some(),
-            base_sim_norm, d1, precision_sim, d_fisher, crs_norm, d2, d3_value, d3, depth_norm, d4, score
+            base_sim_norm, d1, precision_sim, d_fisher, prec_w, crs_norm, d2, d3_value, d3, depth_norm, d4, score
         )
     } else {
         format!(
@@ -767,15 +809,18 @@ mod tests {
     #[test]
     fn fisher_precision_prefers_higher_crs_at_equal_cosine() {
         std::env::set_var("ENGRAM_FISHER_PRECISION", "1");
+        std::env::set_var("ENGRAM_FISHER_INVVAR", "0"); // isolate CRS-only path
         let dir = tempfile::tempdir().unwrap();
         let backend = CpuBackend::new(dir.path());
         let encoded = backend.encode("identical phase content for fisher test");
         let mut low = encoded.clone();
         low.crs_score = 0.74;
         low.energetics.crs = 0.74;
+        low.energetics.dv = 0.0;
         let mut high = encoded.clone();
         high.crs_score = 0.95;
         high.energetics.crs = 0.95;
+        high.energetics.dv = 0.0;
         // Query shares phase with both → equal cosine
         let m_low = score_memory("low".into(), &encoded.q, &low, None);
         let m_high = score_memory("high".into(), &encoded.q, &high, None);
@@ -791,6 +836,43 @@ mod tests {
             m_high.explain
         );
         std::env::remove_var("ENGRAM_FISHER_PRECISION");
+        std::env::remove_var("ENGRAM_FISHER_INVVAR");
+    }
+
+    #[test]
+    fn fisher_invvar_prefers_low_drift_at_equal_crs_cosine() {
+        std::env::set_var("ENGRAM_FISHER_PRECISION", "1");
+        std::env::set_var("ENGRAM_FISHER_INVVAR", "1");
+        let dir = tempfile::tempdir().unwrap();
+        let backend = CpuBackend::new(dir.path());
+        let encoded = backend.encode("identical phase content for invvar fisher");
+        let mut stable = encoded.clone();
+        stable.crs_score = 0.90;
+        stable.energetics.crs = 0.90;
+        stable.energetics.dv = 0.05; // high stability
+        let mut drifted = encoded.clone();
+        drifted.crs_score = 0.90;
+        drifted.energetics.crs = 0.90;
+        drifted.energetics.dv = 0.80; // low stability → lower inv-var precision
+        let m_stable = score_memory("stable".into(), &encoded.q, &stable, None);
+        let m_drift = score_memory("drift".into(), &encoded.q, &drifted, None);
+        assert!(
+            m_stable.score > m_drift.score,
+            "low drift should outrank high drift at equal CRS/cosine: stable={} drift={}",
+            m_stable.score,
+            m_drift.score
+        );
+        assert!(
+            m_stable.explain.contains("invvar"),
+            "explain should note invvar: {}",
+            m_stable.explain
+        );
+        // Precision weight helper
+        assert!((fisher_precision_weight(0.9, 0.95) - 0.9 * 0.95).abs() < 1e-5);
+        std::env::set_var("ENGRAM_FISHER_INVVAR", "0");
+        assert!((fisher_precision_weight(0.9, 0.1) - 0.9).abs() < 1e-5);
+        std::env::remove_var("ENGRAM_FISHER_PRECISION");
+        std::env::remove_var("ENGRAM_FISHER_INVVAR");
     }
 
     #[test]
