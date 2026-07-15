@@ -2557,6 +2557,7 @@ impl StoreHandle {
             "wake_phase_ms_enabled": true,
             "wake_continuation_subphase_ms": true,
             "wake_local_stratum_lean": true,
+            "wake_harness_ultra_lean": true,
             "wake_harness_lean": true,
             "wake_presentation_lean": true,
             "wake_suggested_actions_lean": true,
