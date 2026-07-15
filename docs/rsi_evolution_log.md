@@ -1814,3 +1814,38 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 3. Partial σ² beyond 16-d.
 4. Sub-phase timers inside continuation (harness vs gather vs fidelity).
 
+## Cycle 50 — mmap CSR sidecar reload (2026-07-14)
+
+### Master baseline
+
+- Post Cycle 49: PR **#95** `50d676f2` — lean suggested_actions.
+- Warm wake: sheaf_ms≈1–2, continuation_ms≈2–6s · CSR nnz ~47k in-process.
+
+### Research synthesis
+
+| Source | Insight |
+|--------|---------|
+| Graph systems (CSR on disk) | Multi-million edge graphs reload CSR arrays, not re-sort from edge list every process start. |
+| OS mmap | Page-cache CSR indices across restarts; mutate path copies into owned Vec. |
+| Cycle 36–44 | In-memory CSR mature; missing piece was durable CSR independent of full rebuild_adj. |
+
+### Hypothesis
+
+**CSR sidecar `relation_adj.csr`:** little-endian ECSR v1 (header + offsets + indices + row keys); load via mmap; skip rebuild when n_entries matches.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Code | `persist_csr_sidecar`, `try_load_csr_sidecar` (mmap), flush/rebuild hooks |
+| Path | `relation_adj.csr` beside `relation_index.json` |
+| Readiness | `relation_adj_csr_sidecar`, `relation_adj_csr_mmap_load`, `relation_adj_csr_loaded_from_sidecar` |
+| Test | `relation_csr_sidecar_mmap_reload` |
+
+### Next vectors
+
+1. Sub-phase timers inside continuation.
+2. Partial σ² beyond 16-d.
+3. Query_pure TIMING full gate.
+4. Compact tombstone + CSR sidecar consistency stress at 1M+ edges.
+
