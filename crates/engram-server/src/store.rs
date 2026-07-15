@@ -5663,7 +5663,7 @@ impl StoreHandle {
                 .get("rehydration_manifest")
                 .and_then(|m| m.get("trusted_tiles"))
                 .and_then(|v| v.as_array())
-                .map(|a| a.clone())
+                .cloned()
                 .unwrap_or_default();
             if crate::harness_injection::ensure_session_boundary_in_trusted_tiles(self, &mut tiles)
             {
