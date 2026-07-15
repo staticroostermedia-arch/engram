@@ -2782,6 +2782,7 @@ impl StoreHandle {
                 "mq_csf_session_boundary_prefer": true,
                 "mq_hub_crs_lean_sample": true,
                 "mq_rehydrate_injection_completeness_lean": true,
+                "mq_handoff_next_vector_markdown_json": true,
                 "wake_continuation_soft_stale": true,
                 "wake_continuation_soft_stale_env": "ENGRAM_WAKE_CONTINUATION_SOFT_STALE_SECS",
                 "wake_continuation_soft_stale_secs": 1800,

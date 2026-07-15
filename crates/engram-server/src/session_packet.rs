@@ -103,19 +103,101 @@ pub(crate) fn handoff_parse_open_questions(summary: &str) -> Vec<String> {
         .collect()
 }
 
-/// MQ handoff schema: extract `next_vector:` line from session_end summary.
+/// MQ handoff schema: extract next_vector from session_end summary.
+///
+/// Accepts (first match wins):
+/// - bullet / plain `next_vector: …` or `next vector: …`
+/// - markdown `**next_vector:** …`
+/// - JSON `"next_vector": "…"` / `"next_vector":"…"`
+/// - markdown heading `### next_vector` with body on following non-empty line(s)
+///   until the next heading / blank section break (MQ Cycle 15)
 pub(crate) fn handoff_parse_next_vector(summary: &str) -> Option<String> {
-    for line in summary.lines() {
-        let t = line.trim().trim_start_matches(['-', '*']).trim();
-        let lower = t.to_ascii_lowercase();
-        if let Some(pos) = lower.find("next_vector:") {
-            let after = t[pos + "next_vector:".len()..].trim();
-            if !after.is_empty() {
-                return Some(after.to_string());
+    let lines: Vec<&str> = summary.lines().collect();
+    for (i, line) in lines.iter().enumerate() {
+        let t = line.trim().trim_start_matches(['-', '*', '+']).trim();
+        // Strip leading markdown heading hashes for key detection.
+        let t_no_hash = t.trim_start_matches('#').trim();
+        let lower = t_no_hash.to_ascii_lowercase();
+
+        // JSON: "next_vector": "value"
+        if let Some(pos) = lower.find("\"next_vector\"") {
+            let after_key = &t_no_hash[pos + "\"next_vector\"".len()..];
+            if let Some(colon) = after_key.find(':') {
+                let rest = after_key[colon + 1..].trim();
+                if let Some(parsed) = handoff_strip_json_string(rest) {
+                    if !parsed.is_empty() {
+                        return Some(parsed);
+                    }
+                }
+            }
+        }
+
+        // Inline key forms: next_vector: / next vector: / **next_vector:**
+        for key in ["next_vector:", "next vector:"] {
+            if let Some(pos) = lower.find(key) {
+                let after = t_no_hash[pos + key.len()..]
+                    .trim()
+                    .trim_start_matches('*')
+                    .trim();
+                let cleaned = after.trim_matches(|c: char| c == '*' || c == '`' || c == '"');
+                if !cleaned.is_empty() {
+                    return Some(cleaned.to_string());
+                }
+            }
+        }
+
+        // Section header only: ### next_vector / ## Next vector
+        let header_only = lower
+            .trim_end_matches(':')
+            .trim_matches(|c: char| c == '*' || c == '`')
+            .trim();
+        if header_only == "next_vector" || header_only == "next vector" {
+            // Collect first non-empty content line after the header.
+            for next in lines.iter().skip(i + 1) {
+                let body = next.trim();
+                if body.is_empty() {
+                    continue;
+                }
+                // Stop at next markdown heading.
+                if body.starts_with('#') {
+                    break;
+                }
+                let body_clean = body
+                    .trim_start_matches(['-', '*', '+'])
+                    .trim()
+                    .trim_matches(|c: char| c == '`' || c == '"');
+                if !body_clean.is_empty() {
+                    return Some(body_clean.to_string());
+                }
             }
         }
     }
     None
+}
+
+/// Best-effort extract of a JSON string value starting at `rest` (after `:`).
+fn handoff_strip_json_string(rest: &str) -> Option<String> {
+    let rest = rest.trim();
+    if let Some(inner) = rest.strip_prefix('"') {
+        if let Some(end) = inner.find('"') {
+            let s = &inner[..end];
+            if !s.is_empty() {
+                return Some(s.to_string());
+            }
+        }
+    }
+    // Bare token until comma / brace.
+    let token = rest
+        .split([',', '}', '\n'])
+        .next()
+        .unwrap_or("")
+        .trim()
+        .trim_matches('"');
+    if token.is_empty() {
+        None
+    } else {
+        Some(token.to_string())
+    }
 }
 
 /// MQ handoff schema: extract falsifier / would-reverse lines from summary.
@@ -251,6 +333,47 @@ open: should we demote latency-only fires?
         assert_eq!(
             mq.get("schema_version").and_then(|v| v.as_str()),
             Some("mq_handoff_v1")
+        );
+        assert_eq!(mq.get("complete").and_then(|v| v.as_bool()), Some(true));
+    }
+
+    /// MQ Cycle 15: agents emit ### next_vector sections + JSON quality_metrics blocks.
+    #[test]
+    fn handoff_parse_next_vector_markdown_heading_and_json() {
+        let md = r#"## MQ Cycle 14 COMPLETE
+
+### decisions
+- master_sha: b3b6f575
+
+### next_vector
+MCP swap MQ14; confirm post-verify lawfulness_snapshot.latest == new metric; optional #134 C86
+
+### falsifiers
+- soft-stale still valid after verify persist
+"#;
+        assert_eq!(
+            handoff_parse_next_vector(md).as_deref(),
+            Some(
+                "MCP swap MQ14; confirm post-verify lawfulness_snapshot.latest == new metric; optional #134 C86"
+            )
+        );
+
+        let jsonish = r#"quality_metrics
+{
+  "master_sha": "b3b6f575",
+  "next_vector": "mq_capacity_policy if landfill",
+  "falsifiers": ["x"]
+}
+"#;
+        assert_eq!(
+            handoff_parse_next_vector(jsonish).as_deref(),
+            Some("mq_capacity_policy if landfill")
+        );
+
+        let bold = "**next_vector:** mq_sheaf_freshness after process edit\n";
+        assert_eq!(
+            handoff_parse_next_vector(bold).as_deref(),
+            Some("mq_sheaf_freshness after process edit")
         );
     }
 
