@@ -4377,11 +4377,18 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
                 );
             };
 
-            // Light sync work (fast): boundary block + optional ki mark.
+            // Light sync work (fast): mint session_key; optional ki mark.
+            // RSI Cycle 71: encode+store session_start_* off critical path (async thread).
+            // Measured warm residual session_block_ms≈5 after assemble/readiness fixed.
             let t_phase = std::time::Instant::now();
             // Cycle 45: default skip mark_ki_rebake on wake (lean). Force with ENGRAM_WAKE_KI_REBAKE=1.
             let wake_ki_rebake = wake_ki_rebake_enabled();
-            let session_key = {
+            let timestamp = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or(std::time::Duration::from_secs(0))
+                .as_secs();
+            let session_key = format!("session_start_{}", timestamp);
+            {
                 let mut lock = match store.lock() {
                     Ok(l) => l,
                     Err(p) => {
@@ -4391,21 +4398,30 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
                         })
                     }
                 };
-                let timestamp = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap_or(std::time::Duration::from_secs(0))
-                    .as_secs();
-                let key = format!("session_start_{}", timestamp);
-                let mut session_block = lock.encode(&format!("SESSION_START intent: {}", intent));
-                session_block.zedos_tag = engram_core::types::ZEDOS_EPISODIC;
-                session_block.crs_score = 1.0;
-                let _ = lock.store(&key, session_block);
                 // Reuse continuation bundle TTL cache (120s) — busting every wake costs seconds on 70k stores.
                 if wake_ki_rebake {
                     lock.mark_ki_rebake_needed();
                 }
-                key
-            };
+            }
+            let store_for_sess = store.clone();
+            let session_key_bg = session_key.clone();
+            let intent_bg = intent.clone();
+            std::thread::spawn(move || {
+                let mut lock = match store_for_sess.lock() {
+                    Ok(l) => l,
+                    Err(p) => {
+                        tracing::error!("bg session_start block poisoned: {}", p);
+                        return;
+                    }
+                };
+                let mut session_block =
+                    lock.encode(&format!("SESSION_START intent: {}", intent_bg));
+                session_block.zedos_tag = engram_core::types::ZEDOS_EPISODIC;
+                session_block.crs_score = 1.0;
+                if let Err(e) = lock.store(&session_key_bg, session_block) {
+                    tracing::warn!("bg session_start store failed: {}", e);
+                }
+            });
             mark_phase(&mut phase_ms, "session_block_ms", t_phase);
 
             // Registration now (light): tomls -> process:* blocks + relations.
@@ -4528,6 +4544,8 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
                 // RSI Cycle 43 observability
                 "warm_anchors_promoted": warm_promoted,
                 "fidelity_persist": "async",
+                // RSI Cycle 71: session_start_* block persisted async (key still returned sync)
+                "session_block_persist": "async",
                 // RSI Cycle 45: phase histogram + ki rebake policy
                 "wake_phase_ms": serde_json::Value::Object(phase_ms),
                 "wake_ki_rebake": wake_ki_rebake,
