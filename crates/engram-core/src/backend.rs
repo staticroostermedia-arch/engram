@@ -715,13 +715,51 @@ pub fn fisher_banded_enabled() -> bool {
     }
 }
 
+/// Adaptive residual band count (RSI Cycle 40).
+/// When ON (default under banded Fisher), band mean uses 4/8/16 dims by residual L2
+/// instead of always scanning residual_dims_used. Low surprise → fewer bands (cheaper,
+/// less diluted); high surprise → full capsule. Set `ENGRAM_FISHER_ADAPTIVE_BANDS=0|false|off`
+/// for fixed residual_dims_used (Cycle 35 behavior).
+pub fn fisher_adaptive_bands_enabled() -> bool {
+    if !fisher_banded_enabled() {
+        return false;
+    }
+    match std::env::var("ENGRAM_FISHER_ADAPTIVE_BANDS") {
+        Ok(v) => {
+            let v = v.to_ascii_lowercase();
+            !matches!(v.as_str(), "0" | "false" | "off" | "no")
+        }
+        Err(_) => true,
+    }
+}
+
+/// How many residual capsule dims to fold into the band mean.
+/// Adaptive (default): L2 < 0.5 → 4; < 1.5 → 8; else 16 — clamped by residual_dims_used.
+/// Fixed: residual_dims_used ∈ [1,16].
+pub fn fisher_residual_band_count(block: &crate::types::HolographicBlock) -> usize {
+    let avail = (block.residual_dims_used as usize).clamp(1, 16);
+    if !fisher_adaptive_bands_enabled() {
+        return avail;
+    }
+    let l2 = block.l2_norm_residual;
+    let target = if l2 < 0.5 {
+        4usize
+    } else if l2 < 1.5 {
+        8
+    } else {
+        16
+    };
+    target.min(avail).max(1)
+}
+
 /// Per-block banded precision ∈ [0.05, 1] from residual capsule.
 /// Zero residual / unused dims → 1.0 (no extra penalty).
+/// Cycle 40: adaptive band count via [`fisher_residual_band_count`].
 pub fn fisher_banded_precision(block: &crate::types::HolographicBlock) -> f32 {
     if block.residual_dims_used == 0 || block.l2_norm_residual <= 1e-8 {
         return 1.0;
     }
-    let n = (block.residual_dims_used as usize).clamp(1, 16);
+    let n = fisher_residual_band_count(block);
     let mut acc = 0.0_f32;
     for i in 0..n {
         let r = block.err_residual_16d[i];
@@ -788,6 +826,7 @@ fn score_block(
     // Cycle 19: precision = CRS (scalar proxy).
     // Cycle 33: precision = CRS×(1−dv) inv-var proxy when ENGRAM_FISHER_INVVAR on.
     // Cycle 35: × banded residual precision from err_residual_16d (ENGRAM_FISHER_BANDED).
+    // Cycle 40: adaptive 4/8/16 band count from residual L2 (ENGRAM_FISHER_ADAPTIVE_BANDS).
     // Full per-dimension σ² tensors still deferred.
     let mut prec_w = if fisher_on {
         fisher_precision_weight(crs_norm, stability_norm)
@@ -820,7 +859,13 @@ fn score_block(
             "crs"
         };
         let band = if fisher_banded_enabled() {
-            format!("+band={band_w:.3}")
+            let n = fisher_residual_band_count(block);
+            let adapt = if fisher_adaptive_bands_enabled() {
+                "adapt"
+            } else {
+                "fixed"
+            };
+            format!("+band={band_w:.3}({adapt}n={n})")
         } else {
             String::new()
         };
@@ -974,6 +1019,76 @@ mod tests {
         std::env::remove_var("ENGRAM_FISHER_PRECISION");
         std::env::remove_var("ENGRAM_FISHER_INVVAR");
         std::env::remove_var("ENGRAM_FISHER_BANDED");
+    }
+
+    /// RSI Cycle 40: adaptive residual band count by L2 magnitude.
+    #[test]
+    fn fisher_adaptive_band_count_scales_with_residual_l2() {
+        let _g = FISHER_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        std::env::set_var("ENGRAM_FISHER_PRECISION", "1");
+        std::env::set_var("ENGRAM_FISHER_BANDED", "1");
+        std::env::set_var("ENGRAM_FISHER_ADAPTIVE_BANDS", "1");
+        let dir = tempfile::tempdir().unwrap();
+        let backend = CpuBackend::new(dir.path());
+        let encoded = backend.encode("adaptive fisher residual band count");
+        let mut low = encoded.clone();
+        low.residual_dims_used = 16;
+        low.l2_norm_residual = 0.2;
+        for i in 0..16 {
+            low.err_residual_16d[i] = Complex32::new(0.05, 0.0);
+        }
+        let mut mid = encoded.clone();
+        mid.residual_dims_used = 16;
+        mid.l2_norm_residual = 1.0;
+        for i in 0..16 {
+            mid.err_residual_16d[i] = Complex32::new(0.2, 0.0);
+        }
+        let mut high = encoded.clone();
+        high.residual_dims_used = 16;
+        high.l2_norm_residual = 2.5;
+        for i in 0..16 {
+            high.err_residual_16d[i] = Complex32::new(0.5, 0.5);
+        }
+        assert_eq!(fisher_residual_band_count(&low), 4, "low L2 → 4 bands");
+        assert_eq!(fisher_residual_band_count(&mid), 8, "mid L2 → 8 bands");
+        assert_eq!(fisher_residual_band_count(&high), 16, "high L2 → 16 bands");
+        // Clamp by residual_dims_used
+        low.residual_dims_used = 3;
+        assert_eq!(fisher_residual_band_count(&low), 3);
+        // Fixed mode uses full residual_dims_used
+        std::env::set_var("ENGRAM_FISHER_ADAPTIVE_BANDS", "0");
+        high.residual_dims_used = 16;
+        assert_eq!(fisher_residual_band_count(&high), 16);
+        mid.residual_dims_used = 12;
+        assert_eq!(fisher_residual_band_count(&mid), 12);
+        // Ranking still prefers low residual under adaptive
+        std::env::set_var("ENGRAM_FISHER_ADAPTIVE_BANDS", "1");
+        std::env::set_var("ENGRAM_FISHER_INVVAR", "1");
+        low.residual_dims_used = 16;
+        low.l2_norm_residual = 0.2;
+        low.crs_score = 0.90;
+        low.energetics.crs = 0.90;
+        low.energetics.dv = 0.1;
+        high.crs_score = 0.90;
+        high.energetics.crs = 0.90;
+        high.energetics.dv = 0.1;
+        let m_low = score_memory("low".into(), &encoded.q, &low, None);
+        let m_high = score_memory("high".into(), &encoded.q, &high, None);
+        assert!(
+            m_low.score > m_high.score,
+            "adaptive: low residual outranks high: low={} high={}",
+            m_low.score,
+            m_high.score
+        );
+        assert!(
+            m_high.explain.contains("adaptn=") || m_high.explain.contains("adapt"),
+            "explain notes adaptive bands: {}",
+            m_high.explain
+        );
+        std::env::remove_var("ENGRAM_FISHER_PRECISION");
+        std::env::remove_var("ENGRAM_FISHER_INVVAR");
+        std::env::remove_var("ENGRAM_FISHER_BANDED");
+        std::env::remove_var("ENGRAM_FISHER_ADAPTIVE_BANDS");
     }
 
     #[test]
