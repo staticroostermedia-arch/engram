@@ -353,6 +353,32 @@ pub struct RelationEntry {
 
 /// RoMem-style semantic speed gate heuristic from relation label text.
 /// Returns α ∈ (0,1] — higher = more temporally volatile / faster phase rotation.
+/// MQ Cycle 19: score a relation neighbor for lean resume ranking.
+/// Higher = more useful at wake (recent traces/tiles outrank ancient anchors).
+fn relation_resume_neighbor_score(concept: &str) -> u64 {
+    // Prefer concepts with embedded unix timestamps (trace:1784… / tile:…_1784…).
+    let digits: String = concept
+        .chars()
+        .skip_while(|c| !c.is_ascii_digit())
+        .take_while(|c| c.is_ascii_digit())
+        .collect();
+    let ts = digits.parse::<u64>().unwrap_or(0);
+    let type_boost: u64 = if concept.starts_with("trace:") {
+        2_000_000_000_000 // always prefer traces over non-trace when ts comparable
+    } else if concept.starts_with("tile:session_boundary") {
+        1_500_000_000_000
+    } else if concept.starts_with("tile:") {
+        1_000_000_000_000
+    } else if concept.starts_with("scheduled:") {
+        100 // keep scheduled but below recent traces
+    } else if concept == "primary_goal" {
+        50
+    } else {
+        10
+    };
+    type_boost.saturating_add(ts)
+}
+
 pub fn default_relation_volatility(label: &str) -> f32 {
     let l = label.to_ascii_lowercase();
     if l.contains("supersedes") || l.contains("replaces") || l.contains("invalid") {
@@ -2773,6 +2799,7 @@ impl StoreHandle {
                 "mq_verify_series_persist": true,
                 "mq_verify_invalidate_continuation": true,
                 "wake_relation_resume_lean": true,
+                "mq_relation_resume_recency": true,
                 "wake_lawfulness_snapshot": true,
                 "wake_slim_mq_resume_hoist": true,
                 "mq_spatial_locus_aabb_test": true,
@@ -5870,37 +5897,70 @@ impl StoreHandle {
     /// MQ Cycle 4: series helper for manifold verify samples (lawfulness cadence).
     pub const MQ_VERIFY_SERIES: &'static str = "helper:mq_verify_series";
 
-    /// MQ Cycle 5: lean wake relation neighborhood for non-flat resume (no full graph walk).
+    /// MQ Cycle 5/19: lean wake relation neighborhood for non-flat resume (no full graph walk).
+    /// MQ19: rank by recency of neighbor concept (trace/tile unix prefix) so latest SELECT forks
+    /// surface instead of always returning ancient MQ1/scheduled edges first.
     pub fn build_lean_relation_resume(store: &Self, seed: Option<&str>) -> serde_json::Value {
         let seed = seed
             .filter(|s| !s.is_empty() && *s != "unset")
             .unwrap_or("goal:engram_mvp_v1");
-        let mut edges: Vec<serde_json::Value> = Vec::new();
+        // Collect a wider pool, then rank+cap (search order is not recency-ordered).
+        let mut candidates: Vec<(u64, String, String, &'static str, String)> = Vec::new();
+        // (score, label, other, direction, seed_or_other_for_from)
         for (label, other) in store
             .search_relations(seed, None, "from")
             .into_iter()
-            .take(6)
+            .take(24)
         {
-            edges.push(serde_json::json!({
-                "from": seed,
-                "label": label,
-                "to": other,
-                "direction": "from",
-            }));
+            let score = relation_resume_neighbor_score(&other);
+            candidates.push((score, label, other, "from", seed.to_string()));
         }
-        for (label, other) in store.search_relations(seed, None, "to").into_iter().take(4) {
-            edges.push(serde_json::json!({
-                "from": other,
-                "label": label,
-                "to": seed,
-                "direction": "to",
-            }));
+        for (label, other) in store
+            .search_relations(seed, None, "to")
+            .into_iter()
+            .take(24)
+        {
+            let score = relation_resume_neighbor_score(&other);
+            candidates.push((score, label, other, "to", seed.to_string()));
+        }
+        // Highest score first (recent traces/tiles outrank ancient anchors).
+        candidates.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.2.cmp(&b.2)));
+        // Dedupe by (direction, other, label)
+        let mut seen = std::collections::HashSet::new();
+        let mut edges: Vec<serde_json::Value> = Vec::new();
+        for (score, label, other, direction, seed_s) in candidates {
+            let key = format!("{direction}|{label}|{other}");
+            if !seen.insert(key) {
+                continue;
+            }
+            let edge = if direction == "from" {
+                serde_json::json!({
+                    "from": seed_s,
+                    "label": label,
+                    "to": other,
+                    "direction": "from",
+                    "resume_rank": score,
+                })
+            } else {
+                serde_json::json!({
+                    "from": other,
+                    "label": label,
+                    "to": seed_s,
+                    "direction": "to",
+                    "resume_rank": score,
+                })
+            };
+            edges.push(edge);
+            if edges.len() >= 8 {
+                break;
+            }
         }
         serde_json::json!({
             "version": "mq_relation_resume_v1",
             "seed": seed,
             "edge_count": edges.len(),
             "edges": edges,
+            "ranking": "recency_neighbor_v1",
             "hint": "lean graph rehydrate — search_by_relation for deeper walks",
         })
     }
@@ -10502,6 +10562,76 @@ mod ingest_ast_tests {
         assert_eq!(
             ready
                 .get("wake_skip_warm_on_cont_soft_stale")
+                .and_then(|v| v.as_bool()),
+            Some(true)
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// MQ Cycle 19: recent trace:* edges outrank ancient ones in lean relation_resume.
+    #[test]
+    fn mq_relation_resume_prefers_recent_trace_neighbors() {
+        let dir = test_store_dir("mq19_relation_recency");
+        let mut store = StoreHandle::new(&dir.to_string_lossy());
+        store
+            .remember(
+                "goal:engram_memory_quality_v1",
+                "GOAL\n\n**status:** active\n**statement:** mq19\n",
+            )
+            .unwrap();
+        store
+            .remember(
+                "primary_goal",
+                "PRIMARY GOAL\n\n**goal:** goal:engram_memory_quality_v1\n",
+            )
+            .unwrap();
+        // Ancient + recent SELECT forks both serve the goal.
+        store
+            .remember(
+                "trace:1000_mq1-ancient-select",
+                "REASONING TRACE\n\n**decision_point:** ancient\n",
+            )
+            .unwrap();
+        store
+            .remember(
+                "trace:1784157053_mq19-recent-select",
+                "REASONING TRACE\n\n**decision_point:** recent\n",
+            )
+            .unwrap();
+        let _ = store.relate(
+            "trace:1000_mq1-ancient-select",
+            "goal:engram_memory_quality_v1",
+            "serves",
+        );
+        let _ = store.relate(
+            "trace:1784157053_mq19-recent-select",
+            "goal:engram_memory_quality_v1",
+            "serves",
+        );
+        let _ = store.relate("primary_goal", "goal:engram_memory_quality_v1", "serves");
+        let rr =
+            StoreHandle::build_lean_relation_resume(&store, Some("goal:engram_memory_quality_v1"));
+        assert_eq!(
+            rr.get("ranking").and_then(|v| v.as_str()),
+            Some("recency_neighbor_v1")
+        );
+        let edges = rr.get("edges").and_then(|v| v.as_array()).expect("edges");
+        assert!(!edges.is_empty());
+        let first_from = edges[0].get("from").and_then(|v| v.as_str()).unwrap_or("");
+        let first_to = edges[0].get("to").and_then(|v| v.as_str()).unwrap_or("");
+        let neighbor = if first_from == "goal:engram_memory_quality_v1" {
+            first_to
+        } else {
+            first_from
+        };
+        assert!(
+            neighbor.contains("1784157053") || neighbor.contains("mq19-recent"),
+            "top edge should be recent mq19 trace, got {neighbor}; edges={edges:?}"
+        );
+        assert_eq!(
+            store
+                .backend_readiness()
+                .get("mq_relation_resume_recency")
                 .and_then(|v| v.as_bool()),
             Some(true)
         );
