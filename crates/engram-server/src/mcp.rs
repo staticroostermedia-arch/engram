@@ -10227,11 +10227,15 @@ mod tests {
             let _ = std::fs::remove_dir_all(&tmp);
         }
 
+        /// Serialize env-var LLM tests (process-global ENGRAM_LLM_URL races under cargo test -j).
+        static LLM_ENV_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
         fn spawn_mock_llm_server(facts: &str) -> (String, std::thread::JoinHandle<()>) {
             let listener = TcpListener::bind("127.0.0.1:0").expect("bind mock llm");
             let addr = listener.local_addr().unwrap();
             let facts_json = facts.replace('\n', "\\n");
             let handle = std::thread::spawn(move || {
+                // Two turn_record calls in the LLM entrypoint test.
                 for _ in 0..2 {
                     if let Ok((mut stream, _)) = listener.accept() {
                         let mut buf = vec![0u8; 1 << 16];
@@ -10248,6 +10252,8 @@ mod tests {
                     }
                 }
             });
+            // Allow accept loop to start before client connects.
+            std::thread::sleep(std::time::Duration::from_millis(50));
             (format!("http://{}", addr), handle)
         }
 
@@ -10273,6 +10279,7 @@ mod tests {
 
         #[test]
         fn verify_turn_record_llm_mcp_entrypoint() {
+            let _env_lock = LLM_ENV_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
             let tmp = unique_tmp("turn-llm");
             let store = prep_store(&tmp);
 
