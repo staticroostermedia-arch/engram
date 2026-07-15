@@ -3626,3 +3626,33 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 1. MCP swap MQ18; wake falsifiers are only reverse conditions.
 2. Optional #134 C86 cold assemble residual (floor held).
 3. Capacity only if landfill metrics measured.
+
+## MQ Cycle 19 — relation_resume recency ranking (2026-07-15)
+
+### VERIFY₀ baseline
+
+- master@`ebb35ad9` MQ18 #152.
+- MCP swapped: `mq_handoff_falsifiers_no_substring` LIVE; reverse-condition list usable.
+- CSF warm **0.947** hub_crs≈0.91; injection_completeness **1.0**; handoff complete.
+- Verify **healthy** metric:mq_verify_1784157032; dual-gate continuity+lawfulness green.
+- Residual (retrieval): `relation_resume` top edges stuck on scheduled + MQ1 ancient serves — latest SELECT forks invisible at wake.
+- Unit tests lean + MQ18 falsifier tests green.
+
+### SELECT
+
+**mq_relation_retrieval** — rank lean relation_resume neighbors by recency (trace/tile unix) so recent forks surface first.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Ranking | `relation_resume_neighbor_score` + pool 24/dir, top 8 |
+| Field | `ranking: recency_neighbor_v1`, per-edge `resume_rank` |
+| Flag | `mq_relation_resume_recency` |
+| Test | `mq_relation_resume_prefers_recent_trace_neighbors` |
+
+### Next vectors
+
+1. MCP swap MQ19; wake relation_resume[0] is recent mq* SELECT trace.
+2. Optional #134 C86 cold assemble residual (floor held).
+3. Capacity only if landfill metrics measured.
