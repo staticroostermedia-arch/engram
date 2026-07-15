@@ -2,6 +2,7 @@
 # Sovereign selective disclosure for encrypted-at-rest ProvLog bodies.
 # XChaCha20-Poly1305 AEAD (engram-core::payload_crypto); need-to-know snippets only.
 # Audit trail as audit:access_* blocks (optionally sealed). Additive — no .leg3 layout change.
+# RSI Cycle 34: remember/update auto-seal when ENGRAM_ENCRYPT_AT_REST=1; readiness surfaces flags.
 
 [process]
 name = "agent:engram.ritual.secure-context-provision"
@@ -19,10 +20,28 @@ list = [
   "mcp_engram_secure_context_provision",
   "mcp_engram_context_for_edit",
   "mcp_engram_lexicon_mint_word",
+  "mcp_engram_remember",
+  "mcp_engram_update",
+  "mcp_engram_get_backend_readiness",
   "mcp_engram_quick_trace",
   "mcp_engram_verify_manifold_integrity",
   "mcp_engram_verify_block_lawfulness",
   "mcp_engram_scar",
+]
+
+[env]
+encrypt_at_rest = "ENGRAM_ENCRYPT_AT_REST"
+secure_context = "ENGRAM_SECURE_CONTEXT"
+sovereignty_key = "ENGRAM_SOVEREIGNTY_KEY"
+
+[surfaces]
+list = [
+  "remember_auto_seal",
+  "update_unwrap_splice_reseal",
+  "lexicon_mint_seal",
+  "selective_provision",
+  "context_for_edit_redaction",
+  "readiness_encrypt_flags",
 ]
 
 [requires]

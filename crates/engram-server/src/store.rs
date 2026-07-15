@@ -2145,7 +2145,78 @@ impl StoreHandle {
             "relation_adj_nodes": self.relation_index.adj_node_count(),
             "relation_edge_count": self.relation_index.entries.len(),
             "relation_adj_prefer_static": true,
+            // RSI Cycle 34: sovereignty encrypt-at-rest dogfood surface
+            "encrypt_at_rest_enabled": crate::secure_context::encrypt_at_rest_enabled(),
+            "encrypt_at_rest_env": "ENGRAM_ENCRYPT_AT_REST",
+            "secure_context_mode": crate::secure_context::secure_context_mode(),
+            "secure_context_env": "ENGRAM_SECURE_CONTEXT",
+            "sovereignty_key_configured": std::env::var("ENGRAM_SOVEREIGNTY_KEY")
+                .map(|s| !s.trim().is_empty())
+                .unwrap_or(false),
+            "secure_context_process": "process:engram.ritual.secure-context-provision",
         })
+    }
+
+    /// Continuity helpers stay plaintext so hot paths parse JSON without a key.
+    pub(crate) fn encrypt_seal_eligible(concept: &str) -> bool {
+        if concept == SESSION_SENTINEL_STATE || concept == SESSION_HANDOFF_LATEST {
+            return false;
+        }
+        if concept.starts_with("helper:session_")
+            || concept.starts_with("helper:cold_start")
+            || concept.starts_with("manifest:rehydration_")
+            || concept.starts_with("compression_handoff_")
+        {
+            return false;
+        }
+        true
+    }
+
+    /// Seal ProvLog at rest when `ENGRAM_ENCRYPT_AT_REST` is on (RSI Cycle 34).
+    /// Geometry (q) already encoded from plaintext; only the word-channel is sealed.
+    /// Skips if body already sealed (no double-envelope) or continuity-critical concepts.
+    pub(crate) fn maybe_seal_block_provlog(
+        concept: &str,
+        block: &mut engram_core::types::Leg3Pointer,
+    ) {
+        if !crate::secure_context::encrypt_at_rest_enabled()
+            || !Self::encrypt_seal_eligible(concept)
+        {
+            return;
+        }
+        let plain = engram_core::storage::read_provlog(block);
+        if engram_core::payload_crypto::is_sealed_provlog(&plain) {
+            return;
+        }
+        match crate::secure_context::maybe_seal_for_store(concept, &plain) {
+            Ok(sealed) => {
+                engram_core::storage::write_provlog(block, &sealed);
+                tracing::debug!(
+                    "[ENCRYPT] sealed ProvLog for '{}' ({} → {} chars)",
+                    concept,
+                    plain.chars().count(),
+                    sealed.chars().count()
+                );
+            }
+            Err(e) => {
+                tracing::warn!(
+                    "[ENCRYPT] seal failed for '{}' — storing plaintext: {}",
+                    concept,
+                    e
+                );
+            }
+        }
+    }
+
+    /// Open sealed ProvLog for splice/update; plaintext pass-through when unsealed.
+    pub(crate) fn plain_provlog_for_update(concept: &str, sealed_or_plain: &str) -> Result<String> {
+        if !engram_core::payload_crypto::is_sealed_provlog(sealed_or_plain) {
+            return Ok(sealed_or_plain.to_string());
+        }
+        let key = crate::secure_context::resolve_key()
+            .map_err(|e| anyhow::anyhow!("sealed update requires key: {e}"))?;
+        engram_core::payload_crypto::unwrap_provlog(&key, concept, sealed_or_plain)
+            .map_err(|e| anyhow::anyhow!("unwrap sealed ProvLog for update: {e}"))
     }
 
     fn backend_cufile_hot_ready(&self) -> bool {
@@ -2454,9 +2525,14 @@ impl StoreHandle {
             .unwrap_or_default()
             .as_secs();
 
+        // RSI Cycle 34: encrypt-at-rest seals ProvLog after geometric encode (q stays plaintext-derived).
+        Self::maybe_seal_block_provlog(concept, &mut block);
+
         let trace_fork_detail = if concept.starts_with("trace:") {
             let text = engram_core::storage::read_provlog(&block);
-            crate::mirror::trace_fork_detail(&text)
+            // Fork detail from sealed body is opaque; unwrap if needed for mirror metadata.
+            let plain = Self::plain_provlog_for_update(concept, &text).unwrap_or(text);
+            crate::mirror::trace_fork_detail(&plain)
         } else {
             None
         };
@@ -3639,7 +3715,9 @@ impl StoreHandle {
         else {
             return crate::continuity_spikes::SentinelState::default();
         };
-        let text = engram_core::storage::read_provlog(&block);
+        let raw = engram_core::storage::read_provlog(&block);
+        // Defense: unwrap if a prior encrypt race sealed the helper block.
+        let text = Self::plain_provlog_for_update(SESSION_SENTINEL_STATE, &raw).unwrap_or(raw);
         if let (Some(end), Some(start)) = (text.rfind('}'), text.rfind('{')) {
             if start <= end {
                 if let Ok(state) = serde_json::from_str::<crate::continuity_spikes::SentinelState>(
@@ -5132,10 +5210,11 @@ impl StoreHandle {
         }
 
         let existing_provlog = engram_core::storage::read_provlog(&block);
+        // RSI Cycle 34: unwrap sealed ProvLog before splice, reseal on write.
+        let existing_plain = Self::plain_provlog_for_update(concept, &existing_provlog)?;
         let splice_mode = provlog_mode
             .unwrap_or_else(|| engram_core::storage::infer_provlog_splice_mode(concept, new_text));
-        let spliced =
-            engram_core::storage::splice_provlog(&existing_provlog, new_text, splice_mode);
+        let spliced = engram_core::storage::splice_provlog(&existing_plain, new_text, splice_mode);
         let prov_chars = spliced.chars().count();
 
         let new_block = self.encode(new_text);
@@ -5268,6 +5347,8 @@ impl StoreHandle {
 
         // ── ProvLog splice — keep word-channel aligned with q superposition ─────
         engram_core::storage::write_provlog(&mut block, &spliced);
+        // RSI Cycle 34: reseal after splice when encrypt-at-rest on
+        Self::maybe_seal_block_provlog(concept, &mut block);
 
         self.store(concept, block)?;
         let coherence_suffix = provlog_coherence

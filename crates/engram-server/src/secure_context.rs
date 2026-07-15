@@ -338,6 +338,47 @@ mod tests {
         disable_encrypt();
     }
 
+    /// RSI Cycle 34: StoreHandle::remember auto-seals ProvLog when encrypt-at-rest on.
+    #[test]
+    fn remember_auto_seals_provlog_when_encrypt_on() {
+        let _g = ENV_LOCK.lock().unwrap();
+        enable_encrypt();
+        let (dir, mut store) = open_iso_store();
+        let concept = "dogfood:encrypt_remember_cycle34";
+        let secret = "SECRET_PLAINTEXT_TOKEN_cycle34_xyz";
+        store
+            .remember(concept, &format!("Remember dogfood body with {secret}"))
+            .expect("remember");
+        let block = store.fetch_block(concept).expect("fetch");
+        let body = crate::store::goal_block_text(&block);
+        assert!(
+            is_sealed_provlog(&body),
+            "remember must seal ProvLog when ENGRAM_ENCRYPT_AT_REST=1: {}",
+            body.chars().take(120).collect::<String>()
+        );
+        assert!(
+            !body.contains(secret),
+            "ciphertext must not contain plaintext secret"
+        );
+        // Readiness surface
+        let r = store.backend_readiness();
+        assert_eq!(
+            r.get("encrypt_at_rest_enabled").and_then(|v| v.as_bool()),
+            Some(true)
+        );
+        assert_eq!(
+            r.get("sovereignty_key_configured")
+                .and_then(|v| v.as_bool()),
+            Some(true)
+        );
+        // Selective provision still works
+        let out = provision(&mut store, concept, "dogfood", 200).expect("provision");
+        assert_eq!(out["ok"], true);
+        assert_eq!(out["sealed"], true);
+        let _ = std::fs::remove_dir_all(&dir);
+        disable_encrypt();
+    }
+
     #[test]
     fn redact_json_selective_on_sealed_preview() {
         let _g = ENV_LOCK.lock().unwrap();
