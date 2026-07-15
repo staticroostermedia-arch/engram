@@ -2,6 +2,7 @@
 //!
 //! Tracks consult-before-write discipline and recall/write ratios per MCP session.
 //! Source: arXiv:2607.01224 — memory as trainable skill, not flat filesystem.
+//! MQ Cycle 9: mint vs update split for write-hygiene observability.
 
 use serde_json::{json, Value};
 
@@ -12,6 +13,10 @@ pub struct SessionMetamemoryCounters {
     pub recalls_empty: u32,
     pub writes: u32,
     pub writes_without_prior_recall: u32,
+    /// MQ Cycle 9: remember/import-class mints (new concepts).
+    pub mints: u32,
+    /// MQ Cycle 9: update / update_with_tensor_bond (preferred over mint).
+    pub updates: u32,
     pub plan_tools: u32,
     pub log_tools: u32,
     /// Set true after any successful recall; cleared on write.
@@ -39,11 +44,17 @@ impl SessionMetamemoryCounters {
         self.recall_gate_open = true;
     }
 
-    pub fn note_write(&mut self) {
+    /// Record a gated write. `tool` classifies mint vs update for write hygiene.
+    pub fn note_write(&mut self, tool: &str) {
         if !self.recall_gate_open {
             self.writes_without_prior_recall = self.writes_without_prior_recall.saturating_add(1);
         }
         self.writes = self.writes.saturating_add(1);
+        if is_mint_write_tool(tool) {
+            self.mints = self.mints.saturating_add(1);
+        } else if is_update_write_tool(tool) {
+            self.updates = self.updates.saturating_add(1);
+        }
         self.recall_gate_open = false;
     }
 
@@ -52,6 +63,15 @@ impl SessionMetamemoryCounters {
             return if self.writes == 0 { 0.0 } else { f32::INFINITY };
         }
         self.writes as f32 / self.recalls as f32
+    }
+
+    /// Mint/update ratio — high values signal mint spam (prefer update).
+    /// 0 when no mints; +∞ when mints>0 and updates==0.
+    pub fn mint_update_ratio(&self) -> f32 {
+        if self.updates == 0 {
+            return if self.mints == 0 { 0.0 } else { f32::INFINITY };
+        }
+        self.mints as f32 / self.updates as f32
     }
 
     pub fn empty_recall_rate(&self) -> f32 {
@@ -68,10 +88,18 @@ impl SessionMetamemoryCounters {
             "recalls_empty": self.recalls_empty,
             "writes": self.writes,
             "writes_without_prior_recall": self.writes_without_prior_recall,
+            "mints": self.mints,
+            "updates": self.updates,
+            "mint_update_ratio": self.mint_update_ratio(),
             "plan_tools": self.plan_tools,
             "log_tools": self.log_tools,
             "writes_per_recall": self.writes_per_recall(),
             "empty_recall_rate": self.empty_recall_rate(),
+            "write_hygiene_hint": if self.mints > self.updates && self.mints > 0 {
+                "prefer update over remember when concept exists (match >0.85)"
+            } else {
+                "mint/update within nominal bounds"
+            },
         })
     }
 }
@@ -106,7 +134,7 @@ pub fn build_turn_protocol() -> Value {
                 ]
             }
         },
-        "discipline": "PLAN before substrate edits; recall before remember; LOG at forks and handoff"
+        "discipline": "PLAN before substrate edits; recall before remember; LOG at forks and handoff; prefer update over mint"
     })
 }
 
@@ -124,6 +152,8 @@ pub fn build_trajectory_meta_review(snapshots: &[Value]) -> Value {
     let mut recalls_empty = 0u64;
     let mut writes = 0u64;
     let mut violations = 0u64;
+    let mut mints = 0u64;
+    let mut updates = 0u64;
 
     for snap in snapshots {
         recalls = recalls.saturating_add(snap.get("recalls").and_then(|v| v.as_u64()).unwrap_or(0));
@@ -138,6 +168,8 @@ pub fn build_trajectory_meta_review(snapshots: &[Value]) -> Value {
                 .and_then(|v| v.as_u64())
                 .unwrap_or(0),
         );
+        mints = mints.saturating_add(snap.get("mints").and_then(|v| v.as_u64()).unwrap_or(0));
+        updates = updates.saturating_add(snap.get("updates").and_then(|v| v.as_u64()).unwrap_or(0));
     }
 
     let writes_per_recall = if recalls == 0 {
@@ -154,6 +186,15 @@ pub fn build_trajectory_meta_review(snapshots: &[Value]) -> Value {
     } else {
         recalls_empty as f32 / recalls as f32
     };
+    let mint_update_ratio = if updates == 0 {
+        if mints == 0 {
+            0.0
+        } else {
+            f32::INFINITY
+        }
+    } else {
+        mints as f32 / updates as f32
+    };
 
     json!({
         "version": "trajectory_meta_review_v1",
@@ -164,11 +205,16 @@ pub fn build_trajectory_meta_review(snapshots: &[Value]) -> Value {
             "recalls_empty": recalls_empty,
             "writes": writes,
             "writes_without_prior_recall": violations,
+            "mints": mints,
+            "updates": updates,
+            "mint_update_ratio": mint_update_ratio,
             "writes_per_recall": writes_per_recall,
             "empty_recall_rate": empty_recall_rate,
         },
         "recommendations": if violations > 0 {
             vec!["Increase recall(scope=anchors) before remember/update", "Review consult_before_write_gate violations"]
+        } else if mints > updates && mints > 0 {
+            vec!["Mint-heavy trajectory — prefer mcp_engram_update when concept exists (match >0.85)"]
         } else if recalls == 0 && writes > 0 {
             vec!["Sessions writing without any recall — enforce PLAN phase"]
         } else {
@@ -179,14 +225,25 @@ pub fn build_trajectory_meta_review(snapshots: &[Value]) -> Value {
 
 /// Write tools that increment metamemory counters and subject to consult-before-write gate.
 pub fn is_metamemory_write_tool(tool: &str) -> bool {
+    is_mint_write_tool(tool) || is_update_write_tool(tool)
+}
+
+/// Mint-class writes (new concept creation) — prefer update when match exists.
+pub fn is_mint_write_tool(tool: &str) -> bool {
     matches!(
         tool,
         "mcp_engram_remember"
-            | "mcp_engram_update"
-            | "mcp_engram_update_with_tensor_bond"
             | "mcp_engram_remember_solution"
             | "mcp_engram_batch_remember"
             | "mcp_engram_import"
+    )
+}
+
+/// Update-class writes (Lyapunov / p-momentum preserving).
+pub fn is_update_write_tool(tool: &str) -> bool {
+    matches!(
+        tool,
+        "mcp_engram_update" | "mcp_engram_update_with_tensor_bond"
     )
 }
 
@@ -222,19 +279,58 @@ mod tests {
     fn metamemory_writes_per_recall_ratio() {
         let mut c = SessionMetamemoryCounters::default();
         c.note_recall(2);
-        c.note_write();
-        c.note_write();
+        c.note_write("mcp_engram_update");
+        c.note_write("mcp_engram_remember");
         assert!((c.writes_per_recall() - 2.0).abs() < 1e-5);
     }
 
     #[test]
     fn metamemory_consult_before_write_violation() {
         let mut c = SessionMetamemoryCounters::default();
-        c.note_write();
+        c.note_write("mcp_engram_remember");
         assert_eq!(c.writes_without_prior_recall, 1);
         c.note_recall(1);
-        c.note_write();
+        c.note_write("mcp_engram_update");
         assert_eq!(c.writes_without_prior_recall, 1);
+    }
+
+    /// MQ Cycle 9: mint vs update classification for write hygiene.
+    #[test]
+    fn metamemory_mint_update_ratio_classifies_tools() {
+        let mut c = SessionMetamemoryCounters::default();
+        c.note_recall(1);
+        c.note_write("mcp_engram_remember");
+        c.note_recall(1);
+        c.note_write("mcp_engram_remember_solution");
+        c.note_recall(1);
+        c.note_write("mcp_engram_update");
+        c.note_recall(1);
+        c.note_write("mcp_engram_update_with_tensor_bond");
+        assert_eq!(c.mints, 2);
+        assert_eq!(c.updates, 2);
+        assert!((c.mint_update_ratio() - 1.0).abs() < 1e-5);
+        assert_eq!(c.writes, 4);
+        let j = c.to_json();
+        assert_eq!(j.get("mints").and_then(|v| v.as_u64()), Some(2));
+        assert_eq!(j.get("updates").and_then(|v| v.as_u64()), Some(2));
+    }
+
+    #[test]
+    fn metamemory_mint_heavy_hint() {
+        let mut c = SessionMetamemoryCounters::default();
+        c.note_recall(1);
+        c.note_write("mcp_engram_remember");
+        c.note_recall(1);
+        c.note_write("mcp_engram_batch_remember");
+        assert_eq!(c.mints, 2);
+        assert_eq!(c.updates, 0);
+        assert!(c.mint_update_ratio().is_infinite());
+        let j = c.to_json();
+        assert!(j
+            .get("write_hygiene_hint")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .contains("prefer update"));
     }
 
     #[test]
@@ -251,12 +347,28 @@ mod tests {
         assert!(is_metamemory_write_tool("mcp_engram_remember_solution"));
         assert!(is_metamemory_write_tool("mcp_engram_batch_remember"));
         assert!(is_metamemory_write_tool("mcp_engram_import"));
+        assert!(is_mint_write_tool("mcp_engram_import"));
+        assert!(is_update_write_tool("mcp_engram_update"));
     }
 
     #[test]
     fn trajectory_meta_review_aggregates_receipts() {
-        let a = json!({"recalls": 2, "recalls_empty": 1, "writes": 3, "writes_without_prior_recall": 1});
-        let b = json!({"recalls": 1, "recalls_empty": 0, "writes": 1, "writes_without_prior_recall": 0});
+        let a = json!({
+            "recalls": 2,
+            "recalls_empty": 1,
+            "writes": 3,
+            "writes_without_prior_recall": 1,
+            "mints": 2,
+            "updates": 1
+        });
+        let b = json!({
+            "recalls": 1,
+            "recalls_empty": 0,
+            "writes": 1,
+            "writes_without_prior_recall": 0,
+            "mints": 0,
+            "updates": 1
+        });
         let review = build_trajectory_meta_review(&[a, b]);
         assert_eq!(
             review.get("sessions_reviewed").and_then(|v| v.as_u64()),
@@ -270,5 +382,7 @@ mod tests {
                 .and_then(|v| v.as_u64()),
             Some(1)
         );
+        assert_eq!(agg.get("mints").and_then(|v| v.as_u64()), Some(2));
+        assert_eq!(agg.get("updates").and_then(|v| v.as_u64()), Some(2));
     }
 }
