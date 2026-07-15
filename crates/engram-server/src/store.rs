@@ -116,6 +116,56 @@ fn rehydration_manifest_cache_invalidate(store_key: Option<&str>) {
     }
 }
 
+/// RSI Cycle 80: soft-stale session_handoff_latest presence (avoids gather probe every wake).
+struct HandoffPresenceCache {
+    store_key: String,
+    last_ok: Option<std::time::Instant>,
+    present: bool,
+}
+
+static HANDOFF_PRESENCE_CACHE: std::sync::LazyLock<std::sync::Mutex<HandoffPresenceCache>> =
+    std::sync::LazyLock::new(|| {
+        std::sync::Mutex::new(HandoffPresenceCache {
+            store_key: String::new(),
+            last_ok: None,
+            present: false,
+        })
+    });
+
+fn handoff_presence_soft_stale_secs() -> u64 {
+    std::env::var("ENGRAM_HANDOFF_PRESENCE_SOFT_STALE_SECS")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(900)
+}
+
+fn handoff_presence_cache_get(store_key: &str) -> Option<bool> {
+    let soft = handoff_presence_soft_stale_secs();
+    if soft == 0 || store_key.is_empty() {
+        return None;
+    }
+    let cache = HANDOFF_PRESENCE_CACHE.lock().ok()?;
+    if cache.store_key != store_key {
+        return None;
+    }
+    let t = cache.last_ok?;
+    if t.elapsed().as_secs() >= soft {
+        return None;
+    }
+    Some(cache.present)
+}
+
+fn handoff_presence_cache_set(store_key: &str, present: bool) {
+    if store_key.is_empty() {
+        return;
+    }
+    if let Ok(mut cache) = HANDOFF_PRESENCE_CACHE.lock() {
+        cache.store_key = store_key.to_string();
+        cache.last_ok = Some(std::time::Instant::now());
+        cache.present = present;
+    }
+}
+
 // Session handoff parse helpers — see `session_packet` module (latest-wins extract + decision parse).
 // Named session_packet (not *handoff*) so the source is not excluded by root .gitignore *handoff*.
 use crate::session_packet::{
@@ -4366,6 +4416,8 @@ impl StoreHandle {
     ) -> serde_json::Value {
         // RSI Cycle 77: new handoff must not be masked by soft-stale manifest cache.
         rehydration_manifest_cache_invalidate(Some(self.store_path()));
+        // RSI Cycle 80: handoff just written — presence soft-stale true for gather.
+        handoff_presence_cache_set(self.store_path(), true);
         const HANDOFF_ANCHOR: &str = "handoff:codeland_integration_2026_plan";
         let packet = self.build_handoff_packet(summary, session_end_key);
         let body = format!(
@@ -4875,24 +4927,31 @@ impl StoreHandle {
             );
         }
 
-        // RSI Cycle 80: wake lean always surfaces handoff concept (name-only) — no existence
-        // fetch. Suggested_actions always include handoff read; full path still probes store.
-        let session_handoff_present = if wake_lean {
-            if seen.insert(SESSION_HANDOFF_LATEST.to_string()) {
-                entries.push(BundleEntry {
-                    concept: SESSION_HANDOFF_LATEST.to_string(),
-                    crs: 0.0,
-                    hot: false,
-                    preview: String::new(),
-                    source: "session_handoff_latest".to_string(),
-                });
-            }
-            true
+        // RSI Cycle 80: soft-stale handoff presence — probe at most once per soft window.
+        // Pre-handoff empty stores stay false (continuity test); post-persist sets true.
+        let store_key = self.store_path().to_string();
+        let session_handoff_present = if let Some(cached) = handoff_presence_cache_get(&store_key) {
+            cached
         } else {
             let present = self
                 .fetch_block_high_priority(SESSION_HANDOFF_LATEST)
                 .is_some();
-            if present {
+            handoff_presence_cache_set(&store_key, present);
+            present
+        };
+        if session_handoff_present {
+            if wake_lean {
+                // Name-only entry — no second body/existence fetch.
+                if seen.insert(SESSION_HANDOFF_LATEST.to_string()) {
+                    entries.push(BundleEntry {
+                        concept: SESSION_HANDOFF_LATEST.to_string(),
+                        crs: 0.0,
+                        hot: false,
+                        preview: String::new(),
+                        source: "session_handoff_latest".to_string(),
+                    });
+                }
+            } else {
                 push(
                     self,
                     &mut entries,
@@ -4901,8 +4960,7 @@ impl StoreHandle {
                     "session_handoff_latest",
                 );
             }
-            present
-        };
+        }
 
         let mut latest_compression_handoff: Option<String> = None;
         // RSI Cycle 59: wake skips compression_handoff recent walk.
@@ -9691,14 +9749,24 @@ mod ingest_ast_tests {
             Some("goal:engram_mvp_v1"),
             "wake lean primary_goal from marker target"
         );
-        // Cycle 80: structured_handoff always present on lean (no store probe required).
+        // Cycle 80: with handoff present, structured_handoff surfaces without re-probe.
         assert!(
             bundle
                 .get("structured_handoff")
                 .and_then(|h| h.get("concept"))
                 .and_then(|c| c.as_str())
                 .is_some(),
-            "C80 lean always surfaces handoff concept"
+            "C80 lean surfaces handoff when present (soft-stale presence)"
+        );
+        // Second gather within soft-stale should not need another store probe.
+        let _ = store.forget(crate::harness_injection::SESSION_HANDOFF_LATEST);
+        let bundle2 = store.build_continuation_bundle_wake(Some("c80 soft presence"));
+        assert!(
+            bundle2
+                .get("structured_handoff")
+                .and_then(|h| h.get("concept"))
+                .is_some(),
+            "C80 soft-stale presence still true after forget until window expires"
         );
         let _ = std::fs::remove_dir_all(&dir);
     }

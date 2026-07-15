@@ -2873,13 +2873,13 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 
 ### Hypothesis
 
-**Assume handoff present on lean:** push name-only entry without store probe; full continuation path still verifies.
+**Soft-stale handoff presence:** probe once per 900s (or set true on persist); lean name-only entry when present. Empty pre-handoff stores stay false (continuity tests).
 
 ### Delivered
 
 | Item | Detail |
 |------|--------|
-| Code | wake_lean handoff path in gather |
+| Code | `HANDOFF_PRESENCE_CACHE` + lean name-only push when present |
 | Readiness | `wake_gather_skip_handoff_probe` |
 | Test | extended `wake_ultra_lean_gather_core_anchors_only` |
 
