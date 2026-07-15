@@ -1248,4 +1248,43 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 3. Wake path cost reduction.
 4. Default-on encrypt for agent profile (opt-in remains safer for now).
 
+---
+
+## Cycle 35 — Fisher banded residual precision (2026-07-15)
+
+### Master baseline
+
+- Post Cycle 34: PR **#80** `28f0175f` — encrypt-at-rest remember dogfood.
+- Hub CRS ~0.88 · CSF ~0.93 · ~89k blocks.
+
+### Research synthesis
+
+| Source | Insight |
+|--------|---------|
+| Cycle 33 inv-var | Scalar CRS×(1−dv) only; ignores prediction residual geometry. |
+| `err_residual_16d` | Existing 16-complex capsule + `l2_norm_residual` (surprise). |
+| SLM-V3 Fisher–Rao | Banded/diagonal precision is intermediate before full σ². |
+
+### Hypothesis
+
+**Banded precision:** `prec_w *= mean_i 1/(1+|r_i|) × 1/(1+‖r‖₂)` from residual capsule when `ENGRAM_FISHER_BANDED` on (default with Fisher). High residual (surprised) memories rank lower at equal CRS/cosine.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Code | `fisher_banded_enabled`, `fisher_banded_precision` in `backend.rs` |
+| Score | multiplies inv-var/CRS precision weight |
+| Env | `ENGRAM_FISHER_BANDED` (default on when Fisher on) |
+| Readiness | `fisher_banded_enabled` + env key |
+| Tests | `fisher_banded_prefers_low_residual_at_equal_crs` |
+| Lexicon | `fisher-banded-residual` |
+
+### Next vectors
+
+1. CSR/mmap adj at multi-million edge scale.
+2. Wake path cost reduction.
+3. Optional agent-profile encrypt default.
+4. Adaptive band count / PCA residual dims.
+
 
