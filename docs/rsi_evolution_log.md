@@ -3326,3 +3326,33 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 1. MCP swap MQ8; readiness shows consult hard under agent.
 2. `mq_write_hygiene` / tiles boundaries if write discipline still soft in practice.
 3. PR #134 C86 cold assemble residual (CI green, open).
+
+## MQ Cycle 9 — write hygiene mint/update ratio (2026-07-15)
+
+### VERIFY₀ baseline
+
+- master@`ed82b992` MQ8 #142.
+- MCP swapped: `mq_consult_before_write_agent_hard` LIVE; relation_resume.edges=4; CSF warm **0.925**.
+- Handoff complete mq_handoff_v1; primary memory_quality.
+- Verify **healthy** metric:mq_verify_1784149600; series growing pass_rate improving.
+- Latency floor: readiness_ms=0; post-swap warm assemble ~63–94ms not soft_stale floor fail.
+- Unit tests lean + MQ8 consult hard green.
+
+### SELECT
+
+**mq_write_hygiene** — metamemory tracked consult violations but not mint spam vs update preference.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Counters | `mints`, `updates`, `mint_update_ratio` on session metamemory + trajectory review |
+| Hint | mint-heavy → prefer update when concept exists |
+| Flag | `mq_write_hygiene_mint_update` |
+| Tests | `metamemory_mint_update_ratio_classifies_tools`, `metamemory_mint_heavy_hint` |
+
+### Next vectors
+
+1. MCP swap MQ9; handoff metamemory shows mints/updates after write-heavy session.
+2. `mq_tiles_boundaries` auto tile at session_end compression.
+3. PR #134 C86 cold assemble residual (CI green, open).

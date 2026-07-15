@@ -2442,7 +2442,7 @@ impl StoreHandle {
         match crate::metamemory_metrics::classify_mcp_tool(tool) {
             Some("plan") => self.metamemory.note_plan_tool(),
             Some("log") if crate::metamemory_metrics::is_metamemory_write_tool(tool) => {
-                self.metamemory.note_write();
+                self.metamemory.note_write(tool);
                 self.metamemory.note_log_tool();
             }
             Some("log") => self.metamemory.note_log_tool(),
@@ -2776,6 +2776,7 @@ impl StoreHandle {
                 "wake_slim_mq_resume_hoist": true,
                 "mq_spatial_locus_aabb_test": true,
                 "mq_consult_before_write_agent_hard": true,
+                "mq_write_hygiene_mint_update": true,
                 "wake_continuation_soft_stale": true,
                 "wake_continuation_soft_stale_env": "ENGRAM_WAKE_CONTINUATION_SOFT_STALE_SECS",
                 "wake_continuation_soft_stale_secs": 1800,
