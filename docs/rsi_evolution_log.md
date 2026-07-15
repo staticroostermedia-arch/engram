@@ -1589,4 +1589,41 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 3. Tombstone + deferred CSR compact.
 4. Defer `mark_ki_rebake_needed` / sheaf load when fingerprint fresh.
 
+---
+
+## Cycle 44 — CSR tombstone soft-delete + deferred compact (2026-07-14)
+
+### Master baseline
+
+- Post Cycle 43: PR **#89** `4406fadd` — wake skip-hot + async fidelity.
+- Hub CRS ~0.90 · CSF ~0.94 · ~89k blocks.
+
+### Research synthesis
+
+| Source | Insight |
+|--------|---------|
+| Cycles 39–41 | Remove filters CSR and renumbers all indices ≥ pos. |
+| Graph engines | Soft-delete (tombstone) keeps index stability; batch compact later. |
+| Hot demote paths | Many short-lived removes benefit from stable indices. |
+
+### Hypothesis
+
+**Tombstone + deferred compact:** mark `RelationEntry.tombstone`; CSR filter without renumber; hard compact when tombstones ≥ 8 and ratio ≥ 1/8; re-relate revives tombstone.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Code | `tombstone` field; remove_batch soft-delete; `compact_tombstones_if_needed`; revive on add |
+| Readiness | `relation_adj_csr_tombstone`; live/tombstone edge counts |
+| Tests | `relation_csr_tombstone_revive_and_compact` + updated remove suite |
+| Lexicon | `csr-tombstone-compact` |
+
+### Next vectors
+
+1. mmap CSR for multi-million edge stalks.
+2. Partial σ² tensors beyond 16-d capsule (long horizon).
+3. Defer `mark_ki_rebake_needed` on wake when sheaf fingerprint fresh.
+4. Query_pure TIMING full gate + wake elapsed histogram.
+
 

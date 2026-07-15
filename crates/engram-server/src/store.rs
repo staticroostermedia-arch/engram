@@ -229,6 +229,10 @@ pub struct RelationEntry {
     /// Legacy edges deserialize as 0.0 → effective volatility uses label heuristic.
     #[serde(default)]
     pub volatility: f32,
+    /// RSI Cycle 44: soft-delete marker — indices stay stable until deferred compact.
+    /// Legacy edges deserialize as false.
+    #[serde(default)]
+    pub tombstone: bool,
 }
 
 /// RoMem-style semantic speed gate heuristic from relation label text.
@@ -271,9 +275,9 @@ pub struct RelationIndex {
     /// When > 0, `add`/`remove` defer disk flush until the outer batch ends.
     defer_flush_depth: u32,
     flush_pending: bool,
-    /// RSI Cycles 30–41: CSR incident index (concept → row → prefer-static entry indices).
+    /// RSI Cycles 30–44: CSR incident index (concept → row → prefer-static entry indices).
     /// Not serialized — rebuilt on load/refresh; incremental insert on add (37–38);
-    /// incremental remove (39); batch remove (41). Cycle 38: CSR-only.
+    /// remove (39/41); tombstone soft-delete + deferred compact (44). Cycle 38: CSR-only.
     csr_row: std::collections::HashMap<String, u32>,
     /// Row offsets into `csr_indices` (len = n_nodes + 1).
     csr_offsets: Vec<u32>,
@@ -312,12 +316,15 @@ impl RelationIndex {
         idx
     }
 
-    /// Rebuild CSR incident index from `entries` (O(E log deg)), prefer-static within rows.
-    /// RSI Cycles 30–38; temporary grouping map is stack-local only (not retained).
+    /// Rebuild CSR incident index from live `entries` (O(E log deg)), prefer-static within rows.
+    /// RSI Cycles 30–38/44; skips tombstones; temporary grouping map is stack-local only.
     pub fn rebuild_adj(&mut self) {
         let mut tmp: std::collections::HashMap<String, Vec<usize>> =
             std::collections::HashMap::new();
         for (i, e) in self.entries.iter().enumerate() {
+            if e.tombstone {
+                continue;
+            }
             tmp.entry(e.from.clone()).or_default().push(i);
             if e.to != e.from {
                 tmp.entry(e.to.clone()).or_default().push(i);
@@ -446,12 +453,10 @@ impl RelationIndex {
         self.csr_indices[s..e].copy_from_slice(&slice);
     }
 
-    /// RSI Cycle 39/41: drop one or more entries from CSR without full `rebuild_adj`.
-    /// `remove_idxs` are **old** entry indices (pre-compact). Sorted/deduped internally.
-    /// Filters removed indices, renumbers survivors, collapses empty rows.
-    /// Prefer-static order within surviving rows is preserved (filter only).
-    /// Cycle 41: batch path is O(nnz + k log k) once vs k× single-remove walks.
-    fn csr_remove_entries_at(&mut self, remove_idxs: &[u32]) {
+    /// RSI Cycle 39/41/44: drop entry indices from CSR without full `rebuild_adj`.
+    /// When `renumber` is true (hard compact path), survivors with idx > removed are shifted.
+    /// When false (Cycle 44 tombstone soft-delete), indices stay stable — only filtered out.
+    fn csr_remove_entries_at(&mut self, remove_idxs: &[u32], renumber: bool) {
         if remove_idxs.is_empty() {
             return;
         }
@@ -477,8 +482,12 @@ impl RelationIndex {
             if rem.binary_search(&old).is_ok() {
                 return None;
             }
-            let less = rem.partition_point(|&r| r < old) as u32;
-            Some(old.saturating_sub(less))
+            if renumber {
+                let less = rem.partition_point(|&r| r < old) as u32;
+                Some(old.saturating_sub(less))
+            } else {
+                Some(old)
+            }
         };
         let mut new_indices: Vec<u32> = Vec::with_capacity(
             self.csr_indices
@@ -514,6 +523,34 @@ impl RelationIndex {
         self.csr_row = new_row_map;
     }
 
+    /// Live (non-tombstone) edge count.
+    pub fn live_edge_count(&self) -> usize {
+        self.entries.iter().filter(|e| !e.tombstone).count()
+    }
+
+    /// Soft-deleted edge count (Cycle 44).
+    pub fn tombstone_count(&self) -> usize {
+        self.entries.iter().filter(|e| e.tombstone).count()
+    }
+
+    /// RSI Cycle 44: hard-compact when tombstone ratio ≥ 1/8 and count ≥ 8.
+    /// Retains live edges only and rebuilds CSR (renumbers indices).
+    pub fn compact_tombstones_if_needed(&mut self) -> bool {
+        const MIN: usize = 8;
+        const RATIO: f32 = 0.125;
+        let t = self.tombstone_count();
+        if t < MIN {
+            return false;
+        }
+        let n = self.entries.len().max(1);
+        if (t as f32) / (n as f32) < RATIO {
+            return false;
+        }
+        self.entries.retain(|e| !e.tombstone);
+        self.rebuild_adj();
+        true
+    }
+
     /// Coalesce relation_index.json writes during batch ingest (force_ingest, glue, …).
     pub fn begin_defer_flush(&mut self) {
         self.defer_flush_depth = self.defer_flush_depth.saturating_add(1);
@@ -544,33 +581,36 @@ impl RelationIndex {
     }
 
     /// Remove a directed edge if present (e.g. primary_goal --serves--> demoted artifact).
-    /// RSI Cycle 39: incremental CSR remove (no full `rebuild_adj`); indices renumbered.
+    /// RSI Cycle 39–44: tombstone soft-delete + CSR filter (stable indices); deferred compact.
     pub fn remove(&mut self, from: &str, label: &str, to: &str) -> bool {
         self.remove_batch(&[(from, label, to)]) == 1
     }
 
-    /// RSI Cycle 41: remove many directed edges in one CSR pass (O(E+k) vs k× single).
-    /// Returns number of edges actually removed. Single flush at end.
+    /// RSI Cycle 41/44: remove many directed edges in one CSR pass.
+    /// Cycle 44: mark `tombstone` in place (indices stable) then CSR filter without renumber;
+    /// hard compact when tombstone ratio exceeds threshold.
     pub fn remove_batch(&mut self, edges: &[(&str, &str, &str)]) -> usize {
         if edges.is_empty() {
             return 0;
         }
         let kill: std::collections::HashSet<(&str, &str, &str)> = edges.iter().copied().collect();
         let mut removed_old: Vec<u32> = Vec::new();
-        let mut kept: Vec<RelationEntry> = Vec::with_capacity(self.entries.len());
-        for (i, e) in self.entries.iter().enumerate() {
+        for (i, e) in self.entries.iter_mut().enumerate() {
+            if e.tombstone {
+                continue;
+            }
             if kill.contains(&(e.from.as_str(), e.label.as_str(), e.to.as_str())) {
+                e.tombstone = true;
                 removed_old.push(i as u32);
-            } else {
-                kept.push(e.clone());
             }
         }
         if removed_old.is_empty() {
             return 0;
         }
         let n = removed_old.len();
-        self.entries = kept;
-        self.csr_remove_entries_at(&removed_old);
+        // Tombstone path: filter CSR without renumbering entry indices.
+        self.csr_remove_entries_at(&removed_old, false);
+        let _ = self.compact_tombstones_if_needed();
         self.flush_if_needed();
         n
     }
@@ -587,17 +627,27 @@ impl RelationIndex {
         } else {
             default_relation_volatility(label)
         };
-        if let Some(e) = self
+        if let Some(pos) = self
             .entries
-            .iter_mut()
-            .find(|e| e.from == from && e.label == label && e.to == to)
+            .iter()
+            .position(|e| e.from == from && e.label == label && e.to == to)
         {
-            // Refresh volatility on re-relate (append-only edge, mutable α)
-            e.volatility = vol;
-            // Cycle 37–38: CSR-only re-sort prefer-static rows
-            self.csr_resort_row(from);
-            if to != from {
-                self.csr_resort_row(to);
+            let was_tomb = self.entries[pos].tombstone;
+            self.entries[pos].tombstone = false;
+            self.entries[pos].volatility = vol;
+            if was_tomb {
+                // Cycle 44: revive soft-deleted edge into CSR
+                let ei = pos as u32;
+                self.csr_insert_incident(from, ei, vol);
+                if to != from {
+                    self.csr_insert_incident(to, ei, vol);
+                }
+            } else {
+                // Cycle 37–38: CSR-only re-sort prefer-static rows
+                self.csr_resort_row(from);
+                if to != from {
+                    self.csr_resort_row(to);
+                }
             }
             self.flush_if_needed();
             return;
@@ -609,6 +659,7 @@ impl RelationIndex {
                 label: label.to_string(),
                 volatility: vol,
                 to: to.to_string(),
+                tombstone: false,
             });
             // Cycle 37–38: CSR-only incremental insert (no dual HashMap)
             let ei = idx as u32;
@@ -652,6 +703,9 @@ impl RelationIndex {
     ) -> Vec<(String, String, f32)> {
         let mut out = Vec::new();
         for e in &self.entries {
+            if e.tombstone {
+                continue;
+            }
             let label_ok = filter_label.is_none_or(|l| e.label == l);
             if !label_ok {
                 continue;
@@ -716,6 +770,9 @@ impl RelationIndex {
                         continue;
                     }
                     for e in &self.entries {
+                        if e.tombstone {
+                            continue;
+                        }
                         if &e.from == concept {
                             result.push(e.clone());
                             if !visited.contains(&e.to) {
@@ -775,8 +832,11 @@ impl RelationIndex {
                 continue;
             }
             // Expand low-α edges first at this node for stable ordering
-            let mut outgoing: Vec<&RelationEntry> =
-                self.entries.iter().filter(|e| e.from == concept).collect();
+            let mut outgoing: Vec<&RelationEntry> = self
+                .entries
+                .iter()
+                .filter(|e| !e.tombstone && e.from == concept)
+                .collect();
             outgoing.sort_by(|a, b| {
                 effective_relation_volatility(a)
                     .partial_cmp(&effective_relation_volatility(b))
@@ -2323,7 +2383,8 @@ impl StoreHandle {
             "incident_alpha_scan_cap": Self::incident_alpha_scan_cap(),
             "incident_alpha_scan_cap_env": "ENGRAM_INCIDENT_ALPHA_CAP",
             "relation_adj_nodes": self.relation_index.adj_node_count(),
-            "relation_edge_count": self.relation_index.entries.len(),
+            "relation_edge_count": self.relation_index.live_edge_count(),
+            "relation_edge_tombstones": self.relation_index.tombstone_count(),
             "relation_adj_prefer_static": true,
             "relation_adj_csr_nrows": self.relation_index.csr_nrows(),
             "relation_adj_csr_nnz": self.relation_index.csr_nnz(),
@@ -2332,6 +2393,7 @@ impl StoreHandle {
             "relation_adj_csr_only": true,
             "relation_adj_csr_remove_incremental": true,
             "relation_adj_csr_remove_batch": true,
+            "relation_adj_csr_tombstone": true,
             // RSI Cycle 34: sovereignty encrypt-at-rest dogfood surface
             "encrypt_at_rest_enabled": crate::secure_context::encrypt_at_rest_enabled(),
             "encrypt_at_rest_env": "ENGRAM_ENCRYPT_AT_REST",
@@ -7377,6 +7439,9 @@ impl StoreHandle {
             let Some(e) = self.relation_index.entries.get(i as usize) else {
                 continue;
             };
+            if e.tombstone {
+                continue;
+            }
             let vol = effective_relation_volatility(e);
             if vol < best {
                 best = vol;
@@ -9837,6 +9902,7 @@ SESSION HANDOFF PACKET v1
             label: "implements".into(),
             to: "b".into(),
             volatility: 0.0,
+            tombstone: false,
         };
         assert!(
             (effective_relation_volatility(&e) - default_relation_volatility("implements")).abs()
@@ -10028,7 +10094,9 @@ SESSION HANDOFF PACKET v1
             after_rm
         );
         assert_eq!(store.min_incident_edge_volatility("p1"), 0.0);
-        assert_eq!(store.relation_index.entries.len(), 2);
+        // Cycle 44: tombstone soft-delete — slot retained until compact
+        assert_eq!(store.relation_index.live_edge_count(), 2);
+        assert_eq!(store.relation_index.tombstone_count(), 1);
         assert!(
             store.relation_index.csr_nnz() < nnz_before,
             "incremental remove shrinks CSR nnz"
@@ -10037,11 +10105,15 @@ SESSION HANDOFF PACKET v1
             store.relation_index.incident_indices("p1").is_empty(),
             "p1 row collapsed after last incident removed"
         );
-        // Remaining entry indices must be valid under renumbering
+        // Remaining CSR indices valid (stable under tombstone)
         for &i in store.relation_index.incident_indices("hub:adj") {
             assert!(
                 (i as usize) < store.relation_index.entries.len(),
                 "stale CSR index {i} after remove"
+            );
+            assert!(
+                !store.relation_index.entries[i as usize].tombstone,
+                "CSR must not point at tombstone"
             );
         }
 
@@ -10091,7 +10163,8 @@ SESSION HANDOFF PACKET v1
             .relation_index
             .entries
             .iter()
-            .any(|e| e.from == "h" && e.label == "implements" && e.to == "n0"));
+            .any(|e| { !e.tombstone && e.from == "h" && e.label == "implements" && e.to == "n0" }));
+        assert!(store.relation_index.tombstone_count() >= 1);
         // Oracle rebuild
         let nnz = store.relation_index.csr_nnz();
         let mut hub: Vec<u32> = store.relation_index.incident_indices("h").to_vec();
@@ -10101,10 +10174,67 @@ SESSION HANDOFF PACKET v1
         hub.sort();
         hub2.sort();
         assert_eq!(hub, hub2, "batch CSR matches rebuild");
-        // Remaining incidents must be valid
+        // Remaining incidents must be valid and live
         for &i in store.relation_index.incident_indices("h") {
             assert!((i as usize) < store.relation_index.entries.len());
+            assert!(!store.relation_index.entries[i as usize].tombstone);
         }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// RSI Cycle 44: tombstone soft-delete, revive on re-relate, deferred compact.
+    #[test]
+    fn relation_csr_tombstone_revive_and_compact() {
+        let dir = test_store_dir("csr_tombstone");
+        let mut store = StoreHandle::new(&dir.to_string_lossy());
+        // Seed enough edges so compact threshold can fire after many tombstones
+        for i in 0..16 {
+            let a = format!("ta{i}");
+            let b = format!("tb{i}");
+            store.remember(&a, "a").unwrap();
+            store.remember(&b, "b").unwrap();
+            store
+                .relate_with_volatility(&a, &b, "implements", Some(0.12))
+                .unwrap();
+        }
+        assert_eq!(store.relation_index.live_edge_count(), 16);
+        // Soft-delete 8 edges (ratio 0.5 ≥ 0.125, count ≥ 8 → compact)
+        let mut kill = Vec::new();
+        for i in 0..8 {
+            kill.push((format!("ta{i}"), "implements".to_string(), format!("tb{i}")));
+        }
+        let kill_refs: Vec<(&str, &str, &str)> = kill
+            .iter()
+            .map(|(a, l, b)| (a.as_str(), l.as_str(), b.as_str()))
+            .collect();
+        let n = store.relation_index.remove_batch(&kill_refs);
+        assert_eq!(n, 8);
+        // Compact should have run → no tombstones left
+        assert_eq!(
+            store.relation_index.tombstone_count(),
+            0,
+            "deferred compact should clear tombstones"
+        );
+        assert_eq!(store.relation_index.live_edge_count(), 8);
+        // Revive: re-relate a tombstoned-then-compacted edge as new, or soft-delete one without compact
+        store
+            .relate_with_volatility("ta0", "tb0", "implements", Some(0.12))
+            .unwrap();
+        assert_eq!(store.relation_index.live_edge_count(), 9);
+        // Soft-delete single edge without hitting compact threshold
+        assert!(store.relation_index.remove("ta8", "implements", "tb8"));
+        assert_eq!(store.relation_index.tombstone_count(), 1);
+        assert_eq!(store.relation_index.live_edge_count(), 8);
+        // Revive tombstone in place
+        store
+            .relate_with_volatility("ta8", "tb8", "implements", Some(0.15))
+            .unwrap();
+        assert_eq!(store.relation_index.tombstone_count(), 0);
+        assert_eq!(store.relation_index.live_edge_count(), 9);
+        assert!(
+            !store.relation_index.incident_indices("ta8").is_empty(),
+            "revived edge back in CSR"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -10232,6 +10362,7 @@ SESSION HANDOFF PACKET v1
             label: "implements".into(),
             to: "b".into(),
             volatility: 0.12,
+            tombstone: false,
         };
         assert!((RelationIndex::relation_hop_cost(&e) - 1.12).abs() < 1e-5);
         let e2 = RelationEntry {
@@ -10239,6 +10370,7 @@ SESSION HANDOFF PACKET v1
             label: "supersedes".into(),
             to: "c".into(),
             volatility: 0.85,
+            tombstone: false,
         };
         assert!((RelationIndex::relation_hop_cost(&e2) - 1.85).abs() < 1e-5);
     }
