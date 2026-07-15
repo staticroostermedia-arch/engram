@@ -2650,3 +2650,37 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 3. Full 8192-d σ² tensors (long horizon — not wake path).
 4. Keep warm wake total ≤15ms.
 
+## Cycle 74 — sheaf soft-stale skip (2026-07-15)
+
+### Master baseline
+
+- Post Cycle 73: PR **#121** `9c4ca778` — async cuFile probe.
+- **Live warm (stale MCP pre-C73 binary):** total=**53**, readiness=**0**, harness=**2**, session_block=**0**, **sheaf_ms=45**.
+- Prompt backlog C50–C56 already shipped; residual dominated by `load_process_sheaf` dir walk + store fetch + disk write every wake.
+
+### Research synthesis
+
+| Source | Insight |
+|--------|---------|
+| sheaf_ms 15–45 | C48 fingerprint skip still walks `processes/*/*.toml`, fetches wake-up block, writes disk FP. |
+| readiness soft-stale | 900s window amortizes 15m RSI fires — same pattern fits sheaf. |
+| full-load test hang | Per-process BVH rebuild makes dual full load too heavy for unit tests. |
+
+### Hypothesis
+
+**Soft-stale sheaf:** if in-process cache `loaded` + `last_ok` within `ENGRAM_SHEAF_SOFT_STALE_SECS` (default 900), return immediately — no dir walk / store / disk. Fingerprint path only on miss; disk write only on mismatch.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Code | `ProcessSheafCache.last_ok`, `sheaf_soft_stale_secs`, `mark_sheaf_cache_ok`, early soft-stale return |
+| Readiness | `wake_sheaf_soft_stale`, `sheaf_soft_stale_env`, `sheaf_soft_stale_secs=900` |
+| Test | `sheaf_soft_stale_skips_second_load` |
+
+### Next vectors
+
+1. MCP swap C73+C74; warm sheaf_ms ≤2; total ≤15; cold readiness ≤30.
+2. Full 8192-d σ² tensors (long horizon — not wake path).
+3. Keep warm wake total ≤15ms.
+
