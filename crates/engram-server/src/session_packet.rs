@@ -103,6 +103,77 @@ pub(crate) fn handoff_parse_open_questions(summary: &str) -> Vec<String> {
         .collect()
 }
 
+/// MQ handoff schema: extract `next_vector:` line from session_end summary.
+pub(crate) fn handoff_parse_next_vector(summary: &str) -> Option<String> {
+    for line in summary.lines() {
+        let t = line.trim().trim_start_matches(['-', '*']).trim();
+        let lower = t.to_ascii_lowercase();
+        if let Some(pos) = lower.find("next_vector:") {
+            let after = t[pos + "next_vector:".len()..].trim();
+            if !after.is_empty() {
+                return Some(after.to_string());
+            }
+        }
+    }
+    None
+}
+
+/// MQ handoff schema: extract falsifier / would-reverse lines from summary.
+pub(crate) fn handoff_parse_falsifiers(summary: &str) -> Vec<String> {
+    summary
+        .lines()
+        .map(str::trim)
+        .filter(|line| {
+            if line.is_empty() {
+                return false;
+            }
+            let l = line.to_ascii_lowercase();
+            l.contains("falsif")
+                || l.contains("would reverse")
+                || l.contains("would_falsify")
+                || l.starts_with("- falsifiers")
+                || l.contains("falsifiers:")
+        })
+        .map(|line| line.to_string())
+        .collect()
+}
+
+/// Continuity completeness for MQ dual-gate (fields next mind needs without re-ask).
+pub(crate) fn handoff_memory_quality_completeness(
+    decisions: &[String],
+    next_vector: Option<&str>,
+    falsifiers: &[String],
+    open_questions: &[String],
+    primary_goal: Option<&str>,
+) -> serde_json::Value {
+    let has_decisions = !decisions.is_empty();
+    let has_next = next_vector.map(|s| !s.is_empty()).unwrap_or(false);
+    let has_falsifiers = !falsifiers.is_empty() || !open_questions.is_empty();
+    let has_primary = primary_goal.map(|s| !s.is_empty()).unwrap_or(false);
+    let mut missing = Vec::new();
+    if !has_decisions {
+        missing.push("decisions");
+    }
+    if !has_next {
+        missing.push("next_vector");
+    }
+    if !has_falsifiers {
+        missing.push("falsifiers");
+    }
+    if !has_primary {
+        missing.push("primary_goal");
+    }
+    serde_json::json!({
+        "schema_version": "mq_handoff_v1",
+        "has_decisions": has_decisions,
+        "has_next_vector": has_next,
+        "has_falsifiers": has_falsifiers,
+        "has_primary_goal": has_primary,
+        "complete": missing.is_empty(),
+        "missing_fields": missing,
+    })
+}
+
 /// Extract file paths touched (from `code` or /home/ or crates/ tokens) for handoff packet.
 pub(crate) fn handoff_extract_files_touched(summary: &str) -> Vec<String> {
     let mut seen = HashSet::new();
@@ -145,6 +216,43 @@ pub(crate) fn handoff_extract_files_touched(summary: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn handoff_parse_next_vector_and_mq_completeness() {
+        let summary = r#"RSI fire done
+- master_sha: abc
+- next_vector: mq_rehydrate_graph after handoff schema
+- falsifiers: CSF drops below 0.7 after warm
+open: should we demote latency-only fires?
+"#;
+        assert_eq!(
+            handoff_parse_next_vector(summary).as_deref(),
+            Some("mq_rehydrate_graph after handoff schema")
+        );
+        let decisions = handoff_parse_decisions(summary);
+        let falsifiers = handoff_parse_falsifiers(summary);
+        let open_q = handoff_parse_open_questions(summary);
+        assert!(!falsifiers.is_empty() || !open_q.is_empty());
+        let mq = handoff_memory_quality_completeness(
+            &decisions,
+            handoff_parse_next_vector(summary).as_deref(),
+            &falsifiers,
+            &open_q,
+            Some("goal:engram_memory_quality_v1"),
+        );
+        assert_eq!(
+            mq.get("has_next_vector").and_then(|v| v.as_bool()),
+            Some(true)
+        );
+        assert_eq!(
+            mq.get("has_primary_goal").and_then(|v| v.as_bool()),
+            Some(true)
+        );
+        assert_eq!(
+            mq.get("schema_version").and_then(|v| v.as_str()),
+            Some("mq_handoff_v1")
+        );
+    }
 
     #[test]
     fn extract_latest_handoff_section_is_latest_wins() {
