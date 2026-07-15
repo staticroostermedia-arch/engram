@@ -2406,7 +2406,7 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 3. Full 8192-d σ² tensors (long horizon).
 4. Keep warm wake total ≤60ms.
 
-## Cycle 67 — env-gated readiness snapshot (2026-07-15)
+## Cycle 67 — env-gated readiness field fold (2026-07-15)
 
 ### Master baseline
 
@@ -2418,20 +2418,20 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 
 | Source | Insight |
 |--------|---------|
-| first-build miss | Soft-stale helps 15m hits; cold miss still probes env/Fisher/α/presentation. |
-| Tests | Alpha gate tests flip env + invalidate_readiness_cache — must clear env snap too. |
+| first-build miss | Soft-stale amortizes full rebuild; env/Fisher fields still clutter uncached path. |
+| Process-global Mutex | Parallel CI tests race on static env snapshot — abandoned. |
 
 ### Hypothesis
 
-**Env-gated snapshot Mutex:** build fisher/α/presentation/lean env once per process; clear with readiness cache so tests stay lawful.
+**Fold env-gated fields** into one helper + keep only live dynamics in uncached body; rely on soft-stale for amortization (no process-global cache).
 
 ### Delivered
 
 | Item | Detail |
 |------|--------|
-| Code | `READINESS_ENV_SNAPSHOT` + `readiness_env_gated_snapshot`; invalidate clears both |
+| Code | `readiness_env_gated_fields()` helper; uncached builds dynamics-only then merges |
 | Readiness | `wake_readiness_env_snapshot_once` |
-| Test | `readiness_env_snapshot_invalidates_with_cache` |
+| Test | `readiness_env_gated_fields_present` |
 
 ### Next vectors
 
