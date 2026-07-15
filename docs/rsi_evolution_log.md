@@ -2018,3 +2018,37 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 2. Further cut harness_ms (~1s residual).
 3. Keep wake total ≤2s under load.
 
+## Cycle 56 — partial σ² beyond 16-d capsule (2026-07-14)
+
+### Master baseline
+
+- Post Cycle 55: PR **#101/#102** `14300c48` — query_pure TIMING + clippy.
+- **Measured (C55 binary):** local_stratum_ms=**20**, harness_ms=**889**, cont=**1836**, wake total=**1846**.
+
+### Research synthesis
+
+| Source | Insight |
+|--------|---------|
+| Cycle 35–40 | 16-d residual capsule + adaptive bands; full 8192-d σ² deferred. |
+| Layout | err_residual_16d fixed at 0x21040 — cannot expand without .leg3 break. |
+| Fisher scoring | Evenly-spaced |q−ego| samples act as partial spectral σ bands. |
+
+### Hypothesis
+
+**Partial σ² (no layout change):** N=32 default evenly-spaced complex dims of |q−ego| (or |q|) as inv-var bands, multiplicative with 16-d banded precision.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Code | `fisher_partial_sigma_*` in backend.rs; wired into score_block |
+| Env | `ENGRAM_FISHER_PARTIAL_SIGMA` (default on under banded), `…_DIMS` (default 32) |
+| Readiness | fisher_partial_sigma_enabled/dims |
+| Test | fisher_partial_sigma_prefers_ego_aligned_q |
+
+### Next vectors
+
+1. Further harness_ms cut (~0.9s residual).
+2. Optional full 8192-d σ² tensors (major layout work).
+3. Keep wake total ≤2s under load.
+
