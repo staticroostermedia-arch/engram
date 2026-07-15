@@ -2855,3 +2855,37 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 2. Cold readiness_ms 542 residual (cuFile / slim first-build).
 3. Full 8192-d σ² tensors (long horizon — not wake path).
 
+## Cycle 80 — wake gather skip handoff probe (2026-07-15)
+
+### Master baseline
+
+- Post Cycle 79: PR **#127** `f0713693` — sheaf cold-fetch fallback.
+- **Warm (MCP pre-C78/C79 binary):** total=**52** gather=**10** harness=**1** sheaf=**4** local=**3** assemble=**3**.
+- Residual gather still pays high-priority existence fetch for `helper:session_handoff_latest` every lean wake.
+
+### Research synthesis
+
+| Source | Insight |
+|--------|---------|
+| gather_ms 3–10 | Handoff probe + primary path dominate after soft-stale. |
+| Lean queue | Always includes handoff `read_concept` regardless of probe. |
+| Name-only | Preview already empty — existence fetch only for boolean. |
+
+### Hypothesis
+
+**Assume handoff present on lean:** push name-only entry without store probe; full continuation path still verifies.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Code | wake_lean handoff path in gather |
+| Readiness | `wake_gather_skip_handoff_probe` |
+| Test | extended `wake_ultra_lean_gather_core_anchors_only` |
+
+### Next vectors
+
+1. MCP swap C78–C80; warm gather≤1 total≤6; cold sheaf≤50 readiness≤30.
+2. Soft-stale / skip local_stratum bootstrap residual (~3ms).
+3. Full 8192-d σ² tensors (long horizon — not wake path).
+

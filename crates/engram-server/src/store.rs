@@ -2692,6 +2692,7 @@ impl StoreHandle {
                 "wake_gather_ultra_lean": true,
                 "wake_gather_existence_only": true,
                 "wake_gather_skip_primary_resolve": true,
+                "wake_gather_skip_handoff_probe": true,
                 "wake_harness_single_manifest": true,
                 "wake_assemble_ms": true,
                 "wake_assemble_lean": true,
@@ -4874,18 +4875,34 @@ impl StoreHandle {
             );
         }
 
-        let session_handoff_present = self
-            .fetch_block_high_priority(SESSION_HANDOFF_LATEST)
-            .is_some();
-        if session_handoff_present {
-            push(
-                self,
-                &mut entries,
-                &mut seen,
-                SESSION_HANDOFF_LATEST,
-                "session_handoff_latest",
-            );
-        }
+        // RSI Cycle 80: wake lean always surfaces handoff concept (name-only) — no existence
+        // fetch. Suggested_actions always include handoff read; full path still probes store.
+        let session_handoff_present = if wake_lean {
+            if seen.insert(SESSION_HANDOFF_LATEST.to_string()) {
+                entries.push(BundleEntry {
+                    concept: SESSION_HANDOFF_LATEST.to_string(),
+                    crs: 0.0,
+                    hot: false,
+                    preview: String::new(),
+                    source: "session_handoff_latest".to_string(),
+                });
+            }
+            true
+        } else {
+            let present = self
+                .fetch_block_high_priority(SESSION_HANDOFF_LATEST)
+                .is_some();
+            if present {
+                push(
+                    self,
+                    &mut entries,
+                    &mut seen,
+                    SESSION_HANDOFF_LATEST,
+                    "session_handoff_latest",
+                );
+            }
+            present
+        };
 
         let mut latest_compression_handoff: Option<String> = None;
         // RSI Cycle 59: wake skips compression_handoff recent walk.
@@ -9651,6 +9668,12 @@ mod ingest_ast_tests {
                 .and_then(|v| v.as_bool()),
             Some(true)
         );
+        assert_eq!(
+            ready
+                .get("wake_gather_skip_handoff_probe")
+                .and_then(|v| v.as_bool()),
+            Some(true)
+        );
         // Cycle 75: wake gather must not materialize handoff/primary body previews.
         for a in &arts {
             let c = a.get("concept").and_then(|x| x.as_str()).unwrap_or("");
@@ -9667,6 +9690,15 @@ mod ingest_ast_tests {
             bundle.get("primary_goal").and_then(|v| v.as_str()),
             Some("goal:engram_mvp_v1"),
             "wake lean primary_goal from marker target"
+        );
+        // Cycle 80: structured_handoff always present on lean (no store probe required).
+        assert!(
+            bundle
+                .get("structured_handoff")
+                .and_then(|h| h.get("concept"))
+                .and_then(|c| c.as_str())
+                .is_some(),
+            "C80 lean always surfaces handoff concept"
         );
         let _ = std::fs::remove_dir_all(&dir);
     }
