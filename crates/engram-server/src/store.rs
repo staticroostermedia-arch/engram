@@ -2769,6 +2769,7 @@ impl StoreHandle {
                 "wake_handoff_continuity_fields": true,
                 "wake_csf_lean_hub_crs_neutral": true,
                 "wake_trusted_tiles_mvp_fallback": true,
+                "wake_csf_live_trusted_tiles": true,
                 "wake_continuation_soft_stale": true,
                 "wake_continuation_soft_stale_env": "ENGRAM_WAKE_CONTINUATION_SOFT_STALE_SECS",
                 "wake_continuation_soft_stale_secs": 1800,
@@ -5580,9 +5581,63 @@ impl StoreHandle {
         } else {
             self.backend_readiness()
         };
-        let fidelity_inputs =
+        let mut fidelity_inputs =
             crate::cold_start_fidelity::inputs_from_continuation(&bundle, &readiness_for_fidelity);
-        let fidelity = crate::cold_start_fidelity::cold_start_fidelity_report(&fidelity_inputs);
+        // MQ Cycle 3: stale rehydration_manifest often has trusted_tiles=[] after
+        // child-primary session_ends (pre-MQ2). Live-fill from build_trusted_tiles
+        // (mvp fallback included) so CSF does not keep no_trusted_tiles until next handoff.
+        let mut live_trusted_fill = false;
+        if fidelity_inputs.trusted_tile_count == 0 {
+            let primary = bundle
+                .get("primary_goal")
+                .and_then(|v| v.as_str())
+                .or_else(|| {
+                    bundle
+                        .get("rehydration_manifest")
+                        .and_then(|m| m.get("primary_goal"))
+                        .and_then(|v| v.as_str())
+                });
+            let live = crate::harness_injection::build_trusted_tiles(self, primary);
+            if !live.is_empty() {
+                live_trusted_fill = true;
+                fidelity_inputs.trusted_tile_count = live.len().min(12);
+                if let Some(obj) = bundle.as_object_mut() {
+                    if let Some(manifest) = obj.get_mut("rehydration_manifest") {
+                        if let Some(m) = manifest.as_object_mut() {
+                            let tile_refs: Vec<serde_json::Value> = live
+                                .into_iter()
+                                .take(6)
+                                .map(|t| {
+                                    serde_json::json!({
+                                        "concept": t.get("concept").cloned().unwrap_or(serde_json::Value::Null),
+                                        "crs": t.get("crs").cloned().unwrap_or(serde_json::Value::Null),
+                                        "tile_type": t.get("tile_type").cloned().unwrap_or(serde_json::Value::Null),
+                                        "source": t.get("source").cloned().unwrap_or(serde_json::Value::Null),
+                                    })
+                                })
+                                .collect();
+                            m.insert(
+                                "trusted_tiles".to_string(),
+                                serde_json::Value::Array(tile_refs),
+                            );
+                            m.insert(
+                                "trusted_tiles_live_fill".to_string(),
+                                serde_json::json!(true),
+                            );
+                        }
+                    }
+                }
+            }
+        }
+        let mut fidelity = crate::cold_start_fidelity::cold_start_fidelity_report(&fidelity_inputs);
+        if live_trusted_fill {
+            if let Some(obj) = fidelity.as_object_mut() {
+                obj.insert(
+                    "trusted_tiles_live_fill".to_string(),
+                    serde_json::json!(true),
+                );
+            }
+        }
 
         // Finalize wake queue: ban lean-avoid tools; inject low-score soft rehydrate nudge.
         if let Some(obj) = bundle.as_object_mut() {

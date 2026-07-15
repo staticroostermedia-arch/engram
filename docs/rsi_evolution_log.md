@@ -3151,3 +3151,32 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 1. MCP swap MQ2; warm CSF ≥0.80 without no_trusted_tiles after session_end with primary=memory_quality.
 2. `mq_verify_cadence` metric tile if needed.
 3. Merge PR #134 C86 for cold assemble residual.
+
+## MQ Cycle 3 — CSF live trusted_tiles fill on wake (2026-07-15)
+
+### VERIFY₀ baseline
+
+- master@`aff2324b` MQ2 #136.
+- MCP swapped LIVE: `wake_csf_lean_hub_crs_neutral`, `wake_trusted_tiles_mvp_fallback`.
+- mean_hub_crs=**null** (MQ2 hub fix confirmed; was 0.0).
+- trusted_tile_count still **0** from stale rehydration_manifest (session_end pre-MQ2).
+- CSF cold **0.60** reasons include `no_trusted_tiles` despite mvp fallback at write path.
+- Handoff complete (MQ1); lawfulness healthy; latency readiness_ms=0; cold assemble_ms≈36.
+
+### SELECT
+
+**mq_continuity_csf** (part 2) — live-fill trusted tiles at CSF assembly when manifest empty.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Code | After `inputs_from_continuation`, if trusted_tile_count==0 → `build_trusted_tiles` + inject manifest |
+| CSF | `trusted_tiles_live_fill` marker on fidelity report |
+| Flag | `wake_csf_live_trusted_tiles` |
+
+### Next vectors
+
+1. MCP swap MQ3; cold/warm CSF without no_trusted_tiles when mvp tiles exist.
+2. `mq_verify_cadence` metric tile.
+3. PR #134 C86 cold assemble residual.
