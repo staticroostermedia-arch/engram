@@ -11,6 +11,9 @@ static CUFILE_PROBE_SPAWNED: AtomicBool = AtomicBool::new(false);
 static CUFILE_INIT_OK: AtomicBool = AtomicBool::new(false);
 #[cfg(target_os = "linux")]
 static CUFILE_INIT_TRIED: AtomicBool = AtomicBool::new(false);
+/// RSI Cycle 84: cuFileDriverOpen/dlopen runs once in bg — never block wake readiness.
+/// C73 only async'd ldconfig; config-file detect still called sync `cufile_init` (~500ms cold).
+static CUFILE_INIT_SPAWNED: AtomicBool = AtomicBool::new(false);
 /// 0=off, 1=cufile_dma, 2=h2d_memcpy, 3=unavailable
 static LAST_TRANSFER_MODE: AtomicU8 = AtomicU8::new(3);
 static LAST_DMA_ATTEMPTED: AtomicBool = AtomicBool::new(false);
@@ -101,7 +104,13 @@ fn set_transfer_mode(mode: u8) {
     LAST_TRANSFER_MODE.store(mode, Ordering::Relaxed);
 }
 
-/// Hot NVMe→GPU path is active: requested, driver present, and cuFile driver open succeeded.
+/// Hot NVMe→GPU path is active: requested, driver present, and cuFile driver open succeeded
+/// (or provisional CUDA path while async init is still in flight).
+///
+/// RSI Cycle 84: **never** call sync `cufile_init()` here. Cold wake measured
+/// `readiness_ms≈514` from `dlopen(libcufile)+cuFileDriverOpen` after config-file
+/// detect made `cufile_driver_detected()` return true immediately. Spawn one
+/// background init; DMA path still sync-inits on first `cufile_direct_read_*`.
 pub fn cufile_hot_active() -> bool {
     if !cufile_hot_requested() {
         set_transfer_mode(MODE_OFF);
@@ -111,7 +120,31 @@ pub fn cufile_hot_active() -> bool {
         set_transfer_mode(MODE_UNAVAILABLE);
         return cfg!(engram_backend_cuda);
     }
-    cufile_init() || cfg!(engram_backend_cuda)
+    // Already finished (ok or failed).
+    #[cfg(target_os = "linux")]
+    if CUFILE_INIT_TRIED.load(Ordering::Relaxed) {
+        return CUFILE_INIT_OK.load(Ordering::Relaxed) || cfg!(engram_backend_cuda);
+    }
+    // Spawn async init once; do not block readiness/wake.
+    if !CUFILE_INIT_SPAWNED.swap(true, Ordering::Relaxed) {
+        std::thread::spawn(|| {
+            let _ = cufile_init();
+        });
+    }
+    // Provisional: CUDA backend can serve hot residency while GDS open completes.
+    cfg!(engram_backend_cuda)
+}
+
+/// Whether async/sync `cufile_init` has finished (tests / readiness observability).
+pub fn cufile_init_complete() -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        CUFILE_INIT_TRIED.load(Ordering::Relaxed)
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        true
+    }
 }
 
 /// q-vector byte length at offset 0 in a .leg block (8192 × Complex32).
@@ -372,6 +405,30 @@ mod tests {
             cufile_probe_complete() || CUFILE_PROBE_SPAWNED.load(Ordering::Relaxed),
             "probe must complete or spawn async"
         );
+    }
+
+    /// RSI Cycle 84: `cufile_hot_active` must not block on cuFileDriverOpen.
+    #[test]
+    fn cufile_hot_active_does_not_require_sync_init() {
+        let _guard = cufile_test_lock();
+        std::env::set_var("ENGRAM_CUFILE_HOT", "1");
+        let t0 = std::time::Instant::now();
+        let _ = cufile_hot_active();
+        let ms = t0.elapsed().as_millis();
+        // Sync dlopen+DriverOpen was ~500ms cold; budget leaves headroom for CI noise.
+        assert!(
+            ms < 150,
+            "cufile_hot_active must stay non-blocking (took {ms}ms)"
+        );
+        // Init spawn only when driver is already known-present. Hosts without
+        // GDS config (CI) correctly skip init and return provisional CUDA/false.
+        if cufile_probe_complete() && CUFILE_DETECTED.load(Ordering::Relaxed) {
+            assert!(
+                cufile_init_complete() || CUFILE_INIT_SPAWNED.load(Ordering::Relaxed),
+                "when driver detected, init must complete or spawn async"
+            );
+        }
+        std::env::remove_var("ENGRAM_CUFILE_HOT");
     }
 
     #[test]

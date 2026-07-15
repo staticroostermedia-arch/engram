@@ -2987,3 +2987,37 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 1. MCP swap C78–C83; warm total≤5 (soft-stale cont=0); cold sheaf≤50 readiness≤30.
 2. Full 8192-d σ² tensors (long horizon — not wake path).
 
+
+## Cycle 84 — async cuFile init (cold readiness residual) (2026-07-15)
+
+### Master baseline
+
+- Post Cycle 83: PR **#131** `e9a44ea7` — wake continuation soft-stale.
+- **Warm LIVE:** total=**1** soft_stale_hit=**true** (all sub-phases 0).
+- **Cold first-wake residual:** readiness_ms≈**514** (sheaf≈8, gather≈1, total≈543).
+
+### Research synthesis
+
+| Source | Insight |
+|--------|---------|
+| C73 async ldconfig | Only fixed slow *probe*; `/etc/cufile.json` makes `cufile_driver_detected()` sync-true. |
+| `cufile_hot_active` | Still called sync `cufile_init()` → dlopen + `cuFileDriverOpen` ≈500ms on cold readiness. |
+| readiness soft 900s | Fixed window expired at 15m RSI edge; sheaf already slid to 1800s (C81). |
+
+### Hypothesis
+
+**Async cuFile init** on hot_active path (spawn once; provisional CUDA until INIT_OK) + readiness soft-stale **slide** + default **1800s**.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Code | `cufile_hot_active` non-blocking; `CUFILE_INIT_SPAWNED`; readiness slide + 1800s default |
+| Readiness | `wake_cufile_init_async`, `wake_readiness_soft_stale_slide` |
+| Test | `cufile_hot_active_does_not_require_sync_init` |
+
+### Next vectors
+
+1. MCP swap C84; cold readiness_ms≤30; warm total≤5 sustained.
+2. Full 8192-d σ² tensors (long horizon — not wake path).
+3. Nested loop-goal install (`goal:engram_rsi_nested_loop_v1`) if not yet active.
