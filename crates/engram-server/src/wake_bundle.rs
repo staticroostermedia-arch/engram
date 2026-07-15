@@ -308,10 +308,7 @@ mod tests {
         // MQ Cycle 6: relation_resume + lawfulness_snapshot survive slim tier.
         assert_eq!(slim["relation_resume"]["version"], "mq_relation_resume_v1");
         assert_eq!(slim["relation_resume"]["edge_count"], 1);
-        assert_eq!(
-            slim["relation_resume"]["edges"][0]["to"],
-            "child"
-        );
+        assert_eq!(slim["relation_resume"]["edges"][0]["to"], "child");
         assert_eq!(
             slim["lawfulness_snapshot"]["version"],
             "mq_lawfulness_snapshot_v1"
