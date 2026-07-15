@@ -2684,3 +2684,38 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 2. Full 8192-d σ² tensors (long horizon — not wake path).
 3. Keep warm wake total ≤15ms.
 
+## Cycle 75 — wake gather existence-only (2026-07-15)
+
+### Master baseline
+
+- Post Cycle 74: PR **#122** `26d8349d` — sheaf soft-stale skip.
+- **Live warm (MCP still pre-C74):** total=**19**, readiness=**0**, harness=**3**, session_block=**0**, sheaf_ms=**9**, gather_ms=**4**.
+- Flags missing on live MCP: `wake_sheaf_soft_stale`, `wake_cufile_probe_async` (stale process).
+- Prompt backlog C50–C56 already shipped.
+
+### Research synthesis
+
+| Source | Insight |
+|--------|---------|
+| gather_ms≈4 | Wake lean still `read_provlog` + is_hot for primary_goal + handoff. |
+| Hub presentation | Name-only previews already empty — gather body is waste on lean path. |
+| Full bundle | `get_continuation_bundle` remains body-rich path. |
+
+### Hypothesis
+
+**Existence-only wake push:** on `wake_lean`, register anchors with empty preview/crs=0/hot=false when block exists — no ProvLog body read.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Code | wake `push` existence-only branch in `build_continuation_bundle_inner` |
+| Readiness | `wake_gather_existence_only` |
+| Test | extended `wake_ultra_lean_gather_core_anchors_only` |
+
+### Next vectors
+
+1. MCP swap C74+C75; warm sheaf_ms≤2, gather_ms≤1, total≤12; cold readiness≤30.
+2. Cut harness residual if still ≥3.
+3. Full 8192-d σ² tensors (long horizon — not wake path).
+

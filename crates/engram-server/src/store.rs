@@ -2625,6 +2625,7 @@ impl StoreHandle {
                 "wake_suggested_actions_lean": true,
                 "wake_artifact_gather_lean": true,
                 "wake_gather_ultra_lean": true,
+                "wake_gather_existence_only": true,
                 "wake_harness_single_manifest": true,
                 "wake_assemble_ms": true,
                 "wake_assemble_lean": true,
@@ -4668,6 +4669,11 @@ impl StoreHandle {
         let mut entries: Vec<BundleEntry> = Vec::new();
         let mut seen = HashSet::new();
 
+        // Cycle 49/59: wake path (presentation_k Some) ultra-lean gather.
+        // Hub-only presentation (C57) already surfaces distillates — skip serves/recent/hot.
+        // Cycle 75: wake existence-only push (no ProvLog body / is_hot) — name anchors only.
+        let wake_lean = presentation_k.is_some();
+
         let mut push = |this: &mut Self,
                         entries: &mut Vec<BundleEntry>,
                         seen: &mut HashSet<String>,
@@ -4677,6 +4683,19 @@ impl StoreHandle {
                 return;
             }
             let raw = stalk_raw_concept(concept);
+            if wake_lean {
+                // RSI Cycle 75: existence probe only — CRS/preview filled on full get_continuation_bundle.
+                if this.fetch_block_high_priority(raw).is_some() {
+                    entries.push(BundleEntry {
+                        concept: concept.to_string(),
+                        crs: 0.0,
+                        hot: false,
+                        preview: String::new(),
+                        source: source.to_string(),
+                    });
+                }
+                return;
+            }
             if let Some(block) = this.fetch_block_high_priority(raw) {
                 let text = engram_core::storage::read_provlog(&block);
                 let preview: String = text.chars().take(240).collect();
@@ -4694,10 +4713,6 @@ impl StoreHandle {
                 });
             }
         };
-
-        // Cycle 49/59: wake path (presentation_k Some) ultra-lean gather.
-        // Hub-only presentation (C57) already surfaces distillates — skip serves/recent/hot.
-        let wake_lean = presentation_k.is_some();
 
         let primary_goal_name = resolve_primary_goal_for_continuation(self);
         if self.fetch_block_high_priority("primary_goal").is_some() {
@@ -9513,6 +9528,23 @@ mod ingest_ast_tests {
                 .and_then(|v| v.as_bool()),
             Some(true)
         );
+        assert_eq!(
+            ready
+                .get("wake_gather_existence_only")
+                .and_then(|v| v.as_bool()),
+            Some(true)
+        );
+        // Cycle 75: wake gather must not materialize handoff/primary body previews.
+        for a in &arts {
+            let c = a.get("concept").and_then(|x| x.as_str()).unwrap_or("");
+            if c == "primary_goal" || c == crate::harness_injection::SESSION_HANDOFF_LATEST {
+                let prev = a.get("preview").and_then(|p| p.as_str()).unwrap_or("x");
+                assert!(
+                    prev.is_empty(),
+                    "existence-only gather preview must be empty for {c}, got {prev:?}"
+                );
+            }
+        }
         let _ = std::fs::remove_dir_all(&dir);
     }
 
