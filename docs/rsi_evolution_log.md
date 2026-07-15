@@ -2406,3 +2406,37 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 3. Full 8192-d σ² tensors (long horizon).
 4. Keep warm wake total ≤60ms.
 
+## Cycle 67 — env-gated readiness field fold (2026-07-15)
+
+### Master baseline
+
+- Post Cycle 66: PR **#114** `0ff6bab1` — OnceLock static flags + soft-stale.
+- **Measured on still-stale pre-C65 MCP:** total=**88**, readiness_ms=**69**, harness=9.
+- Prompt backlog C50–C56 already shipped.
+
+### Research synthesis
+
+| Source | Insight |
+|--------|---------|
+| first-build miss | Soft-stale amortizes full rebuild; env/Fisher fields still clutter uncached path. |
+| Process-global Mutex | Parallel CI tests race on static env snapshot — abandoned. |
+
+### Hypothesis
+
+**Fold env-gated fields** into one helper + keep only live dynamics in uncached body; rely on soft-stale for amortization (no process-global cache).
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Code | `readiness_env_gated_fields()` helper; uncached builds dynamics-only then merges |
+| Readiness | `wake_readiness_env_snapshot_once` |
+| Test | `readiness_env_gated_fields_present` |
+
+### Next vectors
+
+1. MCP binary swap (C65–C67); measure soft-hit readiness_ms ≈0–5; first-build ≤20.
+2. Cut harness_ms residual (~9) if still dominant after readiness fixed.
+3. Full 8192-d σ² tensors (long horizon).
+4. Keep warm wake total ≤50ms.
+
