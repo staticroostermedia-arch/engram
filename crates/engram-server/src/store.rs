@@ -2558,6 +2558,7 @@ impl StoreHandle {
             "wake_continuation_subphase_ms": true,
             "wake_local_stratum_lean": true,
             "wake_local_stratum_skip_if_profile": true,
+            "wake_local_stratum_core_only": true,
             "wake_harness_ultra_lean": true,
             "wake_presentation_hub_only": true,
             "wake_fidelity_lean": true,
@@ -4725,21 +4726,21 @@ impl StoreHandle {
         mark_cont(&mut cont_phase_ms, "gather_ms", t_gather);
 
         let t_local = std::time::Instant::now();
-        // Cycle 52: wake path uses bootstrap_for_wake (skip when local host layer warm).
-        // Full get_continuation_bundle still runs full bootstrap. `wake_lean` set above.
+        // Cycle 52/62: wake path uses bootstrap_for_wake + ultra-lean local slice
+        // (profile+mcp only; skip readiness_cache preview). Full path still full bootstrap.
         let _lcs_touched = if wake_lean {
             crate::local_stratum::bootstrap_for_wake(self)
         } else {
             crate::local_stratum::bootstrap(self)
         };
-        let local_stratum = crate::local_stratum::build_local_stratum_slice(
-            self,
-            if wake_lean {
-                crate::local_stratum::local_budget().min(8)
-            } else {
-                crate::local_stratum::local_budget()
-            },
-        );
+        let local_stratum = if wake_lean {
+            crate::local_stratum::build_local_stratum_slice_for_wake(self)
+        } else {
+            crate::local_stratum::build_local_stratum_slice(
+                self,
+                crate::local_stratum::local_budget(),
+            )
+        };
         mark_cont(&mut cont_phase_ms, "local_stratum_ms", t_local);
 
         // Cycle 46: presentation_k Some ⇒ wake path ⇒ lean harness (skip scars/verified walks).

@@ -361,6 +361,73 @@ pub fn build_local_stratum_slice(store: &StoreHandle, budget: usize) -> Value {
     })
 }
 
+/// RSI Cycle 62: ultra-lean wake local stratum.
+/// Skip readiness_cache (multi-KB JSON; full readiness already on session_start packet),
+/// skip recent local: walk and project git concept when not needed for sovereignty hint.
+pub fn build_local_stratum_slice_for_wake(store: &StoreHandle) -> Value {
+    if !enabled() {
+        return json!({
+            "version": "v1",
+            "enabled": false,
+            "node_count": 0,
+            "nodes": [],
+            "wake_lean": true,
+            "sovereignty_note": "ENGRAM_LOCAL_STRATUM=off",
+        });
+    }
+
+    // Core host only — profile + mcp. Readiness lives on wake packet `readiness` field.
+    let concepts = [LOCAL_HOST_PROFILE, LOCAL_HOST_MCP];
+    let mut nodes: Vec<Value> = Vec::new();
+    for c in concepts {
+        if let Some(n) = preview_for_wake(store, c) {
+            nodes.push(n);
+        }
+    }
+
+    json!({
+        "version": "v1",
+        "enabled": true,
+        "wake_lean": true,
+        "budget": 2,
+        "node_count": nodes.len(),
+        "sovereignty_note": "local_only blocks never export raw — use scrub_export when implemented",
+        "process": "process:engram.ritual.local-context-working-memory",
+        "nodes": nodes,
+    })
+}
+
+/// Shorter previews for wake (avoid multi-KB readiness body work).
+fn preview_for_wake(store: &StoreHandle, concept: &str) -> Option<Value> {
+    let block = store.fetch_block_high_priority(concept)?;
+    let text = storage::read_provlog(&block);
+    let preview: String = text
+        .lines()
+        .skip_while(|l| l.starts_with('#'))
+        .take(2)
+        .collect::<Vec<_>>()
+        .join(" ");
+    let preview = if preview.len() > 96 {
+        format!("{}…", preview.chars().take(95).collect::<String>())
+    } else if preview.is_empty() {
+        text.chars().take(80).collect()
+    } else {
+        preview
+    };
+    let tier = if concept.starts_with("local:host:") {
+        "local_only"
+    } else {
+        "local"
+    };
+    Some(json!({
+        "concept": concept,
+        "preview": preview,
+        "crs": block.crs_score,
+        "hot": store.is_hot(concept),
+        "tier": tier,
+    }))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -384,7 +451,57 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// RSI Cycle 52/54: second wake skip when host profile block exists.
+    /// RSI Cycle 62: wake local slice is profile+mcp only (no readiness_cache).
+    #[test]
+    fn wake_local_slice_core_only_skips_readiness() {
+        std::env::set_var("ENGRAM_DISABLE_SHEAF", "1");
+        std::env::set_var("ENGRAM_FORCE_CPU_BACKEND", "1");
+        let dir = std::env::temp_dir().join(format!("engram_lcs_wake_{}", now_secs()));
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.to_string_lossy().to_string();
+        let mut lock = StoreHandle::new(&path);
+        // Mint core locals without full bootstrap (avoids readiness upsert hang paths).
+        let _ = lock.remember(
+            LOCAL_HOST_PROFILE,
+            "# Local Host Profile\n\n**sovereignty:** local_only\n",
+        );
+        let _ = lock.remember(
+            LOCAL_HOST_MCP,
+            "# Local MCP\n\n**sovereignty:** local_only\n",
+        );
+        let _ = lock.remember(
+            LOCAL_HOST_READINESS,
+            "# Local Readiness Cache\n\n```json\n{\"bvh_ready\":false}\n```\n",
+        );
+        lock.mark_hot(LOCAL_HOST_PROFILE);
+        lock.mark_hot(LOCAL_HOST_MCP);
+        lock.mark_hot(LOCAL_HOST_READINESS);
+        let slice = build_local_stratum_slice_for_wake(&lock);
+        assert_eq!(slice.get("wake_lean").and_then(|v| v.as_bool()), Some(true));
+        let nodes = slice
+            .get("nodes")
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default();
+        let names: Vec<String> = nodes
+            .iter()
+            .filter_map(|n| {
+                n.get("concept")
+                    .and_then(|c| c.as_str())
+                    .map(|s| s.to_string())
+            })
+            .collect();
+        assert!(
+            names.iter().any(|n| n == LOCAL_HOST_PROFILE),
+            "expected profile in wake slice: {names:?}"
+        );
+        assert!(
+            !names.iter().any(|n| n == LOCAL_HOST_READINESS),
+            "wake slice must skip readiness_cache: {names:?}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn warm_skip_bootstrap_after_first_bootstrap() {
         std::env::set_var("ENGRAM_DISABLE_SHEAF", "1");
