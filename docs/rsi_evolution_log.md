@@ -2086,3 +2086,39 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 2. Full 8192-d σ² tensors (long horizon).
 3. Keep wake total ≤1.5s under load.
 
+## Cycle 58 — lean wake fidelity (skip full readiness) (2026-07-15)
+
+### Master baseline
+
+- Post Cycle 57: PR **#104/#105** `c26fa006` — hub-only presentation + clippy.
+- **VERIFY fire:** killed deleted-exe MCP; live tip flags C56/C57 present.
+- **Measured post-swap (C57 binary):** harness_ms=**31** (≪400 ✓), local=22, gather=92, **fidelity_ms=654**, cont=1015, total=1021.
+- Prompt backlog C50–C56 already shipped; residual is fidelity sub-phase.
+
+### Research synthesis
+
+| Source | Insight |
+|--------|---------|
+| continuation_detail | After C57, fidelity_ms ≈75% of continuation residual. |
+| cold_start_fidelity | CSF inputs only need bvh_ready + nvme_recall_ready (+ bundle fields). |
+| backend_readiness | Full readiness rebuild on every wake is redundant for CSF. |
+
+### Hypothesis
+
+**Lean fidelity:** on wake_lean path, build slim readiness from `nvme_context` already on the bundle; skip `backend_readiness()` inside fidelity timer. Full readiness still emitted once by session_start for the wake packet.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Code | `build_continuation_bundle_inner` wake_lean fidelity path |
+| Readiness | `wake_fidelity_lean: true` |
+| Test | `wake_lean_fidelity_emits_cold_start_score` |
+
+### Next vectors
+
+1. Measure fidelity_ms after MCP swap (target ≪100ms).
+2. If gather_ms residual remains, trim wake gather further.
+3. Full 8192-d σ² tensors (long horizon).
+4. Keep wake total ≤1.0s warm.
+

@@ -2560,6 +2560,7 @@ impl StoreHandle {
             "wake_local_stratum_skip_if_profile": true,
             "wake_harness_ultra_lean": true,
             "wake_presentation_hub_only": true,
+            "wake_fidelity_lean": true,
             "query_pure_timing_full_gate": true,
             "query_pure_timing_env": "ENGRAM_MCP_TIMING|include_timing",
             "wake_harness_lean": true,
@@ -4841,8 +4842,25 @@ impl StoreHandle {
             );
         }
         // Cold-start fidelity score from real continuation + readiness fields.
+        // RSI Cycle 58: wake_lean skips full backend_readiness() — CSF only needs
+        // bvh_ready + nvme_recall_ready already on nvme_context (measured residual
+        // ~0.6s of fidelity_ms was redundant readiness rebuild on wake).
         let t_fidelity = std::time::Instant::now();
-        let readiness_for_fidelity = self.backend_readiness();
+        let readiness_for_fidelity = if wake_lean {
+            let nvme = bundle.get("nvme_context");
+            serde_json::json!({
+                "bvh_ready": nvme
+                    .and_then(|n| n.get("bvh_ready"))
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false),
+                "nvme_recall_ready": nvme
+                    .and_then(|n| n.get("nvme_recall_ready"))
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false),
+            })
+        } else {
+            self.backend_readiness()
+        };
         let fidelity_inputs =
             crate::cold_start_fidelity::inputs_from_continuation(&bundle, &readiness_for_fidelity);
         let fidelity = crate::cold_start_fidelity::cold_start_fidelity_report(&fidelity_inputs);
@@ -8976,6 +8994,52 @@ mod ingest_ast_tests {
             "suggested_actions must carry injection_rank after composite sort"
         );
 
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// RSI Cycle 58: wake path lean fidelity still emits CSF without full readiness rebuild.
+    #[test]
+    fn wake_lean_fidelity_emits_cold_start_score() {
+        let dir = test_store_dir("wake_fid_lean");
+        let mut store = StoreHandle::new(&dir.to_string_lossy());
+        store
+            .remember(
+                "primary_goal",
+                "PRIMARY GOAL\n\n**goal:** goal:engram_mvp_v1\n**set_at:** test",
+            )
+            .unwrap();
+        store
+            .remember(
+                crate::harness_injection::SESSION_HANDOFF_LATEST,
+                "SESSION HANDOFF PACKET v1\n\n{\"decisions\":[\"c58\"],\"trace_chain_head\":\"trace:c58_head\"}",
+            )
+            .unwrap();
+        store
+            .remember(
+                "trace:c58_head",
+                "REASONING TRACE SEGMENT\n\n**decision_point:** c58\n\n**justification:** lean fidelity\n",
+            )
+            .unwrap();
+        let bundle = store.build_continuation_bundle_wake(Some("c58 lean fidelity"));
+        let fidelity = bundle
+            .get("cold_start_fidelity")
+            .expect("cold_start_fidelity on wake bundle");
+        assert_eq!(
+            fidelity.get("version").and_then(|v| v.as_str()),
+            Some("cold_start_fidelity_v1")
+        );
+        assert!(fidelity.get("score").and_then(|v| v.as_f64()).is_some());
+        let cpm = bundle
+            .get("continuation_phase_ms")
+            .and_then(|v| v.as_object())
+            .expect("continuation_phase_ms");
+        assert!(cpm.get("fidelity_ms").and_then(|v| v.as_u64()).is_some());
+        // Readiness surface advertises lean fidelity.
+        let ready = store.backend_readiness();
+        assert_eq!(
+            ready.get("wake_fidelity_lean").and_then(|v| v.as_bool()),
+            Some(true)
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
