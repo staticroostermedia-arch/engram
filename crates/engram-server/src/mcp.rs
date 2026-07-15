@@ -4390,6 +4390,10 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
                 (continuation, readiness, warm_promoted)
             };
             mark_phase(&mut phase_ms, "continuation_ms", t_phase);
+            // RSI Cycle 51: nest gather/local/harness/fidelity ms under wake_phase_ms.
+            if let Some(detail) = continuation.get("continuation_phase_ms") {
+                phase_ms.insert("continuation_detail".to_string(), detail.clone());
+            }
 
             let t_phase = std::time::Instant::now();
             let spatial = if include_spatial {

@@ -2555,6 +2555,7 @@ impl StoreHandle {
             "wake_ki_rebake_default": false,
             "wake_ki_rebake_env": "ENGRAM_WAKE_KI_REBAKE",
             "wake_phase_ms_enabled": true,
+            "wake_continuation_subphase_ms": true,
             "wake_harness_lean": true,
             "wake_presentation_lean": true,
             "wake_suggested_actions_lean": true,
@@ -4377,6 +4378,18 @@ impl StoreHandle {
     ) -> serde_json::Value {
         use std::collections::HashSet;
 
+        // RSI Cycle 51: sub-phase timers for continuation (gather / local / harness / fidelity).
+        let t_cont = std::time::Instant::now();
+        let mut cont_phase_ms = serde_json::Map::new();
+        let mark_cont = |map: &mut serde_json::Map<String, serde_json::Value>,
+                         name: &str,
+                         since: std::time::Instant| {
+            map.insert(
+                name.to_string(),
+                serde_json::json!((since.elapsed().as_secs_f64() * 1000.0).round() as u64),
+            );
+        };
+
         const TTL_SECS: u64 = 120;
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -4389,6 +4402,7 @@ impl StoreHandle {
                 }
             }
         }
+        let t_gather = std::time::Instant::now();
 
         const HANDOFF_SEEDS: &[&str] = &[
             "handoff:codeland_integration_2026_plan",
@@ -4683,13 +4697,18 @@ impl StoreHandle {
             })
         };
 
+        mark_cont(&mut cont_phase_ms, "gather_ms", t_gather);
+
+        let t_local = std::time::Instant::now();
         let _lcs_touched = crate::local_stratum::bootstrap(self);
         let local_stratum = crate::local_stratum::build_local_stratum_slice(
             self,
             crate::local_stratum::local_budget(),
         );
+        mark_cont(&mut cont_phase_ms, "local_stratum_ms", t_local);
 
         // Cycle 46: presentation_k Some ⇒ wake path ⇒ lean harness (skip scars/verified walks).
+        let t_harness = std::time::Instant::now();
         let harness = match presentation_k {
             Some(k) => crate::harness_injection::build_harness_bundle_with_presentation_k(
                 self,
@@ -4701,6 +4720,7 @@ impl StoreHandle {
         };
 
         let rehydration_manifest = self.resolve_rehydration_manifest_for_wake();
+        mark_cont(&mut cont_phase_ms, "harness_ms", t_harness);
 
         let presentation_stratum = harness
             .get("presentation_stratum")
@@ -4801,6 +4821,7 @@ impl StoreHandle {
             );
         }
         // Cold-start fidelity score from real continuation + readiness fields.
+        let t_fidelity = std::time::Instant::now();
         let readiness_for_fidelity = self.backend_readiness();
         let fidelity_inputs =
             crate::cold_start_fidelity::inputs_from_continuation(&bundle, &readiness_for_fidelity);
@@ -4825,6 +4846,14 @@ impl StoreHandle {
                 }
             }
             obj.insert("cold_start_fidelity".to_string(), fidelity);
+        }
+        mark_cont(&mut cont_phase_ms, "fidelity_ms", t_fidelity);
+        mark_cont(&mut cont_phase_ms, "total_ms", t_cont);
+        if let Some(obj) = bundle.as_object_mut() {
+            obj.insert(
+                "continuation_phase_ms".to_string(),
+                serde_json::Value::Object(cont_phase_ms),
+            );
         }
         if use_cache {
             self.continuation_bundle_cached_at = now;
@@ -8886,6 +8915,24 @@ mod ingest_ast_tests {
         assert!(inj.get("score").and_then(|v| v.as_f64()).is_some());
         assert!(inj.get("slots_filled").is_some());
         assert!(inj.get("missing").is_some());
+
+        // RSI Cycle 51: sub-phase timers always attached on live build (not cache hit).
+        let cpm = bundle
+            .get("continuation_phase_ms")
+            .and_then(|v| v.as_object())
+            .expect("continuation_phase_ms");
+        for key in [
+            "gather_ms",
+            "local_stratum_ms",
+            "harness_ms",
+            "fidelity_ms",
+            "total_ms",
+        ] {
+            assert!(
+                cpm.get(key).and_then(|v| v.as_u64()).is_some(),
+                "missing continuation_phase_ms.{key}"
+            );
+        }
 
         let nvme = bundle.get("nvme_context").expect("nvme_context");
         assert!(nvme.get("recall_mode").is_some());
