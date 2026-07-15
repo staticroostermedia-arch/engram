@@ -9697,8 +9697,7 @@ mod ingest_ast_tests {
         let cold = store.build_continuation_bundle_wake(Some("c86 no leg scan"));
         let provisional = StoreHandle::LARGE_MANIFOLD_THRESHOLD as u64 + 1;
         assert_eq!(
-            cold
-                .get("nvme_context")
+            cold.get("nvme_context")
                 .and_then(|n| n.get("leg_block_count"))
                 .and_then(|v| v.as_u64()),
             Some(provisional),
@@ -9712,8 +9711,7 @@ mod ingest_ast_tests {
             "C86 must not poison leg_block_count cache via dir scan"
         );
         assert_eq!(
-            cold
-                .get("nvme_context")
+            cold.get("nvme_context")
                 .and_then(|n| n.get("recall_mode"))
                 .and_then(|v| v.as_str()),
             Some("sampled_bounded"),
