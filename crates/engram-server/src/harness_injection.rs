@@ -648,12 +648,14 @@ fn trusted_tile_concept_recency(concept: &str) -> u64 {
 
 /// MQ Cycle 11: merge recent `tile:session_boundary_*` into a trusted_tiles list
 /// (lean wake often freezes stale mvp formal_spec entries from rehydration_manifest).
+/// MQ Cycle 21: re-sort existing boundaries by concept unix (latest-first).
+/// MQ Cycle 22: also **merge fresher** session_boundary from access_index when the
+/// frozen set is already all-boundary but stale (max unix lagging live hubs).
 /// Returns true if the list was modified.
 pub fn ensure_session_boundary_in_trusted_tiles(
     store: &mut StoreHandle,
     tiles: &mut Vec<Value>,
 ) -> bool {
-    // MQ Cycle 21: if session_boundary present but not latest-first, re-sort by recency.
     let max_boundary_recency = tiles
         .iter()
         .filter_map(|t| {
@@ -677,38 +679,25 @@ pub fn ensure_session_boundary_in_trusted_tiles(
                 && max_boundary_recency > 0
         })
         .unwrap_or(false);
-    if head_is_latest_boundary {
-        return false;
-    }
-    if max_boundary_recency > 0 {
-        // Re-sort existing list (may only need latest-first within already-collected tiles).
-        tiles.sort_by(|a, b| {
-            let type_rank = |t: &str| match t {
-                "session_boundary" => 0,
-                "verified_sequence" => 1,
-                "state_machine" => 2,
-                "formal_spec" => 3,
-                "research_offload" => 4,
-                "chain_summary" => 5,
-                _ => 6,
-            };
-            let ta = a.get("tile_type").and_then(|v| v.as_str()).unwrap_or("");
-            let tb = b.get("tile_type").and_then(|v| v.as_str()).unwrap_or("");
-            let tr = type_rank(ta).cmp(&type_rank(tb));
-            if tr != std::cmp::Ordering::Equal {
-                return tr;
-            }
-            let ca = a.get("concept").and_then(|v| v.as_str()).unwrap_or("");
-            let cb = b.get("concept").and_then(|v| v.as_str()).unwrap_or("");
-            trusted_tile_concept_recency(cb).cmp(&trusted_tile_concept_recency(ca))
-        });
-        return true;
-    }
 
+    // Scan access_index for boundaries missing from (or fresher than) the frozen list.
+    let mut seen: HashSet<String> = tiles
+        .iter()
+        .filter_map(|t| {
+            t.get("concept")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+        })
+        .collect();
     let mut found: Vec<Value> = Vec::new();
-    let mut seen = HashSet::new();
-    for (concept, _) in store.access_index.recent(40) {
+    for (concept, _) in store.access_index.recent(48) {
         if !concept.starts_with("tile:session_boundary_") || !seen.insert(concept.clone()) {
+            continue;
+        }
+        let rec = trusted_tile_concept_recency(&concept);
+        // When frozen already has boundaries, only merge strictly fresher ones.
+        // When empty of boundaries (max==0), take any recent high-CRS boundary (MQ11).
+        if max_boundary_recency > 0 && rec <= max_boundary_recency {
             continue;
         }
         let Some(block) = store.fetch_block_high_priority(&concept) else {
@@ -724,20 +713,54 @@ pub fn ensure_session_boundary_in_trusted_tiles(
             "source": "session_boundary_prefer",
             "reason": "session compression boundary — rehydrate distillate before mvp playbooks",
         }));
-        if found.len() >= 2 {
+        if found.len() >= 4 {
             break;
         }
     }
-    if found.is_empty() {
+
+    let need_resort = max_boundary_recency > 0 && !head_is_latest_boundary;
+    if found.is_empty() && !need_resort {
         return false;
     }
-    // Prepend boundary distillates; keep total ≤ 6.
-    let mut merged = found;
-    for t in tiles.drain(..) {
-        merged.push(t);
+
+    if !found.is_empty() {
+        let mut merged = found;
+        for t in tiles.drain(..) {
+            merged.push(t);
+        }
+        *tiles = merged;
     }
-    merged.truncate(6);
-    *tiles = merged;
+
+    // Type rank then recency (latest-first), then CRS.
+    tiles.sort_by(|a, b| {
+        let type_rank = |t: &str| match t {
+            "session_boundary" => 0,
+            "verified_sequence" => 1,
+            "state_machine" => 2,
+            "formal_spec" => 3,
+            "research_offload" => 4,
+            "chain_summary" => 5,
+            _ => 6,
+        };
+        let ta = a.get("tile_type").and_then(|v| v.as_str()).unwrap_or("");
+        let tb = b.get("tile_type").and_then(|v| v.as_str()).unwrap_or("");
+        let tr = type_rank(ta).cmp(&type_rank(tb));
+        if tr != std::cmp::Ordering::Equal {
+            return tr;
+        }
+        let ca = a.get("concept").and_then(|v| v.as_str()).unwrap_or("");
+        let cb = b.get("concept").and_then(|v| v.as_str()).unwrap_or("");
+        let rr = trusted_tile_concept_recency(cb).cmp(&trusted_tile_concept_recency(ca));
+        if rr != std::cmp::Ordering::Equal {
+            return rr;
+        }
+        b.get("crs")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.0)
+            .partial_cmp(&a.get("crs").and_then(|v| v.as_f64()).unwrap_or(0.0))
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    tiles.truncate(6);
     true
 }
 
@@ -3072,6 +3095,54 @@ SESSION HANDOFF PACKET v1 (structured JSON for next-wake read_concept)
         assert_eq!(
             shuffled[0].get("concept").and_then(|v| v.as_str()),
             Some("tile:session_boundary_1784159999")
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// MQ Cycle 22: frozen all-boundary list must merge fresher access_index tiles.
+    #[test]
+    fn ensure_session_boundary_merges_fresher_than_frozen_max() {
+        std::env::set_var("ENGRAM_DISABLE_SHEAF", "1");
+        std::env::set_var("ENGRAM_FORCE_CPU_BACKEND", "1");
+        std::env::set_var("ENGRAM_KI_DISABLE", "1");
+        let dir = std::env::temp_dir().join(format!(
+            "mq22_boundary_merge_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).ok();
+        let mut store = StoreHandle::new(&dir.to_string_lossy());
+        let body =
+            "THOUGHT TILE\n\n**tile_type:** session_boundary\n**title:** t\n\n**payload:** {}\n";
+        // Newer boundary only on access_index — not in frozen list.
+        for name in [
+            "tile:session_boundary_1784155375",
+            "tile:session_boundary_1784158269",
+        ] {
+            let mut b = store.encode(body);
+            b.crs_score = 0.91;
+            store.store(name, b).unwrap();
+            let _ = store.promote_tile_to_high_priority(name);
+            store.access_index.touch(name);
+        }
+        // Frozen set: only older boundary, already latest-first within itself.
+        let mut frozen = vec![json!({
+            "concept": "tile:session_boundary_1784155375",
+            "crs": 0.91,
+            "tile_type": "session_boundary",
+            "source": "frozen",
+        })];
+        assert!(
+            ensure_session_boundary_in_trusted_tiles(&mut store, &mut frozen),
+            "must merge fresher 8269 over frozen max 5375"
+        );
+        assert_eq!(
+            frozen[0].get("concept").and_then(|v| v.as_str()),
+            Some("tile:session_boundary_1784158269"),
+            "freshest boundary first after merge, got {frozen:?}"
         );
         let _ = std::fs::remove_dir_all(&dir);
     }

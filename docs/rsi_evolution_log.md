@@ -3715,3 +3715,33 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 1. MCP swap MQ21; wake trusted_tiles[0] is newest session_boundary.
 2. Optional #134 C86 cold assemble residual (floor held).
 3. Capacity only if landfill metrics measured.
+
+## MQ Cycle 22 — merge fresher session_boundary into frozen trusted_tiles (2026-07-15)
+
+### VERIFY₀ baseline
+
+- master@`b0c83af8` MQ21 #155.
+- MCP swapped: `mq_trusted_tiles_boundary_recency` LIVE.
+- CSF warm **0.947**; injection_completeness **1.0**; handoff complete; verify healthy (metric:mq_verify_1784159291).
+- Residual: trusted_tiles desc-sorted within frozen max `1784155375` but hub had newer `1784158269`/`7539` — MQ21 re-sort never merged fresher access_index tiles when list was already all-boundary.
+- Unit tests lean + MQ21 recency green.
+- Warm assemble ~80–112ms (constraint held as non-soft-stale full assemble; floor not primary).
+
+### SELECT
+
+**mq_tiles_boundaries** — merge strictly fresher `tile:session_boundary_*` from access_index into frozen trusted_tiles, then type+recency sort.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Ensure | scan access_index.recent(48); merge fresher than frozen max (or any if max=0) |
+| Sort | type rank → recency → CRS; truncate 6 |
+| Flag | `mq_trusted_tiles_boundary_merge_fresh` |
+| Test | `ensure_session_boundary_merges_fresher_than_frozen_max` |
+
+### Next vectors
+
+1. MCP swap MQ22; wake trusted_tiles[0] is newest live session_boundary (≥ hub newest).
+2. Optional #134 C86 cold assemble residual (floor held).
+3. Capacity only if landfill metrics measured.
