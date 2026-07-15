@@ -420,10 +420,14 @@ mod tests {
             ms < 150,
             "cufile_hot_active must stay non-blocking (took {ms}ms)"
         );
-        assert!(
-            cufile_init_complete() || CUFILE_INIT_SPAWNED.load(Ordering::Relaxed),
-            "init must complete or spawn async"
-        );
+        // Init spawn only when driver is already known-present. Hosts without
+        // GDS config (CI) correctly skip init and return provisional CUDA/false.
+        if cufile_probe_complete() && CUFILE_DETECTED.load(Ordering::Relaxed) {
+            assert!(
+                cufile_init_complete() || CUFILE_INIT_SPAWNED.load(Ordering::Relaxed),
+                "when driver detected, init must complete or spawn async"
+            );
+        }
         std::env::remove_var("ENGRAM_CUFILE_HOT");
     }
 
