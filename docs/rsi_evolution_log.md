@@ -1363,4 +1363,42 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 3. Adaptive Fisher band count.
 4. Further wake path slim (promote batch, etc.).
 
+---
+
+## Cycle 38 — CSR-only RelationIndex (drop dual HashMap) (2026-07-15)
+
+### Master baseline
+
+- Post Cycle 37: PR **#83** `d364eb77` — incremental CSR insert + sheaf TIMING gate.
+- Hub CRS ~0.89 · CSF ~0.93 · ~89k blocks.
+
+### Research synthesis
+
+| Source | Insight |
+|--------|---------|
+| Cycles 36–37 | Dual HashMap+CSR doubles memory; incremental CSR already complete for hot path. |
+| Graph engines | Single CSR is the standard retained structure. |
+| remove/load | Still need O(E) rebuild when entry indices shift. |
+
+### Hypothesis
+
+**CSR-only:** remove retained HashMap adj; `rebuild_adj` builds CSR via stack-local grouping; add/re-relate use CSR insert/resort only.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Code | Dropped `adj: HashMap`; CSR-only mutation + query |
+| rebuild | Temporary map inside `rebuild_adj` only |
+| Readiness | `relation_adj_csr_only: true` |
+| Tests | adj/α suite green under CSR-only |
+| Lexicon | `relation-adj-csr-only` |
+
+### Next vectors
+
+1. mmap CSR for multi-million edge stalks.
+2. Adaptive Fisher band count.
+3. Further wake path slim.
+4. Optional CSR row recycling after remove (avoid full rebuild).
+
 

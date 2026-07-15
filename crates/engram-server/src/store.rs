@@ -271,13 +271,9 @@ pub struct RelationIndex {
     /// When > 0, `add`/`remove` defer disk flush until the outer batch ends.
     defer_flush_depth: u32,
     flush_pending: bool,
-    /// Concept → entry indices where concept is `from` or `to` (RSI Cycle 30 degree index).
-    /// Not serialized — rebuilt on load/refresh/remove; updated incrementally on add.
-    /// RSI Cycle 31: each list is prefer-static sorted (ascending effective α) so
-    /// `min_incident_edge_volatility` early-exits at the structural floor under cap.
-    /// Mutation working set; CSR is the compact query layout (Cycle 36).
-    adj: std::collections::HashMap<String, Vec<usize>>,
-    /// RSI Cycle 36: CSR concept → row id (compact O(deg) query).
+    /// RSI Cycles 30–38: CSR incident index (concept → row → prefer-static entry indices).
+    /// Not serialized — rebuilt on load/refresh/remove; incremental insert on add (Cycle 37–38).
+    /// Cycle 38: CSR-only (HashMap-of-Vec adj removed).
     csr_row: std::collections::HashMap<String, u32>,
     /// Row offsets into `csr_indices` (len = n_nodes + 1).
     csr_offsets: Vec<u32>,
@@ -308,7 +304,6 @@ impl RelationIndex {
             last_sync_mtime: mtime,
             defer_flush_depth: 0,
             flush_pending: false,
-            adj: std::collections::HashMap::new(),
             csr_row: std::collections::HashMap::new(),
             csr_offsets: vec![0],
             csr_indices: Vec::new(),
@@ -317,22 +312,52 @@ impl RelationIndex {
         idx
     }
 
-    /// Rebuild adjacency lists from `entries` (O(E)), prefer-static sort, then CSR (Cycles 30–36).
+    /// Rebuild CSR incident index from `entries` (O(E log deg)), prefer-static within rows.
+    /// RSI Cycles 30–38; temporary grouping map is stack-local only (not retained).
     pub fn rebuild_adj(&mut self) {
-        self.adj.clear();
+        let mut tmp: std::collections::HashMap<String, Vec<usize>> =
+            std::collections::HashMap::new();
         for (i, e) in self.entries.iter().enumerate() {
-            self.adj.entry(e.from.clone()).or_default().push(i);
+            tmp.entry(e.from.clone()).or_default().push(i);
             if e.to != e.from {
-                self.adj.entry(e.to.clone()).or_default().push(i);
+                tmp.entry(e.to.clone()).or_default().push(i);
             }
         }
-        self.sort_all_adj_prefer_static();
-        self.rebuild_csr();
+        for idxs in tmp.values_mut() {
+            idxs.sort_by(|&a, &b| {
+                let va = self
+                    .entries
+                    .get(a)
+                    .map(effective_relation_volatility)
+                    .unwrap_or(1.0);
+                let vb = self
+                    .entries
+                    .get(b)
+                    .map(effective_relation_volatility)
+                    .unwrap_or(1.0);
+                va.partial_cmp(&vb).unwrap_or(std::cmp::Ordering::Equal)
+            });
+        }
+        let mut keys: Vec<String> = tmp.keys().cloned().collect();
+        keys.sort();
+        self.csr_row.clear();
+        self.csr_indices.clear();
+        self.csr_offsets.clear();
+        self.csr_offsets.push(0);
+        for (row, k) in keys.iter().enumerate() {
+            self.csr_row.insert(k.clone(), row as u32);
+            if let Some(idxs) = tmp.get(k) {
+                for &i in idxs {
+                    self.csr_indices.push(i as u32);
+                }
+            }
+            self.csr_offsets.push(self.csr_indices.len() as u32);
+        }
     }
 
     /// Number of concepts with at least one incident edge (for readiness/metrics).
     pub fn adj_node_count(&self) -> usize {
-        self.adj.len()
+        self.csr_row.len()
     }
 
     /// CSR non-zeros (= 2E for undirected-style from/to, minus self-loops).
@@ -343,26 +368,6 @@ impl RelationIndex {
     /// CSR row count (concepts with degree > 0).
     pub fn csr_nrows(&self) -> usize {
         self.csr_row.len()
-    }
-
-    /// Compact CSR rebuild from prefer-static HashMap adj (RSI Cycle 36).
-    /// Query path uses CSR; HashMap remains mutation working set.
-    pub fn rebuild_csr(&mut self) {
-        let mut keys: Vec<String> = self.adj.keys().cloned().collect();
-        keys.sort();
-        self.csr_row.clear();
-        self.csr_indices.clear();
-        self.csr_offsets.clear();
-        self.csr_offsets.push(0);
-        for (row, k) in keys.iter().enumerate() {
-            self.csr_row.insert(k.clone(), row as u32);
-            if let Some(idxs) = self.adj.get(k) {
-                for &i in idxs {
-                    self.csr_indices.push(i as u32);
-                }
-            }
-            self.csr_offsets.push(self.csr_indices.len() as u32);
-        }
     }
 
     /// Incident entry indices for `concept` via CSR (prefer-static order). Empty if unknown.
@@ -379,8 +384,7 @@ impl RelationIndex {
         &self.csr_indices[s..e]
     }
 
-    /// RSI Cycle 37: insert one incident into CSR in prefer-static order (no full rebuild).
-    /// New concepts append a row; existing rows insert by ascending effective α.
+    /// RSI Cycle 37–38: insert one incident into CSR in prefer-static order (no full rebuild).
     fn csr_insert_incident(&mut self, concept: &str, entry_idx: u32, vol: f32) {
         if let Some(&row) = self.csr_row.get(concept) {
             let row = row as usize;
@@ -440,39 +444,6 @@ impl RelationIndex {
             va.partial_cmp(&vb).unwrap_or(std::cmp::Ordering::Equal)
         });
         self.csr_indices[s..e].copy_from_slice(&slice);
-    }
-
-    /// Sort every adj list by effective α ascending (static first).
-    fn sort_all_adj_prefer_static(&mut self) {
-        let keys: Vec<String> = self.adj.keys().cloned().collect();
-        for k in keys {
-            self.sort_adj_prefer_static(&k);
-        }
-    }
-
-    /// Prefer-static order for one concept's incident indices (O(deg log deg)).
-    /// Does **not** rebuild CSR — caller must `rebuild_csr` / `csr_resort_row` after.
-    fn sort_adj_prefer_static(&mut self, concept: &str) {
-        let Some(idxs) = self.adj.get(concept).cloned() else {
-            return;
-        };
-        let mut idxs = idxs;
-        idxs.sort_by(|&a, &b| {
-            let va = self
-                .entries
-                .get(a)
-                .map(effective_relation_volatility)
-                .unwrap_or(1.0);
-            let vb = self
-                .entries
-                .get(b)
-                .map(effective_relation_volatility)
-                .unwrap_or(1.0);
-            va.partial_cmp(&vb).unwrap_or(std::cmp::Ordering::Equal)
-        });
-        if let Some(slot) = self.adj.get_mut(concept) {
-            *slot = idxs;
-        }
     }
 
     /// Coalesce relation_index.json writes during batch ingest (force_ingest, glue, …).
@@ -540,11 +511,9 @@ impl RelationIndex {
         {
             // Refresh volatility on re-relate (append-only edge, mutable α)
             e.volatility = vol;
-            // Cycle 31/37: reorder prefer-static HashMap + CSR row (no full rebuild)
-            self.sort_adj_prefer_static(from);
+            // Cycle 37–38: CSR-only re-sort prefer-static rows
             self.csr_resort_row(from);
             if to != from {
-                self.sort_adj_prefer_static(to);
                 self.csr_resort_row(to);
             }
             self.flush_if_needed();
@@ -558,15 +527,7 @@ impl RelationIndex {
                 volatility: vol,
                 to: to.to_string(),
             });
-            self.adj.entry(from.to_string()).or_default().push(idx);
-            if to != from {
-                self.adj.entry(to.to_string()).or_default().push(idx);
-            }
-            // Cycle 31: prefer-static HashMap order; Cycle 37: incremental CSR insert
-            self.sort_adj_prefer_static(from);
-            if to != from {
-                self.sort_adj_prefer_static(to);
-            }
+            // Cycle 37–38: CSR-only incremental insert (no dual HashMap)
             let ei = idx as u32;
             self.csr_insert_incident(from, ei, vol);
             if to != from {
@@ -2277,6 +2238,7 @@ impl StoreHandle {
             "relation_adj_csr_nnz": self.relation_index.csr_nnz(),
             "relation_adj_csr": true,
             "relation_adj_csr_incremental": true,
+            "relation_adj_csr_only": true,
             // RSI Cycle 34: sovereignty encrypt-at-rest dogfood surface
             "encrypt_at_rest_enabled": crate::secure_context::encrypt_at_rest_enabled(),
             "encrypt_at_rest_env": "ENGRAM_ENCRYPT_AT_REST",
@@ -9834,7 +9796,7 @@ SESSION HANDOFF PACKET v1
         assert_eq!(
             store.relation_index.csr_nrows(),
             store.relation_index.adj_node_count(),
-            "CSR nrows match HashMap nodes"
+            "CSR nrows match adj_node_count (CSR-only)"
         );
         assert!(
             store.relation_index.csr_nnz() >= 3,
