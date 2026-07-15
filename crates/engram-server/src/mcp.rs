@@ -1053,7 +1053,7 @@ fn tool_list() -> Value {
             },
             {
                 "name": "mcp_engram_query_pure",
-                "description": "Pure geometric K-NN discovery (no keyword/file-path hybrid fallback, no p-blend). Turns natural language intent -> phase vector (q) -> cosine K-NN over high-priority/hot blocks (or BVH). Used for fast anchor discovery in optimized wake-up (replaces broad list_concepts + search_by_relation for ritual: / trace: / goal: etc). Intent only; returns ranked concepts + scores + CRS. Fast path for hot ritual rehydrate.",
+                "description": "Pure geometric K-NN discovery (no keyword/file-path hybrid fallback, no p-blend). Turns natural language intent -> phase vector (q) -> cosine K-NN over high-priority/hot blocks (or BVH). Used for fast anchor discovery in optimized wake-up (replaces broad list_concepts + search_by_relation for ritual: / trace: / goal: etc). Intent only; returns ranked concepts + scores + CRS. Fast path for hot ritual rehydrate. RSI Cycle 55: set include_timing=true (or ENGRAM_MCP_TIMING=1) for structured ---query_phase_ms--- trailer (encode_hot_ms, probe_ms, total_ms, path).",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -1064,6 +1064,10 @@ fn tool_list() -> Value {
                         "k": {
                             "type": "integer",
                             "description": "Max results (default 6, max 20)"
+                        },
+                        "include_timing": {
+                            "type": "boolean",
+                            "description": "If true, append ---query_phase_ms--- JSON trailer with encode_hot_ms, probe_ms, total_ms, path (fast_anchor|hot_probe). Also enabled by ENGRAM_MCP_TIMING=1."
                         }
                     },
                     "required": ["intent"]
@@ -3696,8 +3700,23 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
             // per-item *short* lock only for fetch_block_high_priority. Cosine math and collect happen off-lock entirely.
             // Prevents client query_pure from holding store Mutex for full hot.len() duration while bg rehydrate/inc/promote or other procs run.
             let t_q = std::time::Instant::now();
-            // Cycle 48: gate query_pure TIMING (was always-on stderr I/O).
-            if mcp_timing_enabled() {
+            // RSI Cycle 48: stderr TIMING gated. Cycle 55: full phase map + optional JSON trailer.
+            // Enable: ENGRAM_MCP_TIMING=1 | ENGRAM_SHEAF_TIMING=1 | args.include_timing=true
+            let want_timing = mcp_timing_enabled()
+                || args
+                    .get("include_timing")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+            let mut phase_ms = serde_json::Map::new();
+            let mark_qp = |map: &mut serde_json::Map<String, serde_json::Value>,
+                           name: &str,
+                           since: std::time::Instant| {
+                map.insert(
+                    name.to_string(),
+                    serde_json::json!((since.elapsed().as_secs_f64() * 1000.0).round() as u64),
+                );
+            };
+            if want_timing && mcp_timing_enabled() {
                 eprintln!("TIMING[query_pure]: start (T1 diagnostic)");
             }
             let intent = args
@@ -3712,8 +3731,8 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
             }
             // Compute effective_q (encode + geo) once, before the fast/normal split.
             // Fast path for ritual anchors will use it without hot clone.
+            let t_enc = std::time::Instant::now();
             let (effective_q, all_concepts) = {
-                let t_enc = std::time::Instant::now();
                 let mut lock = store.lock().unwrap();
                 let query_block = lock.encode(&intent);
                 let effective_q = if let Some(geo) = lock.current_geosphere_state() {
@@ -3722,18 +3741,14 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
                     engram_core::ops::normalize(&query_block.q)
                 };
                 let all_concepts = lock.hot_concepts();
-                let enc_time = t_enc.elapsed().as_secs_f32();
-                if mcp_timing_enabled() && enc_time > 0.1 {
-                    eprintln!(
-                        "TIMING[query_pure]: encode+hot took {:.3}s len_all={}",
-                        enc_time,
-                        all_concepts.len()
-                    );
-                }
                 (effective_q, all_concepts)
             };
-            if mcp_timing_enabled() {
-                eprintln!("TIMING[query_pure]: encode+hot_cloned len_all={} (lock released for probe; using hot_set only)", all_concepts.len());
+            mark_qp(&mut phase_ms, "encode_hot_ms", t_enc);
+            if want_timing && mcp_timing_enabled() {
+                eprintln!(
+                    "TIMING[query_pure]: encode+hot_cloned len_all={} (lock released for probe; using hot_set only)",
+                    all_concepts.len()
+                );
             }
             // 2026-06 fast direct path for lean wake ritual anchor discovery (the primary use per wake-up.toml and "fast anchor discovery" in tool desc).
             // Bypasses hot_set clone + sampling + large probe entirely for ritual/process:engram.ritual intents.
@@ -3792,13 +3807,25 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
                 if scored.is_empty() {
                     out.push_str("No matches (pure q K-NN).");
                 }
-                if mcp_timing_enabled() {
+                mark_qp(&mut phase_ms, "probe_ms", t_fast);
+                mark_qp(&mut phase_ms, "total_ms", t_q);
+                phase_ms.insert("path".into(), json!("fast_anchor"));
+                phase_ms.insert("scored".into(), json!(scored.len()));
+                phase_ms.insert("probe_size".into(), json!(anchor_names.len()));
+                if want_timing && mcp_timing_enabled() {
                     eprintln!("TIMING[query_pure]: FAST_ANCHOR path used (direct {} anchors, no hot probe) total={:.2}s", anchor_names.len(), t_fast.elapsed().as_secs_f32());
                     eprintln!(
                         "TIMING[query_pure]: COMPLETE scored={} total={:.2}s",
                         scored.len(),
                         t_q.elapsed().as_secs_f32()
                     );
+                }
+                if want_timing {
+                    out.push_str(&format!(
+                        "\n---query_phase_ms---\n{}\n",
+                        serde_json::to_string(&serde_json::Value::Object(phase_ms))
+                            .unwrap_or_else(|_| "{}".into())
+                    ));
                 }
                 return json!({ "content": [{ "type": "text", "text": out }] });
             }
@@ -3813,18 +3840,21 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
                     .filter_map(|i| all_concepts.get(i * step).cloned())
                     .collect()
             };
-            if mcp_timing_enabled() {
+            let t_probe = std::time::Instant::now();
+            if want_timing && mcp_timing_enabled() {
                 eprintln!("TIMING[query_pure]: probe built size={} cap={} (aggressive hot cap for fast anchor pure)", probe.len(), probe_cap);
             }
             let mut scored: Vec<(String, f32, f32)> = vec![];
+            let mut fetch_ms_sum = 0.0_f64;
             for (i, concept) in probe.iter().enumerate() {
                 let t_f = std::time::Instant::now();
                 let block = {
                     let lock = store.lock().unwrap();
                     lock.fetch_block_high_priority(concept)
                 };
-                let fetch_ms = t_f.elapsed().as_secs_f32() * 1000.0;
-                if mcp_timing_enabled() && (i < 5 || fetch_ms > 50.0) {
+                let fetch_ms = t_f.elapsed().as_secs_f64() * 1000.0;
+                fetch_ms_sum += fetch_ms;
+                if want_timing && mcp_timing_enabled() && (i < 5 || fetch_ms > 50.0) {
                     eprintln!(
                         "TIMING[query_pure]: fetch[{}] {} {:.1}ms",
                         i, concept, fetch_ms
@@ -3847,12 +3877,25 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
             if scored.is_empty() {
                 out.push_str("No matches (pure q K-NN).");
             }
-            if mcp_timing_enabled() {
+            mark_qp(&mut phase_ms, "probe_ms", t_probe);
+            mark_qp(&mut phase_ms, "total_ms", t_q);
+            phase_ms.insert("path".into(), json!("hot_probe"));
+            phase_ms.insert("scored".into(), json!(scored.len()));
+            phase_ms.insert("probe_size".into(), json!(probe.len()));
+            phase_ms.insert("fetch_ms_sum".into(), json!(fetch_ms_sum.round() as u64));
+            if want_timing && mcp_timing_enabled() {
                 eprintln!(
                     "TIMING[query_pure]: COMPLETE scored={} total={:.2}s",
                     scored.len(),
                     t_q.elapsed().as_secs_f32()
                 );
+            }
+            if want_timing {
+                out.push_str(&format!(
+                    "\n---query_phase_ms---\n{}\n",
+                    serde_json::to_string(&serde_json::Value::Object(phase_ms))
+                        .unwrap_or_else(|_| "{}".into())
+                ));
             }
             json!({ "content": [{ "type": "text", "text": out }] })
         }
