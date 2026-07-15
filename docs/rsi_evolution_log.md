@@ -2509,3 +2509,39 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 3. Full 8192-d σ² tensors (long horizon — not wake path).
 4. Keep warm wake total ≤40ms.
 
+## Cycle 70 — assemble prefer BVH count + lean gpu_hot (2026-07-15)
+
+### Master baseline
+
+- Post Cycle 69: PR **#117** `650b0eca` — ultra-lean ego snapshot.
+- **First live C65–C69 measure (MCP swapped):** total=**638**, readiness_ms=**0** (soft-stale hit), harness_ms=**6**, **assemble_ms=616**.
+- Name-only presentation live (previews empty / crs 0).
+
+### Research synthesis
+
+| Source | Insight |
+|--------|---------|
+| assemble_ms 616 | Dominates after readiness/harness fixed. |
+| leg_block_count | Cold atomic → full 90k dir scan on first wake. |
+| gpu_hot_resident | cuFile probe path on every assemble. |
+| bvh_node_count | O(1) leaf count already available when BVH ready. |
+
+### Hypothesis
+
+**Prefer BVH count** when leg atomic is cold; **lean gpu_hot** = bvh_ready && gpu_accel (skip cuFile deep probe on wake).
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Code | wake_lean assemble: seed atomic from `bvh_node_count`; lean `gpu_hot` |
+| Readiness | `wake_assemble_prefer_bvh_count`, `wake_assemble_lean_gpu_hot` |
+| Test | extended `wake_lean_assemble_strips_bulky_harness` |
+
+### Next vectors
+
+1. MCP swap C70; measure assemble_ms ≤20, total ≤50, harness ≤3.
+2. If assemble still high: profile structured_handoff / json clone.
+3. Full 8192-d σ² tensors (long horizon — not wake path).
+4. Keep warm wake total ≤40ms.
+

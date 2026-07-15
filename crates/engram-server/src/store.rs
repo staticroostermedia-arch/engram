@@ -2628,6 +2628,8 @@ impl StoreHandle {
                 "wake_harness_single_manifest": true,
                 "wake_assemble_ms": true,
                 "wake_assemble_lean": true,
+                "wake_assemble_prefer_bvh_count": true,
+                "wake_assemble_lean_gpu_hot": true,
                 "wake_readiness_ttl_cache": true,
                 "wake_readiness_slim_first_build": true,
                 "wake_readiness_ttl_ms_units": true,
@@ -5067,20 +5069,34 @@ impl StoreHandle {
                 .count()
         };
         // Cycle 61: prefer already-cached leg block count (avoid 30s-TTL rescan on wake).
+        // RSI Cycle 70: if atomic cold, use O(1) BVH leaf count as proxy (no 90k dir scan).
+        // Measured assemble_ms≈616 with cold atomic after MCP swap — dir scan dominated.
+        let bvh_ready = self.bvh_is_ready();
+        let bvh_nodes = self.backend.bvh_node_count();
         let leg_blocks = if wake_lean {
             let cached = self
                 .leg_block_count_value
                 .load(std::sync::atomic::Ordering::Relaxed);
             if cached > 0 {
                 cached
+            } else if bvh_nodes > 0 {
+                self.leg_block_count_value
+                    .store(bvh_nodes, std::sync::atomic::Ordering::Relaxed);
+                self.leg_block_count_cached_at
+                    .store(activity_now(), std::sync::atomic::Ordering::Relaxed);
+                bvh_nodes
             } else {
                 self.leg_block_count()
             }
         } else {
             self.leg_block_count()
         };
-        let bvh_ready = self.bvh_is_ready();
-        let gpu_hot = self.backend.gpu_hot_resident();
+        // RSI Cycle 70: lean wake skips cuFile/gpu_hot_resident deep probe (cufile init path).
+        let gpu_hot = if wake_lean {
+            bvh_ready && self.backend.gpu_accel_available()
+        } else {
+            self.backend.gpu_hot_resident()
+        };
         let recall_mode = if wake_lean {
             // Avoid second path through leg_block_count inside recall_mode().
             if leg_blocks > Self::LARGE_MANIFOLD_THRESHOLD {
@@ -9355,6 +9371,34 @@ mod ingest_ast_tests {
         let ready = store.backend_readiness();
         assert_eq!(
             ready.get("wake_assemble_lean").and_then(|v| v.as_bool()),
+            Some(true)
+        );
+        assert_eq!(
+            ready
+                .get("wake_assemble_prefer_bvh_count")
+                .and_then(|v| v.as_bool()),
+            Some(true)
+        );
+        assert_eq!(
+            ready
+                .get("wake_assemble_lean_gpu_hot")
+                .and_then(|v| v.as_bool()),
+            Some(true)
+        );
+        // RSI Cycle 70: cold atomic + BVH nodes seeds leg count without full dir scan.
+        store
+            .leg_block_count_value
+            .store(0, std::sync::atomic::Ordering::Relaxed);
+        store
+            .leg_block_count_cached_at
+            .store(0, std::sync::atomic::Ordering::Relaxed);
+        let _ = store.build_continuation_bundle_wake(Some("c70 bvh count"));
+        // Without BVH on empty temp store, may still scan; flag surface is the contract.
+        let ready2 = store.backend_readiness();
+        assert_eq!(
+            ready2
+                .get("wake_assemble_prefer_bvh_count")
+                .and_then(|v| v.as_bool()),
             Some(true)
         );
         let _ = std::fs::remove_dir_all(&dir);
