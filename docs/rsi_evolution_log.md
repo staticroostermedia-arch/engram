@@ -2263,3 +2263,38 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 3. Full 8192-d σ² tensors (long horizon).
 4. Keep warm wake total ≤100ms.
 
+## Cycle 63 — O(1) relation edge counts for readiness (2026-07-15)
+
+### Master baseline
+
+- Post Cycle 62: PR **#110** `7cb21290` — ultra-lean wake local stratum.
+- **Measured warm:** total=**93**, cont detail=**15** (local=1 harness=10 gather=4 assemble=0); outer continuation gap ~70ms.
+- Prompt backlog C50–C56 already shipped.
+
+### Research synthesis
+
+| Source | Insight |
+|--------|---------|
+| backend_readiness | Calls live_edge_count + tombstone_count every wake. |
+| RelationIndex | Linear scan over all entries (24k+) twice. |
+| Outer continuation | session_start readiness after bundle dominates residual. |
+
+### Hypothesis
+
+**O(1) counters:** maintain `live_count` / `tombstone_count` on add/tombstone/revive/compact/load; readiness becomes O(1) for edge stats.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Code | `RelationIndex` counters + recompute on load/refresh |
+| Readiness | `relation_edge_counts_o1: true` |
+| Test | `relation_edge_counts_o1_match_scan` |
+
+### Next vectors
+
+1. Measure outer continuation gap after MCP swap.
+2. If still high, short-TTL readiness cache on wake.
+3. Full 8192-d σ² tensors (long horizon).
+4. Keep warm wake total ≤80ms.
+
