@@ -1421,24 +1421,25 @@ pub fn build_harness_bundle_with_presentation_k(
     presentation_k: usize,
     lean_wake: bool,
 ) -> Value {
-    // Cycle 53 lean: smaller recent scan; skip prev_in_trace walk (head only).
-    let recent_cap = if lean_wake { 24 } else { 200 };
+    // Cycle 53/60 lean: resolve manifest first (handoff parse once); skip recent scan when
+    // manifest already carries trace_chain_head (measured residual inside harness_ms).
     let chain_depth = if lean_wake { 0 } else { 8 };
-    let mut trace_chain_head: Option<String> = None;
-    for (concept, _) in store.access_index.recent(recent_cap) {
-        if concept.starts_with("trace:") {
-            trace_chain_head = Some(concept);
-            break;
-        }
-    }
-    // Prefer manifest head when present (avoids wrong head if recent is noisy).
     let primary_goal = crate::store::resolve_active_primary_goal(store);
 
     let rehydration_manifest = store.resolve_rehydration_manifest_for_wake();
-    if let Some(ref m) = rehydration_manifest {
-        if let Some(h) = m.get("trace_chain_head").and_then(|v| v.as_str()) {
-            if !h.is_empty() {
-                trace_chain_head = Some(h.to_string());
+    let mut trace_chain_head: Option<String> = rehydration_manifest
+        .as_ref()
+        .and_then(|m| m.get("trace_chain_head"))
+        .and_then(|v| v.as_str())
+        .filter(|h| !h.is_empty())
+        .map(|s| s.to_string());
+    // Full path (or lean without manifest head): fall back to recent access scan.
+    if trace_chain_head.is_none() {
+        let recent_cap = if lean_wake { 24 } else { 200 };
+        for (concept, _) in store.access_index.recent(recent_cap) {
+            if concept.starts_with("trace:") {
+                trace_chain_head = Some(concept);
+                break;
             }
         }
     }
@@ -1520,9 +1521,15 @@ pub fn build_harness_bundle_with_presentation_k(
     } else {
         collect_uncertainty_receipts(store, 5)
     };
-    let handoff_for_task = store
-        .fetch_block_high_priority(SESSION_HANDOFF_LATEST)
-        .and_then(|b| parse_handoff_packet_json(&storage::read_provlog(&b)));
+    // RSI Cycle 60 lean: skip second handoff fetch — resolve_rehydration_manifest already
+    // parsed SESSION_HANDOFF_LATEST; infer task from intent + scars only on lean wake.
+    let handoff_for_task = if lean_wake {
+        None
+    } else {
+        store
+            .fetch_block_high_priority(SESSION_HANDOFF_LATEST)
+            .and_then(|b| parse_handoff_packet_json(&storage::read_provlog(&b)))
+    };
     let task_type = infer_task_type(
         handoff_for_task.as_ref(),
         session_intent,
