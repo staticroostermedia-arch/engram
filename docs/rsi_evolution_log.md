@@ -2545,3 +2545,38 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 3. Full 8192-d σ² tensors (long horizon — not wake path).
 4. Keep warm wake total ≤40ms.
 
+## Cycle 71 — async session_start block persist (2026-07-15)
+
+### Master baseline
+
+- Post Cycle 70: PR **#118** `161d6fa9` — assemble BVH count + lean gpu_hot.
+- **Live warm wake (post first-wake caches):** total=**17**, readiness=**0**, assemble=**0**, harness=**5**, session_block=**5**.
+- Cold-path assemble fix (C70) not yet confirmed on this MCP PID (flags may lag binary).
+
+### Research synthesis
+
+| Source | Insight |
+|--------|---------|
+| session_block_ms≈5 | Sync encode+store of session_start_* on critical path. |
+| fidelity_persist async | Cycle 43 pattern: bg thread store after wake packet. |
+| Gaps check | session_start_* may appear shortly after; key returned sync. |
+
+### Hypothesis
+
+**Async session block:** mint session_key sync; encode+store on bg thread (same pattern as cold-start fidelity persist).
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Code | mcp `session_start` bg thread for encode+store |
+| Packet | `session_block_persist: "async"` |
+| Readiness | `wake_session_block_async` |
+
+### Next vectors
+
+1. MCP swap C70+C71; measure total ≤12, session_block≈0, harness ≤3.
+2. Cut harness residual (manifest resolve / suggested_actions) if still ≥5.
+3. Full 8192-d σ² tensors (long horizon — not wake path).
+4. Keep warm wake total ≤20ms.
+
