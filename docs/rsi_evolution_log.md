@@ -3268,3 +3268,32 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 1. MCP swap MQ6; slim session_start shows relation_resume.edges + lawfulness_snapshot.sample_count.
 2. `mq_spatial_locus` precision tests if line filter measured weak.
 3. PR #134 C86 cold assemble residual (CI green, open).
+
+## MQ Cycle 7 — spatial locus AABB line precision test (2026-07-15)
+
+### VERIFY₀ baseline
+
+- master@`5129ba75` MQ6 #140.
+- MCP swapped (deleted binary → live): `wake_slim_mq_resume_hoist` LIVE; slim `relation_resume.edges=4` seed=`goal:engram_memory_quality_v1`; `lawfulness_snapshot.sample_count` growing.
+- CSF warm **0.925** tiles=6; handoff complete mq_handoff_v1; primary memory_quality.
+- Verify **healthy** (0 issues) `metric:mq_verify_1784148238`; series growing.
+- Latency floor: readiness_ms=0; warm assemble ~63–93ms post-swap not soft_stale floor fail.
+- Unit tests: lean_suggested_actions + slim_bundle MQ6 green.
+
+### SELECT
+
+**mq_spatial_locus** — encode fail-closed property: `context_for_edit` line window keeps only AABB-overlapping AST loci.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Test | `context_for_edit_filters_spatial_items_by_line_aabb` (mid hit / early+late excluded / empty far window) |
+| Flag | `mq_spatial_locus_aabb_test` |
+| Live probe | wake_bundle.rs:200-220 → `wake_bundle__fn__slim_continuation_bundle` only |
+
+### Next vectors
+
+1. `mq_consult_before_write` hard default if mint spam measured.
+2. `mq_write_hygiene` / tiles at boundaries.
+3. PR #134 C86 cold assemble residual (CI green, open).
