@@ -2370,3 +2370,39 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 3. Full 8192-d σ² tensors (long horizon).
 4. Keep warm wake total ≤80ms.
 
+## Cycle 66 — OnceLock static readiness flags + soft-stale (2026-07-15)
+
+### Master baseline
+
+- Post Cycle 65: PR **#113** `718c32d0` — slim first-build + TTL ms fix.
+- **Measured on stale pre-C65 MCP:** total=**97**, readiness_ms=**76** (flags missing `wake_readiness_slim_first_build`).
+- Prompt backlog C50–C56 already shipped.
+
+### Research synthesis
+
+| Source | Insight |
+|--------|---------|
+| 15m RSI loop | Every fire past 2s hard TTL rebuilds full readiness JSON. |
+| Static flags | ~50 constant keys re-allocated every miss (env labels + always-true). |
+| Soft-stale | Serve last payload up to soft window (default 900s) after hard TTL. |
+
+### Hypothesis
+
+**OnceLock static flags + soft-stale:** merge process-constant feature surface once; soft-stale default 900s matches loop cadence so warm 15m fires hit cache.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Code | `readiness_static_feature_flags` OnceLock; soft-stale path in `backend_readiness` |
+| Env | `ENGRAM_READINESS_SOFT_STALE_SECS` (default 900) |
+| Readiness | `wake_readiness_static_flags_once`, `wake_readiness_soft_stale`, `readiness_soft_stale_secs` |
+| Test | `readiness_soft_stale_and_static_flags` |
+
+### Next vectors
+
+1. MCP binary swap (C65+C66); measure readiness_ms soft-hit ≈0–5 and first-build ≤25.
+2. If first-build still high, cache env-gated flags with short TTL.
+3. Full 8192-d σ² tensors (long horizon).
+4. Keep warm wake total ≤60ms.
+
