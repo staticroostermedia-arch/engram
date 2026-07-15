@@ -3386,3 +3386,34 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 1. MCP swap MQ10; session_end prepare_compression surfaces session_boundary_tile in manifest.
 2. CSF trusted_tiles prefer recent session_boundary when mvp tiles stale.
 3. PR #134 C86 cold assemble residual (CI green, open).
+
+## MQ Cycle 11 — CSF prefers session_boundary over mvp formal_spec (2026-07-15)
+
+### VERIFY₀ baseline
+
+- master@`e873af76` MQ10 #144.
+- MCP swapped: `mq_tiles_boundaries_session` LIVE; CSF warm **0.925** but trusted_tiles still 6 stale formal_spec/verified_sequence.
+- Handoff complete; next_vector was CSF prefer session_boundary.
+- Verify **healthy** metric:mq_verify_1784150995; series growing.
+- Latency floor: readiness_ms=0; post-swap warm ~68–92ms not soft_stale floor fail.
+- Unit tests lean + MQ10 boundary tile green.
+
+### SELECT
+
+**mq_continuity_csf** — MQ10 mints boundary tiles but lean rehydration freezes mvp formal_spec trusted_tiles; session_boundary was not a trusted type.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Trusted types | `session_boundary` (+ `chain_summary`) admitted |
+| Rank | session_boundary outranks formal_spec/verified_sequence |
+| Merge | `ensure_session_boundary_in_trusted_tiles` on lean harness + CSF assemble |
+| Flag | `mq_csf_session_boundary_prefer` |
+| Test | `ensure_session_boundary_prepends_over_mvp_formal_spec` |
+
+### Next vectors
+
+1. MCP swap MQ11; wake trusted_tiles head is session_boundary when present.
+2. Optional #134 C86 cold assemble residual.
+3. mq_capacity_policy only if landfill metrics measured.

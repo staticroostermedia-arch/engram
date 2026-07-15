@@ -2778,6 +2778,7 @@ impl StoreHandle {
                 "mq_consult_before_write_agent_hard": true,
                 "mq_write_hygiene_mint_update": true,
                 "mq_tiles_boundaries_session": true,
+                "mq_csf_session_boundary_prefer": true,
                 "wake_continuation_soft_stale": true,
                 "wake_continuation_soft_stale_env": "ENGRAM_WAKE_CONTINUATION_SOFT_STALE_SECS",
                 "wake_continuation_soft_stale_secs": 1800,
@@ -5611,17 +5612,18 @@ impl StoreHandle {
         // MQ Cycle 3: stale rehydration_manifest often has trusted_tiles=[] after
         // child-primary session_ends (pre-MQ2). Live-fill from build_trusted_tiles
         // (mvp fallback included) so CSF does not keep no_trusted_tiles until next handoff.
+        // MQ Cycle 11: even when non-empty, prefer recent session_boundary over frozen mvp formal_spec.
         let mut live_trusted_fill = false;
+        let primary = bundle
+            .get("primary_goal")
+            .and_then(|v| v.as_str())
+            .or_else(|| {
+                bundle
+                    .get("rehydration_manifest")
+                    .and_then(|m| m.get("primary_goal"))
+                    .and_then(|v| v.as_str())
+            });
         if fidelity_inputs.trusted_tile_count == 0 {
-            let primary = bundle
-                .get("primary_goal")
-                .and_then(|v| v.as_str())
-                .or_else(|| {
-                    bundle
-                        .get("rehydration_manifest")
-                        .and_then(|m| m.get("primary_goal"))
-                        .and_then(|v| v.as_str())
-                });
             let live = crate::harness_injection::build_trusted_tiles(self, primary);
             if !live.is_empty() {
                 live_trusted_fill = true;
@@ -5654,11 +5656,45 @@ impl StoreHandle {
                 }
             }
         }
+        // MQ Cycle 11: non-empty mvp formal_spec list still freezes without session_boundary.
+        let mut boundary_prefer = false;
+        {
+            let mut tiles: Vec<serde_json::Value> = bundle
+                .get("rehydration_manifest")
+                .and_then(|m| m.get("trusted_tiles"))
+                .and_then(|v| v.as_array())
+                .cloned()
+                .unwrap_or_default();
+            if crate::harness_injection::ensure_session_boundary_in_trusted_tiles(self, &mut tiles)
+            {
+                boundary_prefer = true;
+                fidelity_inputs.trusted_tile_count = tiles.len().min(12);
+                if let Some(obj) = bundle.as_object_mut() {
+                    if let Some(manifest) = obj.get_mut("rehydration_manifest") {
+                        if let Some(m) = manifest.as_object_mut() {
+                            m.insert("trusted_tiles".to_string(), serde_json::Value::Array(tiles));
+                            m.insert(
+                                "trusted_tiles_session_boundary_prefer".to_string(),
+                                serde_json::json!(true),
+                            );
+                        }
+                    }
+                }
+            }
+        }
         let mut fidelity = crate::cold_start_fidelity::cold_start_fidelity_report(&fidelity_inputs);
         if live_trusted_fill {
             if let Some(obj) = fidelity.as_object_mut() {
                 obj.insert(
                     "trusted_tiles_live_fill".to_string(),
+                    serde_json::json!(true),
+                );
+            }
+        }
+        if boundary_prefer {
+            if let Some(obj) = fidelity.as_object_mut() {
+                obj.insert(
+                    "trusted_tiles_session_boundary_prefer".to_string(),
                     serde_json::json!(true),
                 );
             }
