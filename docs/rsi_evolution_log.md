@@ -1883,3 +1883,38 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 3. Query_pure TIMING full gate.
 4. MCP binary swap hygiene (deleted-exe holders).
 
+## Cycle 52 — lean local_stratum bootstrap on wake (2026-07-14)
+
+### Master baseline
+
+- Post Cycle 51: PR **#97** `3ffa0c51` — continuation sub-phase timers.
+- Live continuation_detail: local_stratum_ms=**4158**, harness_ms=1740, gather=93, fidelity=69.
+
+### Research synthesis
+
+| Source | Insight |
+|--------|---------|
+| wake_phase_ms.continuation_detail | local_stratum dominates continuation (~67%). |
+| bootstrap() | nvidia-smi + git×2 + backend_readiness + upsert every wake. |
+| Warm layer | Profile/readiness already on disk after first bootstrap. |
+
+### Hypothesis
+
+**bootstrap_for_wake + warm_skip:** skip full bootstrap when profile hot + readiness fresh; cache git/GPU probes; smaller wake local budget.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Code | `warm_skip_bootstrap`, `bootstrap_for_wake`; wake uses lean path |
+| Cache | OnceLock for nvidia_gpu_count + git fingerprint |
+| Slice | recent(16) only if budget > core concepts |
+| Readiness | `wake_local_stratum_lean` |
+| Test | `warm_skip_bootstrap_after_first_bootstrap` |
+
+### Next vectors
+
+1. Cut harness_ms (second residual ~1.7s).
+2. Partial σ² beyond 16-d.
+3. Query_pure TIMING full gate.
+

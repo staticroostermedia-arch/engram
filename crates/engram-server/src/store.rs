@@ -2556,6 +2556,7 @@ impl StoreHandle {
             "wake_ki_rebake_env": "ENGRAM_WAKE_KI_REBAKE",
             "wake_phase_ms_enabled": true,
             "wake_continuation_subphase_ms": true,
+            "wake_local_stratum_lean": true,
             "wake_harness_lean": true,
             "wake_presentation_lean": true,
             "wake_suggested_actions_lean": true,
@@ -4700,10 +4701,20 @@ impl StoreHandle {
         mark_cont(&mut cont_phase_ms, "gather_ms", t_gather);
 
         let t_local = std::time::Instant::now();
-        let _lcs_touched = crate::local_stratum::bootstrap(self);
+        // Cycle 52: wake path uses bootstrap_for_wake (skip when local host layer warm).
+        // Full get_continuation_bundle still runs full bootstrap. `wake_lean` set above.
+        let _lcs_touched = if wake_lean {
+            crate::local_stratum::bootstrap_for_wake(self)
+        } else {
+            crate::local_stratum::bootstrap(self)
+        };
         let local_stratum = crate::local_stratum::build_local_stratum_slice(
             self,
-            crate::local_stratum::local_budget(),
+            if wake_lean {
+                crate::local_stratum::local_budget().min(8)
+            } else {
+                crate::local_stratum::local_budget()
+            },
         );
         mark_cont(&mut cont_phase_ms, "local_stratum_ms", t_local);
 
