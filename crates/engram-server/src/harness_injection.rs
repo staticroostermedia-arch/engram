@@ -1421,8 +1421,9 @@ pub fn build_harness_bundle_with_presentation_k(
     presentation_k: usize,
     lean_wake: bool,
 ) -> Value {
-    let recent_cap = if lean_wake { 64 } else { 200 };
-    let chain_depth = if lean_wake { 3 } else { 8 };
+    // Cycle 53 lean: smaller recent scan; skip prev_in_trace walk (head only).
+    let recent_cap = if lean_wake { 24 } else { 200 };
+    let chain_depth = if lean_wake { 0 } else { 8 };
     let mut trace_chain_head: Option<String> = None;
     for (concept, _) in store.access_index.recent(recent_cap) {
         if concept.starts_with("trace:") {
@@ -1430,21 +1431,55 @@ pub fn build_harness_bundle_with_presentation_k(
             break;
         }
     }
-
-    let chain = trace_chain_head
-        .as_deref()
-        .map(|h| walk_trace_chain(store, h, chain_depth))
-        .unwrap_or_default();
-
+    // Prefer manifest head when present (avoids wrong head if recent is noisy).
     let primary_goal = crate::store::resolve_active_primary_goal(store);
 
     let rehydration_manifest = store.resolve_rehydration_manifest_for_wake();
-    let hub_anchors = resolve_hub_anchors_for_surprise(store, session_intent);
-    let ego_snapshot = build_ego_snapshot(store, primary_goal.as_deref(), Some(&hub_anchors));
-    let continuity_playbook = build_continuity_playbook(primary_goal.as_deref());
+    if let Some(ref m) = rehydration_manifest {
+        if let Some(h) = m.get("trace_chain_head").and_then(|v| v.as_str()) {
+            if !h.is_empty() {
+                trace_chain_head = Some(h.to_string());
+            }
+        }
+    }
+
+    let chain = if chain_depth == 0 {
+        Vec::new()
+    } else {
+        trace_chain_head
+            .as_deref()
+            .map(|h| walk_trace_chain(store, h, chain_depth))
+            .unwrap_or_default()
+    };
+
+    // Cycle 53 lean: hub anchors from manifest only — never rebuild full presentation
+    // for surprise (that path was a major harness_ms regressor).
+    let hub_anchors: Vec<String> = if lean_wake {
+        hub_anchors_from_manifest(rehydration_manifest.as_ref())
+    } else {
+        resolve_hub_anchors_for_surprise(store, session_intent)
+    };
+    // Lean: ego snapshot without hub residual walk (sentinel uses ego drift only below).
+    let ego_snapshot = if lean_wake {
+        build_ego_snapshot(store, primary_goal.as_deref(), None)
+    } else {
+        build_ego_snapshot(store, primary_goal.as_deref(), Some(&hub_anchors))
+    };
+    let continuity_playbook = if lean_wake {
+        json!({
+            "lean_wake": true,
+            "hint": "full continuity_playbook via mcp_engram_get_continuation_bundle",
+        })
+    } else {
+        build_continuity_playbook(primary_goal.as_deref())
+    };
     let presentation_stratum = crate::presentation_stratum::build_presentation_stratum_opts(
         store,
-        presentation_k.max(5),
+        if lean_wake {
+            presentation_k.min(8).max(5)
+        } else {
+            presentation_k.max(5)
+        },
         session_intent,
         lean_wake,
     );
@@ -1506,8 +1541,13 @@ pub fn build_harness_bundle_with_presentation_k(
             }
         })
     };
-    let surprise_pressure = sentinel_pressure_combined(store, &hub_anchors);
+    // Cycle 53 lean: ego-only surprise (skip hub residual block fetches).
     let ego_drift = ego_drift_velocity();
+    let surprise_pressure = if lean_wake {
+        ego_drift.unwrap_or(0.0)
+    } else {
+        sentinel_pressure_combined(store, &hub_anchors)
+    };
     let (turns, checkpoint) = store.sentinel_snapshot();
     let minutes = crate::continuity_spikes::minutes_since_checkpoint(
         checkpoint,
@@ -1547,11 +1587,23 @@ pub fn build_harness_bundle_with_presentation_k(
         .unwrap_or(false)
     };
 
-    // Cycle 49: lean trusted tiles use smaller recent window (full still builds 6).
+    // Cycle 53 lean: trust rehydration_manifest.trusted_tiles (no relation/recent walks).
+    // Cycle 49 used recent_cap=24; full path still builds 6 via store.
     let trusted_tiles = if lean_wake {
-        build_trusted_tiles_opts(store, primary_goal.as_deref(), 24)
+        rehydration_manifest
+            .as_ref()
+            .and_then(|m| m.get("trusted_tiles"))
+            .and_then(|v| v.as_array())
+            .map(|arr| arr.iter().take(6).cloned().collect::<Vec<_>>())
+            .unwrap_or_default()
     } else {
         build_trusted_tiles(store, primary_goal.as_deref())
+    };
+
+    let residual_surprise = if lean_wake {
+        0.0
+    } else {
+        hub_anchor_surprise_pressure(store, &hub_anchors)
     };
 
     json!({
@@ -1571,7 +1623,7 @@ pub fn build_harness_bundle_with_presentation_k(
         "rsi_cycle_metrics": {
             "cycle": crate::continuity_spikes::resolve_rsi_cycle_number(),
             "surprise_pressure": surprise_pressure,
-            "residual_surprise": hub_anchor_surprise_pressure(store, &hub_anchors),
+            "residual_surprise": residual_surprise,
             "ego_drift_velocity": ego_drift,
             "sentinel_residual_weight": crate::continuity_spikes::resolve_sentinel_residual_weight(),
             "meta_workflow_ok": meta_workflow_registry

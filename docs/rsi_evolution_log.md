@@ -1918,3 +1918,36 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 2. Partial σ² beyond 16-d.
 3. Query_pure TIMING full gate.
 
+## Cycle 53 — ultra-lean harness (cut harness_ms) (2026-07-14)
+
+### Master baseline
+
+- Post Cycle 52: PR **#98** `47442924` — lean local_stratum.
+- Live continuation_detail (stale binary): harness_ms≈**1674**, local still ~3.6s without C52 swap.
+
+### Research synthesis
+
+| Source | Insight |
+|--------|---------|
+| continuation_detail | harness second residual after local. |
+| resolve_hub_anchors | full presentation rebuild fallback expensive. |
+| hub residual + trusted_tiles | multi block fetches on lean wake. |
+
+### Hypothesis
+
+**Ultra-lean harness:** manifest hub anchors only; ego-only surprise; no trace chain walk; trusted_tiles from manifest; smaller presentation K; skip residual_surprise walk.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Code | lean path changes in `build_harness_bundle_with_presentation_k` |
+| Readiness | `wake_harness_ultra_lean` |
+| Test | harness_injection suite |
+
+### Next vectors
+
+1. Measure harness_ms after MCP swap with C52+C53.
+2. Partial σ² beyond 16-d.
+3. Query_pure TIMING full gate.
+
