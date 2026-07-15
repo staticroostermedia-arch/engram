@@ -78,6 +78,7 @@ list = [
   "lexicon:word:relation-adj-csr-only",
   "lexicon:word:csr-remove-incremental",
   "lexicon:word:fisher-adaptive-bands",
+  "lexicon:word:csr-remove-batch",
 ]
 
 [execute]

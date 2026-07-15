@@ -1476,4 +1476,41 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 3. Batch CSR remove / tombstone compaction.
 4. Partial σ² tensors beyond 16-d capsule (long horizon).
 
+---
+
+## Cycle 41 — batch CSR remove (2026-07-14)
+
+### Master baseline
+
+- Post Cycle 40: PR **#86** `e3fc0ad4` — adaptive Fisher residual bands.
+- Hub CRS ~0.89 · CSF ~0.94 · ~89k blocks.
+
+### Research synthesis
+
+| Source | Insight |
+|--------|---------|
+| Cycle 39 | Single remove is O(nnz); k demotions ⇒ k× CSR walks. |
+| Sparse batch delete | Compact entries + one filter/renumber pass. |
+| demote_condensation | Multi-edge unrelate is the hot multi-delete path. |
+
+### Hypothesis
+
+**Batch CSR remove:** `remove_batch` / `csr_remove_entries_at` maps k deleted old indices → one CSR rebuild of survivors; demote uses batch.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Code | `csr_remove_entries_at`, `remove_batch`, `unrelate_batch`; demote_condensation batch path |
+| Readiness | `relation_adj_csr_remove_batch: true` |
+| Tests | `relation_csr_remove_batch_matches_sequential` |
+| Lexicon | `csr-remove-batch` |
+
+### Next vectors
+
+1. mmap CSR for multi-million edge stalks.
+2. Further wake path slim.
+3. Partial σ² tensors beyond 16-d capsule (long horizon).
+4. Tombstone + deferred CSR compact for ultra-hot write paths.
+
 
