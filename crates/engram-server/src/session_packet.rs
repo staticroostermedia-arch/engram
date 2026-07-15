@@ -222,24 +222,163 @@ fn handoff_strip_json_string(rest: &str) -> Option<String> {
     }
 }
 
-/// MQ handoff schema: extract falsifier / would-reverse lines from summary.
+/// MQ handoff schema: extract actionable falsifier / would-reverse items.
+///
+/// MQ Cycle 17: reject section headers (`### falsifiers`) and raw JSON key lines;
+/// prefer bullet bodies, inline `falsifiers: a; b`, and JSON array string items.
 pub(crate) fn handoff_parse_falsifiers(summary: &str) -> Vec<String> {
-    summary
-        .lines()
-        .map(str::trim)
-        .filter(|line| {
-            if line.is_empty() {
-                return false;
+    let mut out = Vec::new();
+    let mut in_falsifier_section = false;
+
+    for line in summary.lines() {
+        let raw = line.trim();
+        if raw.is_empty() {
+            continue;
+        }
+        let lower = raw.to_ascii_lowercase();
+
+        // Markdown section header: enter / leave section.
+        if raw.starts_with('#') {
+            let header = raw
+                .trim_start_matches('#')
+                .trim()
+                .trim_end_matches(':')
+                .to_ascii_lowercase();
+            in_falsifier_section = header == "falsifiers"
+                || header == "falsifier"
+                || header.contains("would reverse")
+                || header == "would_falsify";
+            continue; // never emit the header itself
+        }
+
+        // JSON array: "falsifiers": ["a", "b"]
+        if let Some(pos) = lower.find("\"falsifiers\"") {
+            let after = &raw[pos + "\"falsifiers\"".len()..];
+            if let Some(bracket) = after.find('[') {
+                let arr = &after[bracket..];
+                out.extend(handoff_extract_json_string_array(arr));
             }
-            let l = line.to_ascii_lowercase();
-            l.contains("falsif")
-                || l.contains("would reverse")
-                || l.contains("would_falsify")
-                || l.starts_with("- falsifiers")
-                || l.contains("falsifiers:")
-        })
-        .map(|line| line.to_string())
-        .collect()
+            continue;
+        }
+
+        // Inline key on its own: falsifiers: item1; item2  or  - falsifiers: x
+        let stripped = raw.trim_start_matches(['-', '*', '+']).trim();
+        let stripped_lower = stripped.to_ascii_lowercase();
+        if stripped_lower.starts_with("falsifiers:") || stripped_lower.starts_with("falsifier:") {
+            let key_len = if stripped_lower.starts_with("falsifiers:") {
+                "falsifiers:".len()
+            } else {
+                "falsifier:".len()
+            };
+            let after = stripped[key_len..]
+                .trim()
+                .trim_matches(|c: char| c == '`' || c == '"');
+            if handoff_falsifier_value_ok(after) {
+                // Split on ; when multiple inline.
+                for part in after.split(';') {
+                    let p = part.trim();
+                    if handoff_falsifier_value_ok(p) {
+                        out.push(p.to_string());
+                    }
+                }
+            }
+            continue;
+        }
+
+        // Bullet / prose lines that are falsifier content.
+        let is_bullet = handoff_is_bullet_line(raw);
+        let mentions_falsify = lower.contains("would reverse")
+            || lower.contains("would_falsify")
+            || lower.contains("would reverse this")
+            || (lower.contains("falsif") && !lower.starts_with("\"falsifiers\""));
+
+        if in_falsifier_section && is_bullet {
+            let body = raw
+                .trim_start_matches(['-', '*', '+'])
+                .trim()
+                .trim_matches(|c: char| c == '`' || c == '"');
+            if handoff_falsifier_value_ok(body) {
+                out.push(body.to_string());
+            }
+            continue;
+        }
+
+        if mentions_falsify && !handoff_is_falsifier_noise(raw) {
+            let body = raw
+                .trim_start_matches(['-', '*', '+'])
+                .trim()
+                .trim_matches(|c: char| c == '`' || c == '"');
+            if handoff_falsifier_value_ok(body) {
+                out.push(body.to_string());
+            }
+        }
+    }
+
+    // Dedupe while preserving order.
+    let mut seen = std::collections::HashSet::new();
+    out.retain(|s| seen.insert(s.clone()));
+    out
+}
+
+fn handoff_is_falsifier_noise(line: &str) -> bool {
+    let t = line.trim();
+    let lower = t.to_ascii_lowercase();
+    // Pure headers / key shells without a body.
+    if lower == "### falsifiers"
+        || lower == "## falsifiers"
+        || lower == "# falsifiers"
+        || lower == "falsifiers"
+        || lower == "falsifiers:"
+        || lower == "- falsifiers"
+        || lower == "* falsifiers"
+    {
+        return true;
+    }
+    // JSON key shell without extracted items.
+    if lower
+        .trim_start_matches(['-', '*', ' '])
+        .starts_with("\"falsifiers\"")
+    {
+        return true;
+    }
+    false
+}
+
+fn handoff_falsifier_value_ok(v: &str) -> bool {
+    let v = v.trim();
+    if v.is_empty() || v.len() < 3 {
+        return false;
+    }
+    if v.starts_with('{') || v.starts_with('[') {
+        return false;
+    }
+    let lower = v.to_ascii_lowercase();
+    if lower == "falsifiers" || lower == "falsifier" {
+        return false;
+    }
+    v.chars().any(|c| c.is_alphanumeric())
+}
+
+/// Extract string items from a JSON array prefix (best-effort, no full JSON parser).
+fn handoff_extract_json_string_array(arr: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut rest = arr.trim().strip_prefix('[').unwrap_or(arr);
+    while let Some(start) = rest.find('"') {
+        rest = &rest[start + 1..];
+        if let Some(end) = rest.find('"') {
+            let item = &rest[..end];
+            if handoff_falsifier_value_ok(item) {
+                out.push(item.to_string());
+            }
+            rest = &rest[end + 1..];
+        } else {
+            break;
+        }
+        if rest.trim_start().starts_with(']') {
+            break;
+        }
+    }
+    out
 }
 
 /// Continuity completeness for MQ dual-gate (fields next mind needs without re-ask).
@@ -422,6 +561,51 @@ MCP swap MQ15; confirm has_next_vector=true after ### section form
         // Mid-line only, no real key → None
         let prose_only = "- ship: documents **next_vector:** parsing in session_packet\n";
         assert_eq!(handoff_parse_next_vector(prose_only), None);
+    }
+
+    /// MQ Cycle 17: falsifiers must be actionable items, not headers or JSON key shells.
+    #[test]
+    fn handoff_parse_falsifiers_skips_headers_extracts_bullets_and_json() {
+        let mq16_style = r#"## MQ Cycle 16 COMPLETE
+
+### decisions
+- master_sha: 10db59a0
+
+### next_vector
+MCP swap MQ16
+
+### falsifiers
+- midline garbage still wins
+- section body ignored
+- complete true with unusable text
+
+### quality_metrics
+```json
+{
+  "falsifiers": ["midline garbage still wins", "section body ignored"]
+}
+```
+"#;
+        let f = handoff_parse_falsifiers(mq16_style);
+        assert!(
+            !f.iter()
+                .any(|s| s.starts_with('#') || s.contains("\"falsifiers\"")),
+            "headers/JSON keys must not appear: {f:?}"
+        );
+        assert!(
+            f.iter().any(|s| s.contains("midline garbage")),
+            "bullet body required: {f:?}"
+        );
+        assert!(
+            f.iter().any(|s| s.contains("section body ignored")),
+            "bullet or JSON item required: {f:?}"
+        );
+        // Deduped — not double-counting JSON + bullet for same text more than once each unique.
+        assert_eq!(
+            f.iter().filter(|s| s.contains("midline garbage")).count(),
+            1,
+            "dedupe: {f:?}"
+        );
     }
 
     #[test]

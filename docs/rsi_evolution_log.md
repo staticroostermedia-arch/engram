@@ -3566,3 +3566,33 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 1. MCP swap MQ16; wake next_vector is intentional body not ship prose.
 2. Optional #134 C86 cold assemble residual (floor held).
 3. Capacity only if landfill metrics measured.
+
+## MQ Cycle 17 — handoff falsifiers actionable (2026-07-15)
+
+### VERIFY₀ baseline
+
+- master@`10db59a0` MQ16 #150.
+- MCP swapped: `mq_handoff_next_vector_no_midline` LIVE; next_vector intentional section body.
+- CSF warm **0.941** hub_crs≈0.90; injection_completeness **1.0**; soft-stale total_ms=**0**.
+- Verify **healthy** metric:mq_verify_1784155636 (MQ14 invalidate refreshed snapshot).
+- Residual: falsifiers=`### falsifiers` + JSON key shell (not actionable reverse conditions).
+- Unit tests lean + MQ16 next_vector green.
+
+### SELECT
+
+**mq_handoff_schema** — extract bullet/JSON array falsifiers; reject headers and key noise.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Parser | `handoff_parse_falsifiers` section-aware bullets + JSON array items |
+| Guard | skip `### falsifiers` / `"falsifiers"` shells |
+| Flag | `mq_handoff_falsifiers_actionable` |
+| Test | `handoff_parse_falsifiers_skips_headers_extracts_bullets_and_json` |
+
+### Next vectors
+
+1. MCP swap MQ17; wake falsifiers are bullet bodies not headers.
+2. Optional #134 C86 cold assemble residual (floor held).
+3. Capacity only if landfill metrics measured.
