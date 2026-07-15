@@ -9026,7 +9026,11 @@ mod ingest_ast_tests {
         // Core: primary_goal + handoff should be fetchable; no noise tile: noise_c59_* required.
         let names: Vec<String> = arts
             .iter()
-            .filter_map(|a| a.get("concept").and_then(|c| c.as_str()).map(|s| s.to_string()))
+            .filter_map(|a| {
+                a.get("concept")
+                    .and_then(|c| c.as_str())
+                    .map(|s| s.to_string())
+            })
             .collect();
         assert!(
             !names.iter().any(|n| n.starts_with("tile:noise_c59_")),
@@ -9039,7 +9043,9 @@ mod ingest_ast_tests {
         assert!(cpm.get("gather_ms").and_then(|v| v.as_u64()).is_some());
         let ready = store.backend_readiness();
         assert_eq!(
-            ready.get("wake_gather_ultra_lean").and_then(|v| v.as_bool()),
+            ready
+                .get("wake_gather_ultra_lean")
+                .and_then(|v| v.as_bool()),
             Some(true)
         );
         let _ = std::fs::remove_dir_all(&dir);
