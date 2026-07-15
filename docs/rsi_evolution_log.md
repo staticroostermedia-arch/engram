@@ -1985,3 +1985,36 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 2. Partial σ² beyond 16-d.
 3. Query_pure TIMING full gate.
 
+## Cycle 55 — query_pure TIMING full gate (2026-07-14)
+
+### Master baseline
+
+- Post Cycle 54: PR **#100** `668b79af` — local bootstrap skip if profile.
+- **Measured (C54 binary live):** local_stratum_ms=**24**, harness_ms=**988**, cont total=**2050**, wake total=**2063**.
+
+### Research synthesis
+
+| Source | Insight |
+|--------|---------|
+| Cycle 48 | query_pure TIMING gated off by default (stderr spam). |
+| Wake path | continuation residual cut; next backlog was query_pure TIMING full gate + partial σ². |
+| Agent ops | Need machine-readable phase_ms without enabling global stderr. |
+
+### Hypothesis
+
+**Full TIMING gate:** structured `---query_phase_ms---` trailer when `include_timing=true` or `ENGRAM_MCP_TIMING=1`; cover encode_hot / probe / total / path.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Code | query_pure phase map + optional trailer; schema `include_timing` |
+| Readiness | `query_pure_timing_full_gate` |
+| Note | partial σ² deferred (layout-bound 16-d capsule) |
+
+### Next vectors
+
+1. Partial σ² beyond 16-d (layout extension).
+2. Further cut harness_ms (~1s residual).
+3. Keep wake total ≤2s under load.
+

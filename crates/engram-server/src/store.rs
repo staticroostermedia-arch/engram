@@ -2559,6 +2559,8 @@ impl StoreHandle {
             "wake_local_stratum_lean": true,
             "wake_local_stratum_skip_if_profile": true,
             "wake_harness_ultra_lean": true,
+            "query_pure_timing_full_gate": true,
+            "query_pure_timing_env": "ENGRAM_MCP_TIMING|include_timing",
             "wake_harness_lean": true,
             "wake_presentation_lean": true,
             "wake_suggested_actions_lean": true,
