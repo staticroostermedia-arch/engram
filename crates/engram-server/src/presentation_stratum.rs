@@ -596,9 +596,8 @@ pub fn build_presentation_stratum_from_hubs(
             "goal"
         } else if concept.starts_with("process:") {
             "process"
-        } else if concept.starts_with("helper:") {
-            "memory"
         } else {
+            // helper: / ritual: / other
             "memory"
         };
         nodes.push(json!({
