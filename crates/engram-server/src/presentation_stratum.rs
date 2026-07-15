@@ -56,6 +56,20 @@ pub fn presentation_budget() -> usize {
     }
 }
 
+/// RSI Cycle 42: presentation node budget for lean `session_start` wake path.
+/// Slim wake only surfaces ~5 previews; building full K=40 is wasted work.
+/// Override: `ENGRAM_WAKE_PRESENTATION_K` (clamped 5..=presentation_budget()).
+/// Default **12** under lean; never exceeds [`presentation_budget`].
+pub fn presentation_budget_wake() -> usize {
+    let full = presentation_budget();
+    if let Ok(v) = std::env::var("ENGRAM_WAKE_PRESENTATION_K") {
+        if let Ok(n) = v.parse::<usize>() {
+            return n.clamp(5, full);
+        }
+    }
+    12.min(full)
+}
+
 #[derive(Clone)]
 pub(crate) struct Candidate {
     pub(crate) concept: String,
@@ -668,6 +682,30 @@ mod tests {
         assert_eq!(presentation_budget(), 40);
         std::env::set_var("ENGRAM_MEMORY_MODE", "deep");
         assert_eq!(presentation_budget(), 64);
+    }
+
+    /// RSI Cycle 42: wake presentation K default 12 under lean.
+    #[test]
+    fn test_presentation_budget_wake_defaults() {
+        std::env::remove_var("ENGRAM_PRESENTATION_K");
+        std::env::remove_var("ENGRAM_WAKE_PRESENTATION_K");
+        std::env::set_var("ENGRAM_MEMORY_MODE", "lean");
+        assert_eq!(presentation_budget_wake(), 12);
+        std::env::set_var("ENGRAM_WAKE_PRESENTATION_K", "8");
+        assert_eq!(presentation_budget_wake(), 8);
+        std::env::set_var("ENGRAM_WAKE_PRESENTATION_K", "100");
+        assert_eq!(
+            presentation_budget_wake(),
+            presentation_budget(),
+            "clamped to full lean budget"
+        );
+        std::env::remove_var("ENGRAM_WAKE_PRESENTATION_K");
+        std::env::set_var("ENGRAM_MEMORY_MODE", "deep");
+        assert_eq!(presentation_budget_wake(), 12); // still default 12; deep full is 64
+        std::env::set_var("ENGRAM_WAKE_PRESENTATION_K", "100");
+        assert_eq!(presentation_budget_wake(), 64); // clamp to deep full
+        std::env::remove_var("ENGRAM_WAKE_PRESENTATION_K");
+        std::env::set_var("ENGRAM_MEMORY_MODE", "lean");
     }
 
     #[test]

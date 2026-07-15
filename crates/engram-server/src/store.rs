@@ -2304,6 +2304,10 @@ impl StoreHandle {
             "alpha_speed_gate_env": "ENGRAM_ALPHA_SPEED_GATE",
             "alpha_speed_gate_process": "process:engram.ritual.alpha-speed-gate",
             "presentation_hop_budget": crate::presentation_stratum::presentation_hop_budget(),
+            "presentation_budget": crate::presentation_stratum::presentation_budget(),
+            "presentation_budget_wake": crate::presentation_stratum::presentation_budget_wake(),
+            "wake_presentation_k_env": "ENGRAM_WAKE_PRESENTATION_K",
+            "mcp_timing_env": "ENGRAM_MCP_TIMING",
             "crs_alpha_joint_enabled": crate::injection_priority::crs_alpha_joint_enabled(),
             "crs_alpha_joint_env": "ENGRAM_CRS_ALPHA_JOINT",
             "fisher_precision_enabled": engram_core::backend::fisher_precision_enabled(),
@@ -4082,7 +4086,27 @@ impl StoreHandle {
 
     /// Active continuity artifacts for agent wake-up: primary goal, last session_end,
     /// hydration cache flag, and ranked tile/helper/ritual/metric concepts.
+    /// Full continuation bundle (uses TTL cache). Prefer for `get_continuation_bundle`.
     pub fn build_continuation_bundle(&mut self, session_intent: Option<&str>) -> serde_json::Value {
+        self.build_continuation_bundle_inner(session_intent, true, None)
+    }
+
+    /// RSI Cycle 42: lean wake path — smaller presentation K, does **not** write full-bundle cache
+    /// (so subsequent get_continuation_bundle still rebuilds full K=40).
+    pub fn build_continuation_bundle_wake(
+        &mut self,
+        session_intent: Option<&str>,
+    ) -> serde_json::Value {
+        let k = crate::presentation_stratum::presentation_budget_wake();
+        self.build_continuation_bundle_inner(session_intent, false, Some(k))
+    }
+
+    fn build_continuation_bundle_inner(
+        &mut self,
+        session_intent: Option<&str>,
+        use_cache: bool,
+        presentation_k: Option<usize>,
+    ) -> serde_json::Value {
         use std::collections::HashSet;
 
         const TTL_SECS: u64 = 120;
@@ -4090,9 +4114,11 @@ impl StoreHandle {
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_secs())
             .unwrap_or(0);
-        if let Some(ref cached) = self.continuation_bundle_cache {
-            if now.saturating_sub(self.continuation_bundle_cached_at) < TTL_SECS {
-                return cached.clone();
+        if use_cache {
+            if let Some(ref cached) = self.continuation_bundle_cache {
+                if now.saturating_sub(self.continuation_bundle_cached_at) < TTL_SECS {
+                    return cached.clone();
+                }
             }
         }
 
@@ -4374,7 +4400,14 @@ impl StoreHandle {
             crate::local_stratum::local_budget(),
         );
 
-        let harness = crate::harness_injection::build_harness_bundle(self, session_intent);
+        let harness = match presentation_k {
+            Some(k) => crate::harness_injection::build_harness_bundle_with_presentation_k(
+                self,
+                session_intent,
+                k,
+            ),
+            None => crate::harness_injection::build_harness_bundle(self, session_intent),
+        };
 
         let rehydration_manifest = self.resolve_rehydration_manifest_for_wake();
 
@@ -4502,8 +4535,10 @@ impl StoreHandle {
             }
             obj.insert("cold_start_fidelity".to_string(), fidelity);
         }
-        self.continuation_bundle_cached_at = now;
-        self.continuation_bundle_cache = Some(bundle.clone());
+        if use_cache {
+            self.continuation_bundle_cached_at = now;
+            self.continuation_bundle_cache = Some(bundle.clone());
+        }
         bundle
     }
 
