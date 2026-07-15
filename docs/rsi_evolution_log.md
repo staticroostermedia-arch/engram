@@ -2157,3 +2157,39 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 3. Full 8192-d σ² tensors (long horizon).
 4. Keep warm wake total ≤250ms.
 
+## Cycle 60 — single-pass manifest + assemble_ms (2026-07-15)
+
+### Master baseline
+
+- Post Cycle 59: PR **#107** `2683af25` — ultra-lean wake gather.
+- **Measured warm:** total=**200**, gather=5, harness=**28**, local=21, fidelity=0; untimed assemble gap in cont detail.
+- Prompt backlog C50–C56 already shipped.
+
+### Research synthesis
+
+| Source | Insight |
+|--------|---------|
+| harness_injection | Already calls `resolve_rehydration_manifest_for_wake`. |
+| store continuation | Called resolve again after harness (double handoff parse). |
+| Lean path | Second handoff fetch for task_type + recent(24) when manifest has head. |
+
+### Hypothesis
+
+**Single-pass:** harness resolves manifest once; store reuses it; lean skips second handoff fetch and recent scan when head present; emit `assemble_ms` for post-harness packet build.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Code | harness lean order + store reuse; structured_handoff preview reuse on wake |
+| Timers | `assemble_ms` under continuation_phase_ms |
+| Readiness | `wake_harness_single_manifest`, `wake_assemble_ms` |
+| Test | `wake_single_manifest_and_assemble_ms` |
+
+### Next vectors
+
+1. Measure harness_ms + assemble_ms after MCP swap (target harness≪25, assemble≪30).
+2. Micro-cut hub presentation fetch if still hot.
+3. Full 8192-d σ² tensors (long horizon).
+4. Keep warm wake total ≤200ms.
+

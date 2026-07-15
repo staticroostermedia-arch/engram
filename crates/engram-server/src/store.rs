@@ -2568,6 +2568,8 @@ impl StoreHandle {
             "wake_suggested_actions_lean": true,
             "wake_artifact_gather_lean": true,
             "wake_gather_ultra_lean": true,
+            "wake_harness_single_manifest": true,
+            "wake_assemble_ms": true,
             "sheaf_fingerprint_disk": true,
             "sheaf_fingerprint_path_env": "ENGRAM_STORE parent/process_sheaf_fingerprint",
             "crs_alpha_joint_enabled": crate::injection_priority::crs_alpha_joint_enabled(),
@@ -4682,19 +4684,34 @@ impl StoreHandle {
             })
             .collect();
 
+        // RSI Cycle 60 wake: reuse entry preview from gather push (no second full-body read).
         let structured_handoff = if session_handoff_present {
-            let latest_text = read_session_handoff_latest_text(self).unwrap_or_default();
-            let preview: String = latest_text.chars().take(400).collect();
-            Some(serde_json::json!({
-                "concept": SESSION_HANDOFF_LATEST,
-                "preferred": true,
-                "latest_wins": true,
-                "preview": if latest_text.len() > 400 {
-                    format!("{preview}…")
-                } else {
-                    preview
-                },
-            }))
+            if wake_lean {
+                let preview = entries
+                    .iter()
+                    .find(|e| e.concept == SESSION_HANDOFF_LATEST)
+                    .map(|e| e.preview.clone())
+                    .unwrap_or_default();
+                Some(serde_json::json!({
+                    "concept": SESSION_HANDOFF_LATEST,
+                    "preferred": true,
+                    "latest_wins": true,
+                    "preview": preview,
+                }))
+            } else {
+                let latest_text = read_session_handoff_latest_text(self).unwrap_or_default();
+                let preview: String = latest_text.chars().take(400).collect();
+                Some(serde_json::json!({
+                    "concept": SESSION_HANDOFF_LATEST,
+                    "preferred": true,
+                    "latest_wins": true,
+                    "preview": if latest_text.len() > 400 {
+                        format!("{preview}…")
+                    } else {
+                        preview
+                    },
+                }))
+            }
         } else {
             latest_compression_handoff.map(|concept| {
                 serde_json::json!({
@@ -4735,9 +4752,23 @@ impl StoreHandle {
             ),
             None => crate::harness_injection::build_harness_bundle(self, session_intent),
         };
-
-        let rehydration_manifest = self.resolve_rehydration_manifest_for_wake();
         mark_cont(&mut cont_phase_ms, "harness_ms", t_harness);
+
+        // RSI Cycle 60: reuse harness.rehydration_manifest (already resolved once) — no second
+        // resolve_rehydration_manifest_for_wake. Time post-harness packet assemble separately.
+        let t_assemble = std::time::Instant::now();
+        let rehydration_manifest = harness
+            .get("rehydration_manifest")
+            .filter(|v| !v.is_null())
+            .cloned()
+            .or_else(|| {
+                // Full-bundle path only if harness omitted (should not happen).
+                if wake_lean {
+                    None
+                } else {
+                    self.resolve_rehydration_manifest_for_wake()
+                }
+            });
 
         let presentation_stratum = harness
             .get("presentation_stratum")
@@ -4837,6 +4868,7 @@ impl StoreHandle {
                 rehydration_manifest,
             );
         }
+        mark_cont(&mut cont_phase_ms, "assemble_ms", t_assemble);
         // Cold-start fidelity score from real continuation + readiness fields.
         // RSI Cycle 58: wake_lean skips full backend_readiness() — CSF only needs
         // bvh_ready + nvme_recall_ready already on nvme_context (measured residual
@@ -8959,6 +8991,7 @@ mod ingest_ast_tests {
             "gather_ms",
             "local_stratum_ms",
             "harness_ms",
+            "assemble_ms",
             "fidelity_ms",
             "total_ms",
         ] {
@@ -8990,6 +9023,54 @@ mod ingest_ast_tests {
             "suggested_actions must carry injection_rank after composite sort"
         );
 
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// RSI Cycle 60: wake reuses harness.rehydration_manifest; assemble_ms present.
+    #[test]
+    fn wake_single_manifest_and_assemble_ms() {
+        let dir = test_store_dir("wake_c60_manifest");
+        let mut store = StoreHandle::new(&dir.to_string_lossy());
+        store
+            .remember(
+                "primary_goal",
+                "PRIMARY GOAL\n\n**goal:** goal:engram_mvp_v1\n**set_at:** test",
+            )
+            .unwrap();
+        store
+            .remember(
+                crate::harness_injection::SESSION_HANDOFF_LATEST,
+                r#"SESSION HANDOFF PACKET v1
+
+{"decisions":["c60"],"primary_goal":"goal:engram_mvp_v1","trace_chain_head":"trace:c60_head","rehydration_manifest":{"version":"rehydration_manifest_v1","manifest_concept":"manifest:c60","primary_goal":"goal:engram_mvp_v1","session_end_key":"session_end_c60","trace_chain_head":"trace:c60_head","hub_anchors":["primary_goal","helper:session_handoff_latest"],"trusted_tiles":[],"files_touched":[]}}"#,
+            )
+            .unwrap();
+        let bundle = store.build_continuation_bundle_wake(Some("c60 single manifest"));
+        let cpm = bundle
+            .get("continuation_phase_ms")
+            .and_then(|v| v.as_object())
+            .expect("continuation_phase_ms");
+        assert!(cpm.get("assemble_ms").and_then(|v| v.as_u64()).is_some());
+        assert!(cpm.get("harness_ms").and_then(|v| v.as_u64()).is_some());
+        // Manifest present on top-level and harness (single resolve path).
+        assert!(
+            bundle.get("rehydration_manifest").is_some()
+                || bundle
+                    .get("harness_injection")
+                    .and_then(|h| h.get("rehydration_manifest"))
+                    .is_some()
+        );
+        let ready = store.backend_readiness();
+        assert_eq!(
+            ready
+                .get("wake_harness_single_manifest")
+                .and_then(|v| v.as_bool()),
+            Some(true)
+        );
+        assert_eq!(
+            ready.get("wake_assemble_ms").and_then(|v| v.as_bool()),
+            Some(true)
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
