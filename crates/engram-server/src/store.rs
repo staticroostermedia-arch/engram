@@ -2374,6 +2374,7 @@ impl StoreHandle {
             "wake_ki_rebake_env": "ENGRAM_WAKE_KI_REBAKE",
             "wake_phase_ms_enabled": true,
             "wake_harness_lean": true,
+            "wake_presentation_lean": true,
             "crs_alpha_joint_enabled": crate::injection_priority::crs_alpha_joint_enabled(),
             "crs_alpha_joint_env": "ENGRAM_CRS_ALPHA_JOINT",
             "fisher_precision_enabled": engram_core::backend::fisher_precision_enabled(),
