@@ -157,6 +157,17 @@ fn args_str<'a>(args: &'a Value, keys: &[&str]) -> Option<&'a str> {
     None
 }
 
+/// RSI Cycle 37: gate sheaf TIMING eprintln (wake I/O). Default off; set ENGRAM_SHEAF_TIMING=1.
+fn sheaf_timing_enabled() -> bool {
+    matches!(
+        std::env::var("ENGRAM_SHEAF_TIMING")
+            .unwrap_or_default()
+            .to_ascii_lowercase()
+            .as_str(),
+        "1" | "true" | "on" | "yes"
+    )
+}
+
 fn load_process_sheaf(store: &SharedStore) -> Result<(), String> {
     // M2-2 sub 019eafbd: load_process_sheaf remains here (extract to sheaf.rs scoped out for narrow/minimal/no-behavior-change). Called from dispatch paths + session_start. No change.
     // [MCP] search_tool/use_tool for pre context/recall/trace on this dispatch/load + store handoff will be used; post verify_manifold_integrity + spatial_status post edit. No code change to fn.
@@ -190,14 +201,18 @@ fn load_process_sheaf(store: &SharedStore) -> Result<(), String> {
                 })
                 .is_some();
             if already_registered {
-                eprintln!(
-                    "TIMING[load_process_sheaf]: skip (processes/ unchanged, fingerprint={fingerprint})"
-                );
+                if sheaf_timing_enabled() {
+                    eprintln!(
+                        "TIMING[load_process_sheaf]: skip (processes/ unchanged, fingerprint={fingerprint})"
+                    );
+                }
                 return Ok(());
             }
         }
     }
-    eprintln!("TIMING[load_process_sheaf]: start (T1 diagnostic for wake hang repro)");
+    if sheaf_timing_enabled() {
+        eprintln!("TIMING[load_process_sheaf]: start (T1 diagnostic for wake hang repro)");
+    }
     let subdirs = PROCESS_SHEAF_SUBDIRS;
     // Phase 2 – Sheaf Gluing & Spacetime Integration (additive only, no core changes to .leg3/VSA/MCP base, reuse h1_handler/OP_IS_SYMBOLIC_OF/OP_GEOMETRIC_PRODUCT patterns per audit; sub-agent handoff; file:130):
     // - Add "linguistic" to walk (subdirs array).
@@ -332,7 +347,9 @@ fn load_process_sheaf(store: &SharedStore) -> Result<(), String> {
             }
         }
     }
-    eprintln!("TIMING[load_process_sheaf]: toml parse+fs done (off-lock), collected={}, elapsed_so_far={:.2}s", procs.len(), t_load.elapsed().as_secs_f32());
+    if sheaf_timing_enabled() {
+        eprintln!("TIMING[load_process_sheaf]: toml parse+fs done (off-lock), collected={}, elapsed_so_far={:.2}s", procs.len(), t_load.elapsed().as_secs_f32());
+    }
     // Now per-proc short lock for the geometric ops (shrinks the critical section from one big hold for all ~7 procs to per-proc; allows user query_pure/list_concepts to interleave during bg rehydrate load. Per subagent review of the Mutex as the 45min killer in bg + user calls. The register/relates/fetches per p are now short, total time similar but no starvation).
     for p in &procs {
         let mut lock = store.lock().unwrap();
@@ -373,7 +390,9 @@ fn load_process_sheaf(store: &SharedStore) -> Result<(), String> {
             let _ = lock.relate(&p.key, "ritual:engram.working-memory", "enforced_by");
         }
     }
-    eprintln!("TIMING[load_process_sheaf]: register+relates done (per-proc short locks), registered={}, elapsed_so_far={:.2}s", registered, t_load.elapsed().as_secs_f32());
+    if sheaf_timing_enabled() {
+        eprintln!("TIMING[load_process_sheaf]: register+relates done (per-proc short locks), registered={}, elapsed_so_far={:.2}s", registered, t_load.elapsed().as_secs_f32());
+    }
     // Pre-load promotes (short separate scope).
     {
         let t_pre = std::time::Instant::now();
@@ -394,16 +413,20 @@ fn load_process_sheaf(store: &SharedStore) -> Result<(), String> {
         let _ = hlock.promote_tile_to_high_priority("ritual:session_end_anchor");
         let _ = hlock.promote_tile_to_high_priority("mcp_engram_get_continuation_bundle");
         let _ = hlock.promote_tile_to_high_priority("mcp_engram_query_pure");
-        eprintln!(
-            "TIMING[load_process_sheaf]: preload promotes done, elapsed_pre={:.2}s",
-            t_pre.elapsed().as_secs_f32()
-        );
+        if sheaf_timing_enabled() {
+            eprintln!(
+                "TIMING[load_process_sheaf]: preload promotes done, elapsed_pre={:.2}s",
+                t_pre.elapsed().as_secs_f32()
+            );
+        }
     }
     info!("Process Architecture Sheaf loader: dynamically registered {} processes from processes/ tomls (proper toml parse of category + lists; live RELATION gluing for sheaf; portable via ENGRAM_PROCESSES_DIR or cwd). Subvisor H1 + continuity supported. Pre-loaded core processes + wake anchors to hot cache. See processes/ and the EngramGrok Process Definition doc.", registered);
-    eprintln!(
-        "TIMING[load_process_sheaf]: COMPLETE total={:.2}s",
-        t_load.elapsed().as_secs_f32()
-    );
+    if sheaf_timing_enabled() {
+        eprintln!(
+            "TIMING[load_process_sheaf]: COMPLETE total={:.2}s",
+            t_load.elapsed().as_secs_f32()
+        );
+    }
     if let Ok(mut cache) = PROCESS_SHEAF_CACHE.lock() {
         cache.fingerprint = fingerprint;
         cache.loaded = true;

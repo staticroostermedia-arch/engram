@@ -73,6 +73,8 @@ list = [
   "lexicon:word:encrypt-remember-dogfood",
   "lexicon:word:fisher-banded-residual",
   "lexicon:word:relation-adj-csr",
+  "lexicon:word:csr-incremental-insert",
+  "lexicon:word:sheaf-timing-gate",
 ]
 
 [execute]
