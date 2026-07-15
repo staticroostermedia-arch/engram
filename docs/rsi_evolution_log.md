@@ -3447,3 +3447,33 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 1. MCP swap MQ12; cold/warm CSF shows mean_hub_crs > 0.8 with hub_crs_live_sample.
 2. Optional #134 C86 cold assemble residual (floor held).
 3. Capacity only if landfill metrics measured.
+
+## MQ Cycle 13 — lean injection_completeness honesty (2026-07-15)
+
+### VERIFY₀ baseline
+
+- master@`af344642` MQ12 #146.
+- MCP swapped: `mq_hub_crs_lean_sample` LIVE; CSF warm **0.936** mean_hub_crs≈**0.89** hub_crs_live_sample; trusted_tiles[0]=session_boundary.
+- Warm soft-stale total_ms=**0**; readiness_ms=0.
+- Verify **healthy** metric:mq_verify_1784152729; series growing.
+- Residual: injection_completeness score **0.75** missing `open_scars_surfaced`+`hot_tiles` on lean (hardcoded zeros + scar slot required scars>0).
+- Unit tests lean + MQ12 hub sample green.
+
+### SELECT
+
+**mq_rehydrate_graph** — honest lean completeness: zero scars is filled; count trusted/hot tiles without full walks.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Slot | `open_scars_surfaced` always filled after scar probe (0 scars OK) |
+| Lean hot | count `tile:*` entries + harness trusted_tiles |
+| Flag | `mq_rehydrate_injection_completeness_lean` |
+| Tests | `completeness_zero_scars_with_handoff_is_full_scar_slot`, updated full-slots test |
+
+### Next vectors
+
+1. MCP swap MQ13; injection_completeness score≈1.0 when handoff+tiles+BVH ready.
+2. Optional #134 C86 cold assemble residual (floor held).
+3. Capacity only if landfill metrics measured.

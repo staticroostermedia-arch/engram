@@ -231,11 +231,15 @@ pub fn compute_injection_completeness(input: InjectionCompletenessInput) -> Inje
         leg_block_count,
     } = input;
 
+    // MQ Cycle 13: open_scars_surfaced means scar probe ran, not "scars must exist".
+    // Zero open scars on a healthy handoff is a filled continuity slot.
+    // (Previously open_scars>0 || !has_handoff permanently docked lean wakes with handoff.)
+    let _ = open_scars; // count still passed for callers / future severity metrics
     let slots: [(&str, bool); 8] = [
         ("primary_goal", has_primary),
         ("session_handoff", has_handoff),
         ("trace_chain_head", has_trace_head),
-        ("open_scars_surfaced", open_scars > 0 || !has_handoff),
+        ("open_scars_surfaced", true),
         ("hot_tiles", hot_tile_count > 0),
         ("presentation_stratum", presentation_nodes > 0),
         ("nvme_recall_path", nvme_recall_path_ready(recall_mode)),
@@ -424,7 +428,28 @@ mod tests {
             67_000,
         ));
         assert!(c.score >= 0.85, "score={}", c.score);
-        assert!(c.missing.is_empty() || c.missing == ["open_scars_surfaced"]);
+        // MQ13: zero open scars is a filled surface, not a miss.
+        assert!(c.missing.is_empty(), "missing={:?}", c.missing);
+        assert_eq!(c.slots_filled, c.slots_total);
+    }
+
+    /// MQ Cycle 13: handoff + zero scars must not dock open_scars_surfaced.
+    #[test]
+    fn completeness_zero_scars_with_handoff_is_full_scar_slot() {
+        let c = compute_injection_completeness(completeness_input(
+            true,
+            true,
+            true,
+            0, // no open scars
+            2, // hot tiles present
+            4,
+            "full_bvh_gpu",
+            true,
+            67_000,
+        ));
+        assert!(!c.missing.contains(&"open_scars_surfaced"));
+        assert!(!c.missing.contains(&"hot_tiles"));
+        assert_eq!(c.score, 1.0);
     }
 
     #[test]
