@@ -2820,3 +2820,38 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 2. Cold first-wake sheaf (19700) + readiness (542) — async sheaf or fingerprint skip fix.
 3. Full 8192-d σ² tensors (long horizon — not wake path).
 
+## Cycle 79 — sheaf cold-fetch already_registered (2026-07-15)
+
+### Master baseline
+
+- Post Cycle 78: PR **#126** `fe78072e` — wake gather skip primary resolve.
+- **Warm LIVE:** total=**7** sheaf=**0** harness=**1** gather=**3** readiness=**0**.
+- **Cold first-wake (prior):** sheaf=**19700** readiness=**542** total=**20260**.
+- Root cause: after MCP restart, `fetch_block_high_priority(wake-up)` miss → full toml re-register despite disk fingerprint match + blocks on NVMe.
+
+### Research synthesis
+
+| Source | Insight |
+|--------|---------|
+| sheaf_ms 19700 cold | High-priority-only existence check false-negative post-restart. |
+| Disk FP C48 | Correctly warms cache.loaded but still required store proof. |
+| C74 soft-stale | In-process only — lost on MCP restart. |
+
+### Hypothesis
+
+**Cold fetch fallback:** `fetch_block_high_priority(wake-up).or_else(|| fetch_block(wake-up))` for already_registered.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Code | cold fetch fallback in `load_process_sheaf` skip path |
+| Readiness | `wake_sheaf_cold_fetch_fallback` |
+| Test | `sheaf_disk_warm_cold_fetch_skips_full_reload` |
+
+### Next vectors
+
+1. MCP swap C78+C79; cold sheaf_ms≤50; warm total≤6 gather≤1.
+2. Cold readiness_ms 542 residual (cuFile / slim first-build).
+3. Full 8192-d σ² tensors (long horizon — not wake path).
+

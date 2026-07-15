@@ -2717,6 +2717,7 @@ impl StoreHandle {
                 "wake_sheaf_soft_stale": true,
                 "sheaf_soft_stale_env": "ENGRAM_SHEAF_SOFT_STALE_SECS",
                 "sheaf_soft_stale_secs": 900,
+                "wake_sheaf_cold_fetch_fallback": true,
                 "crs_alpha_joint_env": "ENGRAM_CRS_ALPHA_JOINT",
                 "fisher_precision_env": "ENGRAM_FISHER_PRECISION",
                 "fisher_invvar_env": "ENGRAM_FISHER_INVVAR",
