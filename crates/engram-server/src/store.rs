@@ -10460,6 +10460,8 @@ SESSION HANDOFF PACKET v1
                 > 0.0
         );
         std::env::set_var("ENGRAM_ALPHA_SPEED_GATE", "0");
+        // RSI Cycle 64: readiness TTL cache must not hide env flips in tests.
+        store.invalidate_readiness_cache();
         let r_off = store.backend_readiness();
         assert_eq!(
             r_off
@@ -10469,6 +10471,7 @@ SESSION HANDOFF PACKET v1
         );
         std::env::remove_var("ENGRAM_ALPHA_SPEED_GATE");
         std::env::remove_var("ENGRAM_CRS_ALPHA_JOINT");
+        store.invalidate_readiness_cache();
         let r2 = store.backend_readiness();
         assert_eq!(
             r2.get("crs_alpha_joint_enabled").and_then(|v| v.as_bool()),
