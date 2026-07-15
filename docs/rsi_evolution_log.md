@@ -2193,3 +2193,38 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 3. Full 8192-d σ² tensors (long horizon).
 4. Keep warm wake total ≤200ms.
 
+## Cycle 61 — lean assemble (cut assemble_ms) (2026-07-15)
+
+### Master baseline
+
+- Post Cycle 60: PR **#108** `21918d9b` — single-pass manifest + assemble_ms.
+- **Measured warm:** total=**182**, assemble=**69**, harness=12, gather=4, local=21, fidelity=0.
+- Prompt backlog C50–C56 already shipped; residual is assemble sub-phase.
+
+### Research synthesis
+
+| Source | Insight |
+|--------|---------|
+| continuation_detail | assemble_ms ≈65% of cont detail after C60. |
+| harness embed | agent_discipline + rsi_cycle_metrics bulk clone into wake packet. |
+| stratum_artifacts | Field-by-field node remap duplicated presentation nodes. |
+
+### Hypothesis
+
+**Lean assemble:** strip bulky harness fields on wake; reuse presentation nodes as active_artifacts; prefer cached leg_block_count; short recall hints.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Code | wake_lean assemble path in `build_continuation_bundle_inner` |
+| Readiness | `wake_assemble_lean: true` |
+| Test | `wake_lean_assemble_strips_bulky_harness` |
+
+### Next vectors
+
+1. Measure assemble_ms after MCP swap (target ≪30ms).
+2. If still high, slim presentation previews on wake.
+3. Full 8192-d σ² tensors (long horizon).
+4. Keep warm wake total ≤150ms.
+

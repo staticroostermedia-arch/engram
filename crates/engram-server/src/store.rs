@@ -2570,6 +2570,7 @@ impl StoreHandle {
             "wake_gather_ultra_lean": true,
             "wake_harness_single_manifest": true,
             "wake_assemble_ms": true,
+            "wake_assemble_lean": true,
             "sheaf_fingerprint_disk": true,
             "sheaf_fingerprint_path_env": "ENGRAM_STORE parent/process_sheaf_fingerprint",
             "crs_alpha_joint_enabled": crate::injection_priority::crs_alpha_joint_enabled(),
@@ -4754,45 +4755,67 @@ impl StoreHandle {
         };
         mark_cont(&mut cont_phase_ms, "harness_ms", t_harness);
 
-        // RSI Cycle 60: reuse harness.rehydration_manifest (already resolved once) — no second
-        // resolve_rehydration_manifest_for_wake. Time post-harness packet assemble separately.
+        // RSI Cycle 60/61: reuse harness.rehydration_manifest (single resolve). Lean assemble
+        // avoids node field-remap, bulky harness fields, and cold leg_block_count rescan.
         let t_assemble = std::time::Instant::now();
-        let rehydration_manifest = harness
-            .get("rehydration_manifest")
-            .filter(|v| !v.is_null())
-            .cloned()
-            .or_else(|| {
-                // Full-bundle path only if harness omitted (should not happen).
-                if wake_lean {
-                    None
-                } else {
-                    self.resolve_rehydration_manifest_for_wake()
-                }
-            });
+        let mut harness = harness;
+        let rehydration_manifest = if let Some(obj) = harness.as_object_mut() {
+            // Cycle 61 lean: drop bulky static blocks from wake packet (full via get_continuation_bundle).
+            if wake_lean {
+                obj.remove("agent_discipline");
+                obj.remove("rsi_cycle_metrics");
+                obj.remove("scaffold_registry");
+                obj.remove("meta_workflow_registry");
+                obj.remove("jit_deformation_framework");
+                obj.remove("continuity_playbook");
+                obj.insert("lean_assemble".into(), serde_json::json!(true));
+            }
+            obj.get("rehydration_manifest")
+                .filter(|v| !v.is_null())
+                .cloned()
+        } else {
+            None
+        };
+        let rehydration_manifest = rehydration_manifest.or_else(|| {
+            if wake_lean {
+                None
+            } else {
+                self.resolve_rehydration_manifest_for_wake()
+            }
+        });
 
         let presentation_stratum = harness
             .get("presentation_stratum")
             .cloned()
             .unwrap_or(serde_json::json!({}));
-        let stratum_artifacts: Vec<serde_json::Value> = presentation_stratum
-            .get("nodes")
-            .and_then(|v| v.as_array())
-            .map(|arr| {
-                arr.iter()
-                    .map(|n| {
-                        serde_json::json!({
-                            "concept": n.get("concept"),
-                            "crs": n.get("crs"),
-                            "hot": n.get("hot"),
-                            "source": n.get("source"),
-                            "preview": n.get("preview"),
-                            "lineage": n.get("lineage"),
-                            "orbit": n.get("orbit"),
+        // Cycle 61 lean: active_artifacts = presentation nodes as-is (no lineage/orbit remap).
+        let stratum_artifacts: Vec<serde_json::Value> = if wake_lean {
+            presentation_stratum
+                .get("nodes")
+                .and_then(|v| v.as_array())
+                .cloned()
+                .unwrap_or_default()
+        } else {
+            presentation_stratum
+                .get("nodes")
+                .and_then(|v| v.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .map(|n| {
+                            serde_json::json!({
+                                "concept": n.get("concept"),
+                                "crs": n.get("crs"),
+                                "hot": n.get("hot"),
+                                "source": n.get("source"),
+                                "preview": n.get("preview"),
+                                "lineage": n.get("lineage"),
+                                "orbit": n.get("orbit"),
+                            })
                         })
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
+                        .collect()
+                })
+                .unwrap_or_default()
+        };
 
         let trace_head = harness
             .get("trace_chain")
@@ -4800,21 +4823,58 @@ impl StoreHandle {
             .and_then(|h| h.as_str())
             .map(|s| !s.is_empty())
             .unwrap_or(false);
-        let open_scars = harness
-            .get("open_scars_wake")
-            .and_then(|v| v.as_array())
-            .map(|a| a.len())
-            .unwrap_or(0);
+        let open_scars = if wake_lean {
+            0
+        } else {
+            harness
+                .get("open_scars_wake")
+                .and_then(|v| v.as_array())
+                .map(|a| a.len())
+                .unwrap_or(0)
+        };
         let presentation_count = presentation_stratum
             .get("node_count")
             .and_then(|v| v.as_u64())
             .unwrap_or(0) as usize;
-        let hot_tile_count = entries
-            .iter()
-            .filter(|e| e.hot && e.concept.starts_with("tile:"))
-            .count();
-        let leg_blocks = self.leg_block_count();
-        let recall_mode = self.recall_mode();
+        let hot_tile_count = if wake_lean {
+            0
+        } else {
+            entries
+                .iter()
+                .filter(|e| e.hot && e.concept.starts_with("tile:"))
+                .count()
+        };
+        // Cycle 61: prefer already-cached leg block count (avoid 30s-TTL rescan on wake).
+        let leg_blocks = if wake_lean {
+            let cached = self
+                .leg_block_count_value
+                .load(std::sync::atomic::Ordering::Relaxed);
+            if cached > 0 {
+                cached
+            } else {
+                self.leg_block_count()
+            }
+        } else {
+            self.leg_block_count()
+        };
+        let bvh_ready = self.bvh_is_ready();
+        let gpu_hot = self.backend.gpu_hot_resident();
+        let recall_mode = if wake_lean {
+            // Avoid second path through leg_block_count inside recall_mode().
+            if leg_blocks > Self::LARGE_MANIFOLD_THRESHOLD {
+                if bvh_ready {
+                    "full_bvh_gpu"
+                } else {
+                    "sampled_bounded"
+                }
+            } else if bvh_ready {
+                "full_bvh"
+            } else {
+                "cpu_linear"
+            }
+        } else {
+            self.recall_mode()
+        };
         let completeness = crate::injection_priority::compute_injection_completeness(
             crate::injection_priority::InjectionCompletenessInput {
                 has_primary: primary_goal_name.is_some(),
@@ -4824,7 +4884,7 @@ impl StoreHandle {
                 hot_tile_count,
                 presentation_nodes: presentation_count,
                 recall_mode,
-                gpu_hot_resident: self.backend.gpu_hot_resident(),
+                gpu_hot_resident: gpu_hot,
                 leg_block_count: leg_blocks,
             },
         );
@@ -4844,15 +4904,23 @@ impl StoreHandle {
             },
             "nvme_context": {
                 "recall_mode": recall_mode,
-                "bvh_ready": self.bvh_is_ready(),
-                "gpu_hot_resident": self.backend.gpu_hot_resident(),
+                "bvh_ready": bvh_ready,
+                "gpu_hot_resident": gpu_hot,
                 "leg_block_count": leg_blocks,
                 "large_manifold": leg_blocks > Self::LARGE_MANIFOLD_THRESHOLD,
                 "nvme_direct_io": true,
                 "nvme_recall_ready": crate::injection_priority::nvme_recall_path_ready(recall_mode),
-                "hint": "full_bvh_gpu: O(log N) BVH + O_DIRECT .leg mmap — NVMe as context extension; poll get_backend_readiness if injection_completeness.missing contains nvme_recall_path",
+                "hint": if wake_lean {
+                    "lean_wake: poll get_backend_readiness if nvme missing"
+                } else {
+                    "full_bvh_gpu: O(log N) BVH + O_DIRECT .leg mmap — NVMe as context extension; poll get_backend_readiness if injection_completeness.missing contains nvme_recall_path"
+                },
             },
-            "recall_hint": "Execute suggested_actions in order, then read structured_handoff. local_stratum = sovereign host/project context; presentation_stratum = distilled process/ritual continuation.",
+            "recall_hint": if wake_lean {
+                "Lean wake — execute suggested_actions; full bundle via get_continuation_bundle"
+            } else {
+                "Execute suggested_actions in order, then read structured_handoff. local_stratum = sovereign host/project context; presentation_stratum = distilled process/ritual continuation."
+            },
             "harness_injection": harness,
             "cached_at": now,
         });
@@ -9023,6 +9091,50 @@ mod ingest_ast_tests {
             "suggested_actions must carry injection_rank after composite sort"
         );
 
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// RSI Cycle 61: lean assemble strips bulky harness fields and keeps assemble_ms.
+    #[test]
+    fn wake_lean_assemble_strips_bulky_harness() {
+        let dir = test_store_dir("wake_c61_assemble");
+        let mut store = StoreHandle::new(&dir.to_string_lossy());
+        store
+            .remember(
+                "primary_goal",
+                "PRIMARY GOAL\n\n**goal:** goal:engram_mvp_v1\n**set_at:** test",
+            )
+            .unwrap();
+        store
+            .remember(
+                crate::harness_injection::SESSION_HANDOFF_LATEST,
+                r#"SESSION HANDOFF PACKET v1
+
+{"decisions":["c61"],"primary_goal":"goal:engram_mvp_v1","trace_chain_head":"trace:c61","rehydration_manifest":{"version":"rehydration_manifest_v1","manifest_concept":"manifest:c61","primary_goal":"goal:engram_mvp_v1","session_end_key":"session_end_c61","trace_chain_head":"trace:c61","hub_anchors":["primary_goal"],"trusted_tiles":[],"files_touched":[]}}"#,
+            )
+            .unwrap();
+        let bundle = store.build_continuation_bundle_wake(Some("c61 lean assemble"));
+        let harness = bundle
+            .get("harness_injection")
+            .and_then(|v| v.as_object())
+            .expect("harness_injection");
+        assert_eq!(
+            harness.get("lean_assemble").and_then(|v| v.as_bool()),
+            Some(true)
+        );
+        assert!(harness.get("agent_discipline").is_none());
+        assert!(harness.get("rsi_cycle_metrics").is_none());
+        assert!(harness.get("suggested_actions").is_some());
+        let cpm = bundle
+            .get("continuation_phase_ms")
+            .and_then(|v| v.as_object())
+            .expect("continuation_phase_ms");
+        assert!(cpm.get("assemble_ms").and_then(|v| v.as_u64()).is_some());
+        let ready = store.backend_readiness();
+        assert_eq!(
+            ready.get("wake_assemble_lean").and_then(|v| v.as_bool()),
+            Some(true)
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
