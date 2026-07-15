@@ -1626,4 +1626,41 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 3. Defer `mark_ki_rebake_needed` on wake when sheaf fingerprint fresh.
 4. Query_pure TIMING full gate + wake elapsed histogram.
 
+---
+
+## Cycle 45 — wake phase_ms histogram + skip ki_rebake (2026-07-14)
+
+### Master baseline
+
+- Post Cycle 44: PR **#90** `3bdb63e3` — CSR tombstone + deferred compact.
+- Hub CRS ~0.89 · CSF ~0.94 · ~89k blocks · session_start still ~39s on large stalk.
+
+### Research synthesis
+
+| Source | Insight |
+|--------|---------|
+| Cycles 42–43 | Slim K + skip-hot + async fidelity; total still multi-second. |
+| Observability | Need per-phase ms to target next cut (sheaf vs continuation vs encode). |
+| ki_hijacker | mark_ki_rebake every wake forces bake pressure without new intent geometry. |
+
+### Hypothesis
+
+**Phase histogram + opt-in ki rebake:** emit `wake_phase_ms` breakdown; default skip `mark_ki_rebake_needed` unless `ENGRAM_WAKE_KI_REBAKE=1`.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Code | `wake_phase_ms` (session_block/sheaf/continuation/spatial/packet/total) |
+| Policy | `wake_ki_rebake` default false; env force |
+| Readiness | `wake_phase_ms_enabled`, `wake_ki_rebake_env` |
+| Lexicon | `wake-phase-ms`, `wake-ki-rebake-gate` |
+
+### Next vectors
+
+1. mmap CSR for multi-million edge stalks.
+2. Cut dominant phase from `wake_phase_ms` (likely continuation/sheaf).
+3. Partial σ² tensors beyond 16-d capsule (long horizon).
+4. Query_pure TIMING full gate.
+
 
