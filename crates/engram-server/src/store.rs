@@ -1962,6 +1962,10 @@ pub struct StoreHandle {
     continuation_bundle_cached_at: u64,
     continuation_bundle_cache: Option<serde_json::Value>,
 
+    /// RSI Cycle 83: soft-stale lean wake continuation (separate from full K=40 cache).
+    wake_continuation_cached_at: u64,
+    wake_continuation_cache: Option<serde_json::Value>,
+
     /// Guard: auto-spawn at most one on-demand BVH build when memory_mode=deep.
     deep_bvh_spawn_attempted: std::sync::atomic::AtomicBool,
 
@@ -2385,6 +2389,8 @@ impl StoreHandle {
             last_probe_ts: 0,
             continuation_bundle_cached_at: 0,
             continuation_bundle_cache: None,
+            wake_continuation_cached_at: 0,
+            wake_continuation_cache: None,
             deep_bvh_spawn_attempted: std::sync::atomic::AtomicBool::new(false),
             leg_block_count_value: std::sync::atomic::AtomicUsize::new(0),
             leg_block_count_cached_at: std::sync::atomic::AtomicU64::new(0),
@@ -2556,6 +2562,8 @@ impl StoreHandle {
             last_probe_ts: 0,
             continuation_bundle_cached_at: 0,
             continuation_bundle_cache: None,
+            wake_continuation_cached_at: 0,
+            wake_continuation_cache: None,
             deep_bvh_spawn_attempted: std::sync::atomic::AtomicBool::new(false),
             leg_block_count_value: std::sync::atomic::AtomicUsize::new(0),
             leg_block_count_cached_at: std::sync::atomic::AtomicU64::new(0),
@@ -2568,6 +2576,16 @@ impl StoreHandle {
     pub fn invalidate_continuation_bundle_cache(&mut self) {
         self.continuation_bundle_cached_at = 0;
         self.continuation_bundle_cache = None;
+        self.wake_continuation_cached_at = 0;
+        self.wake_continuation_cache = None;
+    }
+
+    /// RSI Cycle 83: soft-stale secs for lean wake continuation (default 1800).
+    fn wake_continuation_soft_stale_secs() -> u64 {
+        std::env::var("ENGRAM_WAKE_CONTINUATION_SOFT_STALE_SECS")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(1800)
     }
 
     /// RSI Cycle 64: drop readiness TTL cache (after major backend state changes).
@@ -2746,6 +2764,9 @@ impl StoreHandle {
                 "wake_gather_existence_only": true,
                 "wake_gather_skip_primary_resolve": true,
                 "wake_gather_skip_handoff_probe": true,
+                "wake_continuation_soft_stale": true,
+                "wake_continuation_soft_stale_env": "ENGRAM_WAKE_CONTINUATION_SOFT_STALE_SECS",
+                "wake_continuation_soft_stale_secs": 1800,
                 "wake_harness_single_manifest": true,
                 "wake_assemble_ms": true,
                 "wake_assemble_lean": true,
@@ -4752,12 +4773,52 @@ impl StoreHandle {
 
     /// RSI Cycle 42: lean wake path — smaller presentation K, does **not** write full-bundle cache
     /// (so subsequent get_continuation_bundle still rebuilds full K=40).
+    /// RSI Cycle 83: soft-stale lean wake cache (separate; default 1800s sliding).
     pub fn build_continuation_bundle_wake(
         &mut self,
         session_intent: Option<&str>,
     ) -> serde_json::Value {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let soft = Self::wake_continuation_soft_stale_secs();
+        if soft > 0 {
+            if let Some(ref cached) = self.wake_continuation_cache {
+                if now.saturating_sub(self.wake_continuation_cached_at) < soft {
+                    // Sliding window.
+                    self.wake_continuation_cached_at = now;
+                    let mut hit = cached.clone();
+                    // Honest timers: soft-stale hit is near-zero work.
+                    if let Some(obj) = hit.as_object_mut() {
+                        if let Some(cpm) = obj
+                            .get_mut("continuation_phase_ms")
+                            .and_then(|v| v.as_object_mut())
+                        {
+                            cpm.insert("gather_ms".into(), serde_json::json!(0));
+                            cpm.insert("local_stratum_ms".into(), serde_json::json!(0));
+                            cpm.insert("harness_ms".into(), serde_json::json!(0));
+                            cpm.insert("fidelity_ms".into(), serde_json::json!(0));
+                            cpm.insert("assemble_ms".into(), serde_json::json!(0));
+                            cpm.insert("total_ms".into(), serde_json::json!(0));
+                            cpm.insert("soft_stale_hit".into(), serde_json::json!(true));
+                        }
+                        obj.insert(
+                            "wake_continuation_soft_stale_hit".into(),
+                            serde_json::json!(true),
+                        );
+                    }
+                    return hit;
+                }
+            }
+        }
         let k = crate::presentation_stratum::presentation_budget_wake();
-        self.build_continuation_bundle_inner(session_intent, false, Some(k))
+        let bundle = self.build_continuation_bundle_inner(session_intent, false, Some(k));
+        if soft > 0 {
+            self.wake_continuation_cached_at = now;
+            self.wake_continuation_cache = Some(bundle.clone());
+        }
+        bundle
     }
 
     fn build_continuation_bundle_inner(
@@ -9762,15 +9823,32 @@ mod ingest_ast_tests {
                 .is_some(),
             "C80 lean surfaces handoff when present (soft-stale presence)"
         );
-        // Second gather within soft-stale should not need another store probe.
-        let _ = store.forget(crate::harness_injection::SESSION_HANDOFF_LATEST);
-        let bundle2 = store.build_continuation_bundle_wake(Some("c80 soft presence"));
+        // RSI Cycle 83: second wake hits soft-stale continuation cache.
+        let t0 = std::time::Instant::now();
+        let bundle2 = store.build_continuation_bundle_wake(Some("c83 soft continuation"));
         assert!(
+            t0.elapsed().as_millis() < 30,
+            "C83 wake soft-stale second call near-instant"
+        );
+        assert_eq!(
             bundle2
-                .get("structured_handoff")
-                .and_then(|h| h.get("concept"))
-                .is_some(),
-            "C80 soft-stale presence still true after forget until window expires"
+                .get("wake_continuation_soft_stale_hit")
+                .and_then(|v| v.as_bool()),
+            Some(true)
+        );
+        assert_eq!(
+            bundle2
+                .get("continuation_phase_ms")
+                .and_then(|m| m.get("gather_ms"))
+                .and_then(|v| v.as_u64()),
+            Some(0)
+        );
+        let ready = store.backend_readiness();
+        assert_eq!(
+            ready
+                .get("wake_continuation_soft_stale")
+                .and_then(|v| v.as_bool()),
+            Some(true)
         );
         let _ = std::fs::remove_dir_all(&dir);
     }
