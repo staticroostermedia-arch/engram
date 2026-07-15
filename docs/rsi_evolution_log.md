@@ -1737,4 +1737,42 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 3. Partial σ² tensors beyond 16-d capsule (long horizon).
 4. Query_pure TIMING full gate.
 
+---
+
+## Cycle 48 — disk-persisted sheaf fingerprint (2026-07-14)
+
+### Master baseline
+
+- Post Cycle 47: PR **#93** `a711443d` — lean presentation wake.
+- **Measured wake_phase_ms (cold MCP):** sheaf_ms=**60541**, continuation_ms=**31512**, session_block_ms=7, total≈92s.
+
+### Research synthesis
+
+| Source | Insight |
+|--------|---------|
+| wake_phase_ms | Sheaf load dominates cold restart; in-memory cache dies with process. |
+| Cycle 37 | In-process fingerprint skip already exists. |
+| Ops | Persist fingerprint next to store so restart reuses skip. |
+
+### Hypothesis
+
+**Disk fingerprint:** write `~/.engram/process_sheaf_fingerprint`; on wake warm PROCESS_SHEAF_CACHE; if match + process:wake-up present → skip full sheaf load.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Code | `read/write_disk_sheaf_fingerprint`, `warm_sheaf_cache_from_disk` |
+| Path | `ENGRAM_STORE` parent / `process_sheaf_fingerprint` |
+| Readiness | `sheaf_fingerprint_disk: true` |
+| Lexicon | `sheaf-fingerprint-disk` |
+| Measurement | sheaf 60.5s cold → target &lt;100ms warm restart |
+
+### Next vectors
+
+1. Cut continuation_ms (31s) — suggested_actions / trusted_tiles / fidelity.
+2. mmap CSR multi-million edge.
+3. Partial σ² beyond 16-d.
+4. Query_pure TIMING full gate.
+
 
