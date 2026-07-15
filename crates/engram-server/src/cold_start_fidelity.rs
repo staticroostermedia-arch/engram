@@ -301,15 +301,49 @@ fn mean_crs_from_stratum(bundle: &Value) -> Option<f32> {
         }
     }
     if n == 0 {
+        return None;
+    }
+    let mean = sum / n as f32;
+    // MQ Cycle 2: lean existence-only presentation pins crs=0.0 on every preview.
+    // Reporting mean=0.0 as hub health collapses CSF hub weight to 0 and looks like
+    // a real quality failure. Treat near-zero means as unknown → neutral hub (0.5).
+    if mean < 0.01 {
         None
     } else {
-        Some(sum / n as f32)
+        Some(mean)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mean_crs_from_stratum_ignores_lean_zero_previews() {
+        let lean_zeros = json!({
+            "presentation_stratum": {
+                "previews": [
+                    {"concept": "primary_goal", "crs": 0.0},
+                    {"concept": "helper:session_handoff_latest", "crs": 0.0}
+                ]
+            }
+        });
+        assert_eq!(
+            mean_crs_from_stratum(&lean_zeros),
+            None,
+            "MQ2: all-zero lean previews are not real hub CRS"
+        );
+        let real = json!({
+            "presentation_stratum": {
+                "previews": [
+                    {"concept": "tile:a", "crs": 0.88},
+                    {"concept": "tile:b", "crs": 0.92}
+                ]
+            }
+        });
+        let m = mean_crs_from_stratum(&real).expect("real crs");
+        assert!((m - 0.9).abs() < 0.01);
+    }
 
     #[test]
     fn score_in_unit_interval() {
