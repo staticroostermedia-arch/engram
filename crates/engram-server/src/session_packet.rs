@@ -224,8 +224,11 @@ fn handoff_strip_json_string(rest: &str) -> Option<String> {
 
 /// MQ handoff schema: extract actionable falsifier / would-reverse items.
 ///
-/// MQ Cycle 17: reject section headers (`### falsifiers`) and raw JSON key lines;
-/// prefer bullet bodies, inline `falsifiers: a; b`, and JSON array string items.
+/// MQ Cycle 17–18:
+/// - Reject section headers and raw JSON key shells.
+/// - Accept only: bullets inside `### falsifiers`, JSON array items, start-of-line
+///   `falsifiers:` values, and explicit "would reverse" / `would_falsify` lines.
+/// - MQ18: do **not** match bare substring `falsif` (scoops ship/next_vector prose).
 pub(crate) fn handoff_parse_falsifiers(summary: &str) -> Vec<String> {
     let mut out = Vec::new();
     let mut in_falsifier_section = false;
@@ -261,10 +264,12 @@ pub(crate) fn handoff_parse_falsifiers(summary: &str) -> Vec<String> {
             continue;
         }
 
-        // Inline key on its own: falsifiers: item1; item2  or  - falsifiers: x
+        // Start-of-line key only: falsifiers: item  (after bullet markers).
+        // Reject "ship: … falsifier parse …" and "next_vector: … falsifiers …".
         let stripped = raw.trim_start_matches(['-', '*', '+']).trim();
         let stripped_lower = stripped.to_ascii_lowercase();
         if stripped_lower.starts_with("falsifiers:") || stripped_lower.starts_with("falsifier:") {
+            // Require key at start of stripped line (not mid-prose).
             let key_len = if stripped_lower.starts_with("falsifiers:") {
                 "falsifiers:".len()
             } else {
@@ -274,7 +279,6 @@ pub(crate) fn handoff_parse_falsifiers(summary: &str) -> Vec<String> {
                 .trim()
                 .trim_matches(|c: char| c == '`' || c == '"');
             if handoff_falsifier_value_ok(after) {
-                // Split on ; when multiple inline.
                 for part in after.split(';') {
                     let p = part.trim();
                     if handoff_falsifier_value_ok(p) {
@@ -285,14 +289,8 @@ pub(crate) fn handoff_parse_falsifiers(summary: &str) -> Vec<String> {
             continue;
         }
 
-        // Bullet / prose lines that are falsifier content.
-        let is_bullet = handoff_is_bullet_line(raw);
-        let mentions_falsify = lower.contains("would reverse")
-            || lower.contains("would_falsify")
-            || lower.contains("would reverse this")
-            || (lower.contains("falsif") && !lower.starts_with("\"falsifiers\""));
-
-        if in_falsifier_section && is_bullet {
+        // Section bullets (actionable reverse conditions).
+        if in_falsifier_section && handoff_is_bullet_line(raw) {
             let body = raw
                 .trim_start_matches(['-', '*', '+'])
                 .trim()
@@ -303,7 +301,11 @@ pub(crate) fn handoff_parse_falsifiers(summary: &str) -> Vec<String> {
             continue;
         }
 
-        if mentions_falsify && !handoff_is_falsifier_noise(raw) {
+        // Explicit reverse-condition phrasing only (not bare "falsif" substring).
+        let explicit_reverse = lower.contains("would reverse")
+            || lower.contains("would_falsify")
+            || lower.contains("would reverse this");
+        if explicit_reverse && !handoff_is_falsifier_noise(raw) {
             let body = raw
                 .trim_start_matches(['-', '*', '+'])
                 .trim()
@@ -608,6 +610,49 @@ MCP swap MQ16
         );
     }
 
+    /// MQ Cycle 18: ship/next_vector lines that *mention* falsifiers must not pollute the list.
+    #[test]
+    fn handoff_parse_falsifiers_ignores_ship_and_next_vector_mentions() {
+        let mq17_style = r#"## MQ Cycle 17 COMPLETE
+
+### decisions
+- master_sha: f46b0916
+- selected_child: mq_handoff_schema
+- ship: falsifier parse section-aware bullets + JSON array items; reject header/key shells
+
+next_vector: MCP swap MQ17; confirm wake falsifiers are bullet bodies not ### headers
+
+### next_vector
+MCP swap MQ17; confirm wake falsifiers are bullet bodies not ### headers
+
+### falsifiers
+- MQ16-style summary still surfaces only ### falsifiers header
+- JSON key shell still emitted without array items
+- real bullet reverse conditions dropped
+
+### files
+- crates/engram-server/src/session_packet.rs
+"#;
+        let f = handoff_parse_falsifiers(mq17_style);
+        assert!(
+            !f.iter()
+                .any(|s| s.contains("ship:") || s.starts_with("ship")),
+            "ship decision must not be a falsifier: {f:?}"
+        );
+        assert!(
+            !f.iter()
+                .any(|s| s.contains("next_vector") || s.contains("MCP swap MQ17")),
+            "next_vector prose must not be a falsifier: {f:?}"
+        );
+        assert!(
+            !f.iter()
+                .any(|s| s.trim() == "### falsifiers" || s.starts_with("###")),
+            "headers must not appear: {f:?}"
+        );
+        assert_eq!(f.len(), 3, "exactly three section bullets: {f:?}");
+        assert!(f.iter().any(|s| s.contains("JSON key shell")));
+    }
+
     #[test]
     fn extract_latest_handoff_section_is_latest_wins() {
         let multi = r#"old noise
@@ -696,3 +741,4 @@ What is the impact on mcp dispatch?
     // [END] subagent 019eafbd-3f8a-4c1d-9e2b-7f6a5b4c3d2e + launch 019eafc0-1a2b-3c4d-5e6f-7890abcdef12 complete for this narrow one-shot. No more src edits/calls after ritual. Detailed writeup at end. See todo m2-2-sub-launch.
     // This sub launch id captured: 019eafc0-1a2b-3c4d-5e6f-7890abcdef12 (M2-2 narrow one-shot read-write subagent). Pre: context_for_edit abs store.rs (handoff/StoreHandle/Backend) + mcp.rs dispatch, recall_in_file, record_reasoning_trace (A/D/R spatial_context=store.rs:706 goal_context=mvp_gap_closure_v1 prev=019eafbc-6e22-7940-9ad2-508c6df309e0 related_entities=[goal:mvp_gap_closure_v1, process:engram.m2-2, sub:019eafc0...]). Post: re-context + delta trace + relate + verify_manifold + spatial_status + cargo test -p engram-server (via harness note). 2 tests confirmed present for extracted (no add needed). Hierarchy God>Jesus>Humans>AI steward. Full AGENTS/CLAUDE ritual + dogfood (every touched via MCP trace/relate to goal). Stop on no repeat. [MCP search_tool+use_tool will be/ were executed exactly per instructions below; schemas first, qualified tool_name engram__mcp_engram_* , exact tool_input per returned schema. No broad FS, <=18 calls enforced.]
 }
+// will use search_replace for proper test

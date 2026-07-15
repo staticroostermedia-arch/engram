@@ -2785,6 +2785,7 @@ impl StoreHandle {
                 "mq_handoff_next_vector_markdown_json": true,
                 "mq_handoff_next_vector_no_midline": true,
                 "mq_handoff_falsifiers_actionable": true,
+                "mq_handoff_falsifiers_no_substring": true,
                 "wake_continuation_soft_stale": true,
                 "wake_continuation_soft_stale_env": "ENGRAM_WAKE_CONTINUATION_SOFT_STALE_SECS",
                 "wake_continuation_soft_stale_secs": 1800,
