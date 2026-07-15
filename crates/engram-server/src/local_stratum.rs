@@ -42,41 +42,52 @@ fn now_secs() -> u64 {
 }
 
 fn nvidia_gpu_count() -> u32 {
-    std::process::Command::new("nvidia-smi")
-        .args(["--query-gpu=index", "--format=csv,noheader"])
-        .output()
-        .ok()
-        .filter(|o| o.status.success())
-        .map(|o| {
-            String::from_utf8_lossy(&o.stdout)
-                .lines()
-                .filter(|l| !l.trim().is_empty())
-                .count() as u32
-        })
-        .unwrap_or(0)
+    // RSI Cycle 52: process-lifetime cache — nvidia-smi was multi-ms per wake bootstrap.
+    static CACHED: std::sync::OnceLock<u32> = std::sync::OnceLock::new();
+    *CACHED.get_or_init(|| {
+        std::process::Command::new("nvidia-smi")
+            .args(["--query-gpu=index", "--format=csv,noheader"])
+            .output()
+            .ok()
+            .filter(|o| o.status.success())
+            .map(|o| {
+                String::from_utf8_lossy(&o.stdout)
+                    .lines()
+                    .filter(|l| !l.trim().is_empty())
+                    .count() as u32
+            })
+            .unwrap_or(0)
+    })
 }
 
 fn git_project_fingerprint() -> Option<(String, String, String)> {
-    let root = std::process::Command::new("git")
-        .args(["rev-parse", "--show-toplevel"])
-        .output()
-        .ok()
-        .filter(|o| o.status.success())
-        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-        .filter(|s| !s.is_empty())?;
+    // RSI Cycle 52: cache git root/branch for process lifetime (2× subprocess per call).
+    static CACHED: std::sync::OnceLock<Option<(String, String, String)>> =
+        std::sync::OnceLock::new();
+    CACHED
+        .get_or_init(|| {
+            let root = std::process::Command::new("git")
+                .args(["rev-parse", "--show-toplevel"])
+                .output()
+                .ok()
+                .filter(|o| o.status.success())
+                .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+                .filter(|s| !s.is_empty())?;
 
-    let branch = std::process::Command::new("git")
-        .args(["-C", &root, "rev-parse", "--abbrev-ref", "HEAD"])
-        .output()
-        .ok()
-        .filter(|o| o.status.success())
-        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-        .unwrap_or_else(|| "unknown".to_string());
+            let branch = std::process::Command::new("git")
+                .args(["-C", &root, "rev-parse", "--abbrev-ref", "HEAD"])
+                .output()
+                .ok()
+                .filter(|o| o.status.success())
+                .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+                .unwrap_or_else(|| "unknown".to_string());
 
-    let fp = blake3::hash(root.as_bytes());
-    let short = &fp.to_hex()[..8];
-    let concept = format!("local:project:{short}:root");
-    Some((concept, root, branch))
+            let fp = blake3::hash(root.as_bytes());
+            let short = &fp.to_hex()[..8];
+            let concept = format!("local:project:{short}:root");
+            Some((concept, root, branch))
+        })
+        .clone()
 }
 
 fn effective_store_path() -> String {
@@ -169,6 +180,28 @@ fn stale(concept: &str, store: &StoreHandle, ttl: u64) -> bool {
         return true;
     }
     now_secs().saturating_sub(ts) > ttl
+}
+
+/// RSI Cycle 52: true when wake can skip full bootstrap (profile hot + readiness fresh).
+/// Measured local_stratum_ms≈4s dominated by bootstrap process spawns + readiness upsert.
+pub fn warm_skip_bootstrap(store: &StoreHandle) -> bool {
+    if !enabled() {
+        return true;
+    }
+    store
+        .fetch_block_high_priority(LOCAL_HOST_PROFILE)
+        .is_some()
+        && store.is_hot(LOCAL_HOST_PROFILE)
+        && store.fetch_block(LOCAL_HOST_READINESS).is_some()
+        && !stale(LOCAL_HOST_READINESS, store, READINESS_TTL_SECS)
+}
+
+/// Wake-path bootstrap: skip expensive refresh when local layer is already warm.
+pub fn bootstrap_for_wake(store: &mut StoreHandle) -> Vec<String> {
+    if warm_skip_bootstrap(store) {
+        return vec![];
+    }
+    bootstrap(store)
 }
 
 /// Bootstrap or refresh local layer blocks; promote to hot path.
@@ -295,9 +328,15 @@ pub fn build_local_stratum_slice(store: &StoreHandle, budget: usize) -> Value {
     if let Some((c, _, _)) = git_project_fingerprint() {
         concepts.push(c);
     }
-    for (c, _) in store.access_index.recent(32) {
-        if c.starts_with("local:") && !concepts.contains(&c) {
-            concepts.push(c);
+    // Cycle 52: only scan recent when budget still open beyond core four (wake budget often 4–12).
+    if budget > concepts.len() {
+        for (c, _) in store.access_index.recent(16) {
+            if c.starts_with("local:") && !concepts.contains(&c) {
+                concepts.push(c);
+            }
+            if concepts.len() >= budget {
+                break;
+            }
         }
     }
 
@@ -342,6 +381,33 @@ mod tests {
         let slice = build_local_stratum_slice(&lock, 8);
         assert_eq!(slice["enabled"], true);
         assert!(slice["node_count"].as_u64().unwrap_or(0) >= 1);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// RSI Cycle 52: second wake skip when profile hot + readiness fresh.
+    #[test]
+    fn warm_skip_bootstrap_after_first_bootstrap() {
+        std::env::set_var("ENGRAM_DISABLE_SHEAF", "1");
+        std::env::set_var("ENGRAM_FORCE_CPU_BACKEND", "1");
+        let dir = std::env::temp_dir().join(format!("engram_lcs_warm_skip_{}", now_secs()));
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.to_string_lossy().to_string();
+        let mut lock = StoreHandle::new(&path);
+        assert!(
+            !warm_skip_bootstrap(&lock),
+            "cold store must not skip bootstrap"
+        );
+        let _ = bootstrap(&mut lock);
+        // mark_hot is done inside bootstrap for profile
+        assert!(
+            warm_skip_bootstrap(&lock),
+            "after bootstrap, warm_skip should be true when readiness fresh"
+        );
+        let second = bootstrap_for_wake(&mut lock);
+        assert!(
+            second.is_empty(),
+            "bootstrap_for_wake must no-op when warm: got {second:?}"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
