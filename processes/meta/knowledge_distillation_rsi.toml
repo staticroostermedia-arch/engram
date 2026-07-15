@@ -71,6 +71,7 @@ list = [
   "lexicon:word:wake-latency-budget",
   "lexicon:word:fisher-invvar-precision",
   "lexicon:word:encrypt-remember-dogfood",
+  "lexicon:word:fisher-banded-residual",
 ]
 
 [execute]

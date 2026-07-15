@@ -2140,6 +2140,8 @@ impl StoreHandle {
             "fisher_precision_env": "ENGRAM_FISHER_PRECISION",
             "fisher_invvar_enabled": engram_core::backend::fisher_invvar_enabled(),
             "fisher_invvar_env": "ENGRAM_FISHER_INVVAR",
+            "fisher_banded_enabled": engram_core::backend::fisher_banded_enabled(),
+            "fisher_banded_env": "ENGRAM_FISHER_BANDED",
             "incident_alpha_scan_cap": Self::incident_alpha_scan_cap(),
             "incident_alpha_scan_cap_env": "ENGRAM_INCIDENT_ALPHA_CAP",
             "relation_adj_nodes": self.relation_index.adj_node_count(),

@@ -698,6 +698,43 @@ pub fn fisher_precision_weight(crs_norm: f32, stability_norm: f32) -> f32 {
     }
 }
 
+/// Banded Fisher precision from `err_residual_16d` (RSI Cycle 35).
+/// 16 residual complex dims act as band σ proxies; high residual → lower precision.
+/// Default ON when Fisher on. Set `ENGRAM_FISHER_BANDED=0|false|off` to disable.
+/// Intermediate step between scalar inv-var and full 8192-d σ² tensors.
+pub fn fisher_banded_enabled() -> bool {
+    if !fisher_precision_enabled() {
+        return false;
+    }
+    match std::env::var("ENGRAM_FISHER_BANDED") {
+        Ok(v) => {
+            let v = v.to_ascii_lowercase();
+            !matches!(v.as_str(), "0" | "false" | "off" | "no")
+        }
+        Err(_) => true,
+    }
+}
+
+/// Per-block banded precision ∈ [0.05, 1] from residual capsule.
+/// Zero residual / unused dims → 1.0 (no extra penalty).
+pub fn fisher_banded_precision(block: &crate::types::HolographicBlock) -> f32 {
+    if block.residual_dims_used == 0 || block.l2_norm_residual <= 1e-8 {
+        return 1.0;
+    }
+    let n = (block.residual_dims_used as usize).clamp(1, 16);
+    let mut acc = 0.0_f32;
+    for i in 0..n {
+        let r = block.err_residual_16d[i];
+        let mag = (r.re * r.re + r.im * r.im).sqrt();
+        // inv-var proxy per band: 1/(1+|r|)
+        acc += 1.0 / (1.0 + mag);
+    }
+    let band_mean = acc / n as f32;
+    // Scalar L2 residual damp (surprise magnitude)
+    let l2_damp = 1.0 / (1.0 + block.l2_norm_residual.clamp(0.0, 10.0));
+    (band_mean * l2_damp).clamp(0.05, 1.0)
+}
+
 fn score_block(
     concept: String,
     query: &[Complex32; 8192],
@@ -750,12 +787,21 @@ fn score_block(
     // Precision-weighted semantic (Fisher channel).
     // Cycle 19: precision = CRS (scalar proxy).
     // Cycle 33: precision = CRS×(1−dv) inv-var proxy when ENGRAM_FISHER_INVVAR on.
+    // Cycle 35: × banded residual precision from err_residual_16d (ENGRAM_FISHER_BANDED).
     // Full per-dimension σ² tensors still deferred.
-    let prec_w = if fisher_on {
+    let mut prec_w = if fisher_on {
         fisher_precision_weight(crs_norm, stability_norm)
     } else {
         1.0
     };
+    let band_w = if fisher_on && fisher_banded_enabled() {
+        fisher_banded_precision(block)
+    } else {
+        1.0
+    };
+    if band_w < 1.0 - 1e-6 {
+        prec_w = (prec_w * band_w).clamp(0.05, 1.0);
+    }
     let precision_sim = base_sim_norm * prec_w;
 
     let score = (base_sim_norm * d1)
@@ -773,8 +819,13 @@ fn score_block(
         } else {
             "crs"
         };
+        let band = if fisher_banded_enabled() {
+            format!("+band={band_w:.3}")
+        } else {
+            String::new()
+        };
         format!(
-            "Dirichlet+Fisher[{inv},ego={}]: sim={:.3}*{} + prec_sim={:.3}*{} (w={:.3}) + crs={:.3}*{} + frame={:.3}*{} + mass={:.3}*{} => {:.4}",
+            "Dirichlet+Fisher[{inv}{band},ego={}]: sim={:.3}*{} + prec_sim={:.3}*{} (w={:.3}) + crs={:.3}*{} + frame={:.3}*{} + mass={:.3}*{} => {:.4}",
             ego_q.is_some(),
             base_sim_norm, d1, precision_sim, d_fisher, prec_w, crs_norm, d2, d3_value, d3, depth_norm, d4, score
         )
@@ -879,6 +930,50 @@ mod tests {
         assert!((fisher_precision_weight(0.9, 0.1) - 0.9).abs() < 1e-5);
         std::env::remove_var("ENGRAM_FISHER_PRECISION");
         std::env::remove_var("ENGRAM_FISHER_INVVAR");
+    }
+
+    #[test]
+    fn fisher_banded_prefers_low_residual_at_equal_crs() {
+        let _g = FISHER_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        std::env::set_var("ENGRAM_FISHER_PRECISION", "1");
+        std::env::set_var("ENGRAM_FISHER_INVVAR", "1");
+        std::env::set_var("ENGRAM_FISHER_BANDED", "1");
+        let dir = tempfile::tempdir().unwrap();
+        let backend = CpuBackend::new(dir.path());
+        let encoded = backend.encode("identical phase for banded fisher residual");
+        let mut calm = encoded.clone();
+        calm.crs_score = 0.90;
+        calm.energetics.crs = 0.90;
+        calm.energetics.dv = 0.1;
+        calm.residual_dims_used = 0;
+        calm.l2_norm_residual = 0.0;
+        let mut surprised = encoded.clone();
+        surprised.crs_score = 0.90;
+        surprised.energetics.crs = 0.90;
+        surprised.energetics.dv = 0.1;
+        surprised.residual_dims_used = 16;
+        surprised.l2_norm_residual = 2.0;
+        for i in 0..16 {
+            surprised.err_residual_16d[i] = Complex32::new(0.5, 0.5);
+        }
+        let m_calm = score_memory("calm".into(), &encoded.q, &calm, None);
+        let m_surp = score_memory("surp".into(), &encoded.q, &surprised, None);
+        assert!(
+            m_calm.score > m_surp.score,
+            "low residual should outrank high residual: calm={} surp={}",
+            m_calm.score,
+            m_surp.score
+        );
+        assert!(
+            m_surp.explain.contains("band="),
+            "explain should note band: {}",
+            m_surp.explain
+        );
+        assert!((fisher_banded_precision(&calm) - 1.0).abs() < 1e-5);
+        assert!(fisher_banded_precision(&surprised) < 0.5);
+        std::env::remove_var("ENGRAM_FISHER_PRECISION");
+        std::env::remove_var("ENGRAM_FISHER_INVVAR");
+        std::env::remove_var("ENGRAM_FISHER_BANDED");
     }
 
     #[test]
