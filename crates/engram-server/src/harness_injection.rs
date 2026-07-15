@@ -1413,6 +1413,116 @@ pub fn build_harness_bundle(store: &mut StoreHandle, session_intent: Option<&str
     )
 }
 
+/// RSI Cycle 68: session_start harness — essentials only (no hub ProvLog body reads).
+fn build_harness_bundle_ultra_lean_wake(
+    store: &mut StoreHandle,
+    session_intent: Option<&str>,
+    presentation_k: usize,
+) -> Value {
+    let primary_goal = crate::store::resolve_active_primary_goal(store);
+    let rehydration_manifest = store.resolve_rehydration_manifest_for_wake();
+    let mut trace_chain_head: Option<String> = rehydration_manifest
+        .as_ref()
+        .and_then(|m| m.get("trace_chain_head"))
+        .and_then(|v| v.as_str())
+        .filter(|h| !h.is_empty())
+        .map(|s| s.to_string());
+    if trace_chain_head.is_none() {
+        for (concept, _) in store.access_index.recent(24) {
+            if concept.starts_with("trace:") {
+                trace_chain_head = Some(concept);
+                break;
+            }
+        }
+    }
+    let mut hubs = hub_anchors_from_manifest(rehydration_manifest.as_ref());
+    if hubs.is_empty() {
+        hubs.push("primary_goal".into());
+        if let Some(g) = primary_goal.as_ref() {
+            hubs.push(g.clone());
+        }
+        hubs.push(SESSION_HANDOFF_LATEST.to_string());
+    }
+    let budget = presentation_k.clamp(5, 8);
+    // Name-only presentation: hub concepts without ProvLog preview reads (C68).
+    let presentation_stratum =
+        crate::presentation_stratum::build_presentation_stratum_from_hub_names(&hubs, budget);
+    let trusted_tiles = rehydration_manifest
+        .as_ref()
+        .and_then(|m| m.get("trusted_tiles"))
+        .and_then(|v| v.as_array())
+        .map(|arr| arr.iter().take(6).cloned().collect::<Vec<_>>())
+        .unwrap_or_default();
+    let ego_drift = ego_drift_velocity();
+    let surprise_pressure = ego_drift.unwrap_or(0.0);
+    let (turns, checkpoint) = store.sentinel_snapshot();
+    let minutes = crate::continuity_spikes::minutes_since_checkpoint(
+        checkpoint,
+        crate::continuity_spikes::now_unix(),
+    );
+    let (rehydrate_suggested, rehydrate_reason) =
+        crate::continuity_spikes::compute_sentinel_nudge_with_surprise(
+            turns,
+            minutes,
+            surprise_pressure,
+        );
+    let task_type = infer_task_type(None, session_intent, false, 0);
+    // Minimal ego — avoid full hub residual walks (still call builder for sentinel fields).
+    let ego_snapshot = {
+        let mut snap = build_ego_snapshot(store, None, None);
+        if let Some(obj) = snap.as_object_mut() {
+            if let Some(g) = primary_goal.as_ref() {
+                obj.insert("primary_goal".to_string(), json!(g));
+            }
+            obj.insert("top_goal_serving".to_string(), json!([]));
+            obj.insert("ultra_lean".to_string(), json!(true));
+        }
+        snap
+    };
+    json!({
+        "rehydration_manifest": rehydration_manifest,
+        "suggested_actions": build_suggested_actions_opts(store, session_intent, true),
+        "trusted_tiles": trusted_tiles,
+        "verified_processes": [],
+        "meta_workflow_registry": { "lean_wake": true },
+        "jit_deformation_framework": {
+            "lean_wake": true,
+            "hint": "call mcp_engram_get_continuation_bundle for full JIT framework",
+        },
+        "task_type": task_type,
+        "open_scars_wake": [],
+        "uncertainty_receipts_wake": [],
+        "rehydrate_suggested": rehydrate_suggested,
+        "lean_wake": true,
+        "ultra_lean_wake": true,
+        "turn_protocol": crate::metamemory_metrics::build_turn_protocol(),
+        "scaffold_registry": { "lean_wake": true },
+        "rsi_cycle_metrics": {
+            "cycle": crate::continuity_spikes::resolve_rsi_cycle_number(),
+            "surprise_pressure": surprise_pressure,
+            "residual_surprise": 0.0,
+            "ego_drift_velocity": ego_drift,
+            "lean_wake": true,
+            "ultra_lean_wake": true,
+            "rehydrate_reason": if rehydrate_suggested { rehydrate_reason } else { "" },
+            "effective_max_turns": crate::continuity_spikes::effective_max_turns(surprise_pressure),
+        },
+        "trace_chain": {
+            "head": trace_chain_head,
+            "chain": [],
+            "hint": "Chain quick_trace via prev field; condense long chains to thought_tile",
+        },
+        "condensation_hints": [],
+        "ego_snapshot": ego_snapshot,
+        "continuity_playbook": {
+            "lean_wake": true,
+            "hint": "full continuity_playbook via mcp_engram_get_continuation_bundle",
+        },
+        "presentation_stratum": presentation_stratum,
+        "agent_discipline": { "lean_wake": true },
+    })
+}
+
 /// RSI Cycle 42/46: harness with explicit presentation K.
 /// `lean_wake`: skip scars/verified_processes/condensation/heavy meta (session_start path).
 pub fn build_harness_bundle_with_presentation_k(
@@ -1421,9 +1531,15 @@ pub fn build_harness_bundle_with_presentation_k(
     presentation_k: usize,
     lean_wake: bool,
 ) -> Value {
+    // RSI Cycle 68: ultra-lean early return — no ProvLog hub reads, no metamemory/rsi bulk JSON.
+    // Measured residual harness_ms≈9 after C53–C61 lean stack; body reads + bulk serde dominated.
+    if lean_wake {
+        return build_harness_bundle_ultra_lean_wake(store, session_intent, presentation_k);
+    }
+
     // Cycle 53/60 lean: resolve manifest first (handoff parse once); skip recent scan when
     // manifest already carries trace_chain_head (measured residual inside harness_ms).
-    let chain_depth = if lean_wake { 0 } else { 8 };
+    let chain_depth = 8;
     let primary_goal = crate::store::resolve_active_primary_goal(store);
 
     let rehydration_manifest = store.resolve_rehydration_manifest_for_wake();
@@ -1435,7 +1551,7 @@ pub fn build_harness_bundle_with_presentation_k(
         .map(|s| s.to_string());
     // Full path (or lean without manifest head): fall back to recent access scan.
     if trace_chain_head.is_none() {
-        let recent_cap = if lean_wake { 24 } else { 200 };
+        let recent_cap = 200;
         for (concept, _) in store.access_index.recent(recent_cap) {
             if concept.starts_with("trace:") {
                 trace_chain_head = Some(concept);
@@ -1444,66 +1560,22 @@ pub fn build_harness_bundle_with_presentation_k(
         }
     }
 
-    let chain = if chain_depth == 0 {
-        Vec::new()
-    } else {
-        trace_chain_head
-            .as_deref()
-            .map(|h| walk_trace_chain(store, h, chain_depth))
-            .unwrap_or_default()
-    };
+    let chain = trace_chain_head
+        .as_deref()
+        .map(|h| walk_trace_chain(store, h, chain_depth))
+        .unwrap_or_default();
 
     // Cycle 53 lean: hub anchors from manifest only — never rebuild full presentation
     // for surprise (that path was a major harness_ms regressor).
-    let hub_anchors: Vec<String> = if lean_wake {
-        hub_anchors_from_manifest(rehydration_manifest.as_ref())
-    } else {
-        resolve_hub_anchors_for_surprise(store, session_intent)
-    };
-    // Lean: ego without hub residual + without top_goal_serving relation walks (C57).
-    let ego_snapshot = if lean_wake {
-        let mut snap = build_ego_snapshot(store, None, None);
-        if let Some(g) = primary_goal.as_ref() {
-            if let Some(obj) = snap.as_object_mut() {
-                obj.insert("primary_goal".to_string(), json!(g));
-                obj.insert("top_goal_serving".to_string(), json!([]));
-            }
-        }
-        snap
-    } else {
-        build_ego_snapshot(store, primary_goal.as_deref(), Some(&hub_anchors))
-    };
-    let continuity_playbook = if lean_wake {
-        json!({
-            "lean_wake": true,
-            "hint": "full continuity_playbook via mcp_engram_get_continuation_bundle",
-        })
-    } else {
-        build_continuity_playbook(primary_goal.as_deref())
-    };
-    // Cycle 57 lean: presentation from hub_anchors only — skip gather_surface entirely.
-    let presentation_stratum = if lean_wake {
-        let mut hubs = hub_anchors.clone();
-        if hubs.is_empty() {
-            hubs.push("primary_goal".into());
-            if let Some(g) = primary_goal.as_ref() {
-                hubs.push(g.clone());
-            }
-            hubs.push(SESSION_HANDOFF_LATEST.to_string());
-        }
-        crate::presentation_stratum::build_presentation_stratum_from_hubs(
-            store,
-            &hubs,
-            presentation_k.clamp(5, 8),
-        )
-    } else {
-        crate::presentation_stratum::build_presentation_stratum_opts(
-            store,
-            presentation_k.max(5),
-            session_intent,
-            false,
-        )
-    };
+    let hub_anchors = resolve_hub_anchors_for_surprise(store, session_intent);
+    let ego_snapshot = build_ego_snapshot(store, primary_goal.as_deref(), Some(&hub_anchors));
+    let continuity_playbook = build_continuity_playbook(primary_goal.as_deref());
+    let presentation_stratum = crate::presentation_stratum::build_presentation_stratum_opts(
+        store,
+        presentation_k.max(5),
+        session_intent,
+        false,
+    );
 
     // Cycle 46: lean wake skips store-walking scars/verified/condensation (full via get_continuation_bundle).
     let condensation_hints = if lean_wake {
@@ -2454,6 +2526,50 @@ SESSION HANDOFF PACKET v1 (structured JSON for next-wake read_concept)
         let full = build_suggested_actions_opts(&mut store, Some("wake full test"), false);
         // Full path may be longer or equal; both must be non-empty when handoff present.
         assert!(!lean.is_empty() || !full.is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// RSI Cycle 68: ultra-lean wake harness — name-only presentation, no bulky agent_discipline.
+    #[test]
+    fn ultra_lean_wake_harness_name_only_presentation() {
+        std::env::set_var("ENGRAM_DISABLE_SHEAF", "1");
+        std::env::set_var("ENGRAM_FORCE_CPU_BACKEND", "1");
+        std::env::set_var("ENGRAM_KI_DISABLE", "1");
+        let dir = std::env::temp_dir().join(format!(
+            "ultra_lean_harness_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).ok();
+        let mut store = crate::store::StoreHandle::new(&dir.to_string_lossy());
+        let summary =
+            "**decisions:** c68 ultra lean\n**files_touched:** crates/engram-server/src/harness_injection.rs";
+        let _ = store.persist_session_handoff_latest(summary, "session_end_c68");
+        let bundle =
+            build_harness_bundle_with_presentation_k(&mut store, Some("RSI nested loop"), 8, true);
+        assert_eq!(
+            bundle.get("ultra_lean_wake").and_then(|v| v.as_bool()),
+            Some(true)
+        );
+        assert_eq!(
+            bundle.get("lean_wake").and_then(|v| v.as_bool()),
+            Some(true)
+        );
+        let pres = bundle
+            .get("presentation_stratum")
+            .expect("presentation_stratum");
+        assert_eq!(
+            pres.get("name_only").and_then(|v| v.as_bool()),
+            Some(true),
+            "C68 name-only presentation"
+        );
+        // agent_discipline is stub, not full turn_protocol map
+        let ad = bundle.get("agent_discipline").expect("agent_discipline");
+        assert_eq!(ad.get("lean_wake").and_then(|v| v.as_bool()), Some(true));
+        assert!(ad.get("turn_protocol").is_none() || ad.get("lean_wake").is_some());
         let _ = std::fs::remove_dir_all(&dir);
     }
 

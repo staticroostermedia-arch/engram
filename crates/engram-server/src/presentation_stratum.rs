@@ -557,6 +557,8 @@ pub fn build_presentation_stratum(
 
 /// RSI Cycle 57: ultra-lean presentation from rehydration hub_anchors only.
 /// Skips `gather_surface_ranked` entirely (measured ~0.8s of harness_ms residual).
+/// Hub presentation with ProvLog previews (opt-in; wake uses name-only C68).
+#[allow(dead_code)] // retained for full-preview lean experiments / future env switch
 pub fn build_presentation_stratum_from_hubs(
     store: &StoreHandle,
     hubs: &[String],
@@ -588,18 +590,7 @@ pub fn build_presentation_stratum_from_hubs(
             }
             None => (String::new(), 0.0),
         };
-        let kind = if concept.starts_with("tile:") {
-            "tile"
-        } else if concept.starts_with("trace:") {
-            "trace"
-        } else if concept.starts_with("goal:") || concept == "primary_goal" {
-            "goal"
-        } else if concept.starts_with("process:") {
-            "process"
-        } else {
-            // helper: / ritual: / other
-            "memory"
-        };
+        let kind = hub_concept_kind(concept);
         nodes.push(json!({
             "concept": concept,
             "kind": kind,
@@ -621,6 +612,63 @@ pub fn build_presentation_stratum_from_hubs(
         "hub_only": true,
         "budget": budget,
     })
+}
+
+/// RSI Cycle 68: hub name-only presentation (no ProvLog body reads on wake).
+pub fn build_presentation_stratum_from_hub_names(hubs: &[String], budget: usize) -> Value {
+    let budget = budget.clamp(1, 12);
+    let empty_lineage = json!({
+        "summarizes_chain": [],
+        "prev_in_trace": [],
+        "next_in_trace": [],
+        "served_by_goals": [],
+        "member_count": 0,
+        "is_distillate": false,
+        "lean_wake": true,
+        "hub_only": true,
+        "name_only": true,
+    });
+    let nodes: Vec<Value> = hubs
+        .iter()
+        .take(budget)
+        .map(|concept| {
+            json!({
+                "concept": concept,
+                "kind": hub_concept_kind(concept),
+                "crs": 0.0,
+                "hot": false,
+                "score": 1.0,
+                "source": "hub_anchor_name",
+                "orbit": "core",
+                "preview": "",
+                "lineage": empty_lineage,
+            })
+        })
+        .collect();
+    json!({
+        "version": "presentation_stratum_v1",
+        "node_count": nodes.len(),
+        "nodes": nodes,
+        "edges": [],
+        "lean_wake": true,
+        "hub_only": true,
+        "name_only": true,
+        "budget": budget,
+    })
+}
+
+fn hub_concept_kind(concept: &str) -> &'static str {
+    if concept.starts_with("tile:") {
+        "tile"
+    } else if concept.starts_with("trace:") {
+        "trace"
+    } else if concept.starts_with("goal:") || concept == "primary_goal" {
+        "goal"
+    } else if concept.starts_with("process:") {
+        "process"
+    } else {
+        "memory"
+    }
 }
 
 /// RSI Cycle 47: lean wake presentation — no multi-hop expand, no per-node lineage walks.

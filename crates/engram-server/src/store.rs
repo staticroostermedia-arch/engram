@@ -2614,6 +2614,7 @@ impl StoreHandle {
                 "wake_local_stratum_skip_if_profile": true,
                 "wake_local_stratum_core_only": true,
                 "wake_harness_ultra_lean": true,
+                "wake_harness_name_only_presentation": true,
                 "wake_presentation_hub_only": true,
                 "wake_fidelity_lean": true,
                 "query_pure_timing_full_gate": true,
