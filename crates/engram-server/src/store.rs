@@ -2777,6 +2777,7 @@ impl StoreHandle {
                 "mq_spatial_locus_aabb_test": true,
                 "mq_consult_before_write_agent_hard": true,
                 "mq_write_hygiene_mint_update": true,
+                "mq_tiles_boundaries_session": true,
                 "wake_continuation_soft_stale": true,
                 "wake_continuation_soft_stale_env": "ENGRAM_WAKE_CONTINUATION_SOFT_STALE_SECS",
                 "wake_continuation_soft_stale_secs": 1800,
@@ -6126,8 +6127,100 @@ impl StoreHandle {
             manifest["chain_summaries"] = serde_json::json!(chain_tiles);
         }
 
+        // MQ Cycle 10: always mint a session-boundary thought tile at compression
+        // so CSF / rehydration can ride a durable distillate even when chain_summary
+        // finds no multi-node component (candidates < 2).
+        if let Some(boundary_tile) =
+            self.mint_session_boundary_tile(session_end_key, summary_snippet, primary_goal)
+        {
+            if let Some(promoted) = manifest.get_mut("promoted").and_then(|v| v.as_array_mut()) {
+                if !promoted
+                    .iter()
+                    .any(|v| v.as_str() == Some(boundary_tile.as_str()))
+                {
+                    promoted.push(serde_json::json!(boundary_tile));
+                }
+            }
+            manifest["session_boundary_tile"] = serde_json::json!(boundary_tile);
+            manifest["mq_tiles_boundaries"] = serde_json::json!(true);
+        }
+
         self.mark_ki_rebake_needed();
         manifest
+    }
+
+    /// MQ Cycle 10 (`mq_tiles_boundaries`): mint one thought tile at session/compression
+    /// boundary so the next mind rehydrates from a structured distillate, not only phase_ms.
+    pub fn mint_session_boundary_tile(
+        &mut self,
+        session_end_key: &str,
+        summary_snippet: &str,
+        primary_goal: &str,
+    ) -> Option<String> {
+        let ts = session_end_key.strip_prefix("session_end_").unwrap_or("0");
+        let tile_key = format!("tile:session_boundary_{ts}");
+        if self.fetch_block(&tile_key).is_some() {
+            let _ = self.promote_tile_to_high_priority(&tile_key);
+            return Some(tile_key);
+        }
+
+        // Extract next_vector from structured MQ handoff lines when present.
+        let next_vector = summary_snippet
+            .lines()
+            .find(|l| {
+                let t = l.trim_start_matches(['-', ' ']);
+                t.starts_with("next_vector:") || t.starts_with("\"next_vector\"")
+            })
+            .map(|l| l.trim().to_string())
+            .unwrap_or_else(|| "(see helper:session_handoff_latest)".to_string());
+
+        let payload = serde_json::json!({
+            "version": "mq_session_boundary_v1",
+            "session_end": session_end_key,
+            "primary_goal": primary_goal,
+            "summary_head": summary_snippet.chars().take(400).collect::<String>(),
+            "next_vector_hint": next_vector,
+            "survival": "compression_boundary_tile — prefer over raw episodic noise at wake",
+            "leg_display": {
+                "role": "boundary",
+                "shape": "disc",
+                "color": "amber",
+                "orbit": "core",
+                "compressible": false
+            }
+        });
+
+        let title = format!(
+            "Session boundary — {} @ {}",
+            if primary_goal.is_empty() || primary_goal == "(none)" {
+                "continuity"
+            } else {
+                primary_goal
+            },
+            ts
+        );
+        let tile_payload = format!(
+            "THOUGHT TILE\n\n**tile_type:** session_boundary\n**title:** {}\n\n**payload:** {}\n",
+            title,
+            serde_json::to_string_pretty(&payload).unwrap_or_default()
+        );
+
+        let mut tile_block = self.encode(&tile_payload);
+        tile_block.zedos_tag = engram_core::types::ZEDOS_OPERATIONAL;
+        tile_block.crs_score = 0.91;
+        self.store(&tile_key, tile_block).ok()?;
+
+        let _ = self.relate(&tile_key, session_end_key, "compresses_path");
+        if !primary_goal.is_empty() && primary_goal != "(none)" {
+            let _ = self.relate(&tile_key, primary_goal, "serves");
+        }
+        let _ = self.relate(
+            &tile_key,
+            "helper:session_handoff_latest",
+            "compresses_path",
+        );
+        let _ = self.promote_tile_to_high_priority(&tile_key);
+        Some(tile_key)
     }
 
     /// Mint `tile:chain_summary_*` blocks folding serialized trace/session chains at session_end / NREM.
@@ -10863,6 +10956,56 @@ mod ingest_ast_tests {
                 "cufile_dma label requires last DMA success"
             );
         }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// MQ Cycle 10: prepare_compression always mints session_boundary thought tile.
+    #[test]
+    fn refresh_compression_handoff_mints_session_boundary_tile() {
+        let dir = test_store_dir("mq10_session_boundary");
+        let mut store = StoreHandle::new(&dir.to_string_lossy());
+        store
+            .remember(
+                "primary_goal",
+                "PRIMARY GOAL\n\n**goal:** goal:engram_memory_quality_v1\n**set_at:** test\n",
+            )
+            .unwrap();
+        let _ = store.promote_tile_to_high_priority("primary_goal");
+        store
+            .remember(
+                "session_end_1784150999",
+                "SESSION END\n\nsummary: mq10 boundary test\n",
+            )
+            .unwrap();
+
+        let summary =
+            "- mq_cycle: 10\n- next_vector: mq_capacity_policy\n- decisions: boundary tile ship";
+        let manifest = store.refresh_compression_handoff("session_end_1784150999", summary);
+        assert_eq!(
+            manifest
+                .get("mq_tiles_boundaries")
+                .and_then(|v| v.as_bool()),
+            Some(true)
+        );
+        let tile = manifest
+            .get("session_boundary_tile")
+            .and_then(|v| v.as_str())
+            .expect("session_boundary_tile key");
+        assert_eq!(tile, "tile:session_boundary_1784150999");
+        let body = store
+            .fetch_block(tile)
+            .map(|b| engram_core::storage::read_provlog(&b))
+            .expect("boundary tile stored");
+        assert!(body.contains("session_boundary"), "body={body}");
+        assert!(body.contains("mq_session_boundary_v1"), "body={body}");
+        assert!(body.contains("next_vector"), "body={body}");
+        // Idempotent re-mint returns same key.
+        let again = store.mint_session_boundary_tile(
+            "session_end_1784150999",
+            summary,
+            "goal:engram_memory_quality_v1",
+        );
+        assert_eq!(again.as_deref(), Some(tile));
         let _ = std::fs::remove_dir_all(&dir);
     }
 

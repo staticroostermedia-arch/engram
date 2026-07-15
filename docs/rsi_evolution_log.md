@@ -3356,3 +3356,33 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 1. MCP swap MQ9; handoff metamemory shows mints/updates after write-heavy session.
 2. `mq_tiles_boundaries` auto tile at session_end compression.
 3. PR #134 C86 cold assemble residual (CI green, open).
+
+## MQ Cycle 10 — session boundary thought tiles at compression (2026-07-15)
+
+### VERIFY₀ baseline
+
+- master@`74d1375d` MQ9 #143.
+- MCP swapped: `mq_write_hygiene_mint_update` LIVE; CSF warm **0.925**; relation_resume.edges=4.
+- Handoff complete mq_handoff_v1; primary memory_quality.
+- Verify needs_review (1 historical PRAXIS permissive) — series growing; not hard fail.
+- Latency floor: readiness_ms=0; post-swap warm ~66–90ms not soft_stale floor fail.
+- Unit tests lean + MQ9 mint/update green.
+
+### SELECT
+
+**mq_tiles_boundaries** — `chain_summary` only mints when relation component size ≥2; empty graphs leave no distillate for compression survival.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Code | `mint_session_boundary_tile` always at `refresh_compression_handoff` |
+| Tile | `tile:session_boundary_<ts>` type `session_boundary` / `mq_session_boundary_v1` |
+| Flag | `mq_tiles_boundaries_session` |
+| Test | `refresh_compression_handoff_mints_session_boundary_tile` |
+
+### Next vectors
+
+1. MCP swap MQ10; session_end prepare_compression surfaces session_boundary_tile in manifest.
+2. CSF trusted_tiles prefer recent session_boundary when mvp tiles stale.
+3. PR #134 C86 cold assemble residual (CI green, open).
