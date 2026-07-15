@@ -3596,3 +3596,33 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 1. MCP swap MQ17; wake falsifiers are bullet bodies not headers.
 2. Optional #134 C86 cold assemble residual (floor held).
 3. Capacity only if landfill metrics measured.
+
+## MQ Cycle 18 — handoff falsifiers no substring scoop (2026-07-15)
+
+### VERIFY₀ baseline
+
+- master@`f46b0916` MQ17 #151.
+- MCP swapped: `mq_handoff_falsifiers_actionable` LIVE.
+- CSF warm **0.947** hub_crs≈0.91; injection_completeness **1.0**; next_vector intentional.
+- Residual: broad `contains("falsif")` still scoops ship/next_vector prose into falsifiers list.
+- Verify **healthy** metric:mq_verify_1784156324; dual-gate green.
+- Unit tests lean + MQ17 falsifier header skip green.
+
+### SELECT
+
+**mq_handoff_schema** — only section bullets, JSON array items, start-of-line `falsifiers:`, and explicit "would reverse" phrasing.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Drop | bare `falsif` substring match |
+| Keep | ### falsifiers bullets + JSON array + would reverse |
+| Flag | `mq_handoff_falsifiers_no_substring` |
+| Test | `handoff_parse_falsifiers_ignores_ship_and_next_vector_mentions` |
+
+### Next vectors
+
+1. MCP swap MQ18; wake falsifiers are only reverse conditions.
+2. Optional #134 C86 cold assemble residual (floor held).
+3. Capacity only if landfill metrics measured.
