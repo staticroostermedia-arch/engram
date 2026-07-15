@@ -1413,18 +1413,23 @@ pub fn build_harness_bundle(store: &mut StoreHandle, session_intent: Option<&str
     )
 }
 
-/// RSI Cycle 69: ultra-lean ego — single ego.leg3 read, no p-norm / goal-serving walks.
-fn build_ego_snapshot_ultra_lean(
-    ego: Option<&engram_core::types::HolographicBlock>,
-    primary_goal: Option<&str>,
+/// Sentinel inputs for ultra-lean ego (avoids clippy too_many_arguments).
+struct UltraLeanEgoSentinel<'a> {
+    primary_goal: Option<&'a str>,
     turns: u32,
     checkpoint: u64,
     minutes: u64,
     surprise_pressure: f32,
     rehydrate_suggested: bool,
-    rehydrate_reason: &str,
+    rehydrate_reason: &'a str,
+}
+
+/// RSI Cycle 69: ultra-lean ego — single ego.leg3 read, no p-norm / goal-serving walks.
+fn build_ego_snapshot_ultra_lean(
+    ego: Option<&engram_core::types::HolographicBlock>,
+    sentinel: UltraLeanEgoSentinel<'_>,
 ) -> Value {
-    let effective = crate::continuity_spikes::effective_max_turns(surprise_pressure);
+    let effective = crate::continuity_spikes::effective_max_turns(sentinel.surprise_pressure);
     let mut snap = if let Some(block) = ego {
         let dv = block.energetics.dv;
         json!({
@@ -1451,24 +1456,30 @@ fn build_ego_snapshot_ultra_lean(
         })
     };
     if let Some(obj) = snap.as_object_mut() {
-        if let Some(g) = primary_goal.filter(|g| !g.is_empty()) {
+        if let Some(g) = sentinel.primary_goal.filter(|g| !g.is_empty()) {
             obj.insert("primary_goal".to_string(), json!(g));
         }
-        obj.insert("turns_since_last_handoff".into(), json!(turns));
-        obj.insert("minutes_since_checkpoint".into(), json!(minutes));
-        obj.insert("last_checkpoint_unix".into(), json!(checkpoint));
-        obj.insert("rehydrate_suggested".into(), json!(rehydrate_suggested));
+        obj.insert("turns_since_last_handoff".into(), json!(sentinel.turns));
+        obj.insert("minutes_since_checkpoint".into(), json!(sentinel.minutes));
+        obj.insert("last_checkpoint_unix".into(), json!(sentinel.checkpoint));
+        obj.insert(
+            "rehydrate_suggested".into(),
+            json!(sentinel.rehydrate_suggested),
+        );
         obj.insert(
             "rehydrate_reason".into(),
-            json!(if rehydrate_suggested {
-                rehydrate_reason
+            json!(if sentinel.rehydrate_suggested {
+                sentinel.rehydrate_reason
             } else {
                 ""
             }),
         );
-        obj.insert("surprise_pressure".into(), json!(surprise_pressure));
+        obj.insert(
+            "surprise_pressure".into(),
+            json!(sentinel.surprise_pressure),
+        );
         obj.insert("effective_max_turns".into(), json!(effective));
-        obj.insert("lyapunov_proxy".into(), json!(surprise_pressure));
+        obj.insert("lyapunov_proxy".into(), json!(sentinel.surprise_pressure));
     }
     snap
 }
@@ -1531,13 +1542,15 @@ fn build_harness_bundle_ultra_lean_wake(
     let task_type = infer_task_type(None, session_intent, false, 0);
     let ego_snapshot = build_ego_snapshot_ultra_lean(
         ego_block.as_ref(),
-        primary_goal.as_deref(),
-        turns,
-        checkpoint,
-        minutes,
-        surprise_pressure,
-        rehydrate_suggested,
-        rehydrate_reason,
+        UltraLeanEgoSentinel {
+            primary_goal: primary_goal.as_deref(),
+            turns,
+            checkpoint,
+            minutes,
+            surprise_pressure,
+            rehydrate_suggested,
+            rehydrate_reason,
+        },
     );
     json!({
         "rehydration_manifest": rehydration_manifest,
