@@ -289,6 +289,9 @@ pub struct RelationIndex {
     csr_indices: Vec<u32>,
     /// Cycle 50: last load restored CSR from sidecar (skipped O(E log deg) rebuild).
     csr_loaded_from_sidecar: bool,
+    /// RSI Cycle 63: O(1) live / tombstone counts for readiness (no full scan).
+    live_count: usize,
+    tombstone_count: usize,
 }
 
 impl RelationIndex {
@@ -318,7 +321,10 @@ impl RelationIndex {
             csr_offsets: vec![0],
             csr_indices: Vec::new(),
             csr_loaded_from_sidecar: false,
+            live_count: 0,
+            tombstone_count: 0,
         };
+        idx.recompute_edge_counts();
         // Cycle 50: prefer mmap-friendly CSR sidecar over full rebuild_adj on large stalks.
         if !idx.try_load_csr_sidecar() {
             idx.rebuild_adj();
@@ -703,14 +709,29 @@ impl RelationIndex {
         self.csr_row = new_row_map;
     }
 
-    /// Live (non-tombstone) edge count.
-    pub fn live_edge_count(&self) -> usize {
-        self.entries.iter().filter(|e| !e.tombstone).count()
+    /// RSI Cycle 63: recompute live/tombstone counters (load / refresh / compact).
+    fn recompute_edge_counts(&mut self) {
+        let mut live = 0usize;
+        let mut tomb = 0usize;
+        for e in &self.entries {
+            if e.tombstone {
+                tomb = tomb.saturating_add(1);
+            } else {
+                live = live.saturating_add(1);
+            }
+        }
+        self.live_count = live;
+        self.tombstone_count = tomb;
     }
 
-    /// Soft-deleted edge count (Cycle 44).
+    /// Live (non-tombstone) edge count — O(1) after Cycle 63.
+    pub fn live_edge_count(&self) -> usize {
+        self.live_count
+    }
+
+    /// Soft-deleted edge count (Cycle 44) — O(1) after Cycle 63.
     pub fn tombstone_count(&self) -> usize {
-        self.entries.iter().filter(|e| e.tombstone).count()
+        self.tombstone_count
     }
 
     /// RSI Cycle 44: hard-compact when tombstone ratio ≥ 1/8 and count ≥ 8.
@@ -718,7 +739,7 @@ impl RelationIndex {
     pub fn compact_tombstones_if_needed(&mut self) -> bool {
         const MIN: usize = 8;
         const RATIO: f32 = 0.125;
-        let t = self.tombstone_count();
+        let t = self.tombstone_count;
         if t < MIN {
             return false;
         }
@@ -727,6 +748,8 @@ impl RelationIndex {
             return false;
         }
         self.entries.retain(|e| !e.tombstone);
+        self.live_count = self.entries.len();
+        self.tombstone_count = 0;
         self.rebuild_adj();
         true
     }
@@ -756,6 +779,7 @@ impl RelationIndex {
         if let Ok(entries) = serde_json::from_str::<Vec<RelationEntry>>(&data) {
             self.entries = entries;
             self.last_sync_mtime = mtime;
+            self.recompute_edge_counts();
             self.rebuild_adj();
         }
     }
@@ -788,6 +812,9 @@ impl RelationIndex {
             return 0;
         }
         let n = removed_old.len();
+        // Cycle 63: maintain O(1) counters
+        self.live_count = self.live_count.saturating_sub(n);
+        self.tombstone_count = self.tombstone_count.saturating_add(n);
         // Tombstone path: filter CSR without renumbering entry indices.
         self.csr_remove_entries_at(&removed_old, false);
         let _ = self.compact_tombstones_if_needed();
@@ -817,6 +844,9 @@ impl RelationIndex {
             self.entries[pos].volatility = vol;
             if was_tomb {
                 // Cycle 44: revive soft-deleted edge into CSR
+                // Cycle 63: counters — tombstone → live
+                self.tombstone_count = self.tombstone_count.saturating_sub(1);
+                self.live_count = self.live_count.saturating_add(1);
                 let ei = pos as u32;
                 self.csr_insert_incident(from, ei, vol);
                 if to != from {
@@ -841,6 +871,8 @@ impl RelationIndex {
                 to: to.to_string(),
                 tombstone: false,
             });
+            // Cycle 63: new live edge
+            self.live_count = self.live_count.saturating_add(1);
             // Cycle 37–38: CSR-only incremental insert (no dual HashMap)
             let ei = idx as u32;
             self.csr_insert_incident(from, ei, vol);
@@ -2602,6 +2634,7 @@ impl StoreHandle {
             "relation_adj_csr_remove_incremental": true,
             "relation_adj_csr_remove_batch": true,
             "relation_adj_csr_tombstone": true,
+            "relation_edge_counts_o1": true,
             "relation_adj_csr_sidecar": true,
             "relation_adj_csr_mmap_load": true,
             "relation_adj_csr_loaded_from_sidecar": self.relation_index.csr_loaded_from_sidecar(),
@@ -10819,6 +10852,54 @@ SESSION HANDOFF PACKET v1
             assert!((i as usize) < store.relation_index.entries.len());
             assert!(!store.relation_index.entries[i as usize].tombstone);
         }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// RSI Cycle 63: O(1) edge counts match linear scan ground truth.
+    #[test]
+    fn relation_edge_counts_o1_match_scan() {
+        let dir = test_store_dir("edge_counts_o1");
+        let mut store = StoreHandle::new(&dir.to_string_lossy());
+        for i in 0..6 {
+            let a = format!("oa{i}");
+            let b = format!("ob{i}");
+            store.remember(&a, "a").unwrap();
+            store.remember(&b, "b").unwrap();
+            store
+                .relate_with_volatility(&a, &b, "implements", Some(0.2))
+                .unwrap();
+        }
+        let scan_live = store
+            .relation_index
+            .entries
+            .iter()
+            .filter(|e| !e.tombstone)
+            .count();
+        let scan_tomb = store
+            .relation_index
+            .entries
+            .iter()
+            .filter(|e| e.tombstone)
+            .count();
+        assert_eq!(store.relation_index.live_edge_count(), scan_live);
+        assert_eq!(store.relation_index.tombstone_count(), scan_tomb);
+        assert_eq!(store.relation_index.live_edge_count(), 6);
+        assert!(store.relation_index.remove("oa0", "implements", "ob0"));
+        assert_eq!(store.relation_index.live_edge_count(), 5);
+        assert_eq!(store.relation_index.tombstone_count(), 1);
+        // Revive
+        store
+            .relate_with_volatility("oa0", "ob0", "implements", Some(0.2))
+            .unwrap();
+        assert_eq!(store.relation_index.live_edge_count(), 6);
+        assert_eq!(store.relation_index.tombstone_count(), 0);
+        let ready = store.backend_readiness();
+        assert_eq!(
+            ready
+                .get("relation_edge_counts_o1")
+                .and_then(|v| v.as_bool()),
+            Some(true)
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
