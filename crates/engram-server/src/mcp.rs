@@ -111,13 +111,14 @@ static PROCESS_SHEAF_CACHE: std::sync::LazyLock<std::sync::Mutex<ProcessSheafCac
         })
     });
 
-/// RSI Cycle 74: soft-stale window for warm sheaf skip (default 900s ≈ 15m RSI loop).
+/// RSI Cycle 74/81: soft-stale window for warm sheaf skip.
+/// Default **1800s** (C81) so 15m RSI fires keep a sliding hit with margin.
 /// Env: `ENGRAM_SHEAF_SOFT_STALE_SECS` (0 = disable soft-stale; always fingerprint).
 fn sheaf_soft_stale_secs() -> u64 {
     std::env::var("ENGRAM_SHEAF_SOFT_STALE_SECS")
         .ok()
         .and_then(|s| s.parse().ok())
-        .unwrap_or(900)
+        .unwrap_or(1800)
 }
 
 /// Mark in-memory sheaf cache as verified for soft-stale window.
@@ -270,19 +271,21 @@ fn load_process_sheaf(store: &SharedStore) -> Result<(), String> {
     // Called at mcp_engram_session_start for dynamic registration at wake-up boundary.
     // NOTE: Fully portable for public clones (no /path/to paths). See processes/, docs/SUBSTRATE_WINS_PLAN.md, AGENT_INTEGRATION_GUIDE.md.
     let t_load = std::time::Instant::now();
-    // RSI Cycle 74: soft-stale — skip processes/ walk + store fetch + disk write when
-    // this process already verified the sheaf within ENGRAM_SHEAF_SOFT_STALE_SECS (default 900).
-    // Matches readiness soft-stale / 15m RSI fire cadence; process tomls rarely change mid-window.
+    // RSI Cycle 74/81: soft-stale — skip processes/ walk + store fetch + disk write when
+    // this process already verified the sheaf within ENGRAM_SHEAF_SOFT_STALE_SECS (default 1800).
+    // C81: sliding last_ok on hit so 15m RSI fires never fall off a fixed 900s cliff.
     {
         let soft = sheaf_soft_stale_secs();
         if soft > 0 {
-            if let Ok(cache) = PROCESS_SHEAF_CACHE.lock() {
+            if let Ok(mut cache) = PROCESS_SHEAF_CACHE.lock() {
                 if cache.loaded {
                     if let Some(t) = cache.last_ok {
                         if t.elapsed().as_secs() < soft {
+                            // Sliding window — refresh so continuous fires stay hot.
+                            cache.last_ok = Some(std::time::Instant::now());
                             if sheaf_timing_enabled() {
                                 eprintln!(
-                                    "TIMING[load_process_sheaf]: soft-stale skip (elapsed_ms={}, soft_secs={soft})",
+                                    "TIMING[load_process_sheaf]: soft-stale skip (elapsed_ms={}, soft_secs={soft}, slide=1)",
                                     t.elapsed().as_millis()
                                 );
                             }
@@ -9849,13 +9852,25 @@ mod tests {
         let _ = std::fs::remove_dir_all(&tmp);
     }
 
-    /// RSI Cycle 74: soft-stale hit skips dir walk / store / disk (no full sheaf reload).
+    /// RSI Cycle 74/81: soft-stale hit skips dir walk / store / disk; C81 slides last_ok.
     #[test]
     fn sheaf_soft_stale_skips_second_load() {
         let tmp = unique_tmp("sheaf_soft");
-        std::env::set_var("ENGRAM_SHEAF_SOFT_STALE_SECS", "900");
+        std::env::set_var("ENGRAM_SHEAF_SOFT_STALE_SECS", "1800");
         // Seed cache as if a prior wake already verified the sheaf.
         mark_sheaf_cache_ok(0xC74_5007_57A1E);
+        // Age last_ok so a slide is observable.
+        if let Ok(mut cache) = PROCESS_SHEAF_CACHE.lock() {
+            cache.last_ok = Some(
+                std::time::Instant::now()
+                    .checked_sub(std::time::Duration::from_millis(5))
+                    .unwrap_or_else(std::time::Instant::now),
+            );
+        }
+        let before_elapsed = PROCESS_SHEAF_CACHE
+            .lock()
+            .ok()
+            .and_then(|c| c.last_ok.map(|t| t.elapsed()));
         let store: SharedStore = open_store(&tmp);
         let t0 = std::time::Instant::now();
         assert!(
@@ -9866,6 +9881,17 @@ mod tests {
         assert!(
             soft_ms < 50,
             "soft-stale load should be near-instant, got {soft_ms}ms"
+        );
+        // C81: last_ok must slide forward (smaller elapsed after hit).
+        let after_elapsed = PROCESS_SHEAF_CACHE
+            .lock()
+            .ok()
+            .and_then(|c| c.last_ok.map(|t| t.elapsed()));
+        assert!(
+            after_elapsed.is_some()
+                && before_elapsed.is_some()
+                && after_elapsed.unwrap() < before_elapsed.unwrap(),
+            "C81 soft-stale must slide last_ok forward: before={before_elapsed:?} after={after_elapsed:?}"
         );
         // Fresh store never registered wake-up — proves we did not fall through to full load.
         {
