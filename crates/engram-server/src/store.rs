@@ -268,6 +268,10 @@ pub fn effective_relation_volatility(entry: &RelationEntry) -> f32 {
     }
 }
 
+/// RSI Cycle 50: on-disk CSR sidecar magic (`relation_adj.csr`) — mmap-friendly layout.
+const CSR_SIDECAR_MAGIC: &[u8; 4] = b"ECSR";
+const CSR_SIDECAR_VERSION: u32 = 1;
+
 pub struct RelationIndex {
     pub entries: Vec<RelationEntry>,
     path: PathBuf,
@@ -276,13 +280,15 @@ pub struct RelationIndex {
     defer_flush_depth: u32,
     flush_pending: bool,
     /// RSI Cycles 30–44: CSR incident index (concept → row → prefer-static entry indices).
-    /// Not serialized — rebuilt on load/refresh; incremental insert on add (37–38);
-    /// remove (39/41); tombstone soft-delete + deferred compact (44). Cycle 38: CSR-only.
+    /// Not serialized in JSON — rebuilt on load or restored from Cycle 50 sidecar;
+    /// incremental insert on add (37–38); remove (39/41); tombstone (44). Cycle 38: CSR-only.
     csr_row: std::collections::HashMap<String, u32>,
     /// Row offsets into `csr_indices` (len = n_nodes + 1).
     csr_offsets: Vec<u32>,
     /// Flattened entry indices (prefer-static ordered within each row).
     csr_indices: Vec<u32>,
+    /// Cycle 50: last load restored CSR from sidecar (skipped O(E log deg) rebuild).
+    csr_loaded_from_sidecar: bool,
 }
 
 impl RelationIndex {
@@ -311,9 +317,181 @@ impl RelationIndex {
             csr_row: std::collections::HashMap::new(),
             csr_offsets: vec![0],
             csr_indices: Vec::new(),
+            csr_loaded_from_sidecar: false,
         };
-        idx.rebuild_adj();
+        // Cycle 50: prefer mmap-friendly CSR sidecar over full rebuild_adj on large stalks.
+        if !idx.try_load_csr_sidecar() {
+            idx.rebuild_adj();
+            idx.persist_csr_sidecar();
+        }
         idx
+    }
+
+    /// Path of binary CSR sidecar next to `relation_index.json`.
+    pub fn csr_sidecar_path(&self) -> PathBuf {
+        self.path.with_file_name("relation_adj.csr")
+    }
+
+    /// Whether CSR was restored from sidecar on last load (readiness/metrics).
+    pub fn csr_loaded_from_sidecar(&self) -> bool {
+        self.csr_loaded_from_sidecar
+    }
+
+    /// RSI Cycle 50: persist CSR row map + offsets + indices as little-endian binary.
+    /// Layout is mmap-friendly (fixed header + dense u32 arrays + string table).
+    pub fn persist_csr_sidecar(&self) {
+        let path = self.csr_sidecar_path();
+        let n_rows = self.csr_row.len() as u32;
+        let nnz = self.csr_indices.len() as u32;
+        let n_entries = self.entries.len() as u32;
+        // Row keys in row-index order
+        let mut keys: Vec<Option<String>> = vec![None; n_rows as usize];
+        for (k, &row) in &self.csr_row {
+            if (row as usize) < keys.len() {
+                keys[row as usize] = Some(k.clone());
+            }
+        }
+        let mut buf: Vec<u8> = Vec::with_capacity(
+            24 + self.csr_offsets.len() * 4 + self.csr_indices.len() * 4 + n_rows as usize * 32,
+        );
+        buf.extend_from_slice(CSR_SIDECAR_MAGIC);
+        buf.extend_from_slice(&CSR_SIDECAR_VERSION.to_le_bytes());
+        buf.extend_from_slice(&n_entries.to_le_bytes());
+        buf.extend_from_slice(&n_rows.to_le_bytes());
+        buf.extend_from_slice(&nnz.to_le_bytes());
+        for &o in &self.csr_offsets {
+            buf.extend_from_slice(&o.to_le_bytes());
+        }
+        for &i in &self.csr_indices {
+            buf.extend_from_slice(&i.to_le_bytes());
+        }
+        for k in &keys {
+            let s = k.as_deref().unwrap_or("");
+            let kb = s.as_bytes();
+            let len = (kb.len().min(u16::MAX as usize)) as u16;
+            buf.extend_from_slice(&len.to_le_bytes());
+            buf.extend_from_slice(&kb[..len as usize]);
+        }
+        if let Err(e) = std::fs::write(&path, &buf) {
+            tracing::warn!("CSR sidecar write failed {:?}: {}", path, e);
+        }
+    }
+
+    /// RSI Cycle 50: load CSR from sidecar via mmap (zero-copy read) then own into Vecs.
+    /// Returns false if missing, corrupt, or n_entries mismatch (caller rebuilds).
+    pub fn try_load_csr_sidecar(&mut self) -> bool {
+        let path = self.csr_sidecar_path();
+        let file = match std::fs::File::open(&path) {
+            Ok(f) => f,
+            Err(_) => return false,
+        };
+        let meta = match file.metadata() {
+            Ok(m) => m,
+            Err(_) => return false,
+        };
+        let len = meta.len() as usize;
+        if len < 20 {
+            return false;
+        }
+        // mmap read-only — multi-million nnz stays in OS page cache across reloads.
+        let mapped = unsafe {
+            use std::os::unix::io::AsRawFd;
+            let ptr = libc::mmap(
+                std::ptr::null_mut(),
+                len,
+                libc::PROT_READ,
+                libc::MAP_PRIVATE,
+                file.as_raw_fd(),
+                0,
+            );
+            if ptr == libc::MAP_FAILED {
+                return false;
+            }
+            std::slice::from_raw_parts(ptr as *const u8, len)
+        };
+        let ok = self.parse_csr_sidecar_bytes(mapped);
+        unsafe {
+            libc::munmap(mapped.as_ptr() as *mut libc::c_void, len);
+        }
+        // Keep File open until after munmap? fd can close; mapping is independent on Linux.
+        drop(file);
+        if ok {
+            self.csr_loaded_from_sidecar = true;
+            tracing::info!(
+                "RelationIndex CSR sidecar mmap-load: rows={} nnz={} entries={}",
+                self.csr_nrows(),
+                self.csr_nnz(),
+                self.entries.len()
+            );
+        }
+        ok
+    }
+
+    fn parse_csr_sidecar_bytes(&mut self, data: &[u8]) -> bool {
+        if data.len() < 20 || &data[0..4] != CSR_SIDECAR_MAGIC {
+            return false;
+        }
+        let version = u32::from_le_bytes(data[4..8].try_into().unwrap());
+        if version != CSR_SIDECAR_VERSION {
+            return false;
+        }
+        let n_entries = u32::from_le_bytes(data[8..12].try_into().unwrap());
+        let n_rows = u32::from_le_bytes(data[12..16].try_into().unwrap());
+        let nnz = u32::from_le_bytes(data[16..20].try_into().unwrap());
+        if n_entries as usize != self.entries.len() {
+            return false;
+        }
+        let off_bytes = (n_rows as usize + 1) * 4;
+        let idx_bytes = nnz as usize * 4;
+        let mut pos = 20;
+        if pos + off_bytes + idx_bytes > data.len() {
+            return false;
+        }
+        let mut offsets = Vec::with_capacity(n_rows as usize + 1);
+        for _ in 0..=n_rows {
+            let o = u32::from_le_bytes(data[pos..pos + 4].try_into().unwrap());
+            offsets.push(o);
+            pos += 4;
+        }
+        let mut indices = Vec::with_capacity(nnz as usize);
+        for _ in 0..nnz {
+            let i = u32::from_le_bytes(data[pos..pos + 4].try_into().unwrap());
+            if (i as usize) >= self.entries.len() {
+                return false;
+            }
+            indices.push(i);
+            pos += 4;
+        }
+        if offsets.len() != n_rows as usize + 1 {
+            return false;
+        }
+        if *offsets.last().unwrap_or(&0) != nnz {
+            return false;
+        }
+        let mut row_map = std::collections::HashMap::with_capacity(n_rows as usize);
+        for row in 0..n_rows {
+            if pos + 2 > data.len() {
+                return false;
+            }
+            let klen = u16::from_le_bytes(data[pos..pos + 2].try_into().unwrap()) as usize;
+            pos += 2;
+            if pos + klen > data.len() {
+                return false;
+            }
+            let key = match std::str::from_utf8(&data[pos..pos + klen]) {
+                Ok(s) => s.to_string(),
+                Err(_) => return false,
+            };
+            pos += klen;
+            if key.is_empty() {
+                return false;
+            }
+            row_map.insert(key, row);
+        }
+        self.csr_offsets = offsets;
+        self.csr_indices = indices;
+        self.csr_row = row_map;
+        true
     }
 
     /// Rebuild CSR incident index from live `entries` (O(E log deg)), prefer-static within rows.
@@ -360,6 +538,8 @@ impl RelationIndex {
             }
             self.csr_offsets.push(self.csr_indices.len() as u32);
         }
+        self.csr_loaded_from_sidecar = false;
+        self.persist_csr_sidecar();
     }
 
     /// Number of concepts with at least one incident edge (for readiness/metrics).
@@ -876,6 +1056,8 @@ impl RelationIndex {
         if let Ok(s) = serde_json::to_string_pretty(&self.entries) {
             let _ = std::fs::write(&self.path, s);
         }
+        // Cycle 50: keep CSR sidecar in sync with live CSR (incremental + rebuild paths).
+        self.persist_csr_sidecar();
     }
 }
 
@@ -2403,6 +2585,9 @@ impl StoreHandle {
             "relation_adj_csr_remove_incremental": true,
             "relation_adj_csr_remove_batch": true,
             "relation_adj_csr_tombstone": true,
+            "relation_adj_csr_sidecar": true,
+            "relation_adj_csr_mmap_load": true,
+            "relation_adj_csr_loaded_from_sidecar": self.relation_index.csr_loaded_from_sidecar(),
             // RSI Cycle 34: sovereignty encrypt-at-rest dogfood surface
             "encrypt_at_rest_enabled": crate::secure_context::encrypt_at_rest_enabled(),
             "encrypt_at_rest_env": "ENGRAM_ENCRYPT_AT_REST",
@@ -10160,6 +10345,50 @@ SESSION HANDOFF PACKET v1
             "load rebuild_adj: {}",
             reloaded
         );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// RSI Cycle 50: CSR sidecar mmap-load restores graph without rebuild_adj.
+    #[test]
+    fn relation_csr_sidecar_mmap_reload() {
+        let dir = test_store_dir("csr_sidecar_mmap");
+        let mut store = StoreHandle::new(&dir.to_string_lossy());
+        store.remember("hub:csr50", "hub").unwrap();
+        store.remember("a:csr50", "a").unwrap();
+        store.remember("b:csr50", "b").unwrap();
+        store
+            .relate_with_volatility("hub:csr50", "a:csr50", "implements", Some(0.12))
+            .unwrap();
+        store
+            .relate_with_volatility("hub:csr50", "b:csr50", "supersedes", Some(0.90))
+            .unwrap();
+        let nnz = store.relation_index.csr_nnz();
+        let nrows = store.relation_index.csr_nrows();
+        assert!(nnz >= 2 && nrows >= 3);
+        // Flush writes JSON + CSR sidecar
+        store.relation_index.persist_csr_sidecar();
+        let side = store.relation_index.csr_sidecar_path();
+        assert!(side.is_file(), "relation_adj.csr must exist after persist");
+        let path = dir.to_string_lossy().to_string();
+        drop(store);
+        let store2 = StoreHandle::new(&path);
+        assert!(
+            store2.relation_index.csr_loaded_from_sidecar(),
+            "second load must restore CSR from mmap sidecar"
+        );
+        assert_eq!(store2.relation_index.csr_nnz(), nnz);
+        assert_eq!(store2.relation_index.csr_nrows(), nrows);
+        let min_hub = store2.min_incident_edge_volatility("hub:csr50");
+        assert!(
+            (min_hub - 0.12).abs() < 1e-5,
+            "sidecar CSR prefer-static min: {}",
+            min_hub
+        );
+        // Incident indices must reference live entries
+        for &i in store2.relation_index.incident_indices("hub:csr50") {
+            assert!((i as usize) < store2.relation_index.entries.len());
+            assert!(!store2.relation_index.entries[i as usize].tombstone);
+        }
         let _ = std::fs::remove_dir_all(&dir);
     }
 
