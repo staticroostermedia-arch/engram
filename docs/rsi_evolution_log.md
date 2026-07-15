@@ -3180,3 +3180,33 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 1. MCP swap MQ3; cold/warm CSF without no_trusted_tiles when mvp tiles exist.
 2. `mq_verify_cadence` metric tile.
 3. PR #134 C86 cold assemble residual.
+
+## MQ Cycle 4 — verify lawfulness series cadence (2026-07-15)
+
+### VERIFY₀ baseline
+
+- master@`bf04407f` MQ3 #137.
+- MCP swapped: `wake_csf_live_trusted_tiles` LIVE.
+- CSF warm **0.925** / cold post-swap **0.725** with `trusted_tile_count=6`, `mean_hub_crs=null`, no reasons when BVH warm.
+- Handoff complete (MQ1); primary `goal:engram_memory_quality_v1`.
+- Continuity dual-gate green → escalate to lawfulness cadence.
+- Latency floor: warm total_ms≈6; readiness_ms=0.
+
+### SELECT
+
+**mq_verify_cadence** — every `verify_manifold_integrity` call persists trendable metric series.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Code | `persist_mq_verify_metric` + `helper:mq_verify_series` |
+| MCP | verify tool auto-persists sample + reports metric key |
+| Flag | `mq_verify_series_persist` |
+| Test | extended `cold_start_fidelity_persists_two_wakes_and_nudge_on_empty` |
+
+### Next vectors
+
+1. MCP swap MQ4; fire verify → confirm series helper grows.
+2. `mq_relation_retrieval` / spatial locus if continuity+lawfulness green.
+3. PR #134 C86 cold assemble residual.
