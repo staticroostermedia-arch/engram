@@ -2922,3 +2922,35 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 2. Soft-stale local_stratum if still ≥2ms.
 3. Full 8192-d σ² tensors (long horizon — not wake path).
 
+## Cycle 82 — local_stratum wake soft-stale (2026-07-15)
+
+### Master baseline
+
+- Post Cycle 81: PR **#129** `9695f44f` — sheaf soft-stale slide.
+- **Warm LIVE:** total=**8** sheaf=**0** harness=**1** gather=**4** local=**1**.
+- Local slice still did ProvLog previews for profile+mcp every wake.
+
+### Research synthesis
+
+| Source | Insight |
+|--------|---------|
+| local_stratum_ms 1–3 | Body previews for static sovereignty names. |
+| Sheaf/handoff soft-stale | Same 1800s sliding pattern. |
+
+### Hypothesis
+
+**Soft-stale Value cache** for wake local slice + existence-only nodes (empty preview).
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Code | `LOCAL_WAKE_SLICE_CACHE`, existence-only nodes |
+| Readiness | `wake_local_stratum_soft_stale` |
+| Test | `wake_local_stratum_soft_stale_second_call` |
+
+### Next vectors
+
+1. MCP swap C78–C82; warm total≤5 gather≤1 local=0 sheaf=0; cold sheaf≤50 readiness≤30.
+2. Full 8192-d σ² tensors (long horizon — not wake path).
+
