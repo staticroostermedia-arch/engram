@@ -271,9 +271,9 @@ pub struct RelationIndex {
     /// When > 0, `add`/`remove` defer disk flush until the outer batch ends.
     defer_flush_depth: u32,
     flush_pending: bool,
-    /// RSI Cycles 30–39: CSR incident index (concept → row → prefer-static entry indices).
+    /// RSI Cycles 30–41: CSR incident index (concept → row → prefer-static entry indices).
     /// Not serialized — rebuilt on load/refresh; incremental insert on add (37–38);
-    /// incremental remove (39). Cycle 38: CSR-only (HashMap-of-Vec adj removed).
+    /// incremental remove (39); batch remove (41). Cycle 38: CSR-only.
     csr_row: std::collections::HashMap<String, u32>,
     /// Row offsets into `csr_indices` (len = n_nodes + 1).
     csr_offsets: Vec<u32>,
@@ -446,10 +446,18 @@ impl RelationIndex {
         self.csr_indices[s..e].copy_from_slice(&slice);
     }
 
-    /// RSI Cycle 39: drop one entry from CSR without full `rebuild_adj`.
-    /// Filters `entry_idx`, renumbers indices `> entry_idx`, collapses empty rows.
+    /// RSI Cycle 39/41: drop one or more entries from CSR without full `rebuild_adj`.
+    /// `remove_idxs` are **old** entry indices (pre-compact). Sorted/deduped internally.
+    /// Filters removed indices, renumbers survivors, collapses empty rows.
     /// Prefer-static order within surviving rows is preserved (filter only).
-    fn csr_remove_entry_at(&mut self, entry_idx: u32) {
+    /// Cycle 41: batch path is O(nnz + k log k) once vs k× single-remove walks.
+    fn csr_remove_entries_at(&mut self, remove_idxs: &[u32]) {
+        if remove_idxs.is_empty() {
+            return;
+        }
+        let mut rem: Vec<u32> = remove_idxs.to_vec();
+        rem.sort_unstable();
+        rem.dedup();
         let nrows = self.csr_offsets.len().saturating_sub(1);
         if nrows == 0 {
             self.csr_row.clear();
@@ -465,8 +473,18 @@ impl RelationIndex {
                 row_to_concept[r] = Some(c.clone());
             }
         }
-        let mut new_indices: Vec<u32> =
-            Vec::with_capacity(self.csr_indices.len().saturating_sub(2));
+        let map_idx = |old: u32| -> Option<u32> {
+            if rem.binary_search(&old).is_ok() {
+                return None;
+            }
+            let less = rem.partition_point(|&r| r < old) as u32;
+            Some(old.saturating_sub(less))
+        };
+        let mut new_indices: Vec<u32> = Vec::with_capacity(
+            self.csr_indices
+                .len()
+                .saturating_sub(rem.len().saturating_mul(2)),
+        );
         let mut new_offsets: Vec<u32> = Vec::with_capacity(self.csr_offsets.len());
         new_offsets.push(0);
         let mut new_row_map: std::collections::HashMap<String, u32> =
@@ -477,10 +495,9 @@ impl RelationIndex {
             let e = self.csr_offsets[row + 1] as usize;
             let start_len = new_indices.len();
             for &idx in &self.csr_indices[s..e] {
-                if idx == entry_idx {
-                    continue;
+                if let Some(mapped) = map_idx(idx) {
+                    new_indices.push(mapped);
                 }
-                new_indices.push(if idx > entry_idx { idx - 1 } else { idx });
             }
             if new_indices.len() == start_len {
                 // Empty row after remove — drop concept from CSR.
@@ -529,18 +546,33 @@ impl RelationIndex {
     /// Remove a directed edge if present (e.g. primary_goal --serves--> demoted artifact).
     /// RSI Cycle 39: incremental CSR remove (no full `rebuild_adj`); indices renumbered.
     pub fn remove(&mut self, from: &str, label: &str, to: &str) -> bool {
-        if let Some(pos) = self
-            .entries
-            .iter()
-            .position(|e| e.from == from && e.label == label && e.to == to)
-        {
-            self.entries.remove(pos);
-            self.csr_remove_entry_at(pos as u32);
-            self.flush_if_needed();
-            true
-        } else {
-            false
+        self.remove_batch(&[(from, label, to)]) == 1
+    }
+
+    /// RSI Cycle 41: remove many directed edges in one CSR pass (O(E+k) vs k× single).
+    /// Returns number of edges actually removed. Single flush at end.
+    pub fn remove_batch(&mut self, edges: &[(&str, &str, &str)]) -> usize {
+        if edges.is_empty() {
+            return 0;
         }
+        let kill: std::collections::HashSet<(&str, &str, &str)> = edges.iter().copied().collect();
+        let mut removed_old: Vec<u32> = Vec::new();
+        let mut kept: Vec<RelationEntry> = Vec::with_capacity(self.entries.len());
+        for (i, e) in self.entries.iter().enumerate() {
+            if kill.contains(&(e.from.as_str(), e.label.as_str(), e.to.as_str())) {
+                removed_old.push(i as u32);
+            } else {
+                kept.push(e.clone());
+            }
+        }
+        if removed_old.is_empty() {
+            return 0;
+        }
+        let n = removed_old.len();
+        self.entries = kept;
+        self.csr_remove_entries_at(&removed_old);
+        self.flush_if_needed();
+        n
     }
 
     /// Add a directed edge, deduplicating and flushing immediately.
@@ -2293,6 +2325,7 @@ impl StoreHandle {
             "relation_adj_csr_incremental": true,
             "relation_adj_csr_only": true,
             "relation_adj_csr_remove_incremental": true,
+            "relation_adj_csr_remove_batch": true,
             // RSI Cycle 34: sovereignty encrypt-at-rest dogfood surface
             "encrypt_at_rest_enabled": crate::secure_context::encrypt_at_rest_enabled(),
             "encrypt_at_rest_env": "ENGRAM_ENCRYPT_AT_REST",
@@ -5810,6 +5843,18 @@ impl StoreHandle {
         ok
     }
 
+    /// RSI Cycle 41: batch unrelate — one CSR pass for many edges.
+    /// Returns concepts that were successfully un-edged (third of triple).
+    pub fn unrelate_batch(&mut self, edges: &[(&str, &str, &str)]) -> usize {
+        let n = self.relation_index.remove_batch(edges);
+        if n > 0 {
+            for (a, label, b) in edges {
+                self.log_activity(b, "unrelate", Some(&format!("{} -[{}]->", a, label)));
+            }
+        }
+        n
+    }
+
     /// Chain-summary / verified-sequence tiles are compressed memory — not active serving context.
     pub fn is_condensation_tile(c: &str) -> bool {
         c.starts_with("tile:chain_summary_")
@@ -5818,15 +5863,42 @@ impl StoreHandle {
     }
 
     /// Remove condensation tiles from `primary_goal --serves-->` (geometry + summarize_chain edges stay).
+    /// Cycle 41: batch CSR remove (one pass) instead of sequential unrelate.
     pub fn demote_condensation_from_serving_stack(&mut self) -> Vec<String> {
         let serving = self.search_relations("primary_goal", Some("serves"), "from");
-        let mut demoted = Vec::new();
-        for (_label, c) in serving {
-            if Self::is_condensation_tile(&c) && self.unrelate("primary_goal", "serves", &c) {
-                demoted.push(c);
+        let demoted: Vec<String> = serving
+            .into_iter()
+            .filter(|(_label, c)| Self::is_condensation_tile(c))
+            .map(|(_label, c)| c)
+            .collect();
+        if demoted.is_empty() {
+            return demoted;
+        }
+        let edges: Vec<(&str, &str, &str)> = demoted
+            .iter()
+            .map(|c| ("primary_goal", "serves", c.as_str()))
+            .collect();
+        let n = self.relation_index.remove_batch(&edges);
+        if n > 0 {
+            for c in &demoted {
+                self.log_activity(c, "unrelate", Some("primary_goal -[serves]->"));
             }
         }
+        // Keep only those that still lack the edge (all demoted targets attempted).
+        if n == demoted.len() {
+            return demoted;
+        }
+        // Partial: filter to those with no remaining primary_goal serves edge.
         demoted
+            .into_iter()
+            .filter(|c| {
+                !self
+                    .relation_index
+                    .entries
+                    .iter()
+                    .any(|e| e.from == "primary_goal" && e.label == "serves" && e.to == *c)
+            })
+            .collect()
     }
 
     /// Demote a concept from active agent context: mint archival trace, wire lifecycle edges, remove `primary_goal --serves-->`.
@@ -9906,6 +9978,55 @@ SESSION HANDOFF PACKET v1
             "load rebuild_adj: {}",
             reloaded
         );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// RSI Cycle 41: batch remove equals sequential single removes (CSR oracle).
+    #[test]
+    fn relation_csr_remove_batch_matches_sequential() {
+        let dir = test_store_dir("csr_remove_batch");
+        let mut store = StoreHandle::new(&dir.to_string_lossy());
+        store.remember("h", "hub").unwrap();
+        for i in 0..6 {
+            let n = format!("n{i}");
+            store.remember(&n, "p").unwrap();
+            store
+                .relate_with_volatility("h", &n, "implements", Some(0.12))
+                .unwrap();
+        }
+        // Cross edges for multi-endpoint CSR filter
+        store
+            .relate_with_volatility("n1", "n2", "depends_on", Some(0.4))
+            .unwrap();
+        store
+            .relate_with_volatility("n3", "n4", "depends_on", Some(0.4))
+            .unwrap();
+
+        let edges = [
+            ("h", "implements", "n0"),
+            ("h", "implements", "n2"),
+            ("n1", "depends_on", "n2"),
+        ];
+        let n = store.relation_index.remove_batch(&edges);
+        assert_eq!(n, 3, "three edges removed");
+        assert!(!store
+            .relation_index
+            .entries
+            .iter()
+            .any(|e| e.from == "h" && e.label == "implements" && e.to == "n0"));
+        // Oracle rebuild
+        let nnz = store.relation_index.csr_nnz();
+        let mut hub: Vec<u32> = store.relation_index.incident_indices("h").to_vec();
+        store.relation_index.rebuild_adj();
+        assert_eq!(store.relation_index.csr_nnz(), nnz);
+        let mut hub2: Vec<u32> = store.relation_index.incident_indices("h").to_vec();
+        hub.sort();
+        hub2.sort();
+        assert_eq!(hub, hub2, "batch CSR matches rebuild");
+        // Remaining incidents must be valid
+        for &i in store.relation_index.incident_indices("h") {
+            assert!((i as usize) < store.relation_index.entries.len());
+        }
         let _ = std::fs::remove_dir_all(&dir);
     }
 
