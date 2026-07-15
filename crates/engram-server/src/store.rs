@@ -2771,6 +2771,8 @@ impl StoreHandle {
                 "wake_trusted_tiles_mvp_fallback": true,
                 "wake_csf_live_trusted_tiles": true,
                 "mq_verify_series_persist": true,
+                "wake_relation_resume_lean": true,
+                "wake_lawfulness_snapshot": true,
                 "wake_continuation_soft_stale": true,
                 "wake_continuation_soft_stale_env": "ENGRAM_WAKE_CONTINUATION_SOFT_STALE_SECS",
                 "wake_continuation_soft_stale_secs": 1800,
@@ -5560,6 +5562,23 @@ impl StoreHandle {
                 "rehydration_manifest",
                 rehydration_manifest,
             );
+            // MQ Cycle 5: non-flat lean rehydration — relation neighborhood of primary
+            // + latest lawfulness series head (no extra agent tool round-trip).
+            if wake_lean {
+                let seed = primary_goal_name.as_deref().or_else(|| {
+                    obj.get("rehydration_manifest")
+                        .and_then(|m| m.get("primary_goal"))
+                        .and_then(|v| v.as_str())
+                });
+                obj.insert(
+                    "relation_resume".to_string(),
+                    Self::build_lean_relation_resume(self, seed),
+                );
+                obj.insert(
+                    "lawfulness_snapshot".to_string(),
+                    self.mq_verify_series_head(),
+                );
+            }
         }
         mark_cont(&mut cont_phase_ms, "assemble_ms", t_assemble);
         // Cold-start fidelity score from real continuation + readiness fields.
@@ -5766,6 +5785,76 @@ impl StoreHandle {
 
     /// MQ Cycle 4: series helper for manifold verify samples (lawfulness cadence).
     pub const MQ_VERIFY_SERIES: &'static str = "helper:mq_verify_series";
+
+    /// MQ Cycle 5: lean wake relation neighborhood for non-flat resume (no full graph walk).
+    pub fn build_lean_relation_resume(store: &Self, seed: Option<&str>) -> serde_json::Value {
+        let seed = seed
+            .filter(|s| !s.is_empty() && *s != "unset")
+            .unwrap_or("goal:engram_mvp_v1");
+        let mut edges: Vec<serde_json::Value> = Vec::new();
+        for (label, other) in store
+            .search_relations(seed, None, "from")
+            .into_iter()
+            .take(6)
+        {
+            edges.push(serde_json::json!({
+                "from": seed,
+                "label": label,
+                "to": other,
+                "direction": "from",
+            }));
+        }
+        for (label, other) in store.search_relations(seed, None, "to").into_iter().take(4) {
+            edges.push(serde_json::json!({
+                "from": other,
+                "label": label,
+                "to": seed,
+                "direction": "to",
+            }));
+        }
+        serde_json::json!({
+            "version": "mq_relation_resume_v1",
+            "seed": seed,
+            "edge_count": edges.len(),
+            "edges": edges,
+            "hint": "lean graph rehydrate — search_by_relation for deeper walks",
+        })
+    }
+
+    /// Latest entry from `helper:mq_verify_series` (or empty snapshot).
+    pub fn mq_verify_series_head(&self) -> serde_json::Value {
+        let series: Vec<serde_json::Value> = self
+            .fetch_block(Self::MQ_VERIFY_SERIES)
+            .map(|b| engram_core::storage::read_provlog(&b))
+            .and_then(|t| {
+                let start = t.rfind('[')?;
+                let end = t.rfind(']')?;
+                if start < end {
+                    serde_json::from_str(&t[start..=end]).ok()
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_default();
+        let latest = series.last().cloned();
+        let pass_rate = if series.is_empty() {
+            None
+        } else {
+            let passes = series
+                .iter()
+                .filter(|e| e.get("pass").and_then(|v| v.as_bool()).unwrap_or(false))
+                .count();
+            Some(passes as f64 / series.len() as f64)
+        };
+        serde_json::json!({
+            "version": "mq_lawfulness_snapshot_v1",
+            "series_concept": Self::MQ_VERIFY_SERIES,
+            "sample_count": series.len(),
+            "pass_rate": pass_rate,
+            "latest": latest,
+            "hint": "call mcp_engram_verify_manifold_integrity to append samples",
+        })
+    }
 
     /// Persist a verify_manifold_integrity sample as `metric:mq_verify_<unix>` + series helper.
     /// Called from MCP verify tool so every MQ fire VERIFY₀ leaves a trendable artifact.
@@ -10095,6 +10184,34 @@ mod ingest_ast_tests {
         assert!(
             sh.get("memory_quality").is_some(),
             "MQ1 memory_quality completeness block on structured_handoff"
+        );
+        // MQ Cycle 5: lean relation_resume + lawfulness_snapshot on wake bundle.
+        let rr = bundle
+            .get("relation_resume")
+            .and_then(|v| v.as_object())
+            .expect("relation_resume");
+        assert_eq!(
+            rr.get("version").and_then(|v| v.as_str()),
+            Some("mq_relation_resume_v1")
+        );
+        assert!(
+            rr.get("seed").and_then(|v| v.as_str()).is_some(),
+            "relation_resume seed present"
+        );
+        let ls = bundle
+            .get("lawfulness_snapshot")
+            .and_then(|v| v.as_object())
+            .expect("lawfulness_snapshot");
+        assert_eq!(
+            ls.get("version").and_then(|v| v.as_str()),
+            Some("mq_lawfulness_snapshot_v1")
+        );
+        assert_eq!(
+            store
+                .backend_readiness()
+                .get("wake_relation_resume_lean")
+                .and_then(|v| v.as_bool()),
+            Some(true)
         );
         // RSI Cycle 83: second wake hits soft-stale continuation cache.
         // RSI Cycle 85: soft-stale valid → skip warm/sentinel prep.
