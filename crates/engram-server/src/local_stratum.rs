@@ -361,9 +361,62 @@ pub fn build_local_stratum_slice(store: &StoreHandle, budget: usize) -> Value {
     })
 }
 
+/// RSI Cycle 82: soft-stale wake local_stratum Value (default 1800s, sliding).
+struct LocalWakeSliceCache {
+    store_key: String,
+    last_ok: Option<std::time::Instant>,
+    value: Option<Value>,
+}
+
+static LOCAL_WAKE_SLICE_CACHE: std::sync::LazyLock<std::sync::Mutex<LocalWakeSliceCache>> =
+    std::sync::LazyLock::new(|| {
+        std::sync::Mutex::new(LocalWakeSliceCache {
+            store_key: String::new(),
+            last_ok: None,
+            value: None,
+        })
+    });
+
+fn local_wake_soft_stale_secs() -> u64 {
+    std::env::var("ENGRAM_LOCAL_WAKE_SOFT_STALE_SECS")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(1800)
+}
+
+fn local_wake_slice_cache_get(store_key: &str) -> Option<Value> {
+    let soft = local_wake_soft_stale_secs();
+    if soft == 0 || store_key.is_empty() {
+        return None;
+    }
+    let mut cache = LOCAL_WAKE_SLICE_CACHE.lock().ok()?;
+    if cache.store_key != store_key {
+        return None;
+    }
+    let t = cache.last_ok?;
+    if t.elapsed().as_secs() >= soft {
+        return None;
+    }
+    // Sliding window (same pattern as sheaf C81).
+    cache.last_ok = Some(std::time::Instant::now());
+    cache.value.clone()
+}
+
+fn local_wake_slice_cache_set(store_key: &str, value: Value) {
+    if store_key.is_empty() {
+        return;
+    }
+    if let Ok(mut cache) = LOCAL_WAKE_SLICE_CACHE.lock() {
+        cache.store_key = store_key.to_string();
+        cache.last_ok = Some(std::time::Instant::now());
+        cache.value = Some(value);
+    }
+}
+
 /// RSI Cycle 62: ultra-lean wake local stratum.
 /// Skip readiness_cache (multi-KB JSON; full readiness already on session_start packet),
 /// skip recent local: walk and project git concept when not needed for sovereignty hint.
+/// RSI Cycle 82: soft-stale cached Value for warm 15m RSI fires.
 pub fn build_local_stratum_slice_for_wake(store: &StoreHandle) -> Value {
     if !enabled() {
         return json!({
@@ -376,28 +429,46 @@ pub fn build_local_stratum_slice_for_wake(store: &StoreHandle) -> Value {
         });
     }
 
+    let key = store.store_path().to_string();
+    if let Some(cached) = local_wake_slice_cache_get(&key) {
+        return cached;
+    }
+
     // Core host only — profile + mcp. Readiness lives on wake packet `readiness` field.
+    // C82: existence-only nodes (no ProvLog body) — sovereignty names sufficient on lean wake.
     let concepts = [LOCAL_HOST_PROFILE, LOCAL_HOST_MCP];
     let mut nodes: Vec<Value> = Vec::new();
     for c in concepts {
-        if let Some(n) = preview_for_wake(store, c) {
-            nodes.push(n);
+        let present =
+            store.fetch_block_high_priority(c).is_some() || store.fetch_block(c).is_some();
+        if present {
+            nodes.push(json!({
+                "concept": c,
+                "preview": "",
+                "crs": 0.0,
+                "hot": true,
+                "tier": "local_only",
+            }));
         }
     }
 
-    json!({
+    let out = json!({
         "version": "v1",
         "enabled": true,
         "wake_lean": true,
         "budget": 2,
         "node_count": nodes.len(),
+        "soft_stale_cache": true,
         "sovereignty_note": "local_only blocks never export raw — use scrub_export when implemented",
         "process": "process:engram.ritual.local-context-working-memory",
         "nodes": nodes,
-    })
+    });
+    local_wake_slice_cache_set(&key, out.clone());
+    out
 }
 
-/// Shorter previews for wake (avoid multi-KB readiness body work).
+/// Shorter previews for wake (unused on C82 existence-only path; kept for full-preview recovery).
+#[allow(dead_code)]
 fn preview_for_wake(store: &StoreHandle, concept: &str) -> Option<Value> {
     let block = store.fetch_block_high_priority(concept)?;
     let text = storage::read_provlog(&block);
@@ -432,6 +503,55 @@ fn preview_for_wake(store: &StoreHandle, concept: &str) -> Option<Value> {
 mod tests {
     use super::*;
     use crate::store::StoreHandle;
+
+    /// RSI Cycle 82: second wake slice is soft-stale hit (near-instant, empty previews).
+    #[test]
+    fn wake_local_stratum_soft_stale_second_call() {
+        std::env::set_var("ENGRAM_DISABLE_SHEAF", "1");
+        std::env::set_var("ENGRAM_FORCE_CPU_BACKEND", "1");
+        std::env::set_var("ENGRAM_LOCAL_WAKE_SOFT_STALE_SECS", "1800");
+        if let Ok(mut cache) = LOCAL_WAKE_SLICE_CACHE.lock() {
+            cache.store_key.clear();
+            cache.last_ok = None;
+            cache.value = None;
+        }
+        let dir = std::env::temp_dir().join(format!(
+            "engram_lcs_soft_{}_{}",
+            std::process::id(),
+            now_secs()
+        ));
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.to_string_lossy().to_string();
+        let mut store = StoreHandle::new(&path);
+        // Seed without full bootstrap (avoids readiness/BVH hang).
+        let _ = store.remember(
+            LOCAL_HOST_PROFILE,
+            "# Local Host Profile\n\n**sovereignty:** local_only\n",
+        );
+        let _ = store.remember(
+            LOCAL_HOST_MCP,
+            "# Local MCP\n\n**sovereignty:** local_only\n",
+        );
+        let s1 = build_local_stratum_slice_for_wake(&store);
+        assert_eq!(s1.get("wake_lean").and_then(|v| v.as_bool()), Some(true));
+        assert!(s1
+            .get("soft_stale_cache")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false));
+        assert!(s1.get("node_count").and_then(|v| v.as_u64()).unwrap_or(0) >= 1);
+        let t0 = std::time::Instant::now();
+        let s2 = build_local_stratum_slice_for_wake(&store);
+        assert!(
+            t0.elapsed().as_millis() < 20,
+            "soft-stale second call near-instant"
+        );
+        assert_eq!(
+            s2.get("node_count").and_then(|v| v.as_u64()),
+            s1.get("node_count").and_then(|v| v.as_u64())
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+        std::env::remove_var("ENGRAM_LOCAL_WAKE_SOFT_STALE_SECS");
+    }
 
     #[test]
     fn bootstrap_mints_host_profile() {
