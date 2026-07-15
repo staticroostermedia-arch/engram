@@ -2771,6 +2771,7 @@ impl StoreHandle {
                 "wake_trusted_tiles_mvp_fallback": true,
                 "wake_csf_live_trusted_tiles": true,
                 "mq_verify_series_persist": true,
+                "mq_verify_invalidate_continuation": true,
                 "wake_relation_resume_lean": true,
                 "wake_lawfulness_snapshot": true,
                 "wake_slim_mq_resume_hoist": true,
@@ -6021,6 +6022,9 @@ impl StoreHandle {
         }
         let _ = self.promote_tile_to_high_priority(series_key);
         let _ = self.promote_tile_to_high_priority(&metric_key);
+        // MQ Cycle 14: lawfulness sample must rehydrate on next wake — soft-stale
+        // continuation otherwise serves pre-verify lawfulness_snapshot for up to TTL.
+        self.invalidate_continuation_bundle_cache();
         Some(metric_key)
     }
 
@@ -10500,6 +10504,62 @@ mod ingest_ast_tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// MQ Cycle 14: persist_mq_verify_metric invalidates continuation soft-stale so the
+    /// next wake rebuilds lawfulness_snapshot with the fresh sample (not pre-verify TTL).
+    #[test]
+    fn mq_verify_persist_invalidates_continuation_soft_stale() {
+        let dir = test_store_dir("mq14_verify_invalidate");
+        let mut store = StoreHandle::new(&dir.to_string_lossy());
+        store
+            .remember(
+                "primary_goal",
+                "PRIMARY GOAL\n\n**goal:** goal:engram_memory_quality_v1\n**set_at:** mq14\n",
+            )
+            .unwrap();
+        store
+            .remember(
+                crate::harness_injection::SESSION_HANDOFF_LATEST,
+                "SESSION HANDOFF PACKET v1\n\n{\"decisions\":[\"mq14\"],\"next_vector\":\"mq_verify_cadence\"}",
+            )
+            .unwrap();
+        let _ = store.build_continuation_bundle_wake(Some("mq14 first wake"));
+        assert!(
+            store.wake_continuation_soft_stale_valid(),
+            "soft-stale valid after first wake"
+        );
+        let vr = ManifoldHealthReport {
+            total_blocks_sampled: 5,
+            high_value_blocks: 5,
+            issues_found: 0,
+            issues: vec![],
+            overall_health: "healthy".to_string(),
+        };
+        let metric = store
+            .persist_mq_verify_metric(&vr, 0.74, Some(5))
+            .expect("mq verify metric");
+        assert!(
+            !store.wake_continuation_soft_stale_valid(),
+            "MQ14: soft-stale must clear after verify persist"
+        );
+        let bundle = store.build_continuation_bundle_wake(Some("mq14 post-verify wake"));
+        let latest_metric = bundle
+            .pointer("/lawfulness_snapshot/latest/metric")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        assert_eq!(
+            latest_metric, metric,
+            "post-verify wake must surface fresh lawfulness metric, got {latest_metric}"
+        );
+        assert_eq!(
+            store
+                .backend_readiness()
+                .get("mq_verify_invalidate_continuation")
+                .and_then(|v| v.as_bool()),
+            Some(true)
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// RSI Cycle 58: wake path lean fidelity still emits CSF without full readiness rebuild.
     #[test]
     fn wake_lean_fidelity_emits_cold_start_score() {
@@ -11246,6 +11306,13 @@ mod ingest_ast_tests {
             store
                 .backend_readiness()
                 .get("mq_verify_series_persist")
+                .and_then(|v| v.as_bool()),
+            Some(true)
+        );
+        assert_eq!(
+            store
+                .backend_readiness()
+                .get("mq_verify_invalidate_continuation")
                 .and_then(|v| v.as_bool()),
             Some(true)
         );

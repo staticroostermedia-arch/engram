@@ -3477,3 +3477,33 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 1. MCP swap MQ13; injection_completeness score≈1.0 when handoff+tiles+BVH ready.
 2. Optional #134 C86 cold assemble residual (floor held).
 3. Capacity only if landfill metrics measured.
+
+## MQ Cycle 14 — verify persist invalidates continuation soft-stale (2026-07-15)
+
+### VERIFY₀ baseline
+
+- master@`2820f5d4` MQ13 #147.
+- MCP swapped (deleted exe killed): `mq_rehydrate_injection_completeness_lean` LIVE.
+- Warm: CSF **0.936** mean_hub_crs≈**0.89** hub_crs_live; injection_completeness **1.0** missing=[]; trusted_tiles[0]=session_boundary.
+- Soft-stale total_ms=**0** floor green; cold-BVH window CSF 0.736 documented (not hard fail).
+- Verify **healthy** metric:mq_verify_1784153481; series growing.
+- Residual: after verify, soft-stale wake still served pre-verify lawfulness_snapshot (metric:mq_verify_1784152729).
+- Unit tests lean + prior MQ green.
+
+### SELECT
+
+**mq_verify_cadence** — invalidate continuation soft-stale when a lawfulness sample persists so next wake rehydrates latest snapshot.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Invalidate | `persist_mq_verify_metric` → `invalidate_continuation_bundle_cache` |
+| Flag | `mq_verify_invalidate_continuation` |
+| Test | `mq_verify_persist_invalidates_continuation_soft_stale` |
+
+### Next vectors
+
+1. MCP swap MQ14; post-verify session_start lawfulness_snapshot.latest matches new metric.
+2. Optional #134 C86 cold assemble residual (floor held).
+3. Capacity only if landfill metrics measured.
