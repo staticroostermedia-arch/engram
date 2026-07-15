@@ -3055,3 +3055,69 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 1. MCP swap C85; warm total≤1 (warm_ms=0 on soft-stale).
 2. Cold cont residual (~28ms first wake) — disk-seed cont or lean first-build.
 3. Full 8192-d σ² tensors (long horizon — not wake path).
+
+## Cycle 86 — lean assemble no leg dir-scan when cold (2026-07-15)
+
+### Master baseline
+
+- Post Cycle 85: PR **#133** `5378ff5f` — skip warm on cont soft-stale.
+- **MCP swapped LIVE:** `wake_skip_warm_on_cont_soft_stale=true`.
+- **Cold first-wake (BVH still building):** readiness=**0**, sheaf=**8**, assemble_ms=**35**, total=**51**.
+- **Warm (BVH ready):** total=**5** (soft-stale miss while backend was still warming).
+
+### Research synthesis
+
+| Source | Insight |
+|--------|---------|
+| C70 bvh_nodes proxy | Only helps when `bvh_node_count()>0`; first wake post-restart often has bvh_nodes=0. |
+| assemble_ms=35 | Falls through to `leg_block_count()` → 91k dir scan. |
+| LARGE_MANIFOLD | Threshold 10k; provisional 10001 keeps `sampled_bounded` until BVH ready. |
+
+### Hypothesis
+
+**Provisional large-manifold count** when lean wake atomic+bvh cold — never dir-scan; do not poison atomic cache.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Code | lean assemble cold branch returns `THRESHOLD+1` without scan |
+| Readiness | `wake_assemble_no_leg_scan` |
+| Test | extended `wake_lean_assemble_strips_bulky_harness` |
+
+### Next vectors
+
+1. MCP swap C86; cold assemble_ms≤2 total≤15.
+2. Soft-stale cont hit reliability across BVH-warm transition.
+3. Full 8192-d σ² tensors (long horizon — not wake path).
+
+## MQ Cycle 1 — handoff continuity fields on lean wake (2026-07-15)
+
+### VERIFY₀ baseline
+
+- master@`5378ff5f` C85 #133; PR #134 C86 open (latency residual, not selected).
+- CSF **0.85** warm; mean_hub_crs component **0.0** (noted).
+- Latency floor: warm total_ms=**0** soft_stale_hit.
+- Lawfulness sample: needs_review (1 PRAXIS permissive contract) — not hard fail.
+- Handoff **body complete** on read_concept; lean wake **preview empty** (existence-only gather) → continuity debt.
+- Primary set: `goal:engram_memory_quality_v1`.
+
+### SELECT
+
+**mq_handoff_schema** (priority 1 continuity) — next mind needs next_vector/decisions/falsifiers on wake packet.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Packet | `next_vector`, `falsifiers`, `memory_quality` (mq_handoff_v1 completeness) on `build_handoff_packet` |
+| Wake | lean `structured_handoff` parses packet → continuity fields + compact preview |
+| Flag | `wake_handoff_continuity_fields` |
+| Tests | `handoff_parse_next_vector_and_mq_completeness`; extended wake ultra-lean |
+
+### Next vectors
+
+1. MCP swap MQ1; wake structured_handoff.next_vector non-null after session_end with schema lines.
+2. `mq_continuity_csf` mean_hub_crs component.
+3. `mq_verify_cadence` / PRAXIS contract issue.
+4. Merge PR #134 C86 if latency cold assemble still residual after quality green.

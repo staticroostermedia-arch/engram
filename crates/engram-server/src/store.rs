@@ -169,8 +169,9 @@ fn handoff_presence_cache_set(store_key: &str, present: bool) {
 // Session handoff parse helpers — see `session_packet` module (latest-wins extract + decision parse).
 // Named session_packet (not *handoff*) so the source is not excluded by root .gitignore *handoff*.
 use crate::session_packet::{
-    extract_latest_handoff_section, handoff_extract_files_touched, handoff_parse_decisions,
-    handoff_parse_open_questions, HANDOFF_PACKET_MARKER,
+    extract_latest_handoff_section, handoff_extract_files_touched,
+    handoff_memory_quality_completeness, handoff_parse_decisions, handoff_parse_falsifiers,
+    handoff_parse_next_vector, handoff_parse_open_questions, HANDOFF_PACKET_MARKER,
 };
 
 // ── Sheaf Config ──────────────────────────────────────────────────────────────
@@ -2765,6 +2766,7 @@ impl StoreHandle {
                 "wake_gather_existence_only": true,
                 "wake_gather_skip_primary_resolve": true,
                 "wake_gather_skip_handoff_probe": true,
+                "wake_handoff_continuity_fields": true,
                 "wake_continuation_soft_stale": true,
                 "wake_continuation_soft_stale_env": "ENGRAM_WAKE_CONTINUATION_SOFT_STALE_SECS",
                 "wake_continuation_soft_stale_secs": 1800,
@@ -4294,12 +4296,27 @@ impl StoreHandle {
             &files_touched,
         );
 
+        let decisions = handoff_parse_decisions(summary);
+        let open_questions = handoff_parse_open_questions(summary);
+        let next_vector = handoff_parse_next_vector(summary);
+        let falsifiers = handoff_parse_falsifiers(summary);
+        let memory_quality = handoff_memory_quality_completeness(
+            &decisions,
+            next_vector.as_deref(),
+            &falsifiers,
+            &open_questions,
+            primary_goal.as_deref(),
+        );
+
         serde_json::json!({
             "session_end_key": session_end_key,
             "summary": summary_trunc,
             "primary_goal": primary_goal,
-            "decisions": handoff_parse_decisions(summary),
-            "open_questions": handoff_parse_open_questions(summary),
+            "decisions": decisions,
+            "open_questions": open_questions,
+            "next_vector": next_vector,
+            "falsifiers": falsifiers,
+            "memory_quality": memory_quality,
             "files_touched": files_touched,
             "recent_traces": recent_traces,
             "trace_chain_head": trace_chain_head,
@@ -5204,8 +5221,79 @@ impl StoreHandle {
             .collect();
 
         // RSI Cycle 60 wake: reuse entry preview from gather push (no second full-body read).
+        // MQ Cycle 1: lean existence-only gather left preview empty — continuity debt.
+        // One high-priority handoff read surfaces next_vector/decisions/falsifiers for next mind.
         let structured_handoff = if session_handoff_present {
-            if wake_lean {
+            let latest_text = read_session_handoff_latest_text(self).unwrap_or_default();
+            if let Some(packet) = crate::harness_injection::parse_handoff_packet_json(&latest_text)
+            {
+                let next = packet
+                    .get("next_vector")
+                    .and_then(|v| v.as_str())
+                    .filter(|s| !s.is_empty())
+                    .map(|s| s.to_string());
+                let decisions_head: Vec<String> = packet
+                    .get("decisions")
+                    .and_then(|v| v.as_array())
+                    .map(|a| {
+                        a.iter()
+                            .filter_map(|x| x.as_str().map(|s| s.to_string()))
+                            .take(3)
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                let falsifiers: Vec<String> = packet
+                    .get("falsifiers")
+                    .and_then(|v| v.as_array())
+                    .map(|a| {
+                        a.iter()
+                            .filter_map(|x| x.as_str().map(|s| s.to_string()))
+                            .take(5)
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                let open_q: Vec<String> = packet
+                    .get("open_questions")
+                    .and_then(|v| v.as_array())
+                    .map(|a| {
+                        a.iter()
+                            .filter_map(|x| x.as_str().map(|s| s.to_string()))
+                            .take(5)
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                let primary = packet
+                    .get("primary_goal")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
+                let mq = packet.get("memory_quality").cloned().unwrap_or_else(|| {
+                    handoff_memory_quality_completeness(
+                        &decisions_head,
+                        next.as_deref(),
+                        &falsifiers,
+                        &open_q,
+                        primary.as_deref(),
+                    )
+                });
+                let preview = next
+                    .clone()
+                    .or_else(|| decisions_head.first().cloned())
+                    .unwrap_or_default();
+                let preview: String = preview.chars().take(200).collect();
+                Some(serde_json::json!({
+                    "concept": SESSION_HANDOFF_LATEST,
+                    "preferred": true,
+                    "latest_wins": true,
+                    "preview": preview,
+                    "primary_goal": primary,
+                    "next_vector": next,
+                    "decisions_head": decisions_head,
+                    "falsifiers": falsifiers,
+                    "open_questions": open_q,
+                    "memory_quality": mq,
+                    "wake_handoff_continuity_fields": true,
+                }))
+            } else if wake_lean {
                 let preview = entries
                     .iter()
                     .find(|e| e.concept == SESSION_HANDOFF_LATEST)
@@ -5216,9 +5304,9 @@ impl StoreHandle {
                     "preferred": true,
                     "latest_wins": true,
                     "preview": preview,
+                    "wake_handoff_continuity_fields": false,
                 }))
             } else {
-                let latest_text = read_session_handoff_latest_text(self).unwrap_or_default();
                 let preview: String = latest_text.chars().take(400).collect();
                 Some(serde_json::json!({
                     "concept": SESSION_HANDOFF_LATEST,
@@ -5229,6 +5317,7 @@ impl StoreHandle {
                     } else {
                         preview
                     },
+                    "wake_handoff_continuity_fields": false,
                 }))
             }
         } else {
@@ -9837,13 +9926,25 @@ mod ingest_ast_tests {
             "wake lean primary_goal from marker target"
         );
         // Cycle 80: with handoff present, structured_handoff surfaces without re-probe.
-        assert!(
-            bundle
-                .get("structured_handoff")
-                .and_then(|h| h.get("concept"))
-                .and_then(|c| c.as_str())
-                .is_some(),
+        // MQ Cycle 1: continuity fields on structured_handoff (not empty existence-only).
+        let sh = bundle
+            .get("structured_handoff")
+            .and_then(|h| h.as_object())
+            .expect("structured_handoff object");
+        assert_eq!(
+            sh.get("concept").and_then(|c| c.as_str()),
+            Some("helper:session_handoff_latest"),
             "C80 lean surfaces handoff when present (soft-stale presence)"
+        );
+        assert_eq!(
+            sh.get("wake_handoff_continuity_fields")
+                .and_then(|v| v.as_bool()),
+            Some(true),
+            "MQ1 lean handoff continuity fields populated from packet"
+        );
+        assert!(
+            sh.get("memory_quality").is_some(),
+            "MQ1 memory_quality completeness block on structured_handoff"
         );
         // RSI Cycle 83: second wake hits soft-stale continuation cache.
         // RSI Cycle 85: soft-stale valid → skip warm/sentinel prep.
