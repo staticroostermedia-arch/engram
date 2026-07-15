@@ -2633,6 +2633,8 @@ impl StoreHandle {
                 "wake_assemble_lean_gpu_hot": true,
                 "wake_session_block_async": true,
                 "wake_harness_single_pass_actions": true,
+                "wake_harness_skip_ego_leg3": true,
+                "wake_harness_manifest_primary_goal": true,
                 "wake_cufile_probe_async": true,
                 "wake_readiness_ttl_cache": true,
                 "wake_readiness_slim_first_build": true,
