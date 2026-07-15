@@ -1,8 +1,8 @@
 //! Consult-before-write gate — AutoMem PLAN discipline on geometric substrate.
 //!
 //! Modes (`ENGRAM_CONSULT_BEFORE_WRITE`):
-//! - `soft` (default in agent profile): `remember`/`update` succeed with warning when recall gate closed
-//! - `hard`: blocks writes until `mcp_engram_recall` opens the gate
+//! - `hard` (agent profile default via `ENGRAM_PROFILE=agent`): blocks writes until `mcp_engram_recall`
+//! - `soft` (fallback when env unset outside agent profile): warn-only when recall gate closed
 //! - `off`: disabled (CI, power users)
 
 use serde_json::{json, Value};
