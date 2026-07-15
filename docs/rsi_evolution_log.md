@@ -3210,3 +3210,32 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 1. MCP swap MQ4; fire verify → confirm series helper grows.
 2. `mq_relation_retrieval` / spatial locus if continuity+lawfulness green.
 3. PR #134 C86 cold assemble residual.
+
+## MQ Cycle 5 — lean wake relation_resume + lawfulness_snapshot (2026-07-15)
+
+### VERIFY₀ baseline
+
+- master@`cf5ef62a` MQ4 #138; `mq_verify_series_persist` LIVE.
+- CSF warm **0.925** (tiles=6, mean_hub_crs=null); handoff complete; primary memory_quality.
+- Verify seeded: `metric:mq_verify_1784146068` healthy; series has 1 sample.
+- Warm soft-stale total_ms=**0**; first-wake total_ms≈60 (cold-ish, not floor fail).
+- Continuity+lawfulness dual-gate green → non-flat retrieval rehydrate.
+
+### SELECT
+
+**mq_relation_retrieval** — lean wake injects primary relation neighborhood + verify series head.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| `relation_resume` | seed edges (from/to capped) on lean wake bundle |
+| `lawfulness_snapshot` | latest `helper:mq_verify_series` + pass_rate |
+| Flags | `wake_relation_resume_lean`, `wake_lawfulness_snapshot` |
+| Test | extended `wake_ultra_lean_gather_core_anchors_only` |
+
+### Next vectors
+
+1. MCP swap MQ5; wake shows relation_resume.edges for primary.
+2. `mq_spatial_locus` / consult hard default if measured mint spam.
+3. PR #134 C86 cold assemble residual.
