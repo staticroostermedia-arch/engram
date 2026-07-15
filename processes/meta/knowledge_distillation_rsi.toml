@@ -88,6 +88,7 @@ list = [
   "lexicon:word:wake-ki-rebake-gate",
   "lexicon:word:wake-harness-lean",
   "lexicon:word:wake-presentation-lean",
+  "lexicon:word:sheaf-fingerprint-disk",
 ]
 
 [execute]

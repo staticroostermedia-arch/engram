@@ -144,6 +144,56 @@ fn processes_dir_fingerprint(base: &str) -> u64 {
     count.wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ max_mtime
 }
 
+/// RSI Cycle 48: persist sheaf fingerprint across MCP process restarts.
+/// Lives under `ENGRAM_STORE` parent (default `~/.engram/process_sheaf_fingerprint`).
+fn process_sheaf_fingerprint_path() -> std::path::PathBuf {
+    if let Ok(store) = std::env::var("ENGRAM_STORE") {
+        let p = std::path::PathBuf::from(store.trim_end_matches('/'));
+        if let Some(parent) = p.parent() {
+            return parent.join("process_sheaf_fingerprint");
+        }
+        return p.join("process_sheaf_fingerprint");
+    }
+    let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
+    std::path::PathBuf::from(home)
+        .join(".engram")
+        .join("process_sheaf_fingerprint")
+}
+
+fn read_disk_sheaf_fingerprint() -> Option<u64> {
+    let path = process_sheaf_fingerprint_path();
+    let s = std::fs::read_to_string(path).ok()?;
+    let line = s.lines().next()?.trim();
+    u64::from_str_radix(line.trim_start_matches("0x"), 16)
+        .ok()
+        .or_else(|| line.parse::<u64>().ok())
+}
+
+fn write_disk_sheaf_fingerprint(fp: u64) {
+    let path = process_sheaf_fingerprint_path();
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let _ = std::fs::write(path, format!("0x{fp:016x}\n"));
+}
+
+/// Warm in-memory sheaf cache from disk fingerprint (Cycle 48 cold MCP restart).
+/// Returns true if cache now claims loaded+matching fingerprint (caller still checks blocks).
+fn warm_sheaf_cache_from_disk(fingerprint: u64) -> bool {
+    let Some(disk_fp) = read_disk_sheaf_fingerprint() else {
+        return false;
+    };
+    if disk_fp != fingerprint {
+        return false;
+    }
+    if let Ok(mut cache) = PROCESS_SHEAF_CACHE.lock() {
+        cache.fingerprint = fingerprint;
+        cache.loaded = true;
+        return true;
+    }
+    false
+}
+
 /// First non-empty string among `keys` — supports common agent alias parameter names.
 fn args_str<'a>(args: &'a Value, keys: &[&str]) -> Option<&'a str> {
     for key in keys {
@@ -206,6 +256,8 @@ fn load_process_sheaf(store: &SharedStore) -> Result<(), String> {
             .unwrap_or_else(|_| "processes".to_string())
     });
     let fingerprint = processes_dir_fingerprint(&base);
+    // Cycle 48: cold MCP restart — restore in-memory skip from disk fingerprint.
+    let _ = warm_sheaf_cache_from_disk(fingerprint);
     if let Ok(cache) = PROCESS_SHEAF_CACHE.lock() {
         if cache.loaded && cache.fingerprint == fingerprint {
             // Skip only when this store already has sheaf blocks (fresh test stores must reload).
@@ -220,9 +272,11 @@ fn load_process_sheaf(store: &SharedStore) -> Result<(), String> {
             if already_registered {
                 if sheaf_timing_enabled() {
                     eprintln!(
-                        "TIMING[load_process_sheaf]: skip (processes/ unchanged, fingerprint={fingerprint})"
+                        "TIMING[load_process_sheaf]: skip (processes/ unchanged, fingerprint={fingerprint}, disk_warm=1)"
                     );
                 }
+                // Refresh disk fingerprint so future MCP restarts keep skipping.
+                write_disk_sheaf_fingerprint(fingerprint);
                 return Ok(());
             }
         }
@@ -448,6 +502,8 @@ fn load_process_sheaf(store: &SharedStore) -> Result<(), String> {
         cache.fingerprint = fingerprint;
         cache.loaded = true;
     }
+    // Cycle 48: survive MCP process restart without 60s sheaf reload.
+    write_disk_sheaf_fingerprint(fingerprint);
     Ok(())
 }
 
@@ -3640,7 +3696,10 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
             // per-item *short* lock only for fetch_block_high_priority. Cosine math and collect happen off-lock entirely.
             // Prevents client query_pure from holding store Mutex for full hot.len() duration while bg rehydrate/inc/promote or other procs run.
             let t_q = std::time::Instant::now();
-            eprintln!("TIMING[query_pure]: start (T1 diagnostic)");
+            // Cycle 48: gate query_pure TIMING (was always-on stderr I/O).
+            if mcp_timing_enabled() {
+                eprintln!("TIMING[query_pure]: start (T1 diagnostic)");
+            }
             let intent = args
                 .get("intent")
                 .and_then(|v| v.as_str())
@@ -3664,7 +3723,7 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
                 };
                 let all_concepts = lock.hot_concepts();
                 let enc_time = t_enc.elapsed().as_secs_f32();
-                if enc_time > 0.1 {
+                if mcp_timing_enabled() && enc_time > 0.1 {
                     eprintln!(
                         "TIMING[query_pure]: encode+hot took {:.3}s len_all={}",
                         enc_time,
@@ -3673,7 +3732,9 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
                 }
                 (effective_q, all_concepts)
             };
-            eprintln!("TIMING[query_pure]: encode+hot_cloned len_all={} (lock released for probe; using hot_set only)", all_concepts.len());
+            if mcp_timing_enabled() {
+                eprintln!("TIMING[query_pure]: encode+hot_cloned len_all={} (lock released for probe; using hot_set only)", all_concepts.len());
+            }
             // 2026-06 fast direct path for lean wake ritual anchor discovery (the primary use per wake-up.toml and "fast anchor discovery" in tool desc).
             // Bypasses hot_set clone + sampling + large probe entirely for ritual/process:engram.ritual intents.
             // Direct fetch of the small fixed set of known anchors (registered by load + pre-promoted).
@@ -3685,7 +3746,9 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
                 || intent.contains("anchor")
                 || intent.contains("working-memory")
             {
-                eprintln!("TIMING[query_pure]: FAST_ANCHOR entered for intent containing ritual anchor keywords");
+                if mcp_timing_enabled() {
+                    eprintln!("TIMING[query_pure]: FAST_ANCHOR entered for intent containing ritual anchor keywords");
+                }
                 let t_fast = std::time::Instant::now();
                 let anchor_names: Vec<&str> = vec![
                     "process:engram.ritual.wake-up",
@@ -3700,17 +3763,18 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
                 ];
                 let mut scored: Vec<(String, f32, f32)> = vec![];
                 for c in &anchor_names {
-                    eprintln!("TIMING[query_pure]: FAST_ANCHOR fetching {}", c);
                     let t_f = std::time::Instant::now();
                     let block = {
                         let lock = store.lock().unwrap();
                         lock.fetch_block_high_priority(c)
                     };
-                    let ftime = t_f.elapsed().as_secs_f32();
-                    eprintln!(
-                        "TIMING[query_pure]: FAST_ANCHOR fetched {} in {:.3}s",
-                        c, ftime
-                    );
+                    if mcp_timing_enabled() {
+                        eprintln!(
+                            "TIMING[query_pure]: FAST_ANCHOR fetched {} in {:.3}s",
+                            c,
+                            t_f.elapsed().as_secs_f32()
+                        );
+                    }
                     if let Some(block) = block {
                         let q_score = engram_core::ops::cosine_similarity(&effective_q, &block.q);
                         scored.push((c.to_string(), q_score, block.crs_score));
@@ -3728,12 +3792,14 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
                 if scored.is_empty() {
                     out.push_str("No matches (pure q K-NN).");
                 }
-                eprintln!("TIMING[query_pure]: FAST_ANCHOR path used (direct {} anchors, no hot probe) total={:.2}s", anchor_names.len(), t_fast.elapsed().as_secs_f32());
-                eprintln!(
-                    "TIMING[query_pure]: COMPLETE scored={} total={:.2}s",
-                    scored.len(),
-                    t_q.elapsed().as_secs_f32()
-                );
+                if mcp_timing_enabled() {
+                    eprintln!("TIMING[query_pure]: FAST_ANCHOR path used (direct {} anchors, no hot probe) total={:.2}s", anchor_names.len(), t_fast.elapsed().as_secs_f32());
+                    eprintln!(
+                        "TIMING[query_pure]: COMPLETE scored={} total={:.2}s",
+                        scored.len(),
+                        t_q.elapsed().as_secs_f32()
+                    );
+                }
                 return json!({ "content": [{ "type": "text", "text": out }] });
             }
             // normal hot probe path for other pure queries
@@ -3747,7 +3813,9 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
                     .filter_map(|i| all_concepts.get(i * step).cloned())
                     .collect()
             };
-            eprintln!("TIMING[query_pure]: probe built size={} cap={} (aggressive hot cap for fast anchor pure)", probe.len(), probe_cap);
+            if mcp_timing_enabled() {
+                eprintln!("TIMING[query_pure]: probe built size={} cap={} (aggressive hot cap for fast anchor pure)", probe.len(), probe_cap);
+            }
             let mut scored: Vec<(String, f32, f32)> = vec![];
             for (i, concept) in probe.iter().enumerate() {
                 let t_f = std::time::Instant::now();
@@ -3756,7 +3824,7 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
                     lock.fetch_block_high_priority(concept)
                 };
                 let fetch_ms = t_f.elapsed().as_secs_f32() * 1000.0;
-                if i < 5 || fetch_ms > 50.0 {
+                if mcp_timing_enabled() && (i < 5 || fetch_ms > 50.0) {
                     eprintln!(
                         "TIMING[query_pure]: fetch[{}] {} {:.1}ms",
                         i, concept, fetch_ms
@@ -3779,11 +3847,13 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
             if scored.is_empty() {
                 out.push_str("No matches (pure q K-NN).");
             }
-            eprintln!(
-                "TIMING[query_pure]: COMPLETE scored={} total={:.2}s",
-                scored.len(),
-                t_q.elapsed().as_secs_f32()
-            );
+            if mcp_timing_enabled() {
+                eprintln!(
+                    "TIMING[query_pure]: COMPLETE scored={} total={:.2}s",
+                    scored.len(),
+                    t_q.elapsed().as_secs_f32()
+                );
+            }
             json!({ "content": [{ "type": "text", "text": out }] })
         }
 
