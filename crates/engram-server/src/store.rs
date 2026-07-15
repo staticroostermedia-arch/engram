@@ -2375,6 +2375,8 @@ impl StoreHandle {
             "wake_phase_ms_enabled": true,
             "wake_harness_lean": true,
             "wake_presentation_lean": true,
+            "wake_suggested_actions_lean": true,
+            "wake_artifact_gather_lean": true,
             "sheaf_fingerprint_disk": true,
             "sheaf_fingerprint_path_env": "ENGRAM_STORE parent/process_sheaf_fingerprint",
             "crs_alpha_joint_enabled": crate::injection_priority::crs_alpha_joint_enabled(),
@@ -4322,33 +4324,46 @@ impl StoreHandle {
             }
         }
 
-        for seed in HANDOFF_SEEDS {
-            for (_label, other) in self.search_relations(seed, Some("compresses_path"), "to") {
-                if other.starts_with("tile:")
-                    || other.starts_with("helper:")
-                    || other.starts_with("ritual:")
-                    || other.starts_with("metric:")
-                {
-                    push(
-                        self,
-                        &mut entries,
-                        &mut seen,
-                        &other,
-                        "handoff_compresses_path",
-                    );
+        // Cycle 49: wake path (presentation_k Some) caps relation/recent/hot gathers and
+        // skips momentum recall — harness lean presentation already surfaces distillates.
+        let wake_lean = presentation_k.is_some();
+
+        if !wake_lean {
+            for seed in HANDOFF_SEEDS {
+                for (_label, other) in self.search_relations(seed, Some("compresses_path"), "to") {
+                    if other.starts_with("tile:")
+                        || other.starts_with("helper:")
+                        || other.starts_with("ritual:")
+                        || other.starts_with("metric:")
+                    {
+                        push(
+                            self,
+                            &mut entries,
+                            &mut seen,
+                            &other,
+                            "handoff_compresses_path",
+                        );
+                    }
                 }
             }
         }
 
         if let Some(ref goal) = primary_goal_name {
+            let mut serves_n = 0usize;
+            let serves_cap = if wake_lean { 8 } else { usize::MAX };
             for (_label, other) in self.search_relations(goal, Some("serves"), "to") {
                 if other.starts_with("tile:") || other.starts_with("trace:") {
                     push(self, &mut entries, &mut seen, &other, "goal_serves_lineage");
+                    serves_n = serves_n.saturating_add(1);
+                    if serves_n >= serves_cap {
+                        break;
+                    }
                 }
             }
         }
 
-        for (concept, _) in self.access_index.recent(120) {
+        let recent_cap = if wake_lean { 24 } else { 120 };
+        for (concept, _) in self.access_index.recent(recent_cap) {
             if concept.starts_with("tile:")
                 || concept.starts_with("helper:")
                 || concept.starts_with("ritual:")
@@ -4358,6 +4373,7 @@ impl StoreHandle {
             }
         }
 
+        let hot_cap = if wake_lean { 12 } else { usize::MAX };
         let hot_candidates: Vec<String> = self
             .hot_set
             .read()
@@ -4373,6 +4389,7 @@ impl StoreHandle {
                     .cloned()
                     .collect();
                 hot.sort();
+                hot.truncate(hot_cap);
                 hot
             })
             .unwrap_or_default();
@@ -4380,27 +4397,33 @@ impl StoreHandle {
             push(self, &mut entries, &mut seen, &c, "hot_set");
         }
 
-        for mem in self
-            .recall_scoped(
-                "active thought tile roadmap handoff lawfulness substrate",
-                8,
-                Some("anchors"),
-            )
-            .0
-        {
-            if mem.concept.starts_with("tile:") || mem.concept.starts_with("helper:") {
-                push(
-                    self,
-                    &mut entries,
-                    &mut seen,
-                    &mem.concept,
-                    "momentum_recall",
-                );
+        if !wake_lean {
+            for mem in self
+                .recall_scoped(
+                    "active thought tile roadmap handoff lawfulness substrate",
+                    8,
+                    Some("anchors"),
+                )
+                .0
+            {
+                if mem.concept.starts_with("tile:") || mem.concept.starts_with("helper:") {
+                    push(
+                        self,
+                        &mut entries,
+                        &mut seen,
+                        &mem.concept,
+                        "momentum_recall",
+                    );
+                }
             }
         }
 
         let recency_rank =
-            crate::injection_priority::recency_rank_map(&self.access_index.recent(120));
+            crate::injection_priority::recency_rank_map(&self.access_index.recent(if wake_lean {
+                24
+            } else {
+                120
+            }));
 
         let mut artifacts: Vec<crate::injection_priority::InjectionArtifact> = entries
             .iter()
