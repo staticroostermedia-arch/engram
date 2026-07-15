@@ -3507,3 +3507,32 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 1. MCP swap MQ14; post-verify session_start lawfulness_snapshot.latest matches new metric.
 2. Optional #134 C86 cold assemble residual (floor held).
 3. Capacity only if landfill metrics measured.
+
+## MQ Cycle 15 — handoff next_vector markdown/JSON parse (2026-07-15)
+
+### VERIFY₀ baseline
+
+- master@`b3b6f575` MQ14 #148.
+- MCP swapped: `mq_verify_invalidate_continuation` LIVE; post-verify lawfulness_snapshot.latest=`metric:mq_verify_1784154252` (MQ14 confirmed).
+- CSF warm **0.947** mean_hub_crs≈**0.91** hub_crs_live; injection_completeness **1.0**.
+- Verify **healthy**; dual-gate lawfulness green.
+- Continuity residual: `structured_handoff.memory_quality.complete=false` missing `next_vector` (MQ14 summary used `### next_vector` section, not `next_vector:` line).
+- Unit tests lean + MQ14 green.
+
+### SELECT
+
+**mq_handoff_schema** — parse markdown headings, bold, and JSON `"next_vector"` so handoff complete without re-ask.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Parser | `handoff_parse_next_vector` accepts `### next_vector` body, `**next_vector:**`, JSON string |
+| Flag | `mq_handoff_next_vector_markdown_json` |
+| Tests | `handoff_parse_next_vector_markdown_heading_and_json` + completeness assert |
+
+### Next vectors
+
+1. MCP swap MQ15; session_end with `### next_vector` yields has_next_vector=true.
+2. Optional #134 C86 cold assemble residual (floor held).
+3. Capacity only if landfill metrics measured.
