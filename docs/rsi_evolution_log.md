@@ -2475,3 +2475,37 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 3. Full 8192-d σ² tensors (long horizon).
 4. Keep warm wake total ≤40ms.
 
+## Cycle 69 — ultra-lean ego snapshot (no p-norm) (2026-07-15)
+
+### Master baseline
+
+- Post Cycle 68: PR **#116** `fa3b98cf` — ultra-lean harness + name-only presentation.
+- **Measured on still-stale pre-C65 MCP:** total=**91**, readiness_ms=**69**, harness_ms=**10**.
+- Prompt backlog C50–C56 already shipped.
+
+### Research synthesis
+
+| Source | Insight |
+|--------|---------|
+| build_ego_snapshot | Second ego.leg3 read + 8192-d `p_vector_norm` on every wake. |
+| C68 ultra-lean | Still called full builder for sentinel fields. |
+
+### Hypothesis
+
+**One ego read:** drift from energetics only; stub ego_snapshot with sentinel fields; skip p-norm and goal-serving walks.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Code | `build_ego_snapshot_ultra_lean`; single `read_ego_block` in ultra-lean harness |
+| Readiness | `wake_ego_snapshot_ultra_lean` |
+| Test | extended `ultra_lean_wake_harness_name_only_presentation` |
+
+### Next vectors
+
+1. MCP binary swap (C65–C69); measure harness_ms ≤3, readiness soft-hit ≤5, total ≤40.
+2. If still high: cache resolve_rehydration_manifest / suggested_actions further.
+3. Full 8192-d σ² tensors (long horizon — not wake path).
+4. Keep warm wake total ≤40ms.
+
