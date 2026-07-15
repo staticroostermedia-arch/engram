@@ -166,16 +166,23 @@ fn sheaf_timing_enabled() -> bool {
 /// RSI Cycle 42: unified MCP TIMING gate (sheaf load, incremental spatial, query_pure).
 /// Default OFF. Set `ENGRAM_MCP_TIMING=1` or `ENGRAM_SHEAF_TIMING=1`.
 fn mcp_timing_enabled() -> bool {
-    let on = |key: &str| {
-        matches!(
-            std::env::var(key)
-                .unwrap_or_default()
-                .to_ascii_lowercase()
-                .as_str(),
-            "1" | "true" | "on" | "yes"
-        )
-    };
-    on("ENGRAM_MCP_TIMING") || on("ENGRAM_SHEAF_TIMING")
+    env_flag_on("ENGRAM_MCP_TIMING") || env_flag_on("ENGRAM_SHEAF_TIMING")
+}
+
+/// True when env var is 1/true/on/yes (case-insensitive).
+fn env_flag_on(key: &str) -> bool {
+    matches!(
+        std::env::var(key)
+            .unwrap_or_default()
+            .to_ascii_lowercase()
+            .as_str(),
+        "1" | "true" | "on" | "yes"
+    )
+}
+
+/// RSI Cycle 45: force ki rebake on session_start. Default OFF (lean wake).
+fn wake_ki_rebake_enabled() -> bool {
+    env_flag_on("ENGRAM_WAKE_KI_REBAKE")
 }
 
 fn load_process_sheaf(store: &SharedStore) -> Result<(), String> {
@@ -4246,8 +4253,21 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
                 .unwrap_or(5) as usize;
 
             let t_start = std::time::Instant::now();
+            // RSI Cycle 45: per-phase wake latency (ms) for next cut targeting.
+            let mut phase_ms = serde_json::Map::new();
+            let mark_phase = |map: &mut serde_json::Map<String, serde_json::Value>,
+                              name: &str,
+                              since: std::time::Instant| {
+                map.insert(
+                    name.to_string(),
+                    serde_json::json!((since.elapsed().as_secs_f64() * 1000.0).round() as u64),
+                );
+            };
 
-            // Light sync work (fast): boundary block + cache + ki mark.
+            // Light sync work (fast): boundary block + optional ki mark.
+            let t_phase = std::time::Instant::now();
+            // Cycle 45: default skip mark_ki_rebake on wake (lean). Force with ENGRAM_WAKE_KI_REBAKE=1.
+            let wake_ki_rebake = wake_ki_rebake_enabled();
             let session_key = {
                 let mut lock = match store.lock() {
                     Ok(l) => l,
@@ -4268,13 +4288,19 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
                 session_block.crs_score = 1.0;
                 let _ = lock.store(&key, session_block);
                 // Reuse continuation bundle TTL cache (120s) — busting every wake costs seconds on 70k stores.
-                lock.mark_ki_rebake_needed();
+                if wake_ki_rebake {
+                    lock.mark_ki_rebake_needed();
+                }
                 key
             };
+            mark_phase(&mut phase_ms, "session_block_ms", t_phase);
 
             // Registration now (light): tomls -> process:* blocks + relations.
+            let t_phase = std::time::Instant::now();
             let _ = load_process_sheaf(store);
+            mark_phase(&mut phase_ms, "sheaf_ms", t_phase);
 
+            let t_phase = std::time::Instant::now();
             let (continuation, readiness, warm_promoted) = {
                 let mut lock = match store.lock() {
                     Ok(l) => l,
@@ -4293,7 +4319,9 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
                 let readiness = lock.backend_readiness();
                 (continuation, readiness, warm_promoted)
             };
+            mark_phase(&mut phase_ms, "continuation_ms", t_phase);
 
+            let t_phase = std::time::Instant::now();
             let spatial = if include_spatial {
                 Some(run_incremental_spatial_ingest(
                     store,
@@ -4304,7 +4332,9 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
             } else {
                 None
             };
+            mark_phase(&mut phase_ms, "spatial_ms", t_phase);
 
+            let t_phase = std::time::Instant::now();
             let queue_len = continuation
                 .get("harness_injection")
                 .and_then(|h| h.get("suggested_actions"))
@@ -4347,8 +4377,13 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
                 }
                 crate::wake_bundle::WakeBundleTier::Full => continuation,
             };
+            mark_phase(&mut phase_ms, "packet_ms", t_phase);
 
             let elapsed = t_start.elapsed().as_secs_f32();
+            phase_ms.insert(
+                "total_ms".to_string(),
+                serde_json::json!((elapsed as f64 * 1000.0).round() as u64),
+            );
             let mut wake_packet = serde_json::json!({
                 "status": "started",
                 "elapsed_s": elapsed,
@@ -4362,6 +4397,9 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
                 // RSI Cycle 43 observability
                 "warm_anchors_promoted": warm_promoted,
                 "fidelity_persist": "async",
+                // RSI Cycle 45: phase histogram + ki rebake policy
+                "wake_phase_ms": serde_json::Value::Object(phase_ms),
+                "wake_ki_rebake": wake_ki_rebake,
             });
             if let Some(spatial_val) = spatial {
                 wake_packet["spatial"] = spatial_val;

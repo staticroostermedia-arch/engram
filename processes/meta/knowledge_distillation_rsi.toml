@@ -84,6 +84,8 @@ list = [
   "lexicon:word:wake-warm-skip-hot",
   "lexicon:word:fidelity-persist-async",
   "lexicon:word:csr-tombstone-compact",
+  "lexicon:word:wake-phase-ms",
+  "lexicon:word:wake-ki-rebake-gate",
 ]
 
 [execute]
