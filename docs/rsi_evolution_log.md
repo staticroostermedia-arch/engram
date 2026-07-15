@@ -3021,3 +3021,37 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 1. MCP swap C84; cold readiness_ms≤30; warm total≤5 sustained.
 2. Full 8192-d σ² tensors (long horizon — not wake path).
 3. Nested loop-goal install (`goal:engram_rsi_nested_loop_v1`) if not yet active.
+
+## Cycle 85 — skip warm/sentinel on continuation soft-stale (2026-07-15)
+
+### Master baseline
+
+- Post Cycle 84: PR **#132** `ad4deb32` — async cuFile init.
+- **MCP swapped LIVE:** cold readiness_ms=**0** (was 514); flags `wake_cufile_init_async`, soft 1800s.
+- **Warm residual:** total=**4** entirely `warm_ms` (sentinel block load) despite cont soft_stale_hit + anchors already hot.
+
+### Research synthesis
+
+| Source | Insight |
+|--------|---------|
+| mcp session_start order | warm_wake + sentinel always run before cont soft-stale return. |
+| sentinel_on_session_start | `load_sentinel_state` fetch even when last_checkpoint already set. |
+| C83 cont soft-stale | Full lean packet already cached — promote/sentinel redundant. |
+
+### Hypothesis
+
+**Skip warm_wake_anchors + sentinel when `wake_continuation_soft_stale_valid()`** before build.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Code | `wake_continuation_soft_stale_valid`; mcp skip warm/sentinel |
+| Readiness | `wake_skip_warm_on_cont_soft_stale` |
+| Test | extended `wake_ultra_lean_gather_core_anchors_only` |
+
+### Next vectors
+
+1. MCP swap C85; warm total≤1 (warm_ms=0 on soft-stale).
+2. Cold cont residual (~28ms first wake) — disk-seed cont or lean first-build.
+3. Full 8192-d σ² tensors (long horizon — not wake path).

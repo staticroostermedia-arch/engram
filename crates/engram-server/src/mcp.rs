@@ -4494,9 +4494,16 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
                 };
                 // Cycle 43: skip already-hot anchors (covers former bg promote set)
                 // RSI Cycle 64: sub-timers for outer residual (warm vs readiness).
+                // RSI Cycle 85: when lean wake continuation soft-stale will hit, skip
+                // warm_wake_anchors + sentinel (sentinel load was ~4ms warm residual).
                 let t_warm = std::time::Instant::now();
-                let warm_promoted = lock.warm_wake_anchors();
-                lock.sentinel_on_session_start();
+                let warm_promoted = if lock.wake_continuation_soft_stale_valid() {
+                    0usize
+                } else {
+                    let n = lock.warm_wake_anchors();
+                    lock.sentinel_on_session_start();
+                    n
+                };
                 let warm_ms = (t_warm.elapsed().as_secs_f64() * 1000.0).round() as u64;
                 // Cycle 42: wake-path slim presentation K; avoid polluting full-bundle TTL cache
                 let continuation = lock.build_continuation_bundle_wake(Some(&intent));
