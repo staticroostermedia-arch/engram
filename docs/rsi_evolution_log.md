@@ -2440,3 +2440,38 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 3. Full 8192-d σ² tensors (long horizon).
 4. Keep warm wake total ≤50ms.
 
+## Cycle 68 — ultra-lean wake harness + name-only presentation (2026-07-15)
+
+### Master baseline
+
+- Post Cycle 67: PR **#115** `c6b47100` — env-gated readiness field fold.
+- **Measured on still-stale pre-C65 MCP:** total=**90**, readiness_ms=**69**, harness_ms=**9**.
+- Prompt backlog C50–C56 already shipped.
+
+### Research synthesis
+
+| Source | Insight |
+|--------|---------|
+| harness_ms residual | After cont lean, harness≈9ms on warm wake. |
+| hub presentation | Up to 8 ProvLog body reads for 120-char previews. |
+| bulky fields | agent_discipline + full rsi_cycle_metrics built then stripped in assemble. |
+
+### Hypothesis
+
+**Ultra-lean early return:** dedicated lean path with name-only hub presentation (no body reads) + stub bulky blocks; full path unchanged for get_continuation_bundle.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Code | `build_harness_bundle_ultra_lean_wake`; `build_presentation_stratum_from_hub_names` |
+| Readiness | `wake_harness_name_only_presentation` |
+| Test | `ultra_lean_wake_harness_name_only_presentation` |
+
+### Next vectors
+
+1. MCP binary swap (C65–C68); measure harness_ms ≤3 and readiness soft-hit ≤5.
+2. Slim build_ego_snapshot on ultra-lean if still hot.
+3. Full 8192-d σ² tensors (long horizon).
+4. Keep warm wake total ≤40ms.
+
