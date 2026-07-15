@@ -3239,3 +3239,32 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 1. MCP swap MQ5; wake shows relation_resume.edges for primary.
 2. `mq_spatial_locus` / consult hard default if measured mint spam.
 3. PR #134 C86 cold assemble residual.
+
+## MQ Cycle 6 — slim hoist relation_resume + lawfulness_snapshot (2026-07-15)
+
+### VERIFY₀ baseline
+
+- master@`f9ff013c` MQ5 #139.
+- MCP swapped (stale deleted-binary 13:01 → live 13:14+): `wake_relation_resume_lean` + `wake_lawfulness_snapshot` LIVE.
+- CSF cold post-swap **0.725** (BVH cold intentional); warm **0.925** tiles=6; handoff complete mq_handoff_v1.
+- Verify sample needs_review (1 historical PRAXIS permissive); series append `metric:mq_verify_1784147026`.
+- Latency floor: soft-stale path prior total_ms=0–1; post-swap warm assemble ~63–99ms not soft_stale (not floor fail).
+- Unit test lean_suggested_actions green.
+
+### SELECT
+
+**mq_rehydrate_graph** — MQ5 injects relation_resume into lean full assemble, but default `ENGRAM_WAKE_BUNDLE=slim` strips it via `slim_continuation_bundle`. Agents never see edges on session_start.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Code | hoist `relation_resume` + `lawfulness_snapshot` in `slim_continuation_bundle` |
+| Flag | `wake_slim_mq_resume_hoist` |
+| Test | extended `slim_bundle_strips_heavy_harness_fields` |
+
+### Next vectors
+
+1. MCP swap MQ6; slim session_start shows relation_resume.edges + lawfulness_snapshot.sample_count.
+2. `mq_spatial_locus` precision tests if line filter measured weak.
+3. PR #134 C86 cold assemble residual (CI green, open).
