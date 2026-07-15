@@ -773,6 +773,64 @@ pub fn fisher_banded_precision(block: &crate::types::HolographicBlock) -> f32 {
     (band_mean * l2_damp).clamp(0.05, 1.0)
 }
 
+/// RSI Cycle 56: partial σ² beyond the fixed 16-d residual capsule **without layout change**.
+/// Samples N evenly-spaced complex dims of |q_block − q_ego| (or |q_block| if no ego)
+/// as inv-var bands and blends with the 16-d banded residual. Default ON under banded Fisher.
+/// Set `ENGRAM_FISHER_PARTIAL_SIGMA=0|false|off` to disable.
+/// Dim count: `ENGRAM_FISHER_PARTIAL_SIGMA_DIMS` (default 32, clamp 16..=128).
+pub fn fisher_partial_sigma_enabled() -> bool {
+    if !fisher_banded_enabled() {
+        return false;
+    }
+    match std::env::var("ENGRAM_FISHER_PARTIAL_SIGMA") {
+        Ok(v) => {
+            let v = v.to_ascii_lowercase();
+            !matches!(v.as_str(), "0" | "false" | "off" | "no")
+        }
+        Err(_) => true,
+    }
+}
+
+/// Number of evenly-spaced spectral bands for partial σ² (Cycle 56).
+pub fn fisher_partial_sigma_dims() -> usize {
+    std::env::var("ENGRAM_FISHER_PARTIAL_SIGMA_DIMS")
+        .ok()
+        .and_then(|s| s.parse::<usize>().ok())
+        .unwrap_or(32)
+        .clamp(16, 128)
+}
+
+/// Partial σ² precision ∈ [0.05, 1] from evenly-spaced q (and optional ego) samples.
+pub fn fisher_partial_sigma_precision(
+    block: &crate::types::HolographicBlock,
+    ego_q: Option<&[Complex32; 8192]>,
+) -> f32 {
+    let n = fisher_partial_sigma_dims();
+    let step = 8192 / n;
+    let mut acc = 0.0_f32;
+    for b in 0..n {
+        let i = b * step;
+        let mag = if let Some(eq) = ego_q {
+            let dr = block.q[i].re - eq[i].re;
+            let di = block.q[i].im - eq[i].im;
+            (dr * dr + di * di).sqrt()
+        } else {
+            // Spectral energy band of the block phase itself (no ego).
+            let r = block.q[i];
+            (r.re * r.re + r.im * r.im).sqrt()
+        };
+        acc += 1.0 / (1.0 + mag);
+    }
+    let band_mean = acc / n as f32;
+    // Mild L2 residual coupling when capsule present.
+    let l2_damp = if block.l2_norm_residual > 1e-8 {
+        1.0 / (1.0 + 0.25 * block.l2_norm_residual.clamp(0.0, 10.0))
+    } else {
+        1.0
+    };
+    (band_mean * l2_damp).clamp(0.05, 1.0)
+}
+
 fn score_block(
     concept: String,
     query: &[Complex32; 8192],
@@ -827,7 +885,8 @@ fn score_block(
     // Cycle 33: precision = CRS×(1−dv) inv-var proxy when ENGRAM_FISHER_INVVAR on.
     // Cycle 35: × banded residual precision from err_residual_16d (ENGRAM_FISHER_BANDED).
     // Cycle 40: adaptive 4/8/16 band count from residual L2 (ENGRAM_FISHER_ADAPTIVE_BANDS).
-    // Full per-dimension σ² tensors still deferred.
+    // Cycle 56: × partial σ² over N evenly-spaced q dims beyond 16-d capsule (no layout change).
+    // Full per-dimension 8192-d σ² tensors still deferred.
     let mut prec_w = if fisher_on {
         fisher_precision_weight(crs_norm, stability_norm)
     } else {
@@ -840,6 +899,14 @@ fn score_block(
     };
     if band_w < 1.0 - 1e-6 {
         prec_w = (prec_w * band_w).clamp(0.05, 1.0);
+    }
+    let partial_w = if fisher_on && fisher_partial_sigma_enabled() {
+        fisher_partial_sigma_precision(block, ego_q)
+    } else {
+        1.0
+    };
+    if partial_w < 1.0 - 1e-6 {
+        prec_w = (prec_w * partial_w).clamp(0.05, 1.0);
     }
     let precision_sim = base_sim_norm * prec_w;
 
@@ -869,8 +936,13 @@ fn score_block(
         } else {
             String::new()
         };
+        let partial = if fisher_partial_sigma_enabled() {
+            format!("+psig={partial_w:.3}(n={})", fisher_partial_sigma_dims())
+        } else {
+            String::new()
+        };
         format!(
-            "Dirichlet+Fisher[{inv}{band},ego={}]: sim={:.3}*{} + prec_sim={:.3}*{} (w={:.3}) + crs={:.3}*{} + frame={:.3}*{} + mass={:.3}*{} => {:.4}",
+            "Dirichlet+Fisher[{inv}{band}{partial},ego={}]: sim={:.3}*{} + prec_sim={:.3}*{} (w={:.3}) + crs={:.3}*{} + frame={:.3}*{} + mass={:.3}*{} => {:.4}",
             ego_q.is_some(),
             base_sim_norm, d1, precision_sim, d_fisher, prec_w, crs_norm, d2, d3_value, d3, depth_norm, d4, score
         )
@@ -905,6 +977,57 @@ mod tests {
 
     /// Process-global ENGRAM_FISHER_* env — serialize tests that touch it.
     static FISHER_ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    /// RSI Cycle 56: partial σ² precision is lower when |q−ego| is large on sampled bands.
+    #[test]
+    fn fisher_partial_sigma_prefers_ego_aligned_q() {
+        let _g = FISHER_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        std::env::set_var("ENGRAM_FISHER_PRECISION", "1");
+        std::env::set_var("ENGRAM_FISHER_BANDED", "1");
+        std::env::set_var("ENGRAM_FISHER_PARTIAL_SIGMA", "1");
+        std::env::set_var("ENGRAM_FISHER_PARTIAL_SIGMA_DIMS", "32");
+        let dir = tempfile::tempdir().unwrap();
+        let backend = CpuBackend::new(dir.path());
+        let encoded = backend.encode("partial sigma ego alignment");
+        let ego = encoded.q;
+        // Far-from-ego block: flip signs on many dims
+        let mut far = encoded.clone();
+        for i in 0..8192 {
+            far.q[i] = Complex32::new(-far.q[i].re, -far.q[i].im);
+        }
+        far.crs_score = 0.90;
+        far.energetics.crs = 0.90;
+        far.energetics.dv = 0.1;
+        let mut near = encoded.clone();
+        near.crs_score = 0.90;
+        near.energetics.crs = 0.90;
+        near.energetics.dv = 0.1;
+        let p_near = fisher_partial_sigma_precision(&near, Some(&ego));
+        let p_far = fisher_partial_sigma_precision(&far, Some(&ego));
+        assert!(
+            p_near > p_far,
+            "ego-aligned q should have higher partial σ precision: near={p_near} far={p_far}"
+        );
+        assert!(fisher_partial_sigma_enabled());
+        assert_eq!(fisher_partial_sigma_dims(), 32);
+        let m_near = score_memory("near".into(), &encoded.q, &near, Some(&ego));
+        let m_far = score_memory("far".into(), &encoded.q, &far, Some(&ego));
+        assert!(
+            m_near.score >= m_far.score,
+            "near ego should not rank below far under partial σ: near={} far={}",
+            m_near.score,
+            m_far.score
+        );
+        assert!(
+            m_near.explain.contains("psig") || m_far.explain.contains("psig"),
+            "explain should mention psig: {}",
+            m_near.explain
+        );
+        std::env::remove_var("ENGRAM_FISHER_PRECISION");
+        std::env::remove_var("ENGRAM_FISHER_BANDED");
+        std::env::remove_var("ENGRAM_FISHER_PARTIAL_SIGMA");
+        std::env::remove_var("ENGRAM_FISHER_PARTIAL_SIGMA_DIMS");
+    }
 
     #[test]
     fn fisher_precision_prefers_higher_crs_at_equal_cosine() {
