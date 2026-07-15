@@ -2695,13 +2695,14 @@ impl StoreHandle {
             .clamp(0, 30)
     }
 
-    /// RSI Cycle 66: soft-stale window (secs). Serve cached readiness past hard TTL up to this age.
-    /// Default 900s (15m) matches RSI loop cadence. `ENGRAM_READINESS_SOFT_STALE_SECS=0` disables.
+    /// RSI Cycle 66/84: soft-stale window (secs). Serve cached readiness past hard TTL up to this age.
+    /// Default **1800s** (C84) matches sheaf/continuation soft-stale so 15m RSI fires stay warm.
+    /// `ENGRAM_READINESS_SOFT_STALE_SECS=0` disables.
     pub fn readiness_soft_stale_secs() -> u64 {
         std::env::var("ENGRAM_READINESS_SOFT_STALE_SECS")
             .ok()
             .and_then(|s| s.parse().ok())
-            .unwrap_or(900)
+            .unwrap_or(1800)
             .clamp(0, 3600)
     }
 
@@ -2780,11 +2781,13 @@ impl StoreHandle {
                 "rehydration_manifest_soft_stale_env": "ENGRAM_REHYDRATION_MANIFEST_SOFT_STALE_SECS",
                 "rehydration_manifest_soft_stale_secs": 900,
                 "wake_cufile_probe_async": true,
+                "wake_cufile_init_async": true,
                 "wake_readiness_ttl_cache": true,
                 "wake_readiness_slim_first_build": true,
                 "wake_readiness_ttl_ms_units": true,
                 "wake_readiness_static_flags_once": true,
                 "wake_readiness_soft_stale": true,
+                "wake_readiness_soft_stale_slide": true,
                 "readiness_ttl_env": "ENGRAM_READINESS_TTL_SECS",
                 "readiness_soft_stale_env": "ENGRAM_READINESS_SOFT_STALE_SECS",
                 "sheaf_fingerprint_disk": true,
@@ -2859,19 +2862,23 @@ impl StoreHandle {
 
     pub fn backend_readiness(&self) -> serde_json::Value {
         // activity_now() is ms; TTL env is seconds (C64 bug: compared secs to ms → ~2ms window).
-        // C66: hard TTL then soft-stale (default 900s) before forced rebuild.
+        // C66: hard TTL then soft-stale before forced rebuild.
+        // C84: slide soft-stale timestamp on hit (default 1800s) — same pattern as sheaf C81.
         let hard_ms = Self::readiness_cache_ttl_ms();
         let soft_ms = Self::readiness_soft_stale_ms();
         let now = activity_now();
         if hard_ms > 0 || soft_ms > 0 {
-            if let Ok(guard) = self.readiness_cache.lock() {
+            if let Ok(mut guard) = self.readiness_cache.lock() {
                 if let Some((ts, ref cached)) = *guard {
                     let age = now.saturating_sub(ts);
                     if hard_ms > 0 && age < hard_ms {
                         return cached.clone();
                     }
                     if soft_ms > 0 && age < soft_ms {
-                        return cached.clone();
+                        // Sliding window so continuous 15m fires never fall off a fixed cliff.
+                        let hit = cached.clone();
+                        *guard = Some((now, hit.clone()));
+                        return hit;
                     }
                 }
             }
