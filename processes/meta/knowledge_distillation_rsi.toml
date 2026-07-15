@@ -83,6 +83,7 @@ list = [
   "lexicon:word:mcp-timing-gate",
   "lexicon:word:wake-warm-skip-hot",
   "lexicon:word:fidelity-persist-async",
+  "lexicon:word:csr-tombstone-compact",
 ]
 
 [execute]
