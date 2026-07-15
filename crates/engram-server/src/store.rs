@@ -2774,6 +2774,7 @@ impl StoreHandle {
                 "wake_relation_resume_lean": true,
                 "wake_lawfulness_snapshot": true,
                 "wake_slim_mq_resume_hoist": true,
+                "mq_spatial_locus_aabb_test": true,
                 "wake_continuation_soft_stale": true,
                 "wake_continuation_soft_stale_env": "ENGRAM_WAKE_CONTINUATION_SOFT_STALE_SECS",
                 "wake_continuation_soft_stale_secs": 1800,
@@ -9549,6 +9550,81 @@ mod traces_at_locus_tests {
         assert_eq!(line_precise.len(), 1);
         assert_eq!(file_level.len(), 1);
         assert!(relation_linked.is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// MQ Cycle 7 (`mq_spatial_locus`): line-bounded context_for_edit must keep only
+    /// AST loci whose AABB overlaps the requested range (not bag-of-file noise).
+    fn seed_aabb_locus(store: &mut StoreHandle, concept: &str, line_start: i32, line_end: i32) {
+        store
+            .remember(concept, &format!("fn {concept}() {{ /* locus */ }}"))
+            .unwrap();
+        let mut block = store.fetch_block(concept).unwrap();
+        block.aabb_min[0] = line_start as f32;
+        block.aabb_max[0] = line_end as f32;
+        store.store(concept, block).unwrap();
+        let _ = store.promote_tile_to_high_priority(concept);
+    }
+
+    #[test]
+    fn context_for_edit_filters_spatial_items_by_line_aabb() {
+        let dir = test_store_dir("mq7_spatial_aabb");
+        let mut store = StoreHandle::new(&dir.to_string_lossy());
+
+        // Three loci in locus.rs: early / mid / late — only mid overlaps 40..=60.
+        seed_aabb_locus(&mut store, "locus__fn__early", 1, 20);
+        seed_aabb_locus(&mut store, "locus__fn__mid", 45, 55);
+        seed_aabb_locus(&mut store, "locus__fn__late", 80, 100);
+
+        let mid = store.context_for_edit("/tmp/locus.rs", Some(40), Some(60), false);
+        assert_eq!(
+            mid.get("atlas_version").and_then(|v| v.as_str()),
+            Some("v2.1")
+        );
+        let items = mid
+            .get("spatial_items")
+            .and_then(|v| v.as_array())
+            .expect("spatial_items");
+        let concepts: Vec<&str> = items
+            .iter()
+            .filter_map(|v| v.get("concept").and_then(|c| c.as_str()))
+            .collect();
+        assert!(
+            concepts.contains(&"locus__fn__mid"),
+            "mid AABB must hit line window 40-60: {concepts:?}"
+        );
+        assert!(
+            !concepts.contains(&"locus__fn__early"),
+            "early AABB 1-20 must not leak into 40-60: {concepts:?}"
+        );
+        assert!(
+            !concepts.contains(&"locus__fn__late"),
+            "late AABB 80-100 must not leak into 40-60: {concepts:?}"
+        );
+        assert_eq!(
+            mid.get("line_range")
+                .and_then(|r| r.get("start"))
+                .and_then(|v| v.as_u64()),
+            Some(40)
+        );
+        assert_eq!(
+            mid.get("line_range")
+                .and_then(|r| r.get("end"))
+                .and_then(|v| v.as_u64()),
+            Some(60)
+        );
+
+        // Empty window far from all loci → no spatial hits.
+        let empty = store.context_for_edit("/tmp/locus.rs", Some(200), Some(210), false);
+        let empty_items = empty
+            .get("spatial_items")
+            .and_then(|v| v.as_array())
+            .expect("spatial_items empty window");
+        assert!(
+            empty_items.is_empty(),
+            "far line window must return zero spatial_items, got {empty_items:?}"
+        );
+
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
