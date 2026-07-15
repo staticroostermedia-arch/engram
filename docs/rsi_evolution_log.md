@@ -3417,3 +3417,33 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 1. MCP swap MQ11; wake trusted_tiles head is session_boundary when present.
 2. Optional #134 C86 cold assemble residual.
 3. mq_capacity_policy only if landfill metrics measured.
+
+## MQ Cycle 12 — lean CSF hub CRS live sample (2026-07-15)
+
+### VERIFY₀ baseline
+
+- master@`a3bd1045` MQ11 #145.
+- MCP swapped: `mq_csf_session_boundary_prefer` LIVE; trusted_tiles[0]=`session_boundary`; CSF warm **0.925**.
+- Warm soft-stale total_ms=**0** floor green; readiness_ms=0.
+- Verify **healthy** metric:mq_verify_1784152045; series growing.
+- mean_hub_crs still **null** (lean zero previews → neutral hub 0.5) despite high-CRS hubs on disk.
+- Unit tests lean + MQ11 boundary prefer green.
+
+### SELECT
+
+**mq_hub_crs** — sample real CRS from hub anchors / trusted tiles when presentation previews are zero-padded.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Sample | `hub_concepts_for_crs_sample` + high-priority fetch mean |
+| Marker | `hub_crs_live_sample` on CSF report |
+| Flag | `mq_hub_crs_lean_sample` |
+| Tests | `mean_hub_crs_from_samples_ignores_zeros`, `hub_concepts_for_crs_sample_includes_primary_and_tiles` |
+
+### Next vectors
+
+1. MCP swap MQ12; cold/warm CSF shows mean_hub_crs > 0.8 with hub_crs_live_sample.
+2. Optional #134 C86 cold assemble residual (floor held).
+3. Capacity only if landfill metrics measured.

@@ -314,6 +314,65 @@ fn mean_crs_from_stratum(bundle: &Value) -> Option<f32> {
     }
 }
 
+/// MQ Cycle 12: mean of live hub CRS samples (primary/handoff/tiles), ignoring zeros.
+/// Used when lean presentation previews cannot carry real CRS.
+pub fn mean_hub_crs_from_samples(samples: &[f32]) -> Option<f32> {
+    let mut sum = 0.0f32;
+    let mut n = 0u32;
+    for &c in samples {
+        if c > 0.01 {
+            sum += c.clamp(0.0, 1.0);
+            n += 1;
+        }
+    }
+    if n == 0 {
+        None
+    } else {
+        Some(sum / n as f32)
+    }
+}
+
+/// Collect hub concept names from a continuation bundle for lean CRS sampling.
+pub fn hub_concepts_for_crs_sample(bundle: &Value) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut push = |s: &str| {
+        if s.is_empty() || s == "unset" || s == "(none)" {
+            return;
+        }
+        if !out.iter().any(|x| x == s) {
+            out.push(s.to_string());
+        }
+    };
+    if let Some(pg) = bundle.get("primary_goal").and_then(|v| v.as_str()) {
+        push(pg);
+    }
+    push("helper:session_handoff_latest");
+    if let Some(anchors) = bundle
+        .get("rehydration_manifest")
+        .and_then(|m| m.get("hub_anchors"))
+        .and_then(|v| v.as_array())
+    {
+        for a in anchors.iter().take(8) {
+            if let Some(s) = a.as_str() {
+                push(s);
+            }
+        }
+    }
+    if let Some(tiles) = bundle
+        .get("rehydration_manifest")
+        .and_then(|m| m.get("trusted_tiles"))
+        .and_then(|v| v.as_array())
+    {
+        for t in tiles.iter().take(6) {
+            if let Some(c) = t.get("concept").and_then(|v| v.as_str()) {
+                push(c);
+            }
+        }
+    }
+    out.truncate(10);
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -343,6 +402,32 @@ mod tests {
         });
         let m = mean_crs_from_stratum(&real).expect("real crs");
         assert!((m - 0.9).abs() < 0.01);
+    }
+
+    /// MQ Cycle 12: live hub samples fill mean when lean previews are zero.
+    #[test]
+    fn mean_hub_crs_from_samples_ignores_zeros() {
+        assert_eq!(mean_hub_crs_from_samples(&[]), None);
+        assert_eq!(mean_hub_crs_from_samples(&[0.0, 0.0]), None);
+        let m = mean_hub_crs_from_samples(&[0.9, 0.0, 0.94]).expect("samples");
+        assert!((m - 0.92).abs() < 0.01);
+    }
+
+    #[test]
+    fn hub_concepts_for_crs_sample_includes_primary_and_tiles() {
+        let bundle = json!({
+            "primary_goal": "goal:engram_memory_quality_v1",
+            "rehydration_manifest": {
+                "hub_anchors": ["primary_goal", "helper:session_handoff_latest"],
+                "trusted_tiles": [
+                    {"concept": "tile:session_boundary_1", "tile_type": "session_boundary"}
+                ]
+            }
+        });
+        let hubs = hub_concepts_for_crs_sample(&bundle);
+        assert!(hubs.contains(&"goal:engram_memory_quality_v1".to_string()));
+        assert!(hubs.contains(&"helper:session_handoff_latest".to_string()));
+        assert!(hubs.contains(&"tile:session_boundary_1".to_string()));
     }
 
     #[test]
