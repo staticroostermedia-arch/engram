@@ -2406,3 +2406,37 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 3. Full 8192-d σ² tensors (long horizon).
 4. Keep warm wake total ≤60ms.
 
+## Cycle 67 — env-gated readiness snapshot (2026-07-15)
+
+### Master baseline
+
+- Post Cycle 66: PR **#114** `0ff6bab1` — OnceLock static flags + soft-stale.
+- **Measured on still-stale pre-C65 MCP:** total=**88**, readiness_ms=**69**, harness=9.
+- Prompt backlog C50–C56 already shipped.
+
+### Research synthesis
+
+| Source | Insight |
+|--------|---------|
+| first-build miss | Soft-stale helps 15m hits; cold miss still probes env/Fisher/α/presentation. |
+| Tests | Alpha gate tests flip env + invalidate_readiness_cache — must clear env snap too. |
+
+### Hypothesis
+
+**Env-gated snapshot Mutex:** build fisher/α/presentation/lean env once per process; clear with readiness cache so tests stay lawful.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Code | `READINESS_ENV_SNAPSHOT` + `readiness_env_gated_snapshot`; invalidate clears both |
+| Readiness | `wake_readiness_env_snapshot_once` |
+| Test | `readiness_env_snapshot_invalidates_with_cache` |
+
+### Next vectors
+
+1. MCP binary swap (C65–C67); measure soft-hit readiness_ms ≈0–5; first-build ≤20.
+2. Cut harness_ms residual (~9) if still dominant after readiness fixed.
+3. Full 8192-d σ² tensors (long horizon).
+4. Keep warm wake total ≤50ms.
+

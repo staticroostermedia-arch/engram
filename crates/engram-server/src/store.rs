@@ -41,6 +41,10 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 pub type SharedStore = Arc<Mutex<StoreHandle>>;
 
+/// RSI Cycle 67: process-wide env-gated readiness fields (cleared with readiness cache).
+static READINESS_ENV_SNAPSHOT: Mutex<Option<serde_json::Map<String, serde_json::Value>>> =
+    Mutex::new(None);
+
 /// Strip sheaf namespace prefix (`primary::foo` → `foo`) for backend disk/cache lookups.
 /// `list()` returns namespaced keys; blocks on disk use the raw concept stem.
 #[inline]
@@ -2456,8 +2460,12 @@ impl StoreHandle {
     }
 
     /// RSI Cycle 64: drop readiness TTL cache (after major backend state changes).
+    /// RSI Cycle 67: also clears process-wide env-gated snapshot so tests/env flips refresh.
     pub fn invalidate_readiness_cache(&self) {
         if let Ok(mut g) = self.readiness_cache.lock() {
+            *g = None;
+        }
+        if let Ok(mut g) = READINESS_ENV_SNAPSHOT.lock() {
             *g = None;
         }
     }
@@ -2661,6 +2669,52 @@ impl StoreHandle {
         })
     }
 
+    /// RSI Cycle 67: process-stable env/config snapshot (cleared with readiness cache).
+    /// Fisher/α/presentation/lean switches rarely change mid-MCP lifetime.
+    fn readiness_env_gated_snapshot() -> serde_json::Map<String, serde_json::Value> {
+        if let Ok(guard) = READINESS_ENV_SNAPSHOT.lock() {
+            if let Some(ref m) = *guard {
+                return m.clone();
+            }
+        }
+        let j = serde_json::json!({
+            "defer_bvh": std::env::var("ENGRAM_DEFER_BVH").as_deref() == Ok("1"),
+            "defer_watch_ingest": std::env::var("ENGRAM_DEFER_WATCH_INGEST").as_deref() == Ok("1"),
+            "cuda_lean": std::env::var("ENGRAM_CUDA_LEAN").as_deref() != Ok("0"),
+            "sheaf_lean": std::env::var("ENGRAM_SHEAF_LEAN").as_deref() == Ok("1"),
+            "ki_lean": std::env::var("ENGRAM_KI_LEAN").as_deref() == Ok("1"),
+            "ki_disabled": std::env::var("ENGRAM_KI_DISABLE").as_deref() == Ok("1"),
+            "gpu_hot_device": std::env::var("ENGRAM_GPU_HOT_DEVICE").unwrap_or_else(|_| "0".into()),
+            "gpu_compute_device": std::env::var("ENGRAM_GPU_COMPUTE_DEVICE").unwrap_or_else(|_| "1".into()),
+            "cufile_hot_requested": std::env::var("ENGRAM_CUFILE_HOT").as_deref() == Ok("1"),
+            "alpha_speed_gate_enabled": crate::injection_priority::alpha_speed_gate_enabled(),
+            "presentation_hop_budget": crate::presentation_stratum::presentation_hop_budget(),
+            "presentation_budget": crate::presentation_stratum::presentation_budget(),
+            "presentation_budget_wake": crate::presentation_stratum::presentation_budget_wake(),
+            "readiness_ttl_secs": Self::readiness_cache_ttl_secs(),
+            "readiness_soft_stale_secs": Self::readiness_soft_stale_secs(),
+            "crs_alpha_joint_enabled": crate::injection_priority::crs_alpha_joint_enabled(),
+            "fisher_precision_enabled": engram_core::backend::fisher_precision_enabled(),
+            "fisher_invvar_enabled": engram_core::backend::fisher_invvar_enabled(),
+            "fisher_banded_enabled": engram_core::backend::fisher_banded_enabled(),
+            "fisher_adaptive_bands_enabled": engram_core::backend::fisher_adaptive_bands_enabled(),
+            "fisher_partial_sigma_enabled": engram_core::backend::fisher_partial_sigma_enabled(),
+            "fisher_partial_sigma_dims": engram_core::backend::fisher_partial_sigma_dims(),
+            "incident_alpha_scan_cap": Self::incident_alpha_scan_cap(),
+            "encrypt_at_rest_enabled": crate::secure_context::encrypt_at_rest_enabled(),
+            "secure_context_mode": crate::secure_context::secure_context_mode(),
+            "sovereignty_key_configured": std::env::var("ENGRAM_SOVEREIGNTY_KEY")
+                .map(|s| !s.trim().is_empty())
+                .unwrap_or(false),
+            "wake_readiness_env_snapshot_once": true,
+        });
+        let m = j.as_object().cloned().unwrap_or_default();
+        if let Ok(mut guard) = READINESS_ENV_SNAPSHOT.lock() {
+            *guard = Some(m.clone());
+        }
+        m
+    }
+
     pub fn backend_readiness(&self) -> serde_json::Value {
         // activity_now() is ms; TTL env is seconds (C64 bug: compared secs to ms → ~2ms window).
         // C66: hard TTL then soft-stale (default 900s) before forced rebuild.
@@ -2691,7 +2745,8 @@ impl StoreHandle {
 
     fn backend_readiness_uncached(&self) -> serde_json::Value {
         // RSI Cycle 65: slim first-build — prefer cached leg count; single bvh/gpu snapshot.
-        // RSI Cycle 66: merge OnceLock static flags; only dynamic fields built each miss.
+        // RSI Cycle 66: merge OnceLock static flags.
+        // RSI Cycle 67: merge OnceLock env-gated snapshot; only true dynamics each miss.
         let leg_blocks = self.leg_block_count_prefer_cached();
         let bvh_ready = self.bvh_is_ready();
         let bvh_nodes = self.backend.bvh_node_count();
@@ -2709,7 +2764,7 @@ impl StoreHandle {
             "cpu_linear"
         };
         let mut obj = serde_json::Map::new();
-        // Dynamic / process-state fields only
+        // True dynamic / live backend fields only
         obj.insert(
             "fully_initialized".into(),
             serde_json::json!(self.is_fully_initialized()),
@@ -2743,54 +2798,14 @@ impl StoreHandle {
         );
         obj.insert("memory_mode".into(), serde_json::json!(Self::memory_mode()));
         obj.insert(
-            "defer_bvh".into(),
-            serde_json::json!(std::env::var("ENGRAM_DEFER_BVH").as_deref() == Ok("1")),
-        );
-        obj.insert(
-            "defer_watch_ingest".into(),
-            serde_json::json!(std::env::var("ENGRAM_DEFER_WATCH_INGEST").as_deref() == Ok("1")),
-        );
-        obj.insert(
             "bvh_auto_spawned".into(),
             serde_json::json!(self
                 .deep_bvh_spawn_attempted
                 .load(std::sync::atomic::Ordering::Relaxed)),
         );
         obj.insert(
-            "cuda_lean".into(),
-            serde_json::json!(std::env::var("ENGRAM_CUDA_LEAN").as_deref() != Ok("0")),
-        );
-        obj.insert(
-            "sheaf_lean".into(),
-            serde_json::json!(std::env::var("ENGRAM_SHEAF_LEAN").as_deref() == Ok("1")),
-        );
-        obj.insert(
-            "ki_lean".into(),
-            serde_json::json!(std::env::var("ENGRAM_KI_LEAN").as_deref() == Ok("1")),
-        );
-        obj.insert(
-            "ki_disabled".into(),
-            serde_json::json!(std::env::var("ENGRAM_KI_DISABLE").as_deref() == Ok("1")),
-        );
-        obj.insert(
-            "gpu_hot_device".into(),
-            serde_json::json!(
-                std::env::var("ENGRAM_GPU_HOT_DEVICE").unwrap_or_else(|_| "0".into())
-            ),
-        );
-        obj.insert(
-            "gpu_compute_device".into(),
-            serde_json::json!(
-                std::env::var("ENGRAM_GPU_COMPUTE_DEVICE").unwrap_or_else(|_| "1".into())
-            ),
-        );
-        obj.insert(
             "presentation_cache_hit_rate".into(),
             serde_json::json!(crate::cockpit_cache::presentation_cache_hit_rate()),
-        );
-        obj.insert(
-            "cufile_hot_requested".into(),
-            serde_json::json!(std::env::var("ENGRAM_CUFILE_HOT").as_deref() == Ok("1")),
         );
         obj.insert(
             "cufile_hot_ready".into(),
@@ -2803,62 +2818,6 @@ impl StoreHandle {
         obj.insert(
             "cufile_transfer_path".into(),
             serde_json::json!(self.backend_cufile_transfer_path()),
-        );
-        obj.insert(
-            "alpha_speed_gate_enabled".into(),
-            serde_json::json!(crate::injection_priority::alpha_speed_gate_enabled()),
-        );
-        obj.insert(
-            "presentation_hop_budget".into(),
-            serde_json::json!(crate::presentation_stratum::presentation_hop_budget()),
-        );
-        obj.insert(
-            "presentation_budget".into(),
-            serde_json::json!(crate::presentation_stratum::presentation_budget()),
-        );
-        obj.insert(
-            "presentation_budget_wake".into(),
-            serde_json::json!(crate::presentation_stratum::presentation_budget_wake()),
-        );
-        obj.insert(
-            "readiness_ttl_secs".into(),
-            serde_json::json!(Self::readiness_cache_ttl_secs()),
-        );
-        obj.insert(
-            "readiness_soft_stale_secs".into(),
-            serde_json::json!(Self::readiness_soft_stale_secs()),
-        );
-        obj.insert(
-            "crs_alpha_joint_enabled".into(),
-            serde_json::json!(crate::injection_priority::crs_alpha_joint_enabled()),
-        );
-        obj.insert(
-            "fisher_precision_enabled".into(),
-            serde_json::json!(engram_core::backend::fisher_precision_enabled()),
-        );
-        obj.insert(
-            "fisher_invvar_enabled".into(),
-            serde_json::json!(engram_core::backend::fisher_invvar_enabled()),
-        );
-        obj.insert(
-            "fisher_banded_enabled".into(),
-            serde_json::json!(engram_core::backend::fisher_banded_enabled()),
-        );
-        obj.insert(
-            "fisher_adaptive_bands_enabled".into(),
-            serde_json::json!(engram_core::backend::fisher_adaptive_bands_enabled()),
-        );
-        obj.insert(
-            "fisher_partial_sigma_enabled".into(),
-            serde_json::json!(engram_core::backend::fisher_partial_sigma_enabled()),
-        );
-        obj.insert(
-            "fisher_partial_sigma_dims".into(),
-            serde_json::json!(engram_core::backend::fisher_partial_sigma_dims()),
-        );
-        obj.insert(
-            "incident_alpha_scan_cap".into(),
-            serde_json::json!(Self::incident_alpha_scan_cap()),
         );
         obj.insert(
             "relation_adj_nodes".into(),
@@ -2884,21 +2843,10 @@ impl StoreHandle {
             "relation_adj_csr_loaded_from_sidecar".into(),
             serde_json::json!(self.relation_index.csr_loaded_from_sidecar()),
         );
-        obj.insert(
-            "encrypt_at_rest_enabled".into(),
-            serde_json::json!(crate::secure_context::encrypt_at_rest_enabled()),
-        );
-        obj.insert(
-            "secure_context_mode".into(),
-            serde_json::json!(crate::secure_context::secure_context_mode()),
-        );
-        obj.insert(
-            "sovereignty_key_configured".into(),
-            serde_json::json!(std::env::var("ENGRAM_SOVEREIGNTY_KEY")
-                .map(|s| !s.trim().is_empty())
-                .unwrap_or(false)),
-        );
-        // Merge static flags (OnceLock) — do not overwrite dynamic keys if collision
+        // Merge env-gated snapshot then static constants (do not overwrite dynamics)
+        for (k, v) in Self::readiness_env_gated_snapshot() {
+            obj.entry(k).or_insert(v);
+        }
         for (k, v) in Self::readiness_static_feature_flags() {
             obj.entry(k.clone()).or_insert_with(|| v.clone());
         }
@@ -11184,6 +11132,7 @@ SESSION HANDOFF PACKET v1
     }
 
     /// RSI Cycle 66: soft-stale returns cache past hard TTL; static flags OnceLock present.
+    /// RSI Cycle 67: env snapshot flag present.
     #[test]
     fn readiness_soft_stale_and_static_flags() {
         std::env::set_var("ENGRAM_READINESS_TTL_SECS", "0"); // hard TTL off
@@ -11202,6 +11151,11 @@ SESSION HANDOFF PACKET v1
             Some(true)
         );
         assert_eq!(
+            a.get("wake_readiness_env_snapshot_once")
+                .and_then(|v| v.as_bool()),
+            Some(true)
+        );
+        assert_eq!(
             a.get("readiness_soft_stale_secs").and_then(|v| v.as_u64()),
             Some(60)
         );
@@ -11217,6 +11171,44 @@ SESSION HANDOFF PACKET v1
         let _ = std::fs::remove_dir_all(&dir);
         std::env::remove_var("ENGRAM_READINESS_TTL_SECS");
         std::env::remove_var("ENGRAM_READINESS_SOFT_STALE_SECS");
+    }
+
+    /// RSI Cycle 67: env snapshot cache + invalidate picks up env flips.
+    #[test]
+    fn readiness_env_snapshot_invalidates_with_cache() {
+        std::env::set_var("ENGRAM_READINESS_TTL_SECS", "0");
+        std::env::set_var("ENGRAM_READINESS_SOFT_STALE_SECS", "0");
+        std::env::set_var("ENGRAM_ALPHA_SPEED_GATE", "1");
+        let dir = test_store_dir("readiness_env_snap");
+        let store = StoreHandle::new(&dir.to_string_lossy());
+        store.invalidate_readiness_cache();
+        let on = store.backend_readiness();
+        assert_eq!(
+            on.get("alpha_speed_gate_enabled").and_then(|v| v.as_bool()),
+            Some(true)
+        );
+        std::env::set_var("ENGRAM_ALPHA_SPEED_GATE", "0");
+        // Without invalidate, env snapshot still shows old value
+        let stale = store.backend_readiness();
+        assert_eq!(
+            stale
+                .get("alpha_speed_gate_enabled")
+                .and_then(|v| v.as_bool()),
+            Some(true),
+            "env snapshot should retain until invalidate"
+        );
+        store.invalidate_readiness_cache();
+        let off = store.backend_readiness();
+        assert_eq!(
+            off.get("alpha_speed_gate_enabled")
+                .and_then(|v| v.as_bool()),
+            Some(false),
+            "invalidate must rebuild env snapshot"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+        std::env::remove_var("ENGRAM_READINESS_TTL_SECS");
+        std::env::remove_var("ENGRAM_READINESS_SOFT_STALE_SECS");
+        std::env::remove_var("ENGRAM_ALPHA_SPEED_GATE");
     }
 
     /// RSI Cycle 63: O(1) edge counts match linear scan ground truth.
