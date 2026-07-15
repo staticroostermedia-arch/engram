@@ -106,10 +106,7 @@ pub(crate) fn handoff_parse_open_questions(summary: &str) -> Vec<String> {
 /// MQ handoff schema: extract `next_vector:` line from session_end summary.
 pub(crate) fn handoff_parse_next_vector(summary: &str) -> Option<String> {
     for line in summary.lines() {
-        let t = line
-            .trim()
-            .trim_start_matches(|c: char| c == '-' || c == '*')
-            .trim();
+        let t = line.trim().trim_start_matches(['-', '*']).trim();
         let lower = t.to_ascii_lowercase();
         if let Some(pos) = lower.find("next_vector:") {
             let after = t[pos + "next_vector:".len()..].trim();
