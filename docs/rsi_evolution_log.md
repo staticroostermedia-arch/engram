@@ -2052,3 +2052,37 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 2. Optional full 8192-d σ² tensors (major layout work).
 3. Keep wake total ≤2s under load.
 
+## Cycle 57 — hub-only lean presentation (cut harness_ms) (2026-07-14)
+
+### Master baseline
+
+- Post Cycle 56: PR **#103** `0b9ab0e7` — partial σ².
+- **Measured:** local=18, harness=**832**, cont=1172, total=1182.
+
+### Research synthesis
+
+| Source | Insight |
+|--------|---------|
+| continuation_detail | harness still ~70% of continuation after local skip. |
+| gather_surface lean | still multi-pass recent/hot for presentation. |
+| Manifest hubs | already ranked for rehydration. |
+
+### Hypothesis
+
+**Hub-only presentation:** lean wake builds presentation nodes only from rehydration hub_anchors (no gather_surface).
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Code | `build_presentation_stratum_from_hubs`; lean harness uses it |
+| Ego lean | skip top_goal_serving relation walks |
+| Readiness | `wake_presentation_hub_only` |
+| Test | hub_only_presentation_from_hubs |
+
+### Next vectors
+
+1. Measure harness_ms after MCP swap (target ≪400ms).
+2. Full 8192-d σ² tensors (long horizon).
+3. Keep wake total ≤1.5s under load.
+

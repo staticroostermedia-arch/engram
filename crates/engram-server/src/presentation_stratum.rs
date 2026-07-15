@@ -555,6 +555,75 @@ pub fn build_presentation_stratum(
     build_presentation_stratum_opts(store, budget, intent, false)
 }
 
+/// RSI Cycle 57: ultra-lean presentation from rehydration hub_anchors only.
+/// Skips `gather_surface_ranked` entirely (measured ~0.8s of harness_ms residual).
+pub fn build_presentation_stratum_from_hubs(
+    store: &StoreHandle,
+    hubs: &[String],
+    budget: usize,
+) -> Value {
+    let budget = budget.clamp(1, 12);
+    let mut nodes: Vec<Value> = Vec::new();
+    let empty_lineage = json!({
+        "summarizes_chain": [],
+        "prev_in_trace": [],
+        "next_in_trace": [],
+        "served_by_goals": [],
+        "member_count": 0,
+        "is_distillate": false,
+        "lean_wake": true,
+        "hub_only": true,
+    });
+    for concept in hubs.iter().take(budget) {
+        let (preview, crs) = match store.fetch_block_high_priority(concept) {
+            Some(b) => {
+                let text = storage::read_provlog(&b);
+                let p: String = text.chars().take(120).collect();
+                let preview = if text.chars().count() > 120 {
+                    format!("{}…", p)
+                } else {
+                    p
+                };
+                (preview, b.crs_score)
+            }
+            None => (String::new(), 0.0),
+        };
+        let kind = if concept.starts_with("tile:") {
+            "tile"
+        } else if concept.starts_with("trace:") {
+            "trace"
+        } else if concept.starts_with("goal:") || concept == "primary_goal" {
+            "goal"
+        } else if concept.starts_with("process:") {
+            "process"
+        } else if concept.starts_with("helper:") {
+            "memory"
+        } else {
+            "memory"
+        };
+        nodes.push(json!({
+            "concept": concept,
+            "kind": kind,
+            "crs": crs,
+            "hot": store.is_hot(concept),
+            "score": 1.0,
+            "source": "hub_anchor",
+            "orbit": "core",
+            "preview": preview,
+            "lineage": empty_lineage.clone(),
+        }));
+    }
+    json!({
+        "version": "presentation_stratum_v1",
+        "node_count": nodes.len(),
+        "nodes": nodes,
+        "edges": [],
+        "lean_wake": true,
+        "hub_only": true,
+        "budget": budget,
+    })
+}
+
 /// RSI Cycle 47: lean wake presentation — no multi-hop expand, no per-node lineage walks.
 pub fn build_presentation_stratum_opts(
     store: &mut StoreHandle,
@@ -738,6 +807,32 @@ mod tests {
         assert_eq!(presentation_budget(), 40);
         std::env::set_var("ENGRAM_MEMORY_MODE", "deep");
         assert_eq!(presentation_budget(), 64);
+    }
+
+    /// RSI Cycle 57: hub-only presentation has hub_only flag and bounded nodes.
+    #[test]
+    fn hub_only_presentation_from_hubs() {
+        std::env::set_var("ENGRAM_DISABLE_SHEAF", "1");
+        std::env::set_var("ENGRAM_FORCE_CPU_BACKEND", "1");
+        let dir = std::env::temp_dir().join(format!(
+            "hub_only_pres_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = std::fs::create_dir_all(&dir);
+        let mut store = crate::store::StoreHandle::new(&dir.to_string_lossy());
+        let _ = store.remember("primary_goal", "PRIMARY GOAL\n\n**goal:** goal:test\n");
+        let _ = store.remember("helper:session_handoff_latest", "handoff");
+        let hubs = vec![
+            "primary_goal".into(),
+            "helper:session_handoff_latest".into(),
+        ];
+        let s = build_presentation_stratum_from_hubs(&store, &hubs, 8);
+        assert_eq!(s.get("hub_only").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(s.get("node_count").and_then(|v| v.as_u64()), Some(2));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// RSI Cycle 42: wake presentation K default 12 under lean.
