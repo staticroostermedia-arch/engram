@@ -2773,6 +2773,7 @@ impl StoreHandle {
                 "mq_verify_series_persist": true,
                 "wake_relation_resume_lean": true,
                 "wake_lawfulness_snapshot": true,
+                "wake_slim_mq_resume_hoist": true,
                 "wake_continuation_soft_stale": true,
                 "wake_continuation_soft_stale_env": "ENGRAM_WAKE_CONTINUATION_SOFT_STALE_SECS",
                 "wake_continuation_soft_stale_secs": 1800,

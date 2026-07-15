@@ -210,6 +210,18 @@ pub fn slim_continuation_bundle(full: &Value) -> Value {
             "rehydration_manifest",
             rehydration_manifest,
         );
+        // MQ Cycle 6: hoist MQ5 non-flat resume fields so default slim session_start
+        // surfaces relation neighborhood + lawfulness series head (not only on full bundle).
+        crate::continuity_spikes::insert_optional(
+            obj,
+            "relation_resume",
+            full.get("relation_resume").cloned(),
+        );
+        crate::continuity_spikes::insert_optional(
+            obj,
+            "lawfulness_snapshot",
+            full.get("lawfulness_snapshot").cloned(),
+        );
     }
     slim
 }
@@ -264,7 +276,20 @@ mod tests {
                 ]
             },
             "active_artifacts": [{"concept": "heavy"}],
-            "structured_handoff": {"concept": "helper:session_handoff_latest"}
+            "structured_handoff": {"concept": "helper:session_handoff_latest"},
+            // MQ Cycle 6: slim must hoist non-flat resume fields from full lean assemble.
+            "relation_resume": {
+                "version": "mq_relation_resume_v1",
+                "seed": "goal:test",
+                "edge_count": 1,
+                "edges": [{"from": "goal:test", "to": "child", "label": "has_child", "direction": "from"}]
+            },
+            "lawfulness_snapshot": {
+                "version": "mq_lawfulness_snapshot_v1",
+                "series_concept": "helper:mq_verify_series",
+                "sample_count": 2,
+                "pass_rate": 1.0
+            }
         });
 
         let slim = slim_continuation_bundle(&full);
@@ -280,5 +305,17 @@ mod tests {
         let actions = slim["suggested_actions"].as_array().unwrap();
         assert_eq!(actions.len(), 5);
         assert_eq!(actions[0]["tool"], "b");
+        // MQ Cycle 6: relation_resume + lawfulness_snapshot survive slim tier.
+        assert_eq!(slim["relation_resume"]["version"], "mq_relation_resume_v1");
+        assert_eq!(slim["relation_resume"]["edge_count"], 1);
+        assert_eq!(
+            slim["relation_resume"]["edges"][0]["to"],
+            "child"
+        );
+        assert_eq!(
+            slim["lawfulness_snapshot"]["version"],
+            "mq_lawfulness_snapshot_v1"
+        );
+        assert_eq!(slim["lawfulness_snapshot"]["sample_count"], 2);
     }
 }
