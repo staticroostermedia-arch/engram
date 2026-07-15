@@ -1401,4 +1401,41 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 3. Further wake path slim.
 4. Optional CSR row recycling after remove (avoid full rebuild).
 
+---
+
+## Cycle 39 — incremental CSR remove (no full rebuild) (2026-07-14)
+
+### Master baseline
+
+- Post Cycle 38: PR **#84** `71042dab` — CSR-only RelationIndex.
+- Hub CRS ~0.89 · CSF ~0.94 · ~89k blocks.
+
+### Research synthesis
+
+| Source | Insight |
+|--------|---------|
+| Cycles 36–38 | Incremental insert shipped; remove still O(E) rebuild. |
+| Sparse CSR practice | Delete entry → filter row NNZ, renumber higher indices, collapse empty rows. |
+| Graph engines | Hot-path remove without full rebuild is standard for dynamic CSR. |
+
+### Hypothesis
+
+**Incremental CSR remove:** `csr_remove_entry_at` filters the deleted entry index, renumbers `idx > pos`, collapses zero-degree rows; `remove()` no longer calls `rebuild_adj`.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Code | `csr_remove_entry_at`; `remove()` incremental path |
+| Readiness | `relation_adj_csr_remove_incremental: true` |
+| Tests | `relation_csr_remove_incremental_matches_rebuild` + extended adj suite |
+| Lexicon | `csr-remove-incremental` |
+
+### Next vectors
+
+1. mmap CSR for multi-million edge stalks.
+2. Adaptive Fisher band count / residual_dims.
+3. Further wake path slim.
+4. Batch CSR remove / tombstone compaction.
+
 
