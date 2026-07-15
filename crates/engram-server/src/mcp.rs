@@ -98,6 +98,8 @@ static MOMENTUM_LRU: std::sync::LazyLock<
 struct ProcessSheafCache {
     fingerprint: u64,
     loaded: bool,
+    /// RSI Cycle 74: last successful load/skip — soft-stale avoids dir walk + store fetch.
+    last_ok: Option<std::time::Instant>,
 }
 
 static PROCESS_SHEAF_CACHE: std::sync::LazyLock<std::sync::Mutex<ProcessSheafCache>> =
@@ -105,9 +107,27 @@ static PROCESS_SHEAF_CACHE: std::sync::LazyLock<std::sync::Mutex<ProcessSheafCac
         std::sync::Mutex::new(ProcessSheafCache {
             fingerprint: 0,
             loaded: false,
+            last_ok: None,
         })
     });
 
+/// RSI Cycle 74: soft-stale window for warm sheaf skip (default 900s ≈ 15m RSI loop).
+/// Env: `ENGRAM_SHEAF_SOFT_STALE_SECS` (0 = disable soft-stale; always fingerprint).
+fn sheaf_soft_stale_secs() -> u64 {
+    std::env::var("ENGRAM_SHEAF_SOFT_STALE_SECS")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(900)
+}
+
+/// Mark in-memory sheaf cache as verified for soft-stale window.
+fn mark_sheaf_cache_ok(fingerprint: u64) {
+    if let Ok(mut cache) = PROCESS_SHEAF_CACHE.lock() {
+        cache.fingerprint = fingerprint;
+        cache.loaded = true;
+        cache.last_ok = Some(std::time::Instant::now());
+    }
+}
 const PROCESS_SHEAF_SUBDIRS: &[&str] = &[
     "ritual",
     "harness",
@@ -250,6 +270,29 @@ fn load_process_sheaf(store: &SharedStore) -> Result<(), String> {
     // Called at mcp_engram_session_start for dynamic registration at wake-up boundary.
     // NOTE: Fully portable for public clones (no /path/to paths). See processes/, docs/SUBSTRATE_WINS_PLAN.md, AGENT_INTEGRATION_GUIDE.md.
     let t_load = std::time::Instant::now();
+    // RSI Cycle 74: soft-stale — skip processes/ walk + store fetch + disk write when
+    // this process already verified the sheaf within ENGRAM_SHEAF_SOFT_STALE_SECS (default 900).
+    // Matches readiness soft-stale / 15m RSI fire cadence; process tomls rarely change mid-window.
+    {
+        let soft = sheaf_soft_stale_secs();
+        if soft > 0 {
+            if let Ok(cache) = PROCESS_SHEAF_CACHE.lock() {
+                if cache.loaded {
+                    if let Some(t) = cache.last_ok {
+                        if t.elapsed().as_secs() < soft {
+                            if sheaf_timing_enabled() {
+                                eprintln!(
+                                    "TIMING[load_process_sheaf]: soft-stale skip (elapsed_ms={}, soft_secs={soft})",
+                                    t.elapsed().as_millis()
+                                );
+                            }
+                            return Ok(());
+                        }
+                    }
+                }
+            }
+        }
+    }
     let base = std::env::var("ENGRAM_PROCESSES_DIR").unwrap_or_else(|_| {
         std::env::current_dir()
             .map(|p| p.join("processes").to_string_lossy().into_owned())
@@ -275,8 +318,12 @@ fn load_process_sheaf(store: &SharedStore) -> Result<(), String> {
                         "TIMING[load_process_sheaf]: skip (processes/ unchanged, fingerprint={fingerprint}, disk_warm=1)"
                     );
                 }
-                // Refresh disk fingerprint so future MCP restarts keep skipping.
-                write_disk_sheaf_fingerprint(fingerprint);
+                // Cycle 74: only refresh disk when missing/mismatch (avoid fsync every wake).
+                if read_disk_sheaf_fingerprint() != Some(fingerprint) {
+                    write_disk_sheaf_fingerprint(fingerprint);
+                }
+                drop(cache);
+                mark_sheaf_cache_ok(fingerprint);
                 return Ok(());
             }
         }
@@ -498,10 +545,7 @@ fn load_process_sheaf(store: &SharedStore) -> Result<(), String> {
             t_load.elapsed().as_secs_f32()
         );
     }
-    if let Ok(mut cache) = PROCESS_SHEAF_CACHE.lock() {
-        cache.fingerprint = fingerprint;
-        cache.loaded = true;
-    }
+    mark_sheaf_cache_ok(fingerprint);
     // Cycle 48: survive MCP process restart without 60s sheaf reload.
     write_disk_sheaf_fingerprint(fingerprint);
     Ok(())
@@ -9800,6 +9844,42 @@ mod tests {
         let _ = std::fs::remove_dir_all(&tmp);
     }
 
+    /// RSI Cycle 74: soft-stale hit skips dir walk / store / disk (no full sheaf reload).
+    #[test]
+    fn sheaf_soft_stale_skips_second_load() {
+        let tmp = unique_tmp("sheaf_soft");
+        std::env::set_var("ENGRAM_SHEAF_SOFT_STALE_SECS", "900");
+        // Seed cache as if a prior wake already verified the sheaf.
+        mark_sheaf_cache_ok(0xC74_5007_57A1E);
+        let store: SharedStore = open_store(&tmp);
+        let t0 = std::time::Instant::now();
+        assert!(
+            load_process_sheaf(&store).is_ok(),
+            "soft-stale path must return Ok without loading"
+        );
+        let soft_ms = t0.elapsed().as_millis();
+        assert!(
+            soft_ms < 50,
+            "soft-stale load should be near-instant, got {soft_ms}ms"
+        );
+        // Fresh store never registered wake-up — proves we did not fall through to full load.
+        {
+            let lock = store.lock().unwrap();
+            assert!(
+                lock.fetch_block_high_priority("process:engram.ritual.wake-up")
+                    .is_none(),
+                "soft-stale must not register process blocks into an empty store"
+            );
+        }
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::env::remove_var("ENGRAM_SHEAF_SOFT_STALE_SECS");
+        if let Ok(mut cache) = PROCESS_SHEAF_CACHE.lock() {
+            cache.loaded = false;
+            cache.fingerprint = 0;
+            cache.last_ok = None;
+        }
+    }
+
     #[test]
     fn test_load_process_sheaf_registers_from_processes_dir() {
         let tmp = unique_tmp("sheaf");
@@ -9812,9 +9892,17 @@ mod tests {
             .unwrap();
         let proc_dir = root.join("processes").to_string_lossy().into_owned();
         std::env::set_var("ENGRAM_PROCESSES_DIR", &proc_dir);
+        // Cycle 74: disable soft-stale so this registration test always reloads into fresh store.
+        std::env::set_var("ENGRAM_SHEAF_SOFT_STALE_SECS", "0");
+        if let Ok(mut cache) = PROCESS_SHEAF_CACHE.lock() {
+            cache.loaded = false;
+            cache.fingerprint = 0;
+            cache.last_ok = None;
+        }
         let store: SharedStore = open_store(&tmp);
         let res = load_process_sheaf(&store);
         assert!(res.is_ok(), "load_process_sheaf should succeed on real processes/ toml data (covers mcp.rs:105 critical path)");
+        std::env::remove_var("ENGRAM_SHEAF_SOFT_STALE_SECS");
 
         // Verify side-effect: at least one process:engram.* block registered from real toml parse (ritual/monitor/process subdirs; monitor includes self_improvement data)
         let has_registered = {
