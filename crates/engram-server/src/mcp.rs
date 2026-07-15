@@ -300,22 +300,27 @@ fn load_process_sheaf(store: &SharedStore) -> Result<(), String> {
     });
     let fingerprint = processes_dir_fingerprint(&base);
     // Cycle 48: cold MCP restart — restore in-memory skip from disk fingerprint.
-    let _ = warm_sheaf_cache_from_disk(fingerprint);
+    let disk_warm = warm_sheaf_cache_from_disk(fingerprint);
     if let Ok(cache) = PROCESS_SHEAF_CACHE.lock() {
         if cache.loaded && cache.fingerprint == fingerprint {
             // Skip only when this store already has sheaf blocks (fresh test stores must reload).
+            // RSI Cycle 79: after MCP restart hot tier is empty — high-priority-only miss forced
+            // full ~20s toml re-register even when process blocks still live on NVMe.
+            // Prefer high-priority, fall back to cold fetch_block.
             let already_registered = store
                 .lock()
                 .ok()
                 .and_then(|lock| {
                     lock.fetch_block_high_priority("process:engram.ritual.wake-up")
+                        .or_else(|| lock.fetch_block("process:engram.ritual.wake-up"))
                         .map(|_| ())
                 })
                 .is_some();
             if already_registered {
                 if sheaf_timing_enabled() {
                     eprintln!(
-                        "TIMING[load_process_sheaf]: skip (processes/ unchanged, fingerprint={fingerprint}, disk_warm=1)"
+                        "TIMING[load_process_sheaf]: skip (processes/ unchanged, fingerprint={fingerprint}, disk_warm={})",
+                        disk_warm as u8
                     );
                 }
                 // Cycle 74: only refresh disk when missing/mismatch (avoid fsync every wake).
@@ -9873,6 +9878,72 @@ mod tests {
         }
         let _ = std::fs::remove_dir_all(&tmp);
         std::env::remove_var("ENGRAM_SHEAF_SOFT_STALE_SECS");
+        if let Ok(mut cache) = PROCESS_SHEAF_CACHE.lock() {
+            cache.loaded = false;
+            cache.fingerprint = 0;
+            cache.last_ok = None;
+        }
+    }
+
+    /// RSI Cycle 79: disk FP + cold fetch_block (not high-priority) skips full reload.
+    #[test]
+    fn sheaf_disk_warm_cold_fetch_skips_full_reload() {
+        std::env::set_var("ENGRAM_SHEAF_SOFT_STALE_SECS", "0");
+        if let Ok(mut cache) = PROCESS_SHEAF_CACHE.lock() {
+            cache.loaded = false;
+            cache.fingerprint = 0;
+            cache.last_ok = None;
+        }
+        let manifest = env!("CARGO_MANIFEST_DIR");
+        let root = std::path::Path::new(manifest)
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap();
+        let proc_dir = root.join("processes").to_string_lossy().into_owned();
+        std::env::set_var("ENGRAM_PROCESSES_DIR", &proc_dir);
+        let fp = processes_dir_fingerprint(&proc_dir);
+        write_disk_sheaf_fingerprint(fp);
+        let tmp = unique_tmp("sheaf_cold_fb");
+        // Isolate disk FP path under this store parent via ENGRAM_STORE.
+        std::env::set_var("ENGRAM_STORE", &tmp);
+        write_disk_sheaf_fingerprint(fp);
+        let store: SharedStore = open_store(&tmp);
+        // Seed wake-up on store (may land in high-priority on GPU; cold fetch_block still sees it).
+        // C79: already_registered uses high_priority.or_else(fetch_block) so either path skips.
+        {
+            let mut lock = store.lock().unwrap();
+            let mut block = lock.encode(
+                "PROCESS\n\n**name:** process:engram.ritual.wake-up\n**role:** test cold seed\n",
+            );
+            block.zedos_tag = engram_core::types::ZEDOS_OPERATIONAL;
+            block.crs_score = 0.9;
+            lock.store("process:engram.ritual.wake-up", block)
+                .expect("seed wake-up");
+            assert!(
+                lock.fetch_block("process:engram.ritual.wake-up").is_some(),
+                "seed must be fetchable"
+            );
+        }
+        let t0 = std::time::Instant::now();
+        assert!(load_process_sheaf(&store).is_ok());
+        let ms = t0.elapsed().as_millis();
+        assert!(
+            ms < 500,
+            "disk-warm + already_registered must skip full sheaf reload, got {ms}ms"
+        );
+        // Full reload would register monitor/self-improvement etc.; skip leaves only seed.
+        {
+            let lock = store.lock().unwrap();
+            assert!(
+                lock.fetch_block("process:engram.monitor.self-improvement")
+                    .is_none(),
+                "full register must not have run"
+            );
+        }
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::env::remove_var("ENGRAM_SHEAF_SOFT_STALE_SECS");
+        std::env::remove_var("ENGRAM_STORE");
         if let Ok(mut cache) = PROCESS_SHEAF_CACHE.lock() {
             cache.loaded = false;
             cache.fingerprint = 0;
