@@ -2719,3 +2719,37 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 2. Cut harness residual if still ≥3.
 3. Full 8192-d σ² tensors (long horizon — not wake path).
 
+## Cycle 76 — ultra-lean harness skip ego.leg3 (2026-07-15)
+
+### Master baseline
+
+- Post Cycle 75: PR **#123** `5433bbeb` — wake gather existence-only.
+- **Live warm (MCP still pre-C74/C75):** total=**18**, readiness=**0**, harness=**3**, gather=**4**, sheaf=**2**, session_block=**0**.
+- Next residual after gather/sheaf: harness_ms≈3 (ego.leg3 + primary_goal resolve + optional recent walk).
+
+### Research synthesis
+
+| Source | Insight |
+|--------|---------|
+| C69 ego path | Still one ego.leg3 read per wake for drift. |
+| resolve_active_primary_goal | 2–3 high-priority fetches when manifest already has primary_goal. |
+| recent(24) fallback | Rarely needed when handoff carries trace_chain_head. |
+
+### Hypothesis
+
+**Manifest-first + no ego.leg3:** primary_goal from rehydration_manifest; skip ego read (surprise=0, turn/minute sentinel only); no recent walk for trace head.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Code | `build_harness_bundle_ultra_lean_wake` C76 cuts |
+| Readiness | `wake_harness_skip_ego_leg3`, `wake_harness_manifest_primary_goal` |
+| Test | extended `ultra_lean_wake_harness_name_only_presentation` (present=false) |
+
+### Next vectors
+
+1. MCP swap C74–C76; warm harness≤1, gather≤1, sheaf≤2, total≤10; cold readiness≤30.
+2. Soft-stale rehydration manifest parse if harness still ≥2.
+3. Full 8192-d σ² tensors (long horizon — not wake path).
+

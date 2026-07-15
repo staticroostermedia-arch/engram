@@ -1490,22 +1490,23 @@ fn build_harness_bundle_ultra_lean_wake(
     session_intent: Option<&str>,
     presentation_k: usize,
 ) -> Value {
-    let primary_goal = crate::store::resolve_active_primary_goal(store);
     let rehydration_manifest = store.resolve_rehydration_manifest_for_wake();
-    let mut trace_chain_head: Option<String> = rehydration_manifest
+    // RSI Cycle 76: prefer manifest primary_goal — skip resolve_active_primary_goal (2–3 block reads)
+    // when handoff already carries the name.
+    let primary_goal = rehydration_manifest
+        .as_ref()
+        .and_then(|m| m.get("primary_goal"))
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+        .or_else(|| crate::store::resolve_active_primary_goal(store));
+    // RSI Cycle 76: trace head only from manifest — no access_index.recent(24) walk on ultra-lean.
+    let trace_chain_head: Option<String> = rehydration_manifest
         .as_ref()
         .and_then(|m| m.get("trace_chain_head"))
         .and_then(|v| v.as_str())
         .filter(|h| !h.is_empty())
         .map(|s| s.to_string());
-    if trace_chain_head.is_none() {
-        for (concept, _) in store.access_index.recent(24) {
-            if concept.starts_with("trace:") {
-                trace_chain_head = Some(concept);
-                break;
-            }
-        }
-    }
     let mut hubs = hub_anchors_from_manifest(rehydration_manifest.as_ref());
     if hubs.is_empty() {
         hubs.push("primary_goal".into());
@@ -1524,10 +1525,11 @@ fn build_harness_bundle_ultra_lean_wake(
         .and_then(|v| v.as_array())
         .map(|arr| arr.iter().take(6).cloned().collect::<Vec<_>>())
         .unwrap_or_default();
-    // RSI Cycle 69: one ego.leg3 read for drift only — skip second read + 8192-d p_vector_norm.
-    let ego_block = read_ego_block();
-    let ego_drift = ego_block.as_ref().map(|b| b.energetics.dv.clamp(0.0, 1.0));
-    let surprise_pressure = ego_drift.unwrap_or(0.0);
+    // RSI Cycle 76: skip ego.leg3 entirely on ultra-lean (C69 still paid one read).
+    // Turn/minute sentinel alone drives rehydrate nudge; ego drift via get_continuation_bundle.
+    let ego_block: Option<engram_core::types::HolographicBlock> = None;
+    let ego_drift: Option<f32> = None;
+    let surprise_pressure = 0.0_f32;
     let (turns, checkpoint) = store.sentinel_snapshot();
     let minutes = crate::continuity_spikes::minutes_since_checkpoint(
         checkpoint,
@@ -2733,7 +2735,7 @@ SESSION HANDOFF PACKET v1 (structured JSON for next-wake read_concept)
         let ad = bundle.get("agent_discipline").expect("agent_discipline");
         assert_eq!(ad.get("lean_wake").and_then(|v| v.as_bool()), Some(true));
         assert!(ad.get("turn_protocol").is_none() || ad.get("lean_wake").is_some());
-        // C69: ultra-lean ego skips 8192-d p-norm
+        // C69/C76: ultra-lean ego skips p-norm and ego.leg3 (present=false without seeded ego)
         let ego = bundle.get("ego_snapshot").expect("ego_snapshot");
         assert_eq!(
             ego.get("ultra_lean").and_then(|v| v.as_bool()),
@@ -2747,6 +2749,11 @@ SESSION HANDOFF PACKET v1 (structured JSON for next-wake read_concept)
                     .map(|v| v.is_null())
                     .unwrap_or(false),
             "C69 must skip p-norm: {ego:?}"
+        );
+        assert_eq!(
+            ego.get("present").and_then(|v| v.as_bool()),
+            Some(false),
+            "C76 skip ego.leg3 on ultra-lean: {ego:?}"
         );
         // RSI Cycle 72: single-pass actions + lean turn_protocol stub
         let actions = bundle
