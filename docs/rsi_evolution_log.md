@@ -2753,3 +2753,36 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 2. Soft-stale rehydration manifest parse if harness still ≥2.
 3. Full 8192-d σ² tensors (long horizon — not wake path).
 
+## Cycle 77 — rehydration manifest soft-stale (2026-07-15)
+
+### Master baseline
+
+- Post Cycle 76: PR **#124** `168ca3ed` — skip ego.leg3.
+- **Live warm (MCP still pre-C74):** total=**66** (spike; detail cont=9), harness=**3**, gather=**4**, sheaf=**2**.
+- Handoff residual: `resolve_rehydration_manifest_for_wake` re-reads + parses handoff every wake.
+
+### Research synthesis
+
+| Source | Insight |
+|--------|---------|
+| harness_ms≈3 | Still dominated by handoff body read + JSON parse for manifest. |
+| Sheaf soft-stale C74 | Same 900s / 15m RSI pattern. |
+| Handoff rewrite | Must invalidate cache on `persist_session_handoff_latest`. |
+
+### Hypothesis
+
+**Soft-stale manifest cache:** process-global last_ok + Value; default 900s; invalidate on handoff persist.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Code | `REHYDRATION_MANIFEST_CACHE`, soft-stale get/set/invalidate |
+| Readiness | `wake_rehydration_manifest_soft_stale` |
+| Test | `rehydration_manifest_soft_stale_second_resolve` |
+
+### Next vectors
+
+1. MCP swap C74–C77; warm harness≤1 gather≤1 sheaf≤2 total≤10; cold readiness≤30.
+2. Full 8192-d σ² tensors (long horizon — not wake path).
+
