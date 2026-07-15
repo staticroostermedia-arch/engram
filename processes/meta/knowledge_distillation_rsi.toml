@@ -76,6 +76,7 @@ list = [
   "lexicon:word:csr-incremental-insert",
   "lexicon:word:sheaf-timing-gate",
   "lexicon:word:relation-adj-csr-only",
+  "lexicon:word:csr-remove-incremental",
 ]
 
 [execute]

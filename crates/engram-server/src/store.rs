@@ -271,9 +271,9 @@ pub struct RelationIndex {
     /// When > 0, `add`/`remove` defer disk flush until the outer batch ends.
     defer_flush_depth: u32,
     flush_pending: bool,
-    /// RSI Cycles 30–38: CSR incident index (concept → row → prefer-static entry indices).
-    /// Not serialized — rebuilt on load/refresh/remove; incremental insert on add (Cycle 37–38).
-    /// Cycle 38: CSR-only (HashMap-of-Vec adj removed).
+    /// RSI Cycles 30–39: CSR incident index (concept → row → prefer-static entry indices).
+    /// Not serialized — rebuilt on load/refresh; incremental insert on add (37–38);
+    /// incremental remove (39). Cycle 38: CSR-only (HashMap-of-Vec adj removed).
     csr_row: std::collections::HashMap<String, u32>,
     /// Row offsets into `csr_indices` (len = n_nodes + 1).
     csr_offsets: Vec<u32>,
@@ -446,6 +446,57 @@ impl RelationIndex {
         self.csr_indices[s..e].copy_from_slice(&slice);
     }
 
+    /// RSI Cycle 39: drop one entry from CSR without full `rebuild_adj`.
+    /// Filters `entry_idx`, renumbers indices `> entry_idx`, collapses empty rows.
+    /// Prefer-static order within surviving rows is preserved (filter only).
+    fn csr_remove_entry_at(&mut self, entry_idx: u32) {
+        let nrows = self.csr_offsets.len().saturating_sub(1);
+        if nrows == 0 {
+            self.csr_row.clear();
+            self.csr_indices.clear();
+            self.csr_offsets = vec![0];
+            return;
+        }
+        // Reverse map: row → concept (for rebuilding csr_row after empty collapse).
+        let mut row_to_concept: Vec<Option<String>> = vec![None; nrows];
+        for (c, &r) in &self.csr_row {
+            let r = r as usize;
+            if r < nrows {
+                row_to_concept[r] = Some(c.clone());
+            }
+        }
+        let mut new_indices: Vec<u32> =
+            Vec::with_capacity(self.csr_indices.len().saturating_sub(2));
+        let mut new_offsets: Vec<u32> = Vec::with_capacity(self.csr_offsets.len());
+        new_offsets.push(0);
+        let mut new_row_map: std::collections::HashMap<String, u32> =
+            std::collections::HashMap::with_capacity(self.csr_row.len());
+        let mut new_row: u32 = 0;
+        for row in 0..nrows {
+            let s = self.csr_offsets[row] as usize;
+            let e = self.csr_offsets[row + 1] as usize;
+            let start_len = new_indices.len();
+            for &idx in &self.csr_indices[s..e] {
+                if idx == entry_idx {
+                    continue;
+                }
+                new_indices.push(if idx > entry_idx { idx - 1 } else { idx });
+            }
+            if new_indices.len() == start_len {
+                // Empty row after remove — drop concept from CSR.
+                continue;
+            }
+            if let Some(Some(concept)) = row_to_concept.get(row) {
+                new_row_map.insert(concept.clone(), new_row);
+            }
+            new_row = new_row.saturating_add(1);
+            new_offsets.push(new_indices.len() as u32);
+        }
+        self.csr_indices = new_indices;
+        self.csr_offsets = new_offsets;
+        self.csr_row = new_row_map;
+    }
+
     /// Coalesce relation_index.json writes during batch ingest (force_ingest, glue, …).
     pub fn begin_defer_flush(&mut self) {
         self.defer_flush_depth = self.defer_flush_depth.saturating_add(1);
@@ -476,6 +527,7 @@ impl RelationIndex {
     }
 
     /// Remove a directed edge if present (e.g. primary_goal --serves--> demoted artifact).
+    /// RSI Cycle 39: incremental CSR remove (no full `rebuild_adj`); indices renumbered.
     pub fn remove(&mut self, from: &str, label: &str, to: &str) -> bool {
         if let Some(pos) = self
             .entries
@@ -483,8 +535,7 @@ impl RelationIndex {
             .position(|e| e.from == from && e.label == label && e.to == to)
         {
             self.entries.remove(pos);
-            // Indices after `pos` shift — full rebuild is correct and rare.
-            self.rebuild_adj();
+            self.csr_remove_entry_at(pos as u32);
             self.flush_if_needed();
             true
         } else {
@@ -2239,6 +2290,7 @@ impl StoreHandle {
             "relation_adj_csr": true,
             "relation_adj_csr_incremental": true,
             "relation_adj_csr_only": true,
+            "relation_adj_csr_remove_incremental": true,
             // RSI Cycle 34: sovereignty encrypt-at-rest dogfood surface
             "encrypt_at_rest_enabled": crate::secure_context::encrypt_at_rest_enabled(),
             "encrypt_at_rest_env": "ENGRAM_ENCRYPT_AT_REST",
@@ -9814,7 +9866,8 @@ SESSION HANDOFF PACKET v1
         assert!((min_p1 - 0.12).abs() < 1e-5, "peer as `to`: {}", min_p1);
         assert_eq!(store.min_incident_edge_volatility("missing:x"), 0.0);
 
-        // Remove shifts indices — rebuild must keep min correct
+        // Remove shifts indices — incremental CSR must keep min correct (Cycle 39)
+        let nnz_before = store.relation_index.csr_nnz();
         assert!(store.relation_index.remove("hub:adj", "implements", "p1"));
         let after_rm = store.min_incident_edge_volatility("hub:adj");
         assert!(
@@ -9824,6 +9877,21 @@ SESSION HANDOFF PACKET v1
         );
         assert_eq!(store.min_incident_edge_volatility("p1"), 0.0);
         assert_eq!(store.relation_index.entries.len(), 2);
+        assert!(
+            store.relation_index.csr_nnz() < nnz_before,
+            "incremental remove shrinks CSR nnz"
+        );
+        assert!(
+            store.relation_index.incident_indices("p1").is_empty(),
+            "p1 row collapsed after last incident removed"
+        );
+        // Remaining entry indices must be valid under renumbering
+        for &i in store.relation_index.incident_indices("hub:adj") {
+            assert!(
+                (i as usize) < store.relation_index.entries.len(),
+                "stale CSR index {i} after remove"
+            );
+        }
 
         // Reload from disk rebuilds adj
         let path = dir.to_string_lossy().to_string();
@@ -9836,6 +9904,65 @@ SESSION HANDOFF PACKET v1
             "load rebuild_adj: {}",
             reloaded
         );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// RSI Cycle 39: multi-remove keeps CSR consistent with full rebuild oracle.
+    #[test]
+    fn relation_csr_remove_incremental_matches_rebuild() {
+        let dir = test_store_dir("csr_remove_inc");
+        let mut store = StoreHandle::new(&dir.to_string_lossy());
+        store.remember("a", "a").unwrap();
+        store.remember("b", "b").unwrap();
+        store.remember("c", "c").unwrap();
+        store.remember("d", "d").unwrap();
+        store
+            .relate_with_volatility("a", "b", "implements", Some(0.12))
+            .unwrap();
+        store
+            .relate_with_volatility("a", "c", "supersedes", Some(0.80))
+            .unwrap();
+        store
+            .relate_with_volatility("b", "d", "implements", Some(0.15))
+            .unwrap();
+        store
+            .relate_with_volatility("c", "d", "depends_on", Some(0.50))
+            .unwrap();
+
+        assert!(store.relation_index.remove("a", "supersedes", "c"));
+        // Oracle: full rebuild should equal incremental state
+        let mut oracle = store.relation_index.entries.clone();
+        let nnz_inc = store.relation_index.csr_nnz();
+        let nrows_inc = store.relation_index.csr_nrows();
+        let mut inc_hub: Vec<u32> = store.relation_index.incident_indices("a").to_vec();
+        store.relation_index.rebuild_adj();
+        assert_eq!(
+            store.relation_index.csr_nnz(),
+            nnz_inc,
+            "nnz after rebuild matches incremental"
+        );
+        assert_eq!(
+            store.relation_index.csr_nrows(),
+            nrows_inc,
+            "nrows after rebuild matches incremental"
+        );
+        let mut rebuilt: Vec<u32> = store.relation_index.incident_indices("a").to_vec();
+        inc_hub.sort();
+        rebuilt.sort();
+        assert_eq!(inc_hub, rebuilt, "incident set for a matches rebuild");
+        assert_eq!(store.relation_index.entries.len(), oracle.len());
+        assert!(
+            store.relation_index.incident_indices("c").len() >= 1,
+            "c still has d edge"
+        );
+        // Remove last edge of a concept → empty row collapse
+        assert!(store.relation_index.remove("a", "implements", "b"));
+        assert!(
+            store.relation_index.incident_indices("a").is_empty(),
+            "a has no remaining edges"
+        );
+        store.relation_index.rebuild_adj();
+        assert!(store.relation_index.incident_indices("a").is_empty());
         let _ = std::fs::remove_dir_all(&dir);
     }
 
