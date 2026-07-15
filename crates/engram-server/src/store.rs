@@ -2768,6 +2768,7 @@ impl StoreHandle {
                 "wake_continuation_soft_stale": true,
                 "wake_continuation_soft_stale_env": "ENGRAM_WAKE_CONTINUATION_SOFT_STALE_SECS",
                 "wake_continuation_soft_stale_secs": 1800,
+                "wake_skip_warm_on_cont_soft_stale": true,
                 "wake_harness_single_manifest": true,
                 "wake_assemble_ms": true,
                 "wake_assemble_lean": true,
@@ -4776,6 +4777,20 @@ impl StoreHandle {
     /// Full continuation bundle (uses TTL cache). Prefer for `get_continuation_bundle`.
     pub fn build_continuation_bundle(&mut self, session_intent: Option<&str>) -> serde_json::Value {
         self.build_continuation_bundle_inner(session_intent, true, None)
+    }
+
+    /// RSI Cycle 85: true when lean wake continuation soft-stale cache would hit.
+    /// Used to skip warm_wake_anchors + sentinel before build (saves ~4ms on warm RSI fires).
+    pub fn wake_continuation_soft_stale_valid(&self) -> bool {
+        let soft = Self::wake_continuation_soft_stale_secs();
+        if soft == 0 || self.wake_continuation_cache.is_none() {
+            return false;
+        }
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        now.saturating_sub(self.wake_continuation_cached_at) < soft
     }
 
     /// RSI Cycle 42: lean wake path — smaller presentation K, does **not** write full-bundle cache
@@ -9831,6 +9846,11 @@ mod ingest_ast_tests {
             "C80 lean surfaces handoff when present (soft-stale presence)"
         );
         // RSI Cycle 83: second wake hits soft-stale continuation cache.
+        // RSI Cycle 85: soft-stale valid → skip warm/sentinel prep.
+        assert!(
+            store.wake_continuation_soft_stale_valid(),
+            "C85 soft-stale valid after first wake build"
+        );
         let t0 = std::time::Instant::now();
         let bundle2 = store.build_continuation_bundle_wake(Some("c83 soft continuation"));
         assert!(
@@ -9854,6 +9874,12 @@ mod ingest_ast_tests {
         assert_eq!(
             ready
                 .get("wake_continuation_soft_stale")
+                .and_then(|v| v.as_bool()),
+            Some(true)
+        );
+        assert_eq!(
+            ready
+                .get("wake_skip_warm_on_cont_soft_stale")
                 .and_then(|v| v.as_bool()),
             Some(true)
         );
