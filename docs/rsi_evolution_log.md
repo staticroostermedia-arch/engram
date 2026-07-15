@@ -2889,3 +2889,36 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 2. Soft-stale / skip local_stratum bootstrap residual (~3ms).
 3. Full 8192-d σ² tensors (long horizon — not wake path).
 
+## Cycle 81 — sheaf soft-stale sliding window (2026-07-15)
+
+### Master baseline
+
+- Post Cycle 80: PR **#128** `6e4012ed` — handoff presence soft-stale.
+- **Warm:** total=**16** sheaf=**8** gather=**4** harness=**2** (MCP still pre-C78–C80 for some flags).
+- 15m RSI fires at the edge of fixed 900s soft-stale → every fire re-walked `processes/` (sheaf_ms≈8).
+
+### Research synthesis
+
+| Source | Insight |
+|--------|---------|
+| Fixed last_ok | Soft-stale hit did not refresh → window expires at interval cadence. |
+| 15m loop | Default soft must be > interval or slide on hit. |
+
+### Hypothesis
+
+**Slide last_ok on soft-stale hit** + default soft **1800s**.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Code | refresh `last_ok` on soft-stale hit; default 1800 |
+| Readiness | `wake_sheaf_soft_stale_slide`, `sheaf_soft_stale_secs=1800` |
+| Test | extended `sheaf_soft_stale_skips_second_load` |
+
+### Next vectors
+
+1. MCP swap C78–C81; warm sheaf=0 total≤6 gather≤1; cold sheaf≤50 readiness≤30.
+2. Soft-stale local_stratum if still ≥2ms.
+3. Full 8192-d σ² tensors (long horizon — not wake path).
+
