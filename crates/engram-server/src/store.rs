@@ -2767,6 +2767,8 @@ impl StoreHandle {
                 "wake_gather_skip_primary_resolve": true,
                 "wake_gather_skip_handoff_probe": true,
                 "wake_handoff_continuity_fields": true,
+                "wake_csf_lean_hub_crs_neutral": true,
+                "wake_trusted_tiles_mvp_fallback": true,
                 "wake_continuation_soft_stale": true,
                 "wake_continuation_soft_stale_env": "ENGRAM_WAKE_CONTINUATION_SOFT_STALE_SECS",
                 "wake_continuation_soft_stale_secs": 1800,

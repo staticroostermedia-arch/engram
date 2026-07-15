@@ -563,11 +563,21 @@ pub fn build_trusted_tiles_opts(
         }));
     };
 
-    if let Some(goal) = primary_goal {
+    let mut consider_goal_serves = |goal: &str, source: &str| {
         for (_label, other) in store.search_relations(goal, Some("serves"), "to") {
             if let Some(block) = store.fetch_block_high_priority(&other) {
-                consider(&other, "goal_serves", block.crs_score);
+                consider(&other, source, block.crs_score);
             }
+        }
+    };
+
+    if let Some(goal) = primary_goal {
+        consider_goal_serves(goal, "goal_serves");
+        // MQ Cycle 2: child primaries often have no tile --serves--> edges yet.
+        // Always inherit mvp playbooks (deduped via `seen`) so rehydration keeps
+        // trusted_tiles and CSF does not collapse on no_trusted_tiles.
+        if goal != "goal:engram_mvp_v1" {
+            consider_goal_serves("goal:engram_mvp_v1", "mvp_fallback_serves");
         }
     }
 

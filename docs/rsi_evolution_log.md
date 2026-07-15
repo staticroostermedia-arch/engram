@@ -3121,3 +3121,33 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 2. `mq_continuity_csf` mean_hub_crs component.
 3. `mq_verify_cadence` / PRAXIS contract issue.
 4. Merge PR #134 C86 if latency cold assemble still residual after quality green.
+
+## MQ Cycle 2 — CSF lean hub CRS neutral + trusted_tiles mvp fallback (2026-07-15)
+
+### VERIFY₀ baseline
+
+- master@`68586a40` MQ1 #135.
+- MCP swapped: `wake_handoff_continuity_fields` LIVE; structured_handoff has decisions_head + memory_quality.
+- next_vector null on prior handoff (packet built pre-MQ1 binary) — schema path works.
+- CSF warm pre-swap **0.72**; cold post-swap **0.52** (`no_trusted_tiles`, bvh cold, mean_hub_crs **0.0**).
+- Lawfulness: verify healthy (0 issues sample 40).
+- Latency floor: readiness_ms=0; cold assemble_ms≈36 (C86 still open PR #134).
+
+### SELECT
+
+**mq_continuity_csf** — continuity primary: false-negative hub CRS + empty trusted_tiles under child primary.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| CSF | lean all-zero presentation CRS → `None` (neutral hub weight) |
+| Trusted tiles | inherit `goal:engram_mvp_v1` serves when primary ≠ mvp (deduped) |
+| Flags | `wake_csf_lean_hub_crs_neutral`, `wake_trusted_tiles_mvp_fallback` |
+| Tests | `mean_crs_from_stratum_ignores_lean_zero_previews` |
+
+### Next vectors
+
+1. MCP swap MQ2; warm CSF ≥0.80 without no_trusted_tiles after session_end with primary=memory_quality.
+2. `mq_verify_cadence` metric tile if needed.
+3. Merge PR #134 C86 for cold assemble residual.
