@@ -2809,6 +2809,7 @@ impl StoreHandle {
                 "mq_tiles_boundaries_session": true,
                 "mq_csf_session_boundary_prefer": true,
                 "mq_trusted_tiles_boundary_recency": true,
+                "mq_trusted_tiles_boundary_merge_fresh": true,
                 "mq_hub_crs_lean_sample": true,
                 "mq_rehydrate_injection_completeness_lean": true,
                 "mq_handoff_next_vector_markdown_json": true,
