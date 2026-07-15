@@ -2615,3 +2615,38 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 3. Full 8192-d σ² tensors (long horizon — not wake path).
 4. Keep warm wake total ≤15ms.
 
+## Cycle 73 — async cuFile probe (no ldconfig on wake) (2026-07-15)
+
+### Master baseline
+
+- Post Cycle 72: PR **#120** `4f17d703` — single-pass ultra-lean actions.
+- **Cold first-wake after MCP restart (C70–C72 live):** total=**548**, readiness_ms=**531**, harness=**2**, session_block=**0**, assemble=**0**.
+- **Warm second wake:** total=**28**, readiness=**0**, harness=**5**, session_block=**0**.
+
+### Research synthesis
+
+| Source | Insight |
+|--------|---------|
+| cold readiness 531 | First `cufile_driver_detected` ran `ldconfig -p` (shell). |
+| warm readiness 0 | Soft-stale hit after first build. |
+| session_block 0 | C71 async confirmed live. |
+| harness 2 cold / 5 warm | C72 target ≤3 largely met on cold. |
+
+### Hypothesis
+
+**Non-blocking cuFile probe:** config-file path stays sync; `ldconfig -p` runs once in a bg thread; wake returns false until complete.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Code | `cufile_driver_detected` async ldconfig; `cufile_probe_complete` |
+| Readiness | `wake_cufile_probe_async` |
+
+### Next vectors
+
+1. MCP swap C73; cold readiness_ms ≤30; warm total ≤20.
+2. Cut warm harness residual if still ≥5.
+3. Full 8192-d σ² tensors (long horizon — not wake path).
+4. Keep warm wake total ≤15ms.
+
