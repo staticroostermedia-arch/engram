@@ -2954,3 +2954,36 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 1. MCP swap C78–C82; warm total≤5 gather≤1 local=0 sheaf=0; cold sheaf≤50 readiness≤30.
 2. Full 8192-d σ² tensors (long horizon — not wake path).
 
+## Cycle 83 — wake continuation soft-stale (2026-07-15)
+
+### Master baseline
+
+- Post Cycle 82: PR **#130** `23b090f5` — local_stratum wake soft-stale.
+- **Warm:** total=**14** gather=**4** sheaf=**7** harness=**1** local=**1** (MCP still pre-C78–C82 for many flags).
+- Lean wake never used full-bundle `use_cache` (by design); gather re-ran every session_start.
+
+### Research synthesis
+
+| Source | Insight |
+|--------|---------|
+| gather_ms≈4 | Dominant residual when sheaf soft-stale hits. |
+| Full cache | K=40 path only; wake must stay separate. |
+| Soft-stale pattern | 1800s sliding matches 15m RSI loop. |
+
+### Hypothesis
+
+**Separate wake_continuation soft-stale cache** (1800s slide); zero sub-phase timers on hit.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Code | `wake_continuation_cache` on StoreHandle; slide + timer zeroing |
+| Readiness | `wake_continuation_soft_stale` |
+| Test | extended `wake_ultra_lean_gather_core_anchors_only` |
+
+### Next vectors
+
+1. MCP swap C78–C83; warm total≤5 (soft-stale cont=0); cold sheaf≤50 readiness≤30.
+2. Full 8192-d σ² tensors (long horizon — not wake path).
+
