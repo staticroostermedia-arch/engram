@@ -3297,3 +3297,32 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 1. `mq_consult_before_write` hard default if mint spam measured.
 2. `mq_write_hygiene` / tiles at boundaries.
 3. PR #134 C86 cold assemble residual (CI green, open).
+
+## MQ Cycle 8 — agent consult-before-write hard default (2026-07-15)
+
+### VERIFY₀ baseline
+
+- master@`0c3a7f60` MQ7 #141.
+- MCP swapped: `mq_spatial_locus_aabb_test` LIVE; slim relation_resume.edges=4; lawfulness_snapshot sample_count=3 pass_rate≈0.67.
+- CSF warm **0.925** tiles=6; handoff complete mq_handoff_v1; primary memory_quality.
+- Verify **healthy** metric:mq_verify_1784148948; series growing.
+- Latency floor: readiness_ms=0; post-swap warm assemble ~66–89ms not soft_stale floor fail.
+- Unit tests lean_suggested_actions + MQ7 AABB green.
+
+### SELECT
+
+**mq_consult_before_write** — agent profile still left consult gate soft by default (only wake_queue was hard). Soft allows mint spam with warnings only.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Profile | `ENGRAM_CONSULT_BEFORE_WRITE=hard` default under `ENGRAM_PROFILE=agent` |
+| Flag | `mq_consult_before_write_agent_hard` |
+| Test | `agent_profile_sets_consult_before_write_hard_when_unset` (hard default + soft override preserved) |
+
+### Next vectors
+
+1. MCP swap MQ8; readiness shows consult hard under agent.
+2. `mq_write_hygiene` / tiles boundaries if write discipline still soft in practice.
+3. PR #134 C86 cold assemble residual (CI green, open).

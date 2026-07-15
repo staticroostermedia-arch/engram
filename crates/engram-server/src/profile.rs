@@ -116,6 +116,8 @@ impl EngramProfile {
         Self::set_default("ENGRAM_GOAL_AUTOPAUSE", "1");
         Self::set_default("ENGRAM_GOAL_STALE_HOURS", "72");
         Self::set_default("ENGRAM_WAKE_QUEUE_GATE", "hard");
+        // MQ Cycle 8: hard = block remember/update until recall opens gate (write wisdom)
+        Self::set_default("ENGRAM_CONSULT_BEFORE_WRITE", "hard");
         // soft = warn on repeat context_for_edit until __arc update; hard = 403 block; off = disabled
         Self::set_default("ENGRAM_EDIT_ARC_GATE", "soft");
         // off = skip provlog–q coherence on update (CI); warn = report + log if <0.74; block = reject
@@ -215,6 +217,30 @@ mod tests {
         EngramProfile::Agent.apply();
         assert_eq!(std::env::var("ENGRAM_WAKE_QUEUE_GATE").unwrap(), "hard");
         std::env::remove_var("ENGRAM_WAKE_QUEUE_GATE");
+    }
+
+    /// MQ Cycle 8 (`mq_consult_before_write`): agent profile defaults consult gate hard.
+    #[test]
+    fn agent_profile_sets_consult_before_write_hard_when_unset() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        std::env::remove_var("ENGRAM_CONSULT_BEFORE_WRITE");
+        EngramProfile::Agent.apply();
+        assert_eq!(
+            std::env::var("ENGRAM_CONSULT_BEFORE_WRITE").unwrap(),
+            "hard"
+        );
+        assert_eq!(
+            crate::consult_before_write_gate::ConsultBeforeWriteMode::from_env(),
+            crate::consult_before_write_gate::ConsultBeforeWriteMode::Hard
+        );
+        // Explicit soft must win over profile default (set_default only when unset).
+        std::env::set_var("ENGRAM_CONSULT_BEFORE_WRITE", "soft");
+        EngramProfile::Agent.apply();
+        assert_eq!(
+            std::env::var("ENGRAM_CONSULT_BEFORE_WRITE").unwrap(),
+            "soft"
+        );
+        std::env::remove_var("ENGRAM_CONSULT_BEFORE_WRITE");
     }
 
     #[test]
