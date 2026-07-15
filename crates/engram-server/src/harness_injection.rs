@@ -546,9 +546,15 @@ pub fn build_trusted_tiles_opts(
             })
             .unwrap_or_else(|| "unknown".to_string());
 
+        // MQ Cycle 11: session_boundary is a first-class continuity distillate (MQ10).
         let trusted = matches!(
             tile_type.as_str(),
-            "verified_sequence" | "state_machine" | "formal_spec" | "research_offload"
+            "session_boundary"
+                | "verified_sequence"
+                | "state_machine"
+                | "formal_spec"
+                | "research_offload"
+                | "chain_summary"
         );
         if !trusted {
             return;
@@ -559,7 +565,11 @@ pub fn build_trusted_tiles_opts(
             "crs": crs,
             "tile_type": tile_type,
             "source": source,
-            "reason": "trusted JIT playbook — read_concept before repeating arc",
+            "reason": if tile_type == "session_boundary" {
+                "session compression boundary — rehydrate distillate before mvp playbooks"
+            } else {
+                "trusted JIT playbook — read_concept before repeating arc"
+            },
         }));
     };
 
@@ -590,12 +600,15 @@ pub fn build_trusted_tiles_opts(
     }
 
     tiles.sort_by(|a, b| {
+        // MQ Cycle 11: session_boundary outranks static mvp formal_spec playbooks.
         let type_rank = |t: &str| match t {
-            "verified_sequence" => 0,
-            "state_machine" => 1,
-            "formal_spec" => 2,
-            "research_offload" => 3,
-            _ => 4,
+            "session_boundary" => 0,
+            "verified_sequence" => 1,
+            "state_machine" => 2,
+            "formal_spec" => 3,
+            "research_offload" => 4,
+            "chain_summary" => 5,
+            _ => 6,
         };
         let ta = a.get("tile_type").and_then(|v| v.as_str()).unwrap_or("");
         let tb = b.get("tile_type").and_then(|v| v.as_str()).unwrap_or("");
@@ -611,6 +624,63 @@ pub fn build_trusted_tiles_opts(
     });
     tiles.truncate(6);
     tiles
+}
+
+/// MQ Cycle 11: merge recent `tile:session_boundary_*` into a trusted_tiles list
+/// (lean wake often freezes stale mvp formal_spec entries from rehydration_manifest).
+/// Returns true if the list was modified.
+pub fn ensure_session_boundary_in_trusted_tiles(
+    store: &mut StoreHandle,
+    tiles: &mut Vec<Value>,
+) -> bool {
+    let already = tiles.iter().any(|t| {
+        t.get("tile_type")
+            .and_then(|v| v.as_str())
+            .map(|tt| tt == "session_boundary")
+            .unwrap_or(false)
+            || t.get("concept")
+                .and_then(|v| v.as_str())
+                .map(|c| c.starts_with("tile:session_boundary_"))
+                .unwrap_or(false)
+    });
+    if already {
+        return false;
+    }
+
+    let mut found: Vec<Value> = Vec::new();
+    let mut seen = HashSet::new();
+    for (concept, _) in store.access_index.recent(40) {
+        if !concept.starts_with("tile:session_boundary_") || !seen.insert(concept.clone()) {
+            continue;
+        }
+        let Some(block) = store.fetch_block_high_priority(&concept) else {
+            continue;
+        };
+        if block.crs_score < 0.85 {
+            continue;
+        }
+        found.push(json!({
+            "concept": concept,
+            "crs": block.crs_score,
+            "tile_type": "session_boundary",
+            "source": "session_boundary_prefer",
+            "reason": "session compression boundary — rehydrate distillate before mvp playbooks",
+        }));
+        if found.len() >= 2 {
+            break;
+        }
+    }
+    if found.is_empty() {
+        return false;
+    }
+    // Prepend boundary distillates; keep total ≤ 6.
+    let mut merged = found;
+    for t in tiles.drain(..) {
+        merged.push(t);
+    }
+    merged.truncate(6);
+    *tiles = merged;
+    true
 }
 
 /// Hint when many traces on one goal should condense into a tile.
@@ -1863,7 +1933,8 @@ pub fn build_harness_bundle_with_presentation_k(
 
     // Cycle 53 lean: trust rehydration_manifest.trusted_tiles (no relation/recent walks).
     // Cycle 49 used recent_cap=24; full path still builds 6 via store.
-    let trusted_tiles = if lean_wake {
+    // MQ Cycle 11: always prefer recent session_boundary distillates over frozen mvp formal_spec.
+    let mut trusted_tiles = if lean_wake {
         rehydration_manifest
             .as_ref()
             .and_then(|m| m.get("trusted_tiles"))
@@ -1873,6 +1944,7 @@ pub fn build_harness_bundle_with_presentation_k(
     } else {
         build_trusted_tiles(store, primary_goal.as_deref())
     };
+    let _ = ensure_session_boundary_in_trusted_tiles(store, &mut trusted_tiles);
 
     let residual_surprise = if lean_wake {
         0.0
@@ -2838,5 +2910,54 @@ SESSION HANDOFF PACKET v1 (structured JSON for next-wake read_concept)
 "#;
         let p = parse_verified_sequence_payload(body).expect("parse");
         assert_eq!(p["version"], "verified_sequence_v0");
+    }
+
+    /// MQ Cycle 11: session_boundary preferred over frozen mvp formal_spec list.
+    #[test]
+    fn ensure_session_boundary_prepends_over_mvp_formal_spec() {
+        std::env::set_var("ENGRAM_DISABLE_SHEAF", "1");
+        std::env::set_var("ENGRAM_FORCE_CPU_BACKEND", "1");
+        std::env::set_var("ENGRAM_KI_DISABLE", "1");
+        let dir = std::env::temp_dir().join(format!(
+            "mq11_boundary_prefer_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).ok();
+        let mut store = StoreHandle::new(&dir.to_string_lossy());
+
+        let boundary = "tile:session_boundary_1784151111";
+        let body = "THOUGHT TILE\n\n**tile_type:** session_boundary\n**title:** test\n\n**payload:** {\"version\":\"mq_session_boundary_v1\"}\n";
+        let mut b = store.encode(body);
+        b.crs_score = 0.91;
+        store.store(boundary, b).unwrap();
+        let _ = store.promote_tile_to_high_priority(boundary);
+
+        let mut tiles = vec![json!({
+            "concept": "tile:formal_spec_stale_mvp",
+            "crs": 0.88,
+            "tile_type": "formal_spec",
+            "source": "mvp_fallback_serves",
+        })];
+        assert!(ensure_session_boundary_in_trusted_tiles(
+            &mut store, &mut tiles
+        ));
+        assert_eq!(
+            tiles[0].get("tile_type").and_then(|v| v.as_str()),
+            Some("session_boundary")
+        );
+        assert_eq!(
+            tiles[0].get("concept").and_then(|v| v.as_str()),
+            Some(boundary)
+        );
+        assert_eq!(tiles.len(), 2);
+        // Idempotent — already present.
+        assert!(!ensure_session_boundary_in_trusted_tiles(
+            &mut store, &mut tiles
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
