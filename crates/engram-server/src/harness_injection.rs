@@ -1476,7 +1476,7 @@ pub fn build_harness_bundle_with_presentation_k(
     let presentation_stratum = crate::presentation_stratum::build_presentation_stratum_opts(
         store,
         if lean_wake {
-            presentation_k.min(8).max(5)
+            presentation_k.clamp(5, 8)
         } else {
             presentation_k.max(5)
         },
