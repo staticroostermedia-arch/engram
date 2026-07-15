@@ -1459,9 +1459,16 @@ pub fn build_harness_bundle_with_presentation_k(
     } else {
         resolve_hub_anchors_for_surprise(store, session_intent)
     };
-    // Lean: ego snapshot without hub residual walk (sentinel uses ego drift only below).
+    // Lean: ego without hub residual + without top_goal_serving relation walks (C57).
     let ego_snapshot = if lean_wake {
-        build_ego_snapshot(store, primary_goal.as_deref(), None)
+        let mut snap = build_ego_snapshot(store, None, None);
+        if let Some(g) = primary_goal.as_ref() {
+            if let Some(obj) = snap.as_object_mut() {
+                obj.insert("primary_goal".to_string(), json!(g));
+                obj.insert("top_goal_serving".to_string(), json!([]));
+            }
+        }
+        snap
     } else {
         build_ego_snapshot(store, primary_goal.as_deref(), Some(&hub_anchors))
     };
@@ -1473,16 +1480,29 @@ pub fn build_harness_bundle_with_presentation_k(
     } else {
         build_continuity_playbook(primary_goal.as_deref())
     };
-    let presentation_stratum = crate::presentation_stratum::build_presentation_stratum_opts(
-        store,
-        if lean_wake {
-            presentation_k.clamp(5, 8)
-        } else {
-            presentation_k.max(5)
-        },
-        session_intent,
-        lean_wake,
-    );
+    // Cycle 57 lean: presentation from hub_anchors only — skip gather_surface entirely.
+    let presentation_stratum = if lean_wake {
+        let mut hubs = hub_anchors.clone();
+        if hubs.is_empty() {
+            hubs.push("primary_goal".into());
+            if let Some(g) = primary_goal.as_ref() {
+                hubs.push(g.clone());
+            }
+            hubs.push(SESSION_HANDOFF_LATEST.to_string());
+        }
+        crate::presentation_stratum::build_presentation_stratum_from_hubs(
+            store,
+            &hubs,
+            presentation_k.clamp(5, 8),
+        )
+    } else {
+        crate::presentation_stratum::build_presentation_stratum_opts(
+            store,
+            presentation_k.max(5),
+            session_intent,
+            false,
+        )
+    };
 
     // Cycle 46: lean wake skips store-walking scars/verified/condensation (full via get_continuation_bundle).
     let condensation_hints = if lean_wake {
