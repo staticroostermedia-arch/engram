@@ -52,7 +52,9 @@ const SESSION_HANDOFF_LATEST: &str = "helper:session_handoff_latest";
 pub const SESSION_SENTINEL_STATE: &str = "helper:session_sentinel_state";
 
 /// RSI Cycle 77: soft-stale cache for rehydration manifest (handoff parse is harness residual).
+/// Keyed by store path so parallel tests / multi-store never cross-pollinate.
 struct RehydrationManifestCache {
+    store_key: String,
     last_ok: Option<std::time::Instant>,
     value: Option<serde_json::Value>,
 }
@@ -60,6 +62,7 @@ struct RehydrationManifestCache {
 static REHYDRATION_MANIFEST_CACHE: std::sync::LazyLock<std::sync::Mutex<RehydrationManifestCache>> =
     std::sync::LazyLock::new(|| {
         std::sync::Mutex::new(RehydrationManifestCache {
+            store_key: String::new(),
             last_ok: None,
             value: None,
         })
@@ -73,12 +76,15 @@ fn rehydration_manifest_soft_stale_secs() -> u64 {
         .unwrap_or(900)
 }
 
-fn rehydration_manifest_cache_get() -> Option<serde_json::Value> {
+fn rehydration_manifest_cache_get(store_key: &str) -> Option<serde_json::Value> {
     let soft = rehydration_manifest_soft_stale_secs();
-    if soft == 0 {
+    if soft == 0 || store_key.is_empty() {
         return None;
     }
     let cache = REHYDRATION_MANIFEST_CACHE.lock().ok()?;
+    if cache.store_key != store_key {
+        return None;
+    }
     let t = cache.last_ok?;
     if t.elapsed().as_secs() >= soft {
         return None;
@@ -86,15 +92,25 @@ fn rehydration_manifest_cache_get() -> Option<serde_json::Value> {
     cache.value.clone()
 }
 
-fn rehydration_manifest_cache_set(value: Option<serde_json::Value>) {
+fn rehydration_manifest_cache_set(store_key: &str, value: Option<serde_json::Value>) {
+    if store_key.is_empty() {
+        return;
+    }
     if let Ok(mut cache) = REHYDRATION_MANIFEST_CACHE.lock() {
+        cache.store_key = store_key.to_string();
         cache.last_ok = Some(std::time::Instant::now());
         cache.value = value;
     }
 }
 
-fn rehydration_manifest_cache_invalidate() {
+fn rehydration_manifest_cache_invalidate(store_key: Option<&str>) {
     if let Ok(mut cache) = REHYDRATION_MANIFEST_CACHE.lock() {
+        if let Some(k) = store_key {
+            if !cache.store_key.is_empty() && cache.store_key != k {
+                return;
+            }
+        }
+        cache.store_key.clear();
         cache.last_ok = None;
         cache.value = None;
     }
@@ -4346,7 +4362,7 @@ impl StoreHandle {
         session_end_key: &str,
     ) -> serde_json::Value {
         // RSI Cycle 77: new handoff must not be masked by soft-stale manifest cache.
-        rehydration_manifest_cache_invalidate();
+        rehydration_manifest_cache_invalidate(Some(self.store_path()));
         const HANDOFF_ANCHOR: &str = "handoff:codeland_integration_2026_plan";
         let packet = self.build_handoff_packet(summary, session_end_key);
         let body = format!(
@@ -4547,14 +4563,15 @@ impl StoreHandle {
     }
 
     /// Portable rehydration kit for wake — embedded handoff manifest, promoted manifest block, then legacy synthesis.
-    /// RSI Cycle 77: soft-stale process cache (default 900s); invalidate on handoff persist.
+    /// RSI Cycle 77: soft-stale per-store cache (default 900s); invalidate on handoff persist.
     pub fn resolve_rehydration_manifest_for_wake(&mut self) -> Option<serde_json::Value> {
-        if let Some(cached) = rehydration_manifest_cache_get() {
+        let key = self.store_path().to_string();
+        if let Some(cached) = rehydration_manifest_cache_get(&key) {
             return Some(cached);
         }
         let resolved = self.resolve_rehydration_manifest_for_wake_uncached();
         if resolved.is_some() {
-            rehydration_manifest_cache_set(resolved.clone());
+            rehydration_manifest_cache_set(&key, resolved.clone());
         }
         resolved
     }
@@ -9738,7 +9755,7 @@ mod ingest_ast_tests {
 
     #[test]
     fn resolve_manifest_from_promoted_block_without_handoff_embed() {
-        rehydration_manifest_cache_invalidate();
+        rehydration_manifest_cache_invalidate(None);
         let dir = test_store_dir("manifest_block_fallback");
         let mut store = StoreHandle::new(&dir.to_string_lossy());
         let handoff_packet = serde_json::json!({
@@ -9794,7 +9811,7 @@ mod ingest_ast_tests {
 
     #[test]
     fn resolve_manifest_from_legacy_handoff_packet() {
-        rehydration_manifest_cache_invalidate();
+        rehydration_manifest_cache_invalidate(None);
         let dir = test_store_dir("legacy_handoff_manifest");
         let mut store = StoreHandle::new(&dir.to_string_lossy());
         let legacy_packet = serde_json::json!({
@@ -9825,7 +9842,7 @@ mod ingest_ast_tests {
     #[test]
     fn rehydration_manifest_soft_stale_second_resolve() {
         std::env::set_var("ENGRAM_REHYDRATION_MANIFEST_SOFT_STALE_SECS", "900");
-        rehydration_manifest_cache_invalidate();
+        rehydration_manifest_cache_invalidate(None);
         let dir = test_store_dir("rehyd_soft_stale");
         let mut store = StoreHandle::new(&dir.to_string_lossy());
         let packet = serde_json::json!({
@@ -9878,7 +9895,7 @@ mod ingest_ast_tests {
             Some(true)
         );
         let _ = std::fs::remove_dir_all(&dir);
-        rehydration_manifest_cache_invalidate();
+        rehydration_manifest_cache_invalidate(None);
         std::env::remove_var("ENGRAM_REHYDRATION_MANIFEST_SOFT_STALE_SECS");
     }
 
