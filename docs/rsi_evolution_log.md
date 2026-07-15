@@ -1513,4 +1513,42 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 3. Partial σ² tensors beyond 16-d capsule (long horizon).
 4. Tombstone + deferred CSR compact for ultra-hot write paths.
 
+---
+
+## Cycle 42 — wake path slim (presentation K + MCP TIMING) (2026-07-14)
+
+### Master baseline
+
+- Post Cycle 41: PR **#87** `06baf284` — batch CSR remove.
+- Hub CRS ~0.89 · CSF ~0.94 · ~89k blocks · session_start ~13.5s.
+
+### Research synthesis
+
+| Source | Insight |
+|--------|---------|
+| Wake timing | ~13.5s elapsed; presentation builds K=40 but slim keeps 5 previews. |
+| Cycle 37 | Sheaf TIMING gated; spatial TIMING still always-on. |
+| Cache hygiene | Wake slim must not poison full continuation TTL cache. |
+
+### Hypothesis
+
+**Wake slim:** `presentation_budget_wake` default 12; `build_continuation_bundle_wake` skips full cache write; gate spatial TIMING via `ENGRAM_MCP_TIMING`.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Code | `presentation_budget_wake`, `build_continuation_bundle_wake`, harness with K |
+| TIMING | `mcp_timing_enabled` (MCP_TIMING \|\| SHEAF_TIMING); spatial gated |
+| Readiness | presentation_budget / presentation_budget_wake / env keys |
+| Tests | `test_presentation_budget_wake_defaults` |
+| Lexicon | `wake-presentation-k`, `mcp-timing-gate` |
+
+### Next vectors
+
+1. mmap CSR for multi-million edge stalks.
+2. Further wake cost (skip warm promotes when hot, defer fidelity persist).
+3. Partial σ² tensors beyond 16-d capsule (long horizon).
+4. Tombstone + deferred CSR compact.
+
 

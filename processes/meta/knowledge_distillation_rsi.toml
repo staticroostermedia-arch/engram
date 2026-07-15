@@ -79,6 +79,8 @@ list = [
   "lexicon:word:csr-remove-incremental",
   "lexicon:word:fisher-adaptive-bands",
   "lexicon:word:csr-remove-batch",
+  "lexicon:word:wake-presentation-k",
+  "lexicon:word:mcp-timing-gate",
 ]
 
 [execute]

@@ -157,15 +157,25 @@ fn args_str<'a>(args: &'a Value, keys: &[&str]) -> Option<&'a str> {
     None
 }
 
-/// RSI Cycle 37: gate sheaf TIMING eprintln (wake I/O). Default off; set ENGRAM_SHEAF_TIMING=1.
+/// RSI Cycle 37/42: gate TIMING eprintln (wake I/O). Default off.
+/// Accepts `ENGRAM_MCP_TIMING` (Cycle 42) or legacy `ENGRAM_SHEAF_TIMING`.
 fn sheaf_timing_enabled() -> bool {
-    matches!(
-        std::env::var("ENGRAM_SHEAF_TIMING")
-            .unwrap_or_default()
-            .to_ascii_lowercase()
-            .as_str(),
-        "1" | "true" | "on" | "yes"
-    )
+    mcp_timing_enabled()
+}
+
+/// RSI Cycle 42: unified MCP TIMING gate (sheaf load, incremental spatial, query_pure).
+/// Default OFF. Set `ENGRAM_MCP_TIMING=1` or `ENGRAM_SHEAF_TIMING=1`.
+fn mcp_timing_enabled() -> bool {
+    let on = |key: &str| {
+        matches!(
+            std::env::var(key)
+                .unwrap_or_default()
+                .to_ascii_lowercase()
+                .as_str(),
+            "1" | "true" | "on" | "yes"
+        )
+    };
+    on("ENGRAM_MCP_TIMING") || on("ENGRAM_SHEAF_TIMING")
 }
 
 fn load_process_sheaf(store: &SharedStore) -> Result<(), String> {
@@ -442,7 +452,9 @@ fn run_incremental_spatial_ingest(
     explicit_paths: Vec<String>,
 ) -> serde_json::Value {
     let t_inc = std::time::Instant::now();
-    eprintln!("TIMING[incremental_spatial]: start (T1 diagnostic for hang repro)");
+    if mcp_timing_enabled() {
+        eprintln!("TIMING[incremental_spatial]: start (T1 diagnostic for hang repro)");
+    }
     let last_end_ts: u64 = {
         let lock = store.lock().unwrap();
         let mut ts: u64 = 0;
@@ -493,14 +505,16 @@ fn run_incremental_spatial_ingest(
             }
         }
     }
-    eprintln!(
-        "TIMING[incremental_spatial]: delta walk done, paths_to_check={} last_end_ts={} max={} elapsed={:.2}s (first_paths={:?}) (walk off-lock)",
-        paths_to_check.len(),
-        last_end_ts,
-        max_files,
-        t_inc.elapsed().as_secs_f32(),
-        paths_to_check.iter().take(3).collect::<Vec<_>>()
-    );
+    if mcp_timing_enabled() {
+        eprintln!(
+            "TIMING[incremental_spatial]: delta walk done, paths_to_check={} last_end_ts={} max={} elapsed={:.2}s (first_paths={:?}) (walk off-lock)",
+            paths_to_check.len(),
+            last_end_ts,
+            max_files,
+            t_inc.elapsed().as_secs_f32(),
+            paths_to_check.iter().take(3).collect::<Vec<_>>()
+        );
+    }
     if force_all || last_end_ts == 0 || paths_to_check.is_empty() {
         paths_to_check = if !explicit_paths.is_empty() {
             explicit_paths.clone()
@@ -522,20 +536,24 @@ fn run_incremental_spatial_ingest(
         if let Ok(items) = items_res {
             ingested_total += items.len();
             details.push(format!("{}: {} items", p, items.len()));
-            eprintln!(
-                "TIMING[incremental_spatial]: force_ingest {} -> {} items in {:.2}s",
-                p,
-                items.len(),
-                t_f.elapsed().as_secs_f32()
-            );
+            if mcp_timing_enabled() {
+                eprintln!(
+                    "TIMING[incremental_spatial]: force_ingest {} -> {} items in {:.2}s",
+                    p,
+                    items.len(),
+                    t_f.elapsed().as_secs_f32()
+                );
+            }
         }
     }
-    eprintln!(
-        "TIMING[incremental_spatial]: COMPLETE files={} ingested_total={} total={:.2}s",
-        paths_to_check.len(),
-        ingested_total,
-        t_inc.elapsed().as_secs_f32()
-    );
+    if mcp_timing_enabled() {
+        eprintln!(
+            "TIMING[incremental_spatial]: COMPLETE files={} ingested_total={} total={:.2}s",
+            paths_to_check.len(),
+            ingested_total,
+            t_inc.elapsed().as_secs_f32()
+        );
+    }
     serde_json::json!({
         "files_checked": paths_to_check.len(),
         "ingested_total": ingested_total,
@@ -4269,7 +4287,8 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
                 };
                 lock.warm_wake_anchors();
                 lock.sentinel_on_session_start();
-                let continuation = lock.build_continuation_bundle(Some(&intent));
+                // Cycle 42: wake-path slim presentation K; avoid polluting full-bundle TTL cache
+                let continuation = lock.build_continuation_bundle_wake(Some(&intent));
                 let readiness = lock.backend_readiness();
                 (continuation, readiness)
             };

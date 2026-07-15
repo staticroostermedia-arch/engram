@@ -1360,6 +1360,19 @@ pub fn build_continuity_playbook(primary_goal: Option<&str>) -> Value {
 
 /// Full harness injection block for continuation bundle.
 pub fn build_harness_bundle(store: &mut StoreHandle, session_intent: Option<&str>) -> Value {
+    build_harness_bundle_with_presentation_k(
+        store,
+        session_intent,
+        crate::presentation_stratum::presentation_budget(),
+    )
+}
+
+/// RSI Cycle 42: harness with explicit presentation K (wake uses smaller K).
+pub fn build_harness_bundle_with_presentation_k(
+    store: &mut StoreHandle,
+    session_intent: Option<&str>,
+    presentation_k: usize,
+) -> Value {
     let mut trace_chain_head: Option<String> = None;
     for (concept, _) in store.access_index.recent(200) {
         if concept.starts_with("trace:") {
@@ -1381,7 +1394,7 @@ pub fn build_harness_bundle(store: &mut StoreHandle, session_intent: Option<&str
     let continuity_playbook = build_continuity_playbook(primary_goal.as_deref());
     let presentation_stratum = crate::presentation_stratum::build_presentation_stratum(
         store,
-        crate::presentation_stratum::presentation_budget(),
+        presentation_k.max(5),
         session_intent,
     );
 
