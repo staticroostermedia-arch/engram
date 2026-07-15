@@ -1413,6 +1413,77 @@ pub fn build_harness_bundle(store: &mut StoreHandle, session_intent: Option<&str
     )
 }
 
+/// Sentinel inputs for ultra-lean ego (avoids clippy too_many_arguments).
+struct UltraLeanEgoSentinel<'a> {
+    primary_goal: Option<&'a str>,
+    turns: u32,
+    checkpoint: u64,
+    minutes: u64,
+    surprise_pressure: f32,
+    rehydrate_suggested: bool,
+    rehydrate_reason: &'a str,
+}
+
+/// RSI Cycle 69: ultra-lean ego — single ego.leg3 read, no p-norm / goal-serving walks.
+fn build_ego_snapshot_ultra_lean(
+    ego: Option<&engram_core::types::HolographicBlock>,
+    sentinel: UltraLeanEgoSentinel<'_>,
+) -> Value {
+    let effective = crate::continuity_spikes::effective_max_turns(sentinel.surprise_pressure);
+    let mut snap = if let Some(block) = ego {
+        let dv = block.energetics.dv;
+        json!({
+            "present": true,
+            "ultra_lean": true,
+            "lean_wake": true,
+            "last_nrem_unix": block.energetics.ts,
+            "nrem_step": block.energetics.step,
+            "drift_velocity": dv,
+            "stability": ego_stability_label(dv),
+            "contributors_last_pass": block.superposition_count,
+            "friction_tau": block.energetics.tau,
+            // p-norm skipped on ultra-lean (8192-d sum) — full via get_continuation_bundle
+            "momentum_norm": null,
+            "top_goal_serving": [],
+        })
+    } else {
+        json!({
+            "present": false,
+            "ultra_lean": true,
+            "lean_wake": true,
+            "note": "ego.leg3 not seeded — full ego via get_continuation_bundle",
+            "top_goal_serving": [],
+        })
+    };
+    if let Some(obj) = snap.as_object_mut() {
+        if let Some(g) = sentinel.primary_goal.filter(|g| !g.is_empty()) {
+            obj.insert("primary_goal".to_string(), json!(g));
+        }
+        obj.insert("turns_since_last_handoff".into(), json!(sentinel.turns));
+        obj.insert("minutes_since_checkpoint".into(), json!(sentinel.minutes));
+        obj.insert("last_checkpoint_unix".into(), json!(sentinel.checkpoint));
+        obj.insert(
+            "rehydrate_suggested".into(),
+            json!(sentinel.rehydrate_suggested),
+        );
+        obj.insert(
+            "rehydrate_reason".into(),
+            json!(if sentinel.rehydrate_suggested {
+                sentinel.rehydrate_reason
+            } else {
+                ""
+            }),
+        );
+        obj.insert(
+            "surprise_pressure".into(),
+            json!(sentinel.surprise_pressure),
+        );
+        obj.insert("effective_max_turns".into(), json!(effective));
+        obj.insert("lyapunov_proxy".into(), json!(sentinel.surprise_pressure));
+    }
+    snap
+}
+
 /// RSI Cycle 68: session_start harness — essentials only (no hub ProvLog body reads).
 fn build_harness_bundle_ultra_lean_wake(
     store: &mut StoreHandle,
@@ -1453,7 +1524,9 @@ fn build_harness_bundle_ultra_lean_wake(
         .and_then(|v| v.as_array())
         .map(|arr| arr.iter().take(6).cloned().collect::<Vec<_>>())
         .unwrap_or_default();
-    let ego_drift = ego_drift_velocity();
+    // RSI Cycle 69: one ego.leg3 read for drift only — skip second read + 8192-d p_vector_norm.
+    let ego_block = read_ego_block();
+    let ego_drift = ego_block.as_ref().map(|b| b.energetics.dv.clamp(0.0, 1.0));
     let surprise_pressure = ego_drift.unwrap_or(0.0);
     let (turns, checkpoint) = store.sentinel_snapshot();
     let minutes = crate::continuity_spikes::minutes_since_checkpoint(
@@ -1467,18 +1540,18 @@ fn build_harness_bundle_ultra_lean_wake(
             surprise_pressure,
         );
     let task_type = infer_task_type(None, session_intent, false, 0);
-    // Minimal ego — avoid full hub residual walks (still call builder for sentinel fields).
-    let ego_snapshot = {
-        let mut snap = build_ego_snapshot(store, None, None);
-        if let Some(obj) = snap.as_object_mut() {
-            if let Some(g) = primary_goal.as_ref() {
-                obj.insert("primary_goal".to_string(), json!(g));
-            }
-            obj.insert("top_goal_serving".to_string(), json!([]));
-            obj.insert("ultra_lean".to_string(), json!(true));
-        }
-        snap
-    };
+    let ego_snapshot = build_ego_snapshot_ultra_lean(
+        ego_block.as_ref(),
+        UltraLeanEgoSentinel {
+            primary_goal: primary_goal.as_deref(),
+            turns,
+            checkpoint,
+            minutes,
+            surprise_pressure,
+            rehydrate_suggested,
+            rehydrate_reason,
+        },
+    );
     json!({
         "rehydration_manifest": rehydration_manifest,
         "suggested_actions": build_suggested_actions_opts(store, session_intent, true),
@@ -2570,6 +2643,21 @@ SESSION HANDOFF PACKET v1 (structured JSON for next-wake read_concept)
         let ad = bundle.get("agent_discipline").expect("agent_discipline");
         assert_eq!(ad.get("lean_wake").and_then(|v| v.as_bool()), Some(true));
         assert!(ad.get("turn_protocol").is_none() || ad.get("lean_wake").is_some());
+        // C69: ultra-lean ego skips 8192-d p-norm
+        let ego = bundle.get("ego_snapshot").expect("ego_snapshot");
+        assert_eq!(
+            ego.get("ultra_lean").and_then(|v| v.as_bool()),
+            Some(true),
+            "C69 ultra-lean ego"
+        );
+        assert!(
+            ego.get("momentum_norm").is_none()
+                || ego
+                    .get("momentum_norm")
+                    .map(|v| v.is_null())
+                    .unwrap_or(false),
+            "C69 must skip p-norm: {ego:?}"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
