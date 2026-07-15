@@ -182,8 +182,9 @@ fn stale(concept: &str, store: &StoreHandle, ttl: u64) -> bool {
     now_secs().saturating_sub(ts) > ttl
 }
 
-/// RSI Cycle 52: true when wake can skip full bootstrap (profile hot + readiness fresh).
-/// Measured local_stratum_ms≈4s dominated by bootstrap process spawns + readiness upsert.
+/// RSI Cycle 52/54: true when wake can skip full bootstrap.
+/// Cycle 52 required is_hot + fresh readiness — still paid ~3s when readiness
+/// soft-stale or hot_set lag. Cycle 54: profile block present is enough for wake.
 pub fn warm_skip_bootstrap(store: &StoreHandle) -> bool {
     if !enabled() {
         return true;
@@ -191,12 +192,11 @@ pub fn warm_skip_bootstrap(store: &StoreHandle) -> bool {
     store
         .fetch_block_high_priority(LOCAL_HOST_PROFILE)
         .is_some()
-        && store.is_hot(LOCAL_HOST_PROFILE)
-        && store.fetch_block(LOCAL_HOST_READINESS).is_some()
-        && !stale(LOCAL_HOST_READINESS, store, READINESS_TTL_SECS)
+        || store.fetch_block(LOCAL_HOST_PROFILE).is_some()
 }
 
-/// Wake-path bootstrap: skip expensive refresh when local layer is already warm.
+/// Wake-path bootstrap: skip expensive refresh when local host profile already exists.
+/// Full `bootstrap` still runs on cold first mint and on non-wake paths.
 pub fn bootstrap_for_wake(store: &mut StoreHandle) -> Vec<String> {
     if warm_skip_bootstrap(store) {
         return vec![];
@@ -384,7 +384,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// RSI Cycle 52: second wake skip when profile hot + readiness fresh.
+    /// RSI Cycle 52/54: second wake skip when host profile block exists.
     #[test]
     fn warm_skip_bootstrap_after_first_bootstrap() {
         std::env::set_var("ENGRAM_DISABLE_SHEAF", "1");
@@ -398,15 +398,14 @@ mod tests {
             "cold store must not skip bootstrap"
         );
         let _ = bootstrap(&mut lock);
-        // mark_hot is done inside bootstrap for profile
         assert!(
             warm_skip_bootstrap(&lock),
-            "after bootstrap, warm_skip should be true when readiness fresh"
+            "after bootstrap, profile exists → warm_skip"
         );
         let second = bootstrap_for_wake(&mut lock);
         assert!(
             second.is_empty(),
-            "bootstrap_for_wake must no-op when warm: got {second:?}"
+            "bootstrap_for_wake must no-op when profile present: got {second:?}"
         );
         let _ = std::fs::remove_dir_all(&dir);
     }

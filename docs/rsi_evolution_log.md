@@ -1951,3 +1951,37 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 2. Partial σ² beyond 16-d.
 3. Query_pure TIMING full gate.
 
+## Cycle 54 — local_stratum wake skip if profile exists (2026-07-14)
+
+### Master baseline
+
+- Post Cycle 53: PR **#99** `7e628197` — ultra-lean harness.
+- **Measured (C53 binary live):** harness_ms **797** (was ~1674), local_stratum_ms **3396** still hot, total cont ~4.5s.
+- Flags: wake_harness_ultra_lean, wake_local_stratum_lean, CSR sidecar loaded.
+
+### Research synthesis
+
+| Source | Insight |
+|--------|---------|
+| continuation_detail | C53 cut harness ~2×; local still ~75% of continuation. |
+| warm_skip_bootstrap | Required is_hot + fresh readiness — still re-ran full bootstrap. |
+| Ops | Profile always present after first mint on production stalk. |
+
+### Hypothesis
+
+**Profile-exists skip:** wake bootstrap no-ops whenever `local:host:profile` is fetchable (hot or disk).
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Code | relaxed `warm_skip_bootstrap` / `bootstrap_for_wake` |
+| Readiness | `wake_local_stratum_skip_if_profile` |
+| Test | warm_skip_bootstrap_after_first_bootstrap |
+
+### Next vectors
+
+1. Measure local_stratum_ms after MCP swap (target ≪500ms warm).
+2. Partial σ² beyond 16-d.
+3. Query_pure TIMING full gate.
+
