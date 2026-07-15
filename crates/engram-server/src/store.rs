@@ -2800,6 +2800,7 @@ impl StoreHandle {
                 "mq_verify_invalidate_continuation": true,
                 "wake_relation_resume_lean": true,
                 "mq_relation_resume_recency": true,
+                "mq_relation_resume_full_incident": true,
                 "wake_lawfulness_snapshot": true,
                 "wake_slim_mq_resume_hoist": true,
                 "mq_spatial_locus_aabb_test": true,
@@ -5897,32 +5898,25 @@ impl StoreHandle {
     /// MQ Cycle 4: series helper for manifold verify samples (lawfulness cadence).
     pub const MQ_VERIFY_SERIES: &'static str = "helper:mq_verify_series";
 
-    /// MQ Cycle 5/19: lean wake relation neighborhood for non-flat resume (no full graph walk).
-    /// MQ19: rank by recency of neighbor concept (trace/tile unix prefix) so latest SELECT forks
-    /// surface instead of always returning ancient MQ1/scheduled edges first.
+    /// MQ Cycle 5/19/20: lean wake relation neighborhood for non-flat resume.
+    /// MQ19: rank by recency of neighbor concept (trace/tile unix prefix).
+    /// MQ20: scan **all** seed-incident edges before rank (pre-truncation hid recent forks).
     pub fn build_lean_relation_resume(store: &Self, seed: Option<&str>) -> serde_json::Value {
         let seed = seed
             .filter(|s| !s.is_empty() && *s != "unset")
             .unwrap_or("goal:engram_mvp_v1");
-        // Collect a wider pool, then rank+cap (search order is not recency-ordered).
+        // Full incident set for seed (index query is O(degree); degree ≪ total edges).
+        // Ranking after a fixed take(N) re-hides recent SELECT forks when degree > N.
         let mut candidates: Vec<(u64, String, String, &'static str, String)> = Vec::new();
-        // (score, label, other, direction, seed_or_other_for_from)
-        for (label, other) in store
-            .search_relations(seed, None, "from")
-            .into_iter()
-            .take(24)
-        {
+        for (label, other) in store.search_relations(seed, None, "from") {
             let score = relation_resume_neighbor_score(&other);
             candidates.push((score, label, other, "from", seed.to_string()));
         }
-        for (label, other) in store
-            .search_relations(seed, None, "to")
-            .into_iter()
-            .take(24)
-        {
+        for (label, other) in store.search_relations(seed, None, "to") {
             let score = relation_resume_neighbor_score(&other);
             candidates.push((score, label, other, "to", seed.to_string()));
         }
+        let candidates_scanned = candidates.len();
         // Highest score first (recent traces/tiles outrank ancient anchors).
         candidates.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.2.cmp(&b.2)));
         // Dedupe by (direction, other, label)
@@ -5961,6 +5955,7 @@ impl StoreHandle {
             "edge_count": edges.len(),
             "edges": edges,
             "ranking": "recency_neighbor_v1",
+            "candidates_scanned": candidates_scanned,
             "hint": "lean graph rehydrate — search_by_relation for deeper walks",
         })
     }
@@ -10632,6 +10627,62 @@ mod ingest_ast_tests {
             store
                 .backend_readiness()
                 .get("mq_relation_resume_recency")
+                .and_then(|v| v.as_bool()),
+            Some(true)
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// MQ Cycle 20: full incident scan — recent edge still wins when many ancient edges exist.
+    #[test]
+    fn mq_relation_resume_full_incident_sees_past_pool_truncation() {
+        let dir = test_store_dir("mq20_relation_full_incident");
+        let mut store = StoreHandle::new(&dir.to_string_lossy());
+        store
+            .remember(
+                "goal:engram_memory_quality_v1",
+                "GOAL\n\n**status:** active\n**statement:** mq20\n",
+            )
+            .unwrap();
+        // >24 ancient serves edges (would hide recent under take(24) if index returns ancient first).
+        for i in 0..30 {
+            let name = format!("trace:{i}_mq-ancient-filler");
+            store
+                .remember(&name, "REASONING TRACE\n\n**decision_point:** filler\n")
+                .unwrap();
+            let _ = store.relate(&name, "goal:engram_memory_quality_v1", "serves");
+        }
+        store
+            .remember(
+                "trace:1784157810_mq20-newest-select",
+                "REASONING TRACE\n\n**decision_point:** newest\n",
+            )
+            .unwrap();
+        let _ = store.relate(
+            "trace:1784157810_mq20-newest-select",
+            "goal:engram_memory_quality_v1",
+            "serves",
+        );
+        let rr =
+            StoreHandle::build_lean_relation_resume(&store, Some("goal:engram_memory_quality_v1"));
+        let scanned = rr
+            .get("candidates_scanned")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        assert!(
+            scanned >= 31,
+            "must scan all incident edges, got candidates_scanned={scanned}"
+        );
+        let edges = rr.get("edges").and_then(|v| v.as_array()).expect("edges");
+        let neighbor = edges[0].get("from").and_then(|v| v.as_str()).unwrap_or("");
+        assert!(
+            neighbor.contains("1784157810") || neighbor.contains("mq20-newest"),
+            "full scan must surface newest, got {neighbor}; edges={edges:?}"
+        );
+        assert_eq!(
+            store
+                .backend_readiness()
+                .get("mq_relation_resume_full_incident")
                 .and_then(|v| v.as_bool()),
             Some(true)
         );

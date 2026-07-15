@@ -3656,3 +3656,33 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 1. MCP swap MQ19; wake relation_resume[0] is recent mq* SELECT trace.
 2. Optional #134 C86 cold assemble residual (floor held).
 3. Capacity only if landfill metrics measured.
+
+## MQ Cycle 20 — relation_resume full incident scan (2026-07-15)
+
+### VERIFY₀ baseline
+
+- master@`fb4ac3ea` MQ19 #153.
+- MCP swapped: `mq_relation_resume_recency` LIVE; ranking present.
+- CSF warm **0.947**; injection_completeness **1.0**; handoff complete.
+- Residual: top relation_resume edges still early-MQ (178414*) — take(24) before rank truncated recent 178415* serves.
+- Verify **healthy** metric:mq_verify_1784157804.
+- Unit tests lean + MQ19 recency green.
+
+### SELECT
+
+**mq_relation_retrieval** — scan all seed-incident edges before recency rank (no pre-truncation).
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Scan | full `search_relations` incident set (no take(24)) |
+| Field | `candidates_scanned` |
+| Flag | `mq_relation_resume_full_incident` |
+| Test | `mq_relation_resume_full_incident_sees_past_pool_truncation` |
+
+### Next vectors
+
+1. MCP swap MQ20; wake top edge is recent 178415* SELECT/session_end.
+2. Optional #134 C86 cold assemble residual (floor held).
+3. Capacity only if landfill metrics measured.
