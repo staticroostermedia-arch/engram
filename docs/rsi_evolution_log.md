@@ -1551,4 +1551,42 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 3. Partial σ² tensors beyond 16-d capsule (long horizon).
 4. Tombstone + deferred CSR compact.
 
+---
+
+## Cycle 43 — wake warm skip-hot + async fidelity persist (2026-07-14)
+
+### Master baseline
+
+- Post Cycle 42: PR **#88** `9b3df85b` — wake presentation K + MCP TIMING.
+- Hub CRS ~0.90 · CSF ~0.94 · ~89k blocks · session_start still ~13s on live daemon.
+
+### Research synthesis
+
+| Source | Insight |
+|--------|---------|
+| Cycle 42 | Presentation K reduced; remaining cost: warm promotes + sync fidelity store. |
+| Hot set | Re-promote of already-hot anchors is pure lock/cache churn. |
+| Bg promote | Duplicate subset of warm list — wasted second pass. |
+
+### Hypothesis
+
+**Skip-hot warm + async fidelity:** `warm_wake_anchors` skips `is_hot`; drop duplicate bg promotes; persist cold-start fidelity metric off critical path.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Code | `warm_wake_anchors() -> usize` skip-hot; bg fidelity only |
+| Wake packet | `warm_anchors_promoted`, `fidelity_persist: async` |
+| Readiness | `wake_warm_skip_hot`, `wake_fidelity_persist_async` |
+| Tests | `warm_wake_anchors_skips_already_hot` |
+| Lexicon | `wake-warm-skip-hot`, `fidelity-persist-async` |
+
+### Next vectors
+
+1. mmap CSR for multi-million edge stalks.
+2. Partial σ² tensors beyond 16-d capsule (long horizon).
+3. Tombstone + deferred CSR compact.
+4. Defer `mark_ki_rebake_needed` / sheaf load when fingerprint fresh.
+
 

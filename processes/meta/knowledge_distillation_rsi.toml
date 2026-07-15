@@ -81,6 +81,8 @@ list = [
   "lexicon:word:csr-remove-batch",
   "lexicon:word:wake-presentation-k",
   "lexicon:word:mcp-timing-gate",
+  "lexicon:word:wake-warm-skip-hot",
+  "lexicon:word:fidelity-persist-async",
 ]
 
 [execute]

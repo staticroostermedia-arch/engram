@@ -2308,6 +2308,8 @@ impl StoreHandle {
             "presentation_budget_wake": crate::presentation_stratum::presentation_budget_wake(),
             "wake_presentation_k_env": "ENGRAM_WAKE_PRESENTATION_K",
             "mcp_timing_env": "ENGRAM_MCP_TIMING",
+            "wake_warm_skip_hot": true,
+            "wake_fidelity_persist_async": true,
             "crs_alpha_joint_enabled": crate::injection_priority::crs_alpha_joint_enabled(),
             "crs_alpha_joint_env": "ENGRAM_CRS_ALPHA_JOINT",
             "fisher_precision_enabled": engram_core::backend::fisher_precision_enabled(),
@@ -3294,22 +3296,32 @@ impl StoreHandle {
         self.backend.list()
     }
 
+    /// Continuity anchors promoted on wake (shared by warm path + readiness docs).
+    pub const WAKE_ANCHOR_CONCEPTS: &'static [&'static str] = &[
+        "primary_goal",
+        SESSION_HANDOFF_LATEST,
+        "helper:session_hydration_cache",
+        "ritual:engram.working-memory",
+        "ritual:wake_up_anchor",
+        "process:engram.ritual.wake-up",
+        "process:engram.ritual.local-context-working-memory",
+        crate::local_stratum::LOCAL_HOST_PROFILE,
+        crate::local_stratum::LOCAL_HOST_MCP,
+    ];
+
     /// Promote continuity anchors to hot path before wake bundle / anchor recall.
-    pub fn warm_wake_anchors(&mut self) {
-        const WAKE_ANCHORS: &[&str] = &[
-            "primary_goal",
-            SESSION_HANDOFF_LATEST,
-            "helper:session_hydration_cache",
-            "ritual:engram.working-memory",
-            "ritual:wake_up_anchor",
-            "process:engram.ritual.wake-up",
-            "process:engram.ritual.local-context-working-memory",
-            crate::local_stratum::LOCAL_HOST_PROFILE,
-            crate::local_stratum::LOCAL_HOST_MCP,
-        ];
-        for concept in WAKE_ANCHORS {
+    /// RSI Cycle 43: skip concepts already in hot_set/backend hot cache (no redundant promote).
+    /// Returns how many anchors were newly promoted this call.
+    pub fn warm_wake_anchors(&mut self) -> usize {
+        let mut newly = 0usize;
+        for concept in Self::WAKE_ANCHOR_CONCEPTS {
+            if self.is_hot(concept) {
+                continue;
+            }
             let _ = self.promote_tile_to_high_priority(concept);
+            newly = newly.saturating_add(1);
         }
+        newly
     }
 
     /// Return the current hot_set (promoted high-priority concepts for fast paths).
@@ -8524,6 +8536,37 @@ mod ingest_ast_tests {
         let fixed = rewrite_goal_status(&broken, "completed");
         assert!(!goal_status_is_active(&fixed));
         assert_eq!(goal_current_status(&fixed).as_deref(), Some("completed"));
+    }
+
+    /// RSI Cycle 43: second warm_wake_anchors call promotes zero when anchors already hot.
+    #[test]
+    fn warm_wake_anchors_skips_already_hot() {
+        let dir = test_store_dir("warm_wake_skip_hot");
+        let mut store = StoreHandle::new(&dir.to_string_lossy());
+        store
+            .remember(
+                "primary_goal",
+                "PRIMARY GOAL\n\n**goal:** goal:engram_mvp_v1\n**set_at:** test",
+            )
+            .unwrap();
+        store
+            .remember(
+                crate::harness_injection::SESSION_HANDOFF_LATEST,
+                "SESSION HANDOFF PACKET v1\n\n{\"decisions\":[\"warm\"]}",
+            )
+            .unwrap();
+        let first = store.warm_wake_anchors();
+        assert!(
+            first >= 1,
+            "first warm should promote at least primary_goal: {first}"
+        );
+        let second = store.warm_wake_anchors();
+        assert_eq!(
+            second, 0,
+            "second warm must skip all already-hot anchors: {second}"
+        );
+        assert!(store.is_hot("primary_goal"));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
