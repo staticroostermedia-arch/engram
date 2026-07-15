@@ -2334,3 +2334,39 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 3. Full 8192-d σ² tensors (long horizon).
 4. Keep warm wake total ≤80ms.
 
+## Cycle 65 — slim first-build readiness + TTL ms fix (2026-07-15)
+
+### Master baseline
+
+- Post Cycle 64: PR **#112** `f5f6cf62` — readiness TTL cache + outer timers.
+- **Measured warm:** total=**93**, readiness_ms=**69**, warm_ms=1, cont detail=17.
+- Prompt backlog C50–C56 already shipped.
+
+### Research synthesis
+
+| Source | Insight |
+|--------|---------|
+| activity_now | Returns **milliseconds** (as_millis). |
+| C64 TTL compare | Compared env **seconds** to ms → effective window ~2ms (always miss). |
+| leg_block_count | TTL "30s" was 30ms → frequent 90k-dir rescans on readiness. |
+| wake lean assemble | Already preferred atomic leg count; readiness still forced full path. |
+
+### Hypothesis
+
+**Slim first-build + unit fix:** convert readiness TTL secs→ms; leg_block_count TTL 30_000ms; prefer cached leg count + single bvh snapshot (no double recall_mode scan).
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Code | `readiness_cache_ttl_ms`, `leg_block_count_prefer_cached`, slim `backend_readiness_uncached` |
+| Readiness | `wake_readiness_slim_first_build`, `wake_readiness_ttl_ms_units` |
+| Test | `readiness_ttl_cache_hits_within_window` (25ms sleep), `readiness_prefer_cached_leg_count` |
+
+### Next vectors
+
+1. Measure readiness_ms after MCP binary swap (target ≤15 warm hit; first-build ≤40).
+2. If first-build still high, OnceLock static feature flags.
+3. Full 8192-d σ² tensors (long horizon).
+4. Keep warm wake total ≤80ms.
+

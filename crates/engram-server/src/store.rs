@@ -2562,20 +2562,38 @@ impl StoreHandle {
             .clamp(0, 30)
     }
 
+    /// RSI Cycle 65: `activity_now()` is milliseconds — convert TTL secs → ms for compare.
+    fn readiness_cache_ttl_ms() -> u64 {
+        Self::readiness_cache_ttl_secs().saturating_mul(1000)
+    }
+
+    /// RSI Cycle 65: prefer last known `.leg` count (no dir scan) for readiness first-build.
+    fn leg_block_count_prefer_cached(&self) -> usize {
+        let cached = self
+            .leg_block_count_value
+            .load(std::sync::atomic::Ordering::Relaxed);
+        if cached > 0 {
+            cached
+        } else {
+            self.leg_block_count()
+        }
+    }
+
     pub fn backend_readiness(&self) -> serde_json::Value {
-        let ttl = Self::readiness_cache_ttl_secs();
+        // activity_now() is ms; TTL env is seconds (C64 bug: compared secs to ms → ~2ms window).
+        let ttl_ms = Self::readiness_cache_ttl_ms();
         let now = activity_now();
-        if ttl > 0 {
+        if ttl_ms > 0 {
             if let Ok(guard) = self.readiness_cache.lock() {
                 if let Some((ts, ref cached)) = *guard {
-                    if now.saturating_sub(ts) < ttl {
+                    if now.saturating_sub(ts) < ttl_ms {
                         return cached.clone();
                     }
                 }
             }
         }
         let v = self.backend_readiness_uncached();
-        if ttl > 0 {
+        if ttl_ms > 0 {
             if let Ok(mut guard) = self.readiness_cache.lock() {
                 *guard = Some((now, v.clone()));
             }
@@ -2584,19 +2602,36 @@ impl StoreHandle {
     }
 
     fn backend_readiness_uncached(&self) -> serde_json::Value {
-        let recall_mode = self.recall_mode();
+        // RSI Cycle 65: slim first-build — prefer cached leg count; single bvh/gpu snapshot;
+        // avoid recall_mode() double-scan of the 90k-file stalk.
+        let leg_blocks = self.leg_block_count_prefer_cached();
+        let bvh_ready = self.bvh_is_ready();
+        let bvh_nodes = self.backend.bvh_node_count();
+        let bvh_building = self.bvh_build_in_progress();
+        let gpu_hot = self.backend.gpu_hot_resident();
+        let recall_mode = if leg_blocks > Self::LARGE_MANIFOLD_THRESHOLD {
+            if bvh_ready {
+                "full_bvh_gpu"
+            } else {
+                "sampled_bounded"
+            }
+        } else if bvh_ready {
+            "full_bvh"
+        } else {
+            "cpu_linear"
+        };
         serde_json::json!({
             "fully_initialized": self.is_fully_initialized(),
             "backend_kind": self.backend.backend_kind(),
             "gpu_accel_available": self.backend.gpu_accel_available(),
-            "gpu_hot_resident": self.backend.gpu_hot_resident(),
-            "bvh_ready": self.bvh_is_ready(),
-            "bvh_build_in_progress": self.bvh_build_in_progress(),
-            "bvh_nodes": self.backend.bvh_node_count(),
+            "gpu_hot_resident": gpu_hot,
+            "bvh_ready": bvh_ready,
+            "bvh_build_in_progress": bvh_building,
+            "bvh_nodes": bvh_nodes,
             "recall_mode": recall_mode,
             "nvme_direct_io": true,
             "nvme_recall_ready": crate::injection_priority::nvme_recall_path_ready(recall_mode),
-            "leg_block_count": self.leg_block_count(),
+            "leg_block_count": leg_blocks,
             "profile": Self::current_profile_name(),
             "memory_mode": Self::memory_mode(),
             "defer_bvh": std::env::var("ENGRAM_DEFER_BVH").as_deref() == Ok("1"),
@@ -2647,6 +2682,8 @@ impl StoreHandle {
             "wake_assemble_ms": true,
             "wake_assemble_lean": true,
             "wake_readiness_ttl_cache": true,
+            "wake_readiness_slim_first_build": true,
+            "wake_readiness_ttl_ms_units": true,
             "readiness_ttl_secs": Self::readiness_cache_ttl_secs(),
             "readiness_ttl_env": "ENGRAM_READINESS_TTL_SECS",
             "sheaf_fingerprint_disk": true,
@@ -3693,14 +3730,14 @@ impl StoreHandle {
     }
 
     /// Fast `.leg`/`.leg3` count without allocating concept names.
-    /// Cached 30s; invalidated on local store/forget.
+    /// Cached 30s (`activity_now` is ms — RSI Cycle 65 fixed TTL unit); invalidated on store/forget.
     pub fn leg_block_count(&self) -> usize {
-        const TTL_SECS: u64 = 30;
+        const TTL_MS: u64 = 30_000;
         let now = activity_now();
         let cached_at = self
             .leg_block_count_cached_at
             .load(std::sync::atomic::Ordering::Relaxed);
-        if cached_at != 0 && now.saturating_sub(cached_at) < TTL_SECS {
+        if cached_at != 0 && now.saturating_sub(cached_at) < TTL_MS {
             return self
                 .leg_block_count_value
                 .load(std::sync::atomic::Ordering::Relaxed);
@@ -10904,6 +10941,7 @@ SESSION HANDOFF PACKET v1
     }
 
     /// RSI Cycle 64: readiness TTL cache returns same payload within TTL.
+    /// RSI Cycle 65: TTL is seconds but activity_now is ms — cache must survive >2ms.
     #[test]
     fn readiness_ttl_cache_hits_within_window() {
         std::env::set_var("ENGRAM_READINESS_TTL_SECS", "30");
@@ -10911,15 +10949,27 @@ SESSION HANDOFF PACKET v1
         let store = StoreHandle::new(&dir.to_string_lossy());
         store.invalidate_readiness_cache();
         let a = store.backend_readiness();
+        // Sleep longer than the pre-C65 bug window (2ms) but well under 30s TTL.
+        std::thread::sleep(std::time::Duration::from_millis(25));
         let b = store.backend_readiness();
         assert_eq!(
             a.get("wake_readiness_ttl_cache").and_then(|v| v.as_bool()),
             Some(true)
         );
         assert_eq!(
+            a.get("wake_readiness_slim_first_build")
+                .and_then(|v| v.as_bool()),
+            Some(true)
+        );
+        assert_eq!(
+            a.get("wake_readiness_ttl_ms_units")
+                .and_then(|v| v.as_bool()),
+            Some(true)
+        );
+        assert_eq!(
             a.get("relation_edge_count"),
             b.get("relation_edge_count"),
-            "cached readiness should match"
+            "cached readiness should match after 25ms (TTL is seconds not ms)"
         );
         assert_eq!(a.get("bvh_ready"), b.get("bvh_ready"));
         // Force miss path
@@ -10931,6 +10981,33 @@ SESSION HANDOFF PACKET v1
         );
         let _ = std::fs::remove_dir_all(&dir);
         std::env::remove_var("ENGRAM_READINESS_TTL_SECS");
+    }
+
+    /// RSI Cycle 65: prefer_cached leg count avoids rescan when atomic is warm.
+    #[test]
+    fn readiness_prefer_cached_leg_count() {
+        let dir = test_store_dir("readiness_pref_leg");
+        let store = StoreHandle::new(&dir.to_string_lossy());
+        // Seed atomic without full TTL path
+        store
+            .leg_block_count_value
+            .store(42_000, std::sync::atomic::Ordering::Relaxed);
+        store
+            .leg_block_count_cached_at
+            .store(1, std::sync::atomic::Ordering::Relaxed);
+        store.invalidate_readiness_cache();
+        let r = store.backend_readiness();
+        assert_eq!(
+            r.get("leg_block_count").and_then(|v| v.as_u64()),
+            Some(42_000),
+            "readiness should prefer warm atomic leg count"
+        );
+        assert_eq!(
+            r.get("wake_readiness_slim_first_build")
+                .and_then(|v| v.as_bool()),
+            Some(true)
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// RSI Cycle 63: O(1) edge counts match linear scan ground truth.
