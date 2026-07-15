@@ -105,74 +105,96 @@ pub(crate) fn handoff_parse_open_questions(summary: &str) -> Vec<String> {
 
 /// MQ handoff schema: extract next_vector from session_end summary.
 ///
-/// Accepts (first match wins):
-/// - bullet / plain `next_vector: …` or `next vector: …`
-/// - markdown `**next_vector:** …`
-/// - JSON `"next_vector": "…"` / `"next_vector":"…"`
-/// - markdown heading `### next_vector` with body on following non-empty line(s)
-///   until the next heading / blank section break (MQ Cycle 15)
+/// Priority (MQ Cycle 16 — avoid mid-line prose false positives):
+/// 1. JSON `"next_vector": "…"`
+/// 2. Markdown heading `### next_vector` + following body line
+/// 3. **Start-of-line only** `next_vector:` / `**next_vector:**` (after bullet markers)
+///
+/// Mid-sentence mentions like `accepts **next_vector:**, JSON…` are ignored.
 pub(crate) fn handoff_parse_next_vector(summary: &str) -> Option<String> {
     let lines: Vec<&str> = summary.lines().collect();
-    for (i, line) in lines.iter().enumerate() {
-        let t = line.trim().trim_start_matches(['-', '*', '+']).trim();
-        // Strip leading markdown heading hashes for key detection.
-        let t_no_hash = t.trim_start_matches('#').trim();
-        let lower = t_no_hash.to_ascii_lowercase();
 
-        // JSON: "next_vector": "value"
+    // Pass 1: JSON fields anywhere (structured metrics block).
+    for line in &lines {
+        let t = line.trim();
+        let lower = t.to_ascii_lowercase();
         if let Some(pos) = lower.find("\"next_vector\"") {
-            let after_key = &t_no_hash[pos + "\"next_vector\"".len()..];
+            let after_key = &t[pos + "\"next_vector\"".len()..];
             if let Some(colon) = after_key.find(':') {
                 let rest = after_key[colon + 1..].trim();
                 if let Some(parsed) = handoff_strip_json_string(rest) {
-                    if !parsed.is_empty() {
+                    if handoff_next_vector_value_ok(&parsed) {
                         return Some(parsed);
                     }
                 }
             }
         }
+    }
 
-        // Inline key forms: next_vector: / next vector: / **next_vector:**
-        for key in ["next_vector:", "next vector:"] {
-            if let Some(pos) = lower.find(key) {
-                let after = t_no_hash[pos + key.len()..]
-                    .trim()
-                    .trim_start_matches('*')
-                    .trim();
-                let cleaned = after.trim_matches(|c: char| c == '*' || c == '`' || c == '"');
-                if !cleaned.is_empty() {
-                    return Some(cleaned.to_string());
-                }
-            }
+    // Pass 2: markdown section headers (### next_vector) + body.
+    for (i, line) in lines.iter().enumerate() {
+        let t = line.trim();
+        if !t.starts_with('#') {
+            continue;
         }
-
-        // Section header only: ### next_vector / ## Next vector
-        let header_only = lower
+        let header = t
+            .trim_start_matches('#')
+            .trim()
             .trim_end_matches(':')
             .trim_matches(|c: char| c == '*' || c == '`')
-            .trim();
-        if header_only == "next_vector" || header_only == "next vector" {
-            // Collect first non-empty content line after the header.
-            for next in lines.iter().skip(i + 1) {
-                let body = next.trim();
-                if body.is_empty() {
-                    continue;
-                }
-                // Stop at next markdown heading.
-                if body.starts_with('#') {
-                    break;
-                }
-                let body_clean = body
-                    .trim_start_matches(['-', '*', '+'])
-                    .trim()
-                    .trim_matches(|c: char| c == '`' || c == '"');
-                if !body_clean.is_empty() {
-                    return Some(body_clean.to_string());
+            .to_ascii_lowercase();
+        if header != "next_vector" && header != "next vector" {
+            continue;
+        }
+        for next in lines.iter().skip(i + 1) {
+            let body = next.trim();
+            if body.is_empty() {
+                continue;
+            }
+            if body.starts_with('#') {
+                break;
+            }
+            let body_clean = body
+                .trim_start_matches(['-', '*', '+'])
+                .trim()
+                .trim_matches(|c: char| c == '`' || c == '"');
+            if handoff_next_vector_value_ok(body_clean) {
+                return Some(body_clean.to_string());
+            }
+        }
+    }
+
+    // Pass 3: start-of-line key only (bullet / plain / bold), never mid-sentence.
+    for line in &lines {
+        let t = line.trim().trim_start_matches(['-', '*', '+']).trim();
+        // Allow leading bold markers around the key.
+        let t = t.trim_start_matches('*').trim();
+        let lower = t.to_ascii_lowercase();
+        for key in ["next_vector:", "next vector:"] {
+            if lower.starts_with(key) {
+                let after = t[key.len()..].trim().trim_start_matches('*').trim();
+                let cleaned = after.trim_matches(|c: char| c == '*' || c == '`' || c == '"');
+                if handoff_next_vector_value_ok(cleaned) {
+                    return Some(cleaned.to_string());
                 }
             }
         }
     }
     None
+}
+
+/// Reject garbage values from mid-line / punctuation artifacts.
+fn handoff_next_vector_value_ok(v: &str) -> bool {
+    let v = v.trim();
+    if v.is_empty() || v.len() < 3 {
+        return false;
+    }
+    // Leading punctuation from false positives like `**, JSON string…`
+    if v.starts_with(',') || v.starts_with('*') || v.starts_with(';') {
+        return false;
+    }
+    // Must have some alnum content (not pure markup).
+    v.chars().any(|c| c.is_alphanumeric())
 }
 
 /// Best-effort extract of a JSON string value starting at `rest` (after `:`).
@@ -375,6 +397,31 @@ MCP swap MQ14; confirm post-verify lawfulness_snapshot.latest == new metric; opt
             handoff_parse_next_vector(bold).as_deref(),
             Some("mq_sheaf_freshness after process edit")
         );
+    }
+
+    /// MQ Cycle 16: mid-line **next_vector:** in ship prose must not beat ### next_vector body.
+    #[test]
+    fn handoff_parse_next_vector_rejects_midline_false_positive() {
+        let mq15_style = r#"## MQ Cycle 15 COMPLETE
+
+### decisions
+- master_sha: 5eba7fa9
+- ship: handoff_parse_next_vector accepts ### next_vector body, **next_vector:**, JSON string; flag mq_handoff_next_vector_markdown_json
+
+### next_vector
+MCP swap MQ15; confirm has_next_vector=true after ### section form
+
+### falsifiers
+- section body still None
+"#;
+        assert_eq!(
+            handoff_parse_next_vector(mq15_style).as_deref(),
+            Some("MCP swap MQ15; confirm has_next_vector=true after ### section form")
+        );
+
+        // Mid-line only, no real key → None
+        let prose_only = "- ship: documents **next_vector:** parsing in session_packet\n";
+        assert_eq!(handoff_parse_next_vector(prose_only), None);
     }
 
     #[test]

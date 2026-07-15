@@ -3536,3 +3536,33 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 1. MCP swap MQ15; session_end with `### next_vector` yields has_next_vector=true.
 2. Optional #134 C86 cold assemble residual (floor held).
 3. Capacity only if landfill metrics measured.
+
+## MQ Cycle 16 — handoff next_vector no mid-line false positive (2026-07-15)
+
+### VERIFY₀ baseline
+
+- master@`5eba7fa9` MQ15 #149.
+- MCP swapped: `mq_handoff_next_vector_markdown_json` LIVE.
+- CSF warm **0.947** hub_crs≈0.91; injection_completeness **1.0**.
+- memory_quality.complete=**true** but next_vector value garbage: `**, JSON string; flag…` (mid-line `**next_vector:**` in ship decision beat real `### next_vector` body).
+- Verify **healthy** metric:mq_verify_1784154963; MQ14 invalidate still live.
+- Unit tests lean + MQ15 parse green.
+
+### SELECT
+
+**mq_handoff_schema** — priority JSON → section header → start-of-line key only; reject mid-line prose.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Priority | JSON, then `### next_vector` body, then start-of-line key |
+| Guard | `handoff_next_vector_value_ok` rejects `,`/`*` prefix garbage |
+| Flag | `mq_handoff_next_vector_no_midline` |
+| Test | `handoff_parse_next_vector_rejects_midline_false_positive` |
+
+### Next vectors
+
+1. MCP swap MQ16; wake next_vector is intentional body not ship prose.
+2. Optional #134 C86 cold assemble residual (floor held).
+3. Capacity only if landfill metrics measured.
