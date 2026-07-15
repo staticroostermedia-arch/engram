@@ -2774,6 +2774,7 @@ impl StoreHandle {
                 "wake_assemble_lean": true,
                 "wake_assemble_prefer_bvh_count": true,
                 "wake_assemble_lean_gpu_hot": true,
+                "wake_assemble_no_leg_scan": true,
                 "wake_session_block_async": true,
                 "wake_harness_single_pass_actions": true,
                 "wake_harness_skip_ego_leg3": true,
@@ -5365,6 +5366,10 @@ impl StoreHandle {
         // Cycle 61: prefer already-cached leg block count (avoid 30s-TTL rescan on wake).
         // RSI Cycle 70: if atomic cold, use O(1) BVH leaf count as proxy (no 90k dir scan).
         // Measured assemble_ms≈616 with cold atomic after MCP swap — dir scan dominated.
+        // RSI Cycle 86: when atomic AND bvh still cold (first wake post-MCP restart),
+        // never call leg_block_count() dir scan — provisional large-manifold marker
+        // keeps recall_mode=sampled_bounded; next wake uses bvh_nodes once ready.
+        // Live: cold assemble_ms≈35 was residual scan; target ≤2 without scan.
         let bvh_ready = self.bvh_is_ready();
         let bvh_nodes = self.backend.bvh_node_count();
         let leg_blocks = if wake_lean {
@@ -5380,7 +5385,8 @@ impl StoreHandle {
                     .store(activity_now(), std::sync::atomic::Ordering::Relaxed);
                 bvh_nodes
             } else {
-                self.leg_block_count()
+                // Provisional — do NOT poison leg_block_count_value (real count later).
+                Self::LARGE_MANIFOLD_THRESHOLD.saturating_add(1)
             }
         } else {
             self.leg_block_count()
@@ -9680,18 +9686,47 @@ mod ingest_ast_tests {
             Some(true)
         );
         // RSI Cycle 70: cold atomic + BVH nodes seeds leg count without full dir scan.
+        // RSI Cycle 86: when atomic AND bvh cold, provisional large-manifold — no dir scan.
+        store.invalidate_continuation_bundle_cache();
         store
             .leg_block_count_value
             .store(0, std::sync::atomic::Ordering::Relaxed);
         store
             .leg_block_count_cached_at
             .store(0, std::sync::atomic::Ordering::Relaxed);
-        let _ = store.build_continuation_bundle_wake(Some("c70 bvh count"));
-        // Without BVH on empty temp store, may still scan; flag surface is the contract.
+        let cold = store.build_continuation_bundle_wake(Some("c86 no leg scan"));
+        let provisional = StoreHandle::LARGE_MANIFOLD_THRESHOLD as u64 + 1;
+        assert_eq!(
+            cold.get("nvme_context")
+                .and_then(|n| n.get("leg_block_count"))
+                .and_then(|v| v.as_u64()),
+            Some(provisional),
+            "C86 lean assemble uses provisional large-manifold when atomic+bvh cold"
+        );
+        assert_eq!(
+            store
+                .leg_block_count_cached_at
+                .load(std::sync::atomic::Ordering::Relaxed),
+            0,
+            "C86 must not poison leg_block_count cache via dir scan"
+        );
+        assert_eq!(
+            cold.get("nvme_context")
+                .and_then(|n| n.get("recall_mode"))
+                .and_then(|v| v.as_str()),
+            Some("sampled_bounded"),
+            "provisional large + bvh not ready → sampled_bounded"
+        );
         let ready2 = store.backend_readiness();
         assert_eq!(
             ready2
                 .get("wake_assemble_prefer_bvh_count")
+                .and_then(|v| v.as_bool()),
+            Some(true)
+        );
+        assert_eq!(
+            ready2
+                .get("wake_assemble_no_leg_scan")
                 .and_then(|v| v.as_bool()),
             Some(true)
         );
