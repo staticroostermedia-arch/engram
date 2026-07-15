@@ -4414,7 +4414,7 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
             mark_phase(&mut phase_ms, "sheaf_ms", t_phase);
 
             let t_phase = std::time::Instant::now();
-            let (continuation, readiness, warm_promoted) = {
+            let (continuation, readiness, warm_promoted, warm_ms, readiness_ms) = {
                 let mut lock = match store.lock() {
                     Ok(l) => l,
                     Err(p) => {
@@ -4425,18 +4425,32 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
                     }
                 };
                 // Cycle 43: skip already-hot anchors (covers former bg promote set)
+                // RSI Cycle 64: sub-timers for outer residual (warm vs readiness).
+                let t_warm = std::time::Instant::now();
                 let warm_promoted = lock.warm_wake_anchors();
                 lock.sentinel_on_session_start();
+                let warm_ms = (t_warm.elapsed().as_secs_f64() * 1000.0).round() as u64;
                 // Cycle 42: wake-path slim presentation K; avoid polluting full-bundle TTL cache
                 let continuation = lock.build_continuation_bundle_wake(Some(&intent));
+                let t_ready = std::time::Instant::now();
                 let readiness = lock.backend_readiness();
-                (continuation, readiness, warm_promoted)
+                let readiness_ms = (t_ready.elapsed().as_secs_f64() * 1000.0).round() as u64;
+                (
+                    continuation,
+                    readiness,
+                    warm_promoted,
+                    warm_ms,
+                    readiness_ms,
+                )
             };
             mark_phase(&mut phase_ms, "continuation_ms", t_phase);
             // RSI Cycle 51: nest gather/local/harness/fidelity ms under wake_phase_ms.
             if let Some(detail) = continuation.get("continuation_phase_ms") {
                 phase_ms.insert("continuation_detail".to_string(), detail.clone());
             }
+            // RSI Cycle 64: outer residual observability
+            phase_ms.insert("warm_ms".to_string(), json!(warm_ms));
+            phase_ms.insert("readiness_ms".to_string(), json!(readiness_ms));
 
             let t_phase = std::time::Instant::now();
             let spatial = if include_spatial {
