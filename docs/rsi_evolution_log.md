@@ -3686,3 +3686,32 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 1. MCP swap MQ20; wake top edge is recent 178415* SELECT/session_end.
 2. Optional #134 C86 cold assemble residual (floor held).
 3. Capacity only if landfill metrics measured.
+
+## MQ Cycle 21 — trusted session_boundary tiles by recency (2026-07-15)
+
+### VERIFY₀ baseline
+
+- master@`9fe2239c` MQ20 #154.
+- MCP swapped: full incident + recency LIVE; candidates_scanned=121; top edge `1784158269`.
+- CSF warm **0.947**; injection_completeness **1.0**; verify healthy.
+- Residual: `trusted_tiles[0]=session_boundary_1784151768` (oldest) — newest boundaries not first.
+- Unit tests lean + MQ20 relation full-incident green.
+
+### SELECT
+
+**mq_tiles_boundaries** — rank trusted session_boundary by concept unix recency (latest-wins).
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Sort | type rank then recency then CRS in `build_trusted_tiles_opts` |
+| Ensure | re-sort existing boundary list if head not latest |
+| Flag | `mq_trusted_tiles_boundary_recency` |
+| Test | `build_trusted_tiles_ranks_session_boundary_by_recency` |
+
+### Next vectors
+
+1. MCP swap MQ21; wake trusted_tiles[0] is newest session_boundary.
+2. Optional #134 C86 cold assemble residual (floor held).
+3. Capacity only if landfill metrics measured.

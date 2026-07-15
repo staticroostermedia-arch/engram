@@ -616,6 +616,15 @@ pub fn build_trusted_tiles_opts(
         if tr != std::cmp::Ordering::Equal {
             return tr;
         }
+        // MQ Cycle 21: same type → newer concept unix wins (session_boundary latest-wins).
+        let ca = a.get("concept").and_then(|v| v.as_str()).unwrap_or("");
+        let cb = b.get("concept").and_then(|v| v.as_str()).unwrap_or("");
+        let ra = trusted_tile_concept_recency(ca);
+        let rb = trusted_tile_concept_recency(cb);
+        let rr = rb.cmp(&ra);
+        if rr != std::cmp::Ordering::Equal {
+            return rr;
+        }
         b.get("crs")
             .and_then(|v| v.as_f64())
             .unwrap_or(0.0)
@@ -626,6 +635,17 @@ pub fn build_trusted_tiles_opts(
     tiles
 }
 
+/// Extract unix-ish digits from tile/trace concept names for latest-wins ranking.
+fn trusted_tile_concept_recency(concept: &str) -> u64 {
+    concept
+        .chars()
+        .skip_while(|c| !c.is_ascii_digit())
+        .take_while(|c| c.is_ascii_digit())
+        .collect::<String>()
+        .parse()
+        .unwrap_or(0)
+}
+
 /// MQ Cycle 11: merge recent `tile:session_boundary_*` into a trusted_tiles list
 /// (lean wake often freezes stale mvp formal_spec entries from rehydration_manifest).
 /// Returns true if the list was modified.
@@ -633,18 +653,56 @@ pub fn ensure_session_boundary_in_trusted_tiles(
     store: &mut StoreHandle,
     tiles: &mut Vec<Value>,
 ) -> bool {
-    let already = tiles.iter().any(|t| {
-        t.get("tile_type")
-            .and_then(|v| v.as_str())
-            .map(|tt| tt == "session_boundary")
-            .unwrap_or(false)
-            || t.get("concept")
-                .and_then(|v| v.as_str())
-                .map(|c| c.starts_with("tile:session_boundary_"))
-                .unwrap_or(false)
-    });
-    if already {
+    // MQ Cycle 21: if session_boundary present but not latest-first, re-sort by recency.
+    let max_boundary_recency = tiles
+        .iter()
+        .filter_map(|t| {
+            let tt = t.get("tile_type").and_then(|v| v.as_str()).unwrap_or("");
+            let c = t.get("concept").and_then(|v| v.as_str()).unwrap_or("");
+            if tt == "session_boundary" || c.starts_with("tile:session_boundary_") {
+                Some(trusted_tile_concept_recency(c))
+            } else {
+                None
+            }
+        })
+        .max()
+        .unwrap_or(0);
+    let head_is_latest_boundary = tiles
+        .first()
+        .map(|t| {
+            let c = t.get("concept").and_then(|v| v.as_str()).unwrap_or("");
+            let tt = t.get("tile_type").and_then(|v| v.as_str()).unwrap_or("");
+            (tt == "session_boundary" || c.starts_with("tile:session_boundary_"))
+                && trusted_tile_concept_recency(c) == max_boundary_recency
+                && max_boundary_recency > 0
+        })
+        .unwrap_or(false);
+    if head_is_latest_boundary {
         return false;
+    }
+    if max_boundary_recency > 0 {
+        // Re-sort existing list (may only need latest-first within already-collected tiles).
+        tiles.sort_by(|a, b| {
+            let type_rank = |t: &str| match t {
+                "session_boundary" => 0,
+                "verified_sequence" => 1,
+                "state_machine" => 2,
+                "formal_spec" => 3,
+                "research_offload" => 4,
+                "chain_summary" => 5,
+                _ => 6,
+            };
+            let ta = a.get("tile_type").and_then(|v| v.as_str()).unwrap_or("");
+            let tb = b.get("tile_type").and_then(|v| v.as_str()).unwrap_or("");
+            let tr = type_rank(ta).cmp(&type_rank(tb));
+            if tr != std::cmp::Ordering::Equal {
+                return tr;
+            }
+            let ca = a.get("concept").and_then(|v| v.as_str()).unwrap_or("");
+            let cb = b.get("concept").and_then(|v| v.as_str()).unwrap_or("");
+            trusted_tile_concept_recency(cb).cmp(&trusted_tile_concept_recency(ca))
+        });
+        return true;
     }
 
     let mut found: Vec<Value> = Vec::new();
@@ -2958,6 +3016,63 @@ SESSION HANDOFF PACKET v1 (structured JSON for next-wake read_concept)
         assert!(!ensure_session_boundary_in_trusted_tiles(
             &mut store, &mut tiles
         ));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// MQ Cycle 21: newest session_boundary wins over older ones with same CRS.
+    #[test]
+    fn build_trusted_tiles_ranks_session_boundary_by_recency() {
+        std::env::set_var("ENGRAM_DISABLE_SHEAF", "1");
+        std::env::set_var("ENGRAM_FORCE_CPU_BACKEND", "1");
+        std::env::set_var("ENGRAM_KI_DISABLE", "1");
+        let dir = std::env::temp_dir().join(format!(
+            "mq21_boundary_recency_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).ok();
+        let mut store = StoreHandle::new(&dir.to_string_lossy());
+        store
+            .remember(
+                "goal:engram_memory_quality_v1",
+                "GOAL\n\n**status:** active\n**statement:** mq21\n",
+            )
+            .unwrap();
+        let body =
+            "THOUGHT TILE\n\n**tile_type:** session_boundary\n**title:** t\n\n**payload:** {}\n";
+        for (name, ts) in [
+            ("tile:session_boundary_1000", 1000u64),
+            ("tile:session_boundary_1784159999", 1784159999u64),
+            ("tile:session_boundary_5000", 5000u64),
+        ] {
+            let _ = ts;
+            let mut b = store.encode(body);
+            b.crs_score = 0.91;
+            store.store(name, b).unwrap();
+            let _ = store.promote_tile_to_high_priority(name);
+            let _ = store.relate(name, "goal:engram_memory_quality_v1", "serves");
+        }
+        let tiles = build_trusted_tiles(&mut store, Some("goal:engram_memory_quality_v1"));
+        assert!(!tiles.is_empty());
+        assert_eq!(
+            tiles[0].get("concept").and_then(|v| v.as_str()),
+            Some("tile:session_boundary_1784159999"),
+            "newest boundary must be first, got {tiles:?}"
+        );
+        // Re-order ensure path
+        let mut shuffled = tiles.clone();
+        shuffled.reverse();
+        assert!(ensure_session_boundary_in_trusted_tiles(
+            &mut store,
+            &mut shuffled
+        ));
+        assert_eq!(
+            shuffled[0].get("concept").and_then(|v| v.as_str()),
+            Some("tile:session_boundary_1784159999")
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
