@@ -1854,6 +1854,9 @@ pub struct StoreHandle {
     leg_block_count_value: std::sync::atomic::AtomicUsize,
     leg_block_count_cached_at: std::sync::atomic::AtomicU64,
 
+    /// RSI Cycle 64: short-TTL cache for `backend_readiness` (wake outer residual).
+    readiness_cache: std::sync::Mutex<Option<(u64, serde_json::Value)>>,
+
     /// Last `recall_scoped` path for MCP observability (relational | sampled_warmup | bvh_discovery | bvh_full).
     last_recall_path: String,
 
@@ -2270,6 +2273,7 @@ impl StoreHandle {
             deep_bvh_spawn_attempted: std::sync::atomic::AtomicBool::new(false),
             leg_block_count_value: std::sync::atomic::AtomicUsize::new(0),
             leg_block_count_cached_at: std::sync::atomic::AtomicU64::new(0),
+            readiness_cache: std::sync::Mutex::new(None),
             last_recall_path: String::new(),
             metamemory: crate::metamemory_metrics::SessionMetamemoryCounters::default(),
         }
@@ -2440,6 +2444,7 @@ impl StoreHandle {
             deep_bvh_spawn_attempted: std::sync::atomic::AtomicBool::new(false),
             leg_block_count_value: std::sync::atomic::AtomicUsize::new(0),
             leg_block_count_cached_at: std::sync::atomic::AtomicU64::new(0),
+            readiness_cache: std::sync::Mutex::new(None),
             last_recall_path: String::new(),
             metamemory: crate::metamemory_metrics::SessionMetamemoryCounters::default(),
         }
@@ -2448,6 +2453,13 @@ impl StoreHandle {
     pub fn invalidate_continuation_bundle_cache(&mut self) {
         self.continuation_bundle_cached_at = 0;
         self.continuation_bundle_cache = None;
+    }
+
+    /// RSI Cycle 64: drop readiness TTL cache (after major backend state changes).
+    pub fn invalidate_readiness_cache(&self) {
+        if let Ok(mut g) = self.readiness_cache.lock() {
+            *g = None;
+        }
     }
 
     /// Returns true when the full backend (real store + OptiX/BVH + ki_hijacker etc.)
@@ -2541,7 +2553,37 @@ impl StoreHandle {
         }
     }
 
+    /// RSI Cycle 64: readiness TTL seconds (env `ENGRAM_READINESS_TTL_SECS`, default 2).
+    pub fn readiness_cache_ttl_secs() -> u64 {
+        std::env::var("ENGRAM_READINESS_TTL_SECS")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(2)
+            .clamp(0, 30)
+    }
+
     pub fn backend_readiness(&self) -> serde_json::Value {
+        let ttl = Self::readiness_cache_ttl_secs();
+        let now = activity_now();
+        if ttl > 0 {
+            if let Ok(guard) = self.readiness_cache.lock() {
+                if let Some((ts, ref cached)) = *guard {
+                    if now.saturating_sub(ts) < ttl {
+                        return cached.clone();
+                    }
+                }
+            }
+        }
+        let v = self.backend_readiness_uncached();
+        if ttl > 0 {
+            if let Ok(mut guard) = self.readiness_cache.lock() {
+                *guard = Some((now, v.clone()));
+            }
+        }
+        v
+    }
+
+    fn backend_readiness_uncached(&self) -> serde_json::Value {
         let recall_mode = self.recall_mode();
         serde_json::json!({
             "fully_initialized": self.is_fully_initialized(),
@@ -2604,6 +2646,9 @@ impl StoreHandle {
             "wake_harness_single_manifest": true,
             "wake_assemble_ms": true,
             "wake_assemble_lean": true,
+            "wake_readiness_ttl_cache": true,
+            "readiness_ttl_secs": Self::readiness_cache_ttl_secs(),
+            "readiness_ttl_env": "ENGRAM_READINESS_TTL_SECS",
             "sheaf_fingerprint_disk": true,
             "sheaf_fingerprint_path_env": "ENGRAM_STORE parent/process_sheaf_fingerprint",
             "crs_alpha_joint_enabled": crate::injection_priority::crs_alpha_joint_enabled(),
@@ -10853,6 +10898,36 @@ SESSION HANDOFF PACKET v1
             assert!(!store.relation_index.entries[i as usize].tombstone);
         }
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// RSI Cycle 64: readiness TTL cache returns same payload within TTL.
+    #[test]
+    fn readiness_ttl_cache_hits_within_window() {
+        std::env::set_var("ENGRAM_READINESS_TTL_SECS", "30");
+        let dir = test_store_dir("readiness_ttl");
+        let store = StoreHandle::new(&dir.to_string_lossy());
+        store.invalidate_readiness_cache();
+        let a = store.backend_readiness();
+        let b = store.backend_readiness();
+        assert_eq!(
+            a.get("wake_readiness_ttl_cache").and_then(|v| v.as_bool()),
+            Some(true)
+        );
+        assert_eq!(
+            a.get("relation_edge_count"),
+            b.get("relation_edge_count"),
+            "cached readiness should match"
+        );
+        assert_eq!(a.get("bvh_ready"), b.get("bvh_ready"));
+        // Force miss path
+        store.invalidate_readiness_cache();
+        let c = store.backend_readiness();
+        assert_eq!(
+            c.get("wake_readiness_ttl_cache").and_then(|v| v.as_bool()),
+            Some(true)
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+        std::env::remove_var("ENGRAM_READINESS_TTL_SECS");
     }
 
     /// RSI Cycle 63: O(1) edge counts match linear scan ground truth.

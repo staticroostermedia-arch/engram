@@ -2298,3 +2298,39 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 3. Full 8192-d σ² tensors (long horizon).
 4. Keep warm wake total ≤80ms.
 
+## Cycle 64 — readiness TTL cache + outer wake timers (2026-07-15)
+
+### Master baseline
+
+- Post Cycle 63: PR **#111** `d7e43474` — O(1) edge counts.
+- **Measured warm:** total=**93**, cont=87, detail=17; outer gap ~70ms.
+- Prompt backlog C50–C56 already shipped.
+
+### Research synthesis
+
+| Source | Insight |
+|--------|---------|
+| session_start | warm_wake + sentinel + bundle + readiness under one continuation_ms. |
+| backend_readiness | Large JSON rebuilt every call even when state stable. |
+| C63 | Edge scans O(1); residual is readiness construction + repeat calls. |
+
+### Hypothesis
+
+**2s TTL cache** for `backend_readiness` (+ `ENGRAM_READINESS_TTL_SECS`); expose `warm_ms` / `readiness_ms` under wake_phase_ms for outer residual targeting.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Code | readiness_cache Mutex; backend_readiness cache path; mcp warm/readiness timers |
+| Env | `ENGRAM_READINESS_TTL_SECS` (default 2) |
+| Readiness | `wake_readiness_ttl_cache`, `readiness_ttl_secs` |
+| Test | `readiness_ttl_cache_hits_within_window` |
+
+### Next vectors
+
+1. Measure readiness_ms / warm_ms after MCP swap; cut dominant outer.
+2. Slim first-build readiness if readiness_ms still high.
+3. Full 8192-d σ² tensors (long horizon).
+4. Keep warm wake total ≤80ms.
+
