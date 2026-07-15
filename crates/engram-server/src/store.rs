@@ -2780,6 +2780,7 @@ impl StoreHandle {
                 "mq_tiles_boundaries_session": true,
                 "mq_csf_session_boundary_prefer": true,
                 "mq_hub_crs_lean_sample": true,
+                "mq_rehydrate_injection_completeness_lean": true,
                 "wake_continuation_soft_stale": true,
                 "wake_continuation_soft_stale_env": "ENGRAM_WAKE_CONTINUATION_SOFT_STALE_SECS",
                 "wake_continuation_soft_stale_secs": 1800,
@@ -5443,26 +5444,36 @@ impl StoreHandle {
             .and_then(|h| h.as_str())
             .map(|s| !s.is_empty())
             .unwrap_or(false);
-        let open_scars = if wake_lean {
-            0
-        } else {
-            harness
-                .get("open_scars_wake")
-                .and_then(|v| v.as_array())
-                .map(|a| a.len())
-                .unwrap_or(0)
-        };
+        // MQ Cycle 13: lean still surfaces scar count (0 = healthy) without heavy scar walks.
+        let open_scars = harness
+            .get("open_scars_wake")
+            .and_then(|v| v.as_array())
+            .map(|a| a.len())
+            .unwrap_or(0);
         let presentation_count = presentation_stratum
             .get("node_count")
             .and_then(|v| v.as_u64())
             .unwrap_or(0) as usize;
-        let hot_tile_count = if wake_lean {
-            0
-        } else {
-            entries
+        // MQ Cycle 13: lean counts trusted/hot tiles from harness + entries (no full hot walk).
+        let hot_tile_count = {
+            let from_entries = entries
                 .iter()
-                .filter(|e| e.hot && e.concept.starts_with("tile:"))
-                .count()
+                .filter(|e| e.concept.starts_with("tile:") && (e.hot || wake_lean))
+                .count();
+            let from_trusted = harness
+                .get("trusted_tiles")
+                .and_then(|v| v.as_array())
+                .map(|a| a.len())
+                .unwrap_or(0);
+            if wake_lean {
+                from_entries.max(from_trusted)
+            } else {
+                entries
+                    .iter()
+                    .filter(|e| e.hot && e.concept.starts_with("tile:"))
+                    .count()
+                    .max(from_trusted)
+            }
         };
         // Cycle 61: prefer already-cached leg block count (avoid 30s-TTL rescan on wake).
         // RSI Cycle 70: if atomic cold, use O(1) BVH leaf count as proxy (no 90k dir scan).
