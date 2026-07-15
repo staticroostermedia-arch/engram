@@ -1700,4 +1700,41 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 3. Partial σ² tensors beyond 16-d capsule (long horizon).
 4. Query_pure TIMING full gate.
 
+---
+
+## Cycle 47 — lean presentation stratum on wake (2026-07-14)
+
+### Master baseline
+
+- Post Cycle 46: PR **#92** `6abf2a21` — lean wake harness.
+- Hub CRS ~0.89 · CSF ~0.94 · ~89k blocks · wake still ~50s on stale MCP.
+
+### Research synthesis
+
+| Source | Insight |
+|--------|---------|
+| Cycle 46 | Harness lean cut scars/verified; presentation gather still multi-hop α + lineage. |
+| gather_surface | expand_labeled_alpha + recent(80) + hot flood + per-node lineage_for dominate. |
+| Slim wake | Previews only need core/handoff/top serves. |
+
+### Hypothesis
+
+**Lean presentation:** skip multi-hop prev_in_trace expand, cap recent/hot, skip lineage_for and tile/trace edge expansion on wake path.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Code | `gather_surface_ranked_opts` + `build_presentation_stratum_opts(lean)` |
+| Wake | harness lean_wake → presentation lean |
+| Full | LEG/serve/get_continuation still full gather |
+| Lexicon | `wake-presentation-lean` |
+
+### Next vectors
+
+1. mmap CSR for multi-million edge stalks.
+2. Restart MCP + measure phase_ms; cut session_block encode if still hot.
+3. Partial σ² tensors beyond 16-d capsule (long horizon).
+4. Query_pure TIMING full gate.
+
 

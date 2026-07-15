@@ -87,6 +87,7 @@ list = [
   "lexicon:word:wake-phase-ms",
   "lexicon:word:wake-ki-rebake-gate",
   "lexicon:word:wake-harness-lean",
+  "lexicon:word:wake-presentation-lean",
 ]
 
 [execute]

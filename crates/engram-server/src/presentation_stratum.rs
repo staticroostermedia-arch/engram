@@ -297,6 +297,17 @@ pub fn gather_surface_ranked(
     intent: Option<&str>,
     use_intent_recall: bool,
 ) -> Vec<Candidate> {
+    gather_surface_ranked_opts(store, budget, intent, use_intent_recall, false)
+}
+
+/// RSI Cycle 47: `lean` skips multi-hop α expand, deep recent scans, and hot-set flood.
+pub fn gather_surface_ranked_opts(
+    store: &mut StoreHandle,
+    budget: usize,
+    intent: Option<&str>,
+    use_intent_recall: bool,
+    lean: bool,
+) -> Vec<Candidate> {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
@@ -379,8 +390,10 @@ pub fn gather_surface_ranked(
     }
 
     // Trace breadcrumb: α-weighted multi-hop along prev_in_trace from recent head.
+    // Cycle 47 lean: single head only, no expand_labeled_alpha (O(deg×budget) on large stalks).
     let hop_budget = presentation_hop_budget();
-    for (concept, _) in store.access_index.recent(40) {
+    let recent_trace_cap = if lean { 12 } else { 40 };
+    for (concept, _) in store.access_index.recent(recent_trace_cap) {
         if concept.starts_with("trace:") {
             push_candidate(
                 &mut candidates,
@@ -394,23 +407,25 @@ pub fn gather_surface_ranked(
                 "trace_head",
                 "warm",
             );
-            for (prev, path_cost, vol) in
-                expand_labeled_alpha(store, &concept, "prev_in_trace", "to", hop_budget)
-            {
-                if is_surface_eligible(&prev) {
-                    if let Some(b) = store.fetch_block_high_priority(&prev) {
-                        // Deeper / higher-α paths lose base score
-                        let depth_pen = (path_cost / hop_budget.max(1.0)).clamp(0.0, 1.0);
-                        let base = 0.60 * score_alpha_scale(vol) * (1.0 - 0.25 * depth_pen);
-                        push_candidate(
-                            &mut candidates,
-                            &prev,
-                            base,
-                            b.crs_score,
-                            store.is_hot(&prev),
-                            "trace_prev_alpha",
-                            "warm",
-                        );
+            if !lean {
+                for (prev, path_cost, vol) in
+                    expand_labeled_alpha(store, &concept, "prev_in_trace", "to", hop_budget)
+                {
+                    if is_surface_eligible(&prev) {
+                        if let Some(b) = store.fetch_block_high_priority(&prev) {
+                            // Deeper / higher-α paths lose base score
+                            let depth_pen = (path_cost / hop_budget.max(1.0)).clamp(0.0, 1.0);
+                            let base = 0.60 * score_alpha_scale(vol) * (1.0 - 0.25 * depth_pen);
+                            push_candidate(
+                                &mut candidates,
+                                &prev,
+                                base,
+                                b.crs_score,
+                                store.is_hot(&prev),
+                                "trace_prev_alpha",
+                                "warm",
+                            );
+                        }
                     }
                 }
             }
@@ -418,7 +433,8 @@ pub fn gather_surface_ranked(
         }
     }
 
-    for (concept, _) in store.access_index.recent(80) {
+    let recent_access_cap = if lean { 24 } else { 80 };
+    for (concept, _) in store.access_index.recent(recent_access_cap) {
         if !is_surface_eligible(&concept) {
             continue;
         }
@@ -447,7 +463,12 @@ pub fn gather_surface_ranked(
         }
     }
 
+    let mut hot_n = 0usize;
+    let hot_cap = if lean { 12 } else { usize::MAX };
     for c in store.hot_concepts() {
+        if hot_n >= hot_cap {
+            break;
+        }
         if let Some(b) = store.fetch_block_high_priority(&c) {
             push_candidate(
                 &mut candidates,
@@ -458,26 +479,29 @@ pub fn gather_surface_ranked(
                 "hot_set",
                 "warm",
             );
+            hot_n = hot_n.saturating_add(1);
         }
     }
 
-    for (concept, _) in store.search_relations("primary_goal", Some("serves"), "from") {
-        if concept.starts_with("process:engram.") {
-            if let Some(b) = store.fetch_block_high_priority(&concept) {
-                push_candidate(
-                    &mut candidates,
-                    &concept,
-                    0.70,
-                    b.crs_score,
-                    store.is_hot(&concept),
-                    "process_sheaf",
-                    "served",
-                );
+    if !lean {
+        for (concept, _) in store.search_relations("primary_goal", Some("serves"), "from") {
+            if concept.starts_with("process:engram.") {
+                if let Some(b) = store.fetch_block_high_priority(&concept) {
+                    push_candidate(
+                        &mut candidates,
+                        &concept,
+                        0.70,
+                        b.crs_score,
+                        store.is_hot(&concept),
+                        "process_sheaf",
+                        "served",
+                    );
+                }
             }
         }
     }
 
-    if use_intent_recall {
+    if use_intent_recall && !lean {
         if let Some(intent_text) = intent.filter(|s| !s.is_empty()) {
             for mem in store
                 .recall_scoped(intent_text, 6, Some("anchors"))
@@ -528,7 +552,17 @@ pub fn build_presentation_stratum(
     budget: usize,
     intent: Option<&str>,
 ) -> Value {
-    let ranked = gather_surface_ranked(store, budget, intent, true);
+    build_presentation_stratum_opts(store, budget, intent, false)
+}
+
+/// RSI Cycle 47: lean wake presentation — no multi-hop expand, no per-node lineage walks.
+pub fn build_presentation_stratum_opts(
+    store: &mut StoreHandle,
+    budget: usize,
+    intent: Option<&str>,
+    lean: bool,
+) -> Value {
+    let ranked = gather_surface_ranked_opts(store, budget, intent, !lean, lean);
     let selected: HashSet<String> = ranked.iter().map(|c| c.concept.clone()).collect();
 
     let mut nodes: Vec<Value> = Vec::new();
@@ -541,8 +575,8 @@ pub fn build_presentation_stratum(
             .fetch_block_high_priority(&c.concept)
             .map(|b| {
                 let text = storage::read_provlog(&b);
-                let p: String = text.chars().take(200).collect();
-                if text.len() > 200 {
+                let p: String = text.chars().take(if lean { 120 } else { 200 }).collect();
+                if text.len() > if lean { 120 } else { 200 } {
                     format!("{}…", p)
                 } else {
                     p
@@ -550,7 +584,20 @@ pub fn build_presentation_stratum(
             })
             .unwrap_or_default();
 
-        let lineage = lineage_for(store, &c.concept);
+        // Cycle 47 lean: empty lineage (avoids 4× search_relations per node).
+        let lineage = if lean {
+            json!({
+                "summarizes_chain": [],
+                "prev_in_trace": [],
+                "next_in_trace": [],
+                "served_by_goals": [],
+                "member_count": 0,
+                "is_distillate": false,
+                "lean_wake": true,
+            })
+        } else {
+            lineage_for(store, &c.concept)
+        };
         lineage_index.insert(c.concept.clone(), lineage.clone());
 
         let kind = if c.concept.starts_with("tile:") {
@@ -567,11 +614,15 @@ pub fn build_presentation_stratum(
             "memory"
         };
 
-        let l2_norm_residual = store
-            .fetch_block_high_priority(&c.concept)
-            .or_else(|| store.fetch_block(&c.concept))
-            .map(|b| b.l2_norm_residual)
-            .unwrap_or(0.0);
+        let l2_norm_residual = if lean {
+            0.0
+        } else {
+            store
+                .fetch_block_high_priority(&c.concept)
+                .or_else(|| store.fetch_block(&c.concept))
+                .map(|b| b.l2_norm_residual)
+                .unwrap_or(0.0)
+        };
         let mut node = json!({
             "concept": c.concept,
             "kind": kind,
@@ -591,6 +642,7 @@ pub fn build_presentation_stratum(
 
     let mut edges: Vec<Value> = Vec::new();
     if selected.contains("primary_goal") {
+        // Lean: one ranked serves pass is enough for edge list; skip trace edges.
         for c in selected.iter().filter(|id| *id != "primary_goal") {
             if let Some((_, _, vol)) = store
                 .search_relations_ranked("primary_goal", Some("serves"), "to", true)
@@ -607,33 +659,37 @@ pub fn build_presentation_stratum(
             }
         }
     }
-    for id in selected.iter().filter(|c| c.starts_with("trace:")) {
-        for (_label, other, vol) in
-            store.search_relations_ranked(id, Some("prev_in_trace"), "both", true)
-        {
-            if selected.contains(&other) {
-                edges.push(json!({
-                    "from": id,
-                    "to": other,
-                    "label": "prev_in_trace",
-                    "volatility": vol,
-                    "hop_cost": 1.0 + vol,
-                }));
+    if !lean {
+        for id in selected.iter().filter(|c| c.starts_with("trace:")) {
+            for (_label, other, vol) in
+                store.search_relations_ranked(id, Some("prev_in_trace"), "both", true)
+            {
+                if selected.contains(&other) {
+                    edges.push(json!({
+                        "from": id,
+                        "to": other,
+                        "label": "prev_in_trace",
+                        "volatility": vol,
+                        "hop_cost": 1.0 + vol,
+                    }));
+                }
             }
         }
     }
-    for id in selected.iter().filter(|c| c.starts_with("tile:")) {
-        for (_label, member, vol) in
-            store.search_relations_ranked(id, Some("summarizes_chain"), "to", true)
-        {
-            if selected.contains(&member) {
-                edges.push(json!({
-                    "from": id,
-                    "to": member,
-                    "label": "summarizes_chain",
-                    "volatility": vol,
-                    "hop_cost": 1.0 + vol,
-                }));
+    if !lean {
+        for id in selected.iter().filter(|c| c.starts_with("tile:")) {
+            for (_label, member, vol) in
+                store.search_relations_ranked(id, Some("summarizes_chain"), "to", true)
+            {
+                if selected.contains(&member) {
+                    edges.push(json!({
+                        "from": id,
+                        "to": member,
+                        "label": "summarizes_chain",
+                        "volatility": vol,
+                        "hop_cost": 1.0 + vol,
+                    }));
+                }
             }
         }
     }

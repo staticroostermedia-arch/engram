@@ -1397,10 +1397,11 @@ pub fn build_harness_bundle_with_presentation_k(
     let hub_anchors = resolve_hub_anchors_for_surprise(store, session_intent);
     let ego_snapshot = build_ego_snapshot(store, primary_goal.as_deref(), Some(&hub_anchors));
     let continuity_playbook = build_continuity_playbook(primary_goal.as_deref());
-    let presentation_stratum = crate::presentation_stratum::build_presentation_stratum(
+    let presentation_stratum = crate::presentation_stratum::build_presentation_stratum_opts(
         store,
         presentation_k.max(5),
         session_intent,
+        lean_wake,
     );
 
     // Cycle 46: lean wake skips store-walking scars/verified/condensation (full via get_continuation_bundle).
