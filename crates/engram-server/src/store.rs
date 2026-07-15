@@ -2691,6 +2691,7 @@ impl StoreHandle {
                 "wake_artifact_gather_lean": true,
                 "wake_gather_ultra_lean": true,
                 "wake_gather_existence_only": true,
+                "wake_gather_skip_primary_resolve": true,
                 "wake_harness_single_manifest": true,
                 "wake_assemble_ms": true,
                 "wake_assemble_lean": true,
@@ -4799,16 +4800,37 @@ impl StoreHandle {
             }
         };
 
-        let primary_goal_name = resolve_primary_goal_for_continuation(self);
-        if self.fetch_block_high_priority("primary_goal").is_some() {
-            push(
-                self,
-                &mut entries,
-                &mut seen,
-                "primary_goal",
-                "primary_goal_marker",
-            );
-        }
+        // RSI Cycle 78: wake lean — one marker fetch for name+existence; skip active-status goal body.
+        // Full resolve_primary_goal_for_continuation remains for non-wake (serves walks need active).
+        let primary_goal_name = if wake_lean {
+            if let Some(marker) = self.fetch_block_high_priority("primary_goal") {
+                let name = primary_goal_marker_target(&marker);
+                if seen.insert("primary_goal".to_string()) {
+                    entries.push(BundleEntry {
+                        concept: "primary_goal".to_string(),
+                        crs: 0.0,
+                        hot: false,
+                        preview: String::new(),
+                        source: "primary_goal_marker".to_string(),
+                    });
+                }
+                name
+            } else {
+                None
+            }
+        } else {
+            let name = resolve_primary_goal_for_continuation(self);
+            if self.fetch_block_high_priority("primary_goal").is_some() {
+                push(
+                    self,
+                    &mut entries,
+                    &mut seen,
+                    "primary_goal",
+                    "primary_goal_marker",
+                );
+            }
+            name
+        };
 
         let mut last_session_end: Option<serde_json::Value> = None;
         // RSI Cycle 59: wake skips recent(50) session_end scan (handoff carries chain).
@@ -4834,10 +4856,13 @@ impl StoreHandle {
             }
         }
 
-        let hydration_cache_present = self
-            .fetch_block_high_priority("helper:session_hydration_cache")
-            .is_some();
-        // Wake: existence probe only (no entry push) — saves preview fetch.
+        // RSI Cycle 78: wake lean skips hydration_cache probe (not in lean artifacts).
+        let hydration_cache_present = if wake_lean {
+            false
+        } else {
+            self.fetch_block_high_priority("helper:session_hydration_cache")
+                .is_some()
+        };
         if hydration_cache_present && !wake_lean {
             push(
                 self,
@@ -9619,6 +9644,12 @@ mod ingest_ast_tests {
                 .and_then(|v| v.as_bool()),
             Some(true)
         );
+        assert_eq!(
+            ready
+                .get("wake_gather_skip_primary_resolve")
+                .and_then(|v| v.as_bool()),
+            Some(true)
+        );
         // Cycle 75: wake gather must not materialize handoff/primary body previews.
         for a in &arts {
             let c = a.get("concept").and_then(|x| x.as_str()).unwrap_or("");
@@ -9630,6 +9661,12 @@ mod ingest_ast_tests {
                 );
             }
         }
+        // Cycle 78: primary_goal name from marker target (no active-status resolve).
+        assert_eq!(
+            bundle.get("primary_goal").and_then(|v| v.as_str()),
+            Some("goal:engram_mvp_v1"),
+            "wake lean primary_goal from marker target"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 

@@ -2786,3 +2786,37 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 1. MCP swap C74–C77; warm harness≤1 gather≤1 sheaf≤2 total≤10; cold readiness≤30.
 2. Full 8192-d σ² tensors (long horizon — not wake path).
 
+## Cycle 78 — wake gather skip primary resolve (2026-07-15)
+
+### Master baseline
+
+- Post Cycle 77: PR **#125** `c34f1659` — rehydration manifest soft-stale.
+- **MCP swapped (flags C74–C77 LIVE):** cold total=**20260** sheaf=**19700** readiness=**542**; **warm** total=**8** sheaf=**0** harness=**1** gather=**4**.
+- Warm targets ≤10 met; residual gather_ms from `resolve_primary_goal_for_continuation` (2–3 block fetches) unused for lean serves walks.
+
+### Research synthesis
+
+| Source | Insight |
+|--------|---------|
+| warm gather_ms=4 | Dominant warm residual after soft-stale stack. |
+| primary_goal resolve | Active-status goal body fetch not needed for wake packet name field. |
+| hydration probe | Lean path never pushes hydration_cache — existence probe pure waste. |
+
+### Hypothesis
+
+**Marker-only primary_goal:** one high-priority marker fetch → name + existence entry; skip active resolve + hydration probe on wake lean.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Code | wake_lean primary_goal path + skip hydration probe |
+| Readiness | `wake_gather_skip_primary_resolve` |
+| Test | extended `wake_ultra_lean_gather_core_anchors_only` |
+
+### Next vectors
+
+1. Warm gather_ms≤1 total≤6 after C78 MCP swap.
+2. Cold first-wake sheaf (19700) + readiness (542) — async sheaf or fingerprint skip fix.
+3. Full 8192-d σ² tensors (long horizon — not wake path).
+
