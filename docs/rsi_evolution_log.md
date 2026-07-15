@@ -1438,4 +1438,42 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 3. Further wake path slim.
 4. Batch CSR remove / tombstone compaction.
 
+---
+
+## Cycle 40 — adaptive Fisher residual bands (2026-07-14)
+
+### Master baseline
+
+- Post Cycle 39: PR **#85** `4bc60c8a` — incremental CSR remove.
+- Hub CRS ~0.89 · CSF ~0.94 · ~89k blocks.
+
+### Research synthesis
+
+| Source | Insight |
+|--------|---------|
+| Cycle 35 | Fixed 16 residual dims for band mean; low-surprise dilutes / wastes work. |
+| Fisher / multi-scale precision | Match observation bandwidth to residual energy. |
+| Info geometry | Adaptive dim count ≈ local precision scale selection. |
+
+### Hypothesis
+
+**Adaptive bands:** map residual L2 → 4 / 8 / 16 capsule dims (clamped by `residual_dims_used`); default ON via `ENGRAM_FISHER_ADAPTIVE_BANDS`.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Code | `fisher_adaptive_bands_enabled`, `fisher_residual_band_count`, banded precision uses adaptive n |
+| Explain | `+band=…(adaptn=N)` vs fixed |
+| Readiness | `fisher_adaptive_bands_enabled` + env key |
+| Tests | `fisher_adaptive_band_count_scales_with_residual_l2` |
+| Lexicon | `fisher-adaptive-bands` |
+
+### Next vectors
+
+1. mmap CSR for multi-million edge stalks.
+2. Further wake path slim.
+3. Batch CSR remove / tombstone compaction.
+4. Partial σ² tensors beyond 16-d capsule (long horizon).
+
 
