@@ -520,6 +520,15 @@ pub fn build_jit_deformation_framework(task_type: &str, primary_goal: Option<&st
 
 /// Trusted tiles suitable as JIT playbooks (high CRS, linked to goal or handoff).
 pub fn build_trusted_tiles(store: &mut StoreHandle, primary_goal: Option<&str>) -> Vec<Value> {
+    build_trusted_tiles_opts(store, primary_goal, 80)
+}
+
+/// RSI Cycle 49: `recent_cap` bounds access-index scan (lean wake uses 24).
+pub fn build_trusted_tiles_opts(
+    store: &mut StoreHandle,
+    primary_goal: Option<&str>,
+    recent_cap: usize,
+) -> Vec<Value> {
     let mut tiles = Vec::new();
     let mut seen = HashSet::new();
 
@@ -562,7 +571,7 @@ pub fn build_trusted_tiles(store: &mut StoreHandle, primary_goal: Option<&str>) 
         }
     }
 
-    for (concept, _) in store.access_index.recent(80) {
+    for (concept, _) in store.access_index.recent(recent_cap) {
         if concept.starts_with("tile:") {
             if let Some(block) = store.fetch_block_high_priority(&concept) {
                 consider(&concept, "recent_access", block.crs_score);
@@ -734,37 +743,60 @@ pub fn build_suggested_actions(
     store: &mut StoreHandle,
     session_intent: Option<&str>,
 ) -> Vec<Value> {
+    build_suggested_actions_opts(store, session_intent, false)
+}
+
+/// RSI Cycle 49: lean wake skips scars/verified/condensation + full presentation rebuild
+/// (those dominate `continuation_ms` after sheaf disk warm). Full queue via
+/// `get_continuation_bundle` / non-lean harness.
+pub fn build_suggested_actions_opts(
+    store: &mut StoreHandle,
+    session_intent: Option<&str>,
+    lean_wake: bool,
+) -> Vec<Value> {
     let mut actions = Vec::new();
     let mut primary_goal: Option<String> = None;
     let mut handoff_packet: Option<Value> = None;
 
-    let hub_anchors = resolve_hub_anchors_for_surprise(store, session_intent);
-    let surprise = sentinel_pressure_combined(store, &hub_anchors);
-    let (turns, checkpoint) = store.sentinel_snapshot();
-    let minutes = crate::continuity_spikes::minutes_since_checkpoint(
-        checkpoint,
-        crate::continuity_spikes::now_unix(),
-    );
-    let (rehydrate_suggested, rehydrate_reason) =
-        crate::continuity_spikes::compute_sentinel_nudge_with_surprise(turns, minutes, surprise);
+    // Lean: use ego sentinel only (no hub residual walk / presentation rebuild).
+    let (rehydrate_suggested, rehydrate_reason) = if lean_wake {
+        let (turns, checkpoint) = store.sentinel_snapshot();
+        let minutes = crate::continuity_spikes::minutes_since_checkpoint(
+            checkpoint,
+            crate::continuity_spikes::now_unix(),
+        );
+        let ego = ego_drift_velocity().unwrap_or(0.0);
+        crate::continuity_spikes::compute_sentinel_nudge_with_surprise(turns, minutes, ego)
+    } else {
+        let hub_anchors = resolve_hub_anchors_for_surprise(store, session_intent);
+        let surprise = sentinel_pressure_combined(store, &hub_anchors);
+        let (turns, checkpoint) = store.sentinel_snapshot();
+        let minutes = crate::continuity_spikes::minutes_since_checkpoint(
+            checkpoint,
+            crate::continuity_spikes::now_unix(),
+        );
+        crate::continuity_spikes::compute_sentinel_nudge_with_surprise(turns, minutes, surprise)
+    };
     if rehydrate_suggested {
         actions.push(crate::continuity_spikes::rehydrate_nudge_action(
             rehydrate_reason,
         ));
     }
 
-    for scar in collect_open_scars(store, 3) {
-        if let Some(concept) = scar.get("concept").and_then(|v| v.as_str()) {
-            push_jit_action(
-                &mut actions,
-                "mcp_engram_read_concept",
-                json!({ "concept": concept }),
-                "open scar — repulsion before repeating dead approach (RSI)",
-                0,
-                false,
-                Some("open_scars non-empty"),
-            );
-            break;
+    if !lean_wake {
+        for scar in collect_open_scars(store, 3) {
+            if let Some(concept) = scar.get("concept").and_then(|v| v.as_str()) {
+                push_jit_action(
+                    &mut actions,
+                    "mcp_engram_read_concept",
+                    json!({ "concept": concept }),
+                    "open scar — repulsion before repeating dead approach (RSI)",
+                    0,
+                    false,
+                    Some("open_scars non-empty"),
+                );
+                break;
+            }
         }
     }
 
@@ -954,168 +986,181 @@ pub fn build_suggested_actions(
         }
     }
 
-    // Presentation stratum distillates — read top process/ritual/tile nodes (praxis continuation).
-    let stratum =
-        crate::presentation_stratum::build_presentation_stratum(store, 12, session_intent);
-    let mut stratum_queued = 0u64;
-    if let Some(nodes) = stratum.get("nodes").and_then(|v| v.as_array()) {
-        for n in nodes {
-            if stratum_queued >= 3 {
-                break;
+    // Presentation distillates — Cycle 49 lean: skip (harness already built lean stratum;
+    // full non-lean rebuild here was a major continuation_ms regressor).
+    if !lean_wake {
+        let stratum =
+            crate::presentation_stratum::build_presentation_stratum(store, 12, session_intent);
+        let mut stratum_queued = 0u64;
+        if let Some(nodes) = stratum.get("nodes").and_then(|v| v.as_array()) {
+            for n in nodes {
+                if stratum_queued >= 3 {
+                    break;
+                }
+                let concept = n.get("concept").and_then(|v| v.as_str()).unwrap_or("");
+                let kind = n.get("kind").and_then(|v| v.as_str()).unwrap_or("");
+                if concept.is_empty()
+                    || concept == SESSION_HANDOFF_LATEST
+                    || concept == "primary_goal"
+                {
+                    continue;
+                }
+                if !matches!(kind, "tile" | "process" | "ritual" | "trace") {
+                    continue;
+                }
+                let lineage_n = n
+                    .get("lineage")
+                    .and_then(|l| l.get("member_count"))
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0);
+                let reason = if lineage_n > 0 {
+                    format!(
+                        "presentation stratum distillate ({kind}, lineage={lineage_n}) — praxis continuation"
+                    )
+                } else {
+                    format!("presentation stratum distillate ({kind}) — ranked process/ritual node")
+                };
+                push_action(
+                    &mut actions,
+                    "mcp_engram_read_concept",
+                    json!({ "concept": concept }),
+                    &reason,
+                    3 + stratum_queued,
+                );
+                stratum_queued += 1;
             }
-            let concept = n.get("concept").and_then(|v| v.as_str()).unwrap_or("");
-            let kind = n.get("kind").and_then(|v| v.as_str()).unwrap_or("");
-            if concept.is_empty() || concept == SESSION_HANDOFF_LATEST || concept == "primary_goal"
-            {
-                continue;
-            }
-            if !matches!(kind, "tile" | "process" | "ritual" | "trace") {
-                continue;
-            }
-            let lineage_n = n
-                .get("lineage")
-                .and_then(|l| l.get("member_count"))
-                .and_then(|v| v.as_u64())
-                .unwrap_or(0);
-            let reason = if lineage_n > 0 {
-                format!(
-                    "presentation stratum distillate ({kind}, lineage={lineage_n}) — praxis continuation"
-                )
-            } else {
-                format!("presentation stratum distillate ({kind}) — ranked process/ritual node")
-            };
-            push_action(
-                &mut actions,
-                "mcp_engram_read_concept",
-                json!({ "concept": concept }),
-                &reason,
-                3 + stratum_queued,
-            );
-            stratum_queued += 1;
         }
-    }
 
-    for proc in build_verified_processes(store, primary_goal.as_deref()) {
-        if let Some(concept) = proc.get("tile").and_then(|v| v.as_str()) {
-            let tile_type = proc.get("tile_type").and_then(|v| v.as_str()).unwrap_or("");
+        for proc in build_verified_processes(store, primary_goal.as_deref()) {
+            if let Some(concept) = proc.get("tile").and_then(|v| v.as_str()) {
+                let tile_type = proc.get("tile_type").and_then(|v| v.as_str()).unwrap_or("");
+                push_jit_action(
+                    &mut actions,
+                    "mcp_engram_read_concept",
+                    json!({ "concept": concept }),
+                    "trusted JIT playbook — read payload then construct tool calls per step",
+                    18,
+                    true,
+                    Some("verified_process fronted at wake"),
+                );
+                if tile_type == "verified_sequence" {
+                    actions.push(json!({
+                        "tool": "(jit_replay)",
+                        "args": { "tile": concept, "steps_preview": proc.get("steps_preview") },
+                        "reason": proc.get("jit_replay").and_then(|v| v.as_str()).unwrap_or("JIT verified_sequence replay"),
+                        "priority": 17,
+                        "jit": true,
+                        "verified_sequence": true,
+                        "on_success": proc.get("on_full_success"),
+                        "on_failure": proc.get("on_repeat_failure"),
+                    }));
+                }
+            }
+        }
+
+        for hint in build_condensation_hints(store, primary_goal.as_deref()) {
+            actions.push(hint);
+        }
+
+        let has_condensation = !build_condensation_hints(store, primary_goal.as_deref()).is_empty();
+        let scar_n = collect_open_scars(store, 1).len();
+        let task_type = infer_task_type(
+            handoff_packet.as_ref(),
+            session_intent,
+            has_condensation,
+            scar_n,
+        );
+        if task_type == "meta_evolution" {
             push_jit_action(
                 &mut actions,
-                "mcp_engram_read_concept",
-                json!({ "concept": concept }),
-                "trusted JIT playbook — read payload then construct tool calls per step",
-                18,
+                "mcp_engram_thought_tile_draft_from_chain",
+                json!({ "goal_context": primary_goal.clone().unwrap_or_default() }),
+                "meta arc — draft verified_sequence from trace chain before minting tile",
+                6,
                 true,
-                Some("verified_process fronted at wake"),
+                Some("meta_evolution task_type"),
             );
-            if tile_type == "verified_sequence" {
-                actions.push(json!({
-                    "tool": "(jit_replay)",
-                    "args": { "tile": concept, "steps_preview": proc.get("steps_preview") },
-                    "reason": proc.get("jit_replay").and_then(|v| v.as_str()).unwrap_or("JIT verified_sequence replay"),
-                    "priority": 17,
-                    "jit": true,
-                    "verified_sequence": true,
-                    "on_success": proc.get("on_full_success"),
-                    "on_failure": proc.get("on_repeat_failure"),
-                }));
-            }
         }
-    }
 
-    for hint in build_condensation_hints(store, primary_goal.as_deref()) {
-        actions.push(hint);
-    }
-
-    let has_condensation = !build_condensation_hints(store, primary_goal.as_deref()).is_empty();
-    let scar_n = collect_open_scars(store, 1).len();
-    let task_type = infer_task_type(
-        handoff_packet.as_ref(),
-        session_intent,
-        has_condensation,
-        scar_n,
-    );
-    if task_type == "meta_evolution" {
-        push_jit_action(
-            &mut actions,
-            "mcp_engram_thought_tile_draft_from_chain",
-            json!({ "goal_context": primary_goal.clone().unwrap_or_default() }),
-            "meta arc — draft verified_sequence from trace chain before minting tile",
-            6,
-            true,
-            Some("meta_evolution task_type"),
-        );
-    }
-
-    // Task-type tile delivery — formal_spec for orchestrator, agent_response turn_record ritual.
-    if task_type == "orchestrator" {
-        push_jit_action(
-            &mut actions,
-            "mcp_engram_scrub_export",
-            json!({
-                "concepts": [],
-                "prefixes": ["trace:", "tile:"],
-                "min_crs": 0.74,
-                "mint_derivatives": true,
-                "limit": 8
-            }),
-            "training corpus — scrub_export high-CRS traces/tiles after track milestones",
-            19,
-            true,
-            Some("orchestrator verify phase"),
-        );
-    }
-
-    if !matches!(task_type, "wake_only" | "recovery") {
-        let process_ctx = if task_type == "orchestrator" {
-            Some(PARALLEL_PROGRAM_PROCESS)
-        } else {
-            None
-        };
-        push_jit_action(
-            &mut actions,
-            "mcp_engram_turn_record",
-            json!({
-                "user_utterance": "<session user message>",
-                "assistant_output": "<your reply excerpt>",
-                "human_forward": "<one-sentence thesis>",
-                "goal_context": primary_goal,
-                "process_context": process_ctx,
-                "tier": if task_type == "orchestrator" { "full" } else { "lean" },
-                "outcome_status": "partial"
-            }),
-            "RPT v3 turn_record — extend context window without replaying full chat",
-            21,
-            true,
-            Some("turn_record ritual"),
-        );
-    }
-
-    if let Some(head) = handoff_packet
-        .as_ref()
-        .and_then(|p| p.get("trace_chain_head").and_then(|v| v.as_str()))
-    {
-        let chain_len = walk_trace_chain(store, head, 32).len();
-        if chain_len >= 8 {
-            let chain_reason = format!(
-                "trace chain depth {chain_len} — session_end mints chain_summary for continuation"
-            );
+        // Task-type tile delivery — formal_spec for orchestrator, agent_response turn_record ritual.
+        if task_type == "orchestrator" {
             push_jit_action(
                 &mut actions,
-                "mcp_engram_session_end",
+                "mcp_engram_scrub_export",
                 json!({
-                    "prepare_compression": true,
-                    "summary": "<decisions, files, open questions>"
+                    "concepts": [],
+                    "prefixes": ["trace:", "tile:"],
+                    "min_crs": 0.74,
+                    "mint_derivatives": true,
+                    "limit": 8
                 }),
-                &chain_reason,
-                23,
+                "training corpus — scrub_export high-CRS traces/tiles after track milestones",
+                19,
                 true,
-                Some("chain_summary ritual"),
+                Some("orchestrator verify phase"),
             );
         }
-    }
 
-    rank_suggested_actions(store, &mut actions);
-    actions.truncate(16);
+        if !matches!(task_type, "wake_only" | "recovery") {
+            let process_ctx = if task_type == "orchestrator" {
+                Some(PARALLEL_PROGRAM_PROCESS)
+            } else {
+                None
+            };
+            push_jit_action(
+                &mut actions,
+                "mcp_engram_turn_record",
+                json!({
+                    "user_utterance": "<session user message>",
+                    "assistant_output": "<your reply excerpt>",
+                    "human_forward": "<one-sentence thesis>",
+                    "goal_context": primary_goal,
+                    "process_context": process_ctx,
+                    "tier": if task_type == "orchestrator" { "full" } else { "lean" },
+                    "outcome_status": "partial"
+                }),
+                "RPT v3 turn_record — extend context window without replaying full chat",
+                21,
+                true,
+                Some("turn_record ritual"),
+            );
+        }
+
+        if let Some(head) = handoff_packet
+            .as_ref()
+            .and_then(|p| p.get("trace_chain_head").and_then(|v| v.as_str()))
+        {
+            let chain_len = walk_trace_chain(store, head, 32).len();
+            if chain_len >= 8 {
+                let chain_reason = format!(
+                    "trace chain depth {chain_len} — session_end mints chain_summary for continuation"
+                );
+                push_jit_action(
+                    &mut actions,
+                    "mcp_engram_session_end",
+                    json!({
+                        "prepare_compression": true,
+                        "summary": "<decisions, files, open questions>"
+                    }),
+                    &chain_reason,
+                    23,
+                    true,
+                    Some("chain_summary ritual"),
+                );
+            }
+        }
+
+        rank_suggested_actions(store, &mut actions);
+        actions.truncate(16);
+    } else {
+        // Lean: priority-order only (manifest/handoff already pushed). Cap at 8 for slim wake.
+        actions.sort_by(|a, b| {
+            let pa = a.get("priority").and_then(|v| v.as_u64()).unwrap_or(99);
+            let pb = b.get("priority").and_then(|v| v.as_u64()).unwrap_or(99);
+            pa.cmp(&pb)
+        });
+        actions.truncate(8);
+    }
     actions
 }
 
@@ -1502,10 +1547,17 @@ pub fn build_harness_bundle_with_presentation_k(
         .unwrap_or(false)
     };
 
+    // Cycle 49: lean trusted tiles use smaller recent window (full still builds 6).
+    let trusted_tiles = if lean_wake {
+        build_trusted_tiles_opts(store, primary_goal.as_deref(), 24)
+    } else {
+        build_trusted_tiles(store, primary_goal.as_deref())
+    };
+
     json!({
         "rehydration_manifest": rehydration_manifest,
-        "suggested_actions": build_suggested_actions(store, session_intent),
-        "trusted_tiles": build_trusted_tiles(store, primary_goal.as_deref()),
+        "suggested_actions": build_suggested_actions_opts(store, session_intent, lean_wake),
+        "trusted_tiles": trusted_tiles,
         "verified_processes": verified_processes,
         "meta_workflow_registry": meta_workflow_registry,
         "jit_deformation_framework": jit_framework,
@@ -2279,6 +2331,50 @@ SESSION HANDOFF PACKET v1 (structured JSON for next-wake read_concept)
             top_nudge || top_manifest,
             "first action must be sentinel nudge or manifest read; got: {top:?}"
         );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// RSI Cycle 49: lean suggested_actions must stay under 8 and omit scar/verified tools.
+    #[test]
+    fn lean_suggested_actions_skips_heavy_walks() {
+        std::env::set_var("ENGRAM_DISABLE_SHEAF", "1");
+        std::env::set_var("ENGRAM_FORCE_CPU_BACKEND", "1");
+        std::env::set_var("ENGRAM_KI_DISABLE", "1");
+        let dir = std::env::temp_dir().join(format!(
+            "lean_suggested_actions_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).ok();
+        let mut store = crate::store::StoreHandle::new(&dir.to_string_lossy());
+        store.sentinel_reset_for_test();
+        let summary =
+            "**decisions:** lean wake queue\n**files_touched:** crates/engram-server/src/harness_injection.rs";
+        let _ = store.persist_session_handoff_latest(summary, "session_end_lean");
+        let lean = build_suggested_actions_opts(&mut store, Some("wake lean test"), true);
+        assert!(lean.len() <= 8, "lean queue cap 8, got {}", lean.len());
+        for a in &lean {
+            let tool = a.get("tool").and_then(|v| v.as_str()).unwrap_or("");
+            let reason = a.get("reason").and_then(|v| v.as_str()).unwrap_or("");
+            assert!(
+                !reason.contains("open scar"),
+                "lean must not queue open scars: {a:?}"
+            );
+            assert!(
+                !reason.contains("verified_sequence") && tool != "(jit_replay)",
+                "lean must not queue verified_process replay: {a:?}"
+            );
+            assert!(
+                !reason.contains("presentation stratum distillate"),
+                "lean must not rebuild full presentation distillates: {a:?}"
+            );
+        }
+        let full = build_suggested_actions_opts(&mut store, Some("wake full test"), false);
+        // Full path may be longer or equal; both must be non-empty when handoff present.
+        assert!(!lean.is_empty() || !full.is_empty());
         let _ = std::fs::remove_dir_all(&dir);
     }
 

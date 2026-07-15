@@ -1776,3 +1776,41 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 4. Query_pure TIMING full gate.
 
 
+## Cycle 49 — lean suggested_actions + wake artifact gather (2026-07-14)
+
+### Master baseline
+
+- Post Cycle 48: PR **#94** `dd19310f` — sheaf fingerprint disk.
+- **Measured wake_phase_ms (warm sheaf):** sheaf_ms=**2**, continuation_ms=**34202**, session_block_ms=12, total≈34s.
+- Hub CRS ~0.89 · CSF ~0.79 · ~89.5k blocks · sheaf disk skip confirmed.
+
+### Research synthesis
+
+| Source | Insight |
+|--------|---------|
+| wake_phase_ms Cycle 48→49 | After sheaf warm, continuation dominates 100% of remaining wake cost. |
+| build_suggested_actions | Still rebuilt **full non-lean** presentation + open_scars + verified_processes + double condensation + chain walk depth 32 on every lean wake. |
+| build_continuation_bundle_wake | Still did compresses_path seeds, recent(120), unlimited hot flood, recall_scoped — redundant with lean presentation. |
+| Cache hierarchy (OS / LLM systems) | Slim wake path must not re-materialize full working set; defer heavy walks to get_continuation_bundle. |
+
+### Hypothesis
+
+**Lean suggested_actions + capped wake gather:** session_start queue = handoff/manifest/goal only (≤8); skip scars/verified/presentation rebuild/condensation/deep chain; cap recent/hot/serves on wake artifact gather; skip momentum recall on wake.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Code | `build_suggested_actions_opts(lean)`, `build_trusted_tiles_opts(recent_cap)` |
+| Wake gather | skip compresses_path + recall_scoped; recent 24; hot 12; serves 8 |
+| Readiness | `wake_suggested_actions_lean`, `wake_artifact_gather_lean` |
+| Test | `lean_suggested_actions_skips_heavy_walks` |
+| Target | continuation_ms ≪ 34s (prefer &lt;10s on warm MCP) |
+
+### Next vectors
+
+1. Measure continuation_ms after MCP restart with new binary.
+2. mmap CSR multi-million edge.
+3. Partial σ² beyond 16-d.
+4. Sub-phase timers inside continuation (harness vs gather vs fidelity).
+
