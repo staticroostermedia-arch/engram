@@ -2373,6 +2373,7 @@ impl StoreHandle {
             "wake_ki_rebake_default": false,
             "wake_ki_rebake_env": "ENGRAM_WAKE_KI_REBAKE",
             "wake_phase_ms_enabled": true,
+            "wake_harness_lean": true,
             "crs_alpha_joint_enabled": crate::injection_priority::crs_alpha_joint_enabled(),
             "crs_alpha_joint_env": "ENGRAM_CRS_ALPHA_JOINT",
             "fisher_precision_enabled": engram_core::backend::fisher_precision_enabled(),
@@ -4477,11 +4478,13 @@ impl StoreHandle {
             crate::local_stratum::local_budget(),
         );
 
+        // Cycle 46: presentation_k Some ⇒ wake path ⇒ lean harness (skip scars/verified walks).
         let harness = match presentation_k {
             Some(k) => crate::harness_injection::build_harness_bundle_with_presentation_k(
                 self,
                 session_intent,
                 k,
+                true,
             ),
             None => crate::harness_injection::build_harness_bundle(self, session_intent),
         };

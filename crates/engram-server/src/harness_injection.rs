@@ -1364,17 +1364,22 @@ pub fn build_harness_bundle(store: &mut StoreHandle, session_intent: Option<&str
         store,
         session_intent,
         crate::presentation_stratum::presentation_budget(),
+        false,
     )
 }
 
-/// RSI Cycle 42: harness with explicit presentation K (wake uses smaller K).
+/// RSI Cycle 42/46: harness with explicit presentation K.
+/// `lean_wake`: skip scars/verified_processes/condensation/heavy meta (session_start path).
 pub fn build_harness_bundle_with_presentation_k(
     store: &mut StoreHandle,
     session_intent: Option<&str>,
     presentation_k: usize,
+    lean_wake: bool,
 ) -> Value {
+    let recent_cap = if lean_wake { 64 } else { 200 };
+    let chain_depth = if lean_wake { 3 } else { 8 };
     let mut trace_chain_head: Option<String> = None;
-    for (concept, _) in store.access_index.recent(200) {
+    for (concept, _) in store.access_index.recent(recent_cap) {
         if concept.starts_with("trace:") {
             trace_chain_head = Some(concept);
             break;
@@ -1383,7 +1388,7 @@ pub fn build_harness_bundle_with_presentation_k(
 
     let chain = trace_chain_head
         .as_deref()
-        .map(|h| walk_trace_chain(store, h, 8))
+        .map(|h| walk_trace_chain(store, h, chain_depth))
         .unwrap_or_default();
 
     let primary_goal = crate::store::resolve_active_primary_goal(store);
@@ -1398,9 +1403,22 @@ pub fn build_harness_bundle_with_presentation_k(
         session_intent,
     );
 
-    let condensation_hints = build_condensation_hints(store, primary_goal.as_deref());
-    let open_scars_wake = collect_open_scars(store, 5);
-    let uncertainty_receipts_wake = collect_uncertainty_receipts(store, 5);
+    // Cycle 46: lean wake skips store-walking scars/verified/condensation (full via get_continuation_bundle).
+    let condensation_hints = if lean_wake {
+        Vec::new()
+    } else {
+        build_condensation_hints(store, primary_goal.as_deref())
+    };
+    let open_scars_wake = if lean_wake {
+        Vec::new()
+    } else {
+        collect_open_scars(store, 5)
+    };
+    let uncertainty_receipts_wake = if lean_wake {
+        Vec::new()
+    } else {
+        collect_uncertainty_receipts(store, 5)
+    };
     let handoff_for_task = store
         .fetch_block_high_priority(SESSION_HANDOFF_LATEST)
         .and_then(|b| parse_handoff_packet_json(&storage::read_provlog(&b)));
@@ -1410,17 +1428,38 @@ pub fn build_harness_bundle_with_presentation_k(
         !condensation_hints.is_empty(),
         open_scars_wake.len(),
     );
-    let jit_framework = build_jit_deformation_framework(task_type, primary_goal.as_deref());
-    let verified_processes = build_verified_processes(store, primary_goal.as_deref());
-    let audit_loop_path =
-        crate::process_metrics::resolve_processes_dir().join("meta/full_system_audit_loop.toml");
-    let meta_workflow_registry = json!({
-        "full_system_audit_loop": {
-            "ok": crate::process_metrics::validate_meta_workflow_toml(&audit_loop_path),
-            "name": crate::process_metrics::parse_meta_workflow_name(&audit_loop_path)
-                .unwrap_or_default(),
-        }
-    });
+    let jit_framework = if lean_wake {
+        json!({
+            "lean_wake": true,
+            "hint": "call mcp_engram_get_continuation_bundle for full JIT framework",
+        })
+    } else {
+        build_jit_deformation_framework(task_type, primary_goal.as_deref())
+    };
+    let verified_processes = if lean_wake {
+        Vec::new()
+    } else {
+        build_verified_processes(store, primary_goal.as_deref())
+    };
+    let meta_workflow_registry = if lean_wake {
+        json!({
+            "full_system_audit_loop": {
+                "ok": true,
+                "name": "full_system_audit_loop",
+                "lean_wake_skipped_fs": true,
+            }
+        })
+    } else {
+        let audit_loop_path = crate::process_metrics::resolve_processes_dir()
+            .join("meta/full_system_audit_loop.toml");
+        json!({
+            "full_system_audit_loop": {
+                "ok": crate::process_metrics::validate_meta_workflow_toml(&audit_loop_path),
+                "name": crate::process_metrics::parse_meta_workflow_name(&audit_loop_path)
+                    .unwrap_or_default(),
+            }
+        })
+    };
     let surprise_pressure = sentinel_pressure_combined(store, &hub_anchors);
     let ego_drift = ego_drift_velocity();
     let (turns, checkpoint) = store.sentinel_snapshot();
@@ -1435,6 +1474,33 @@ pub fn build_harness_bundle_with_presentation_k(
             surprise_pressure,
         );
 
+    let metamemory_snap = store.metamemory_snapshot();
+    let consult_gate = crate::consult_before_write_gate::gate_status_json(
+        store.metamemory.recall_gate_open(),
+        store.metamemory.recalls,
+        store.metamemory.writes,
+    );
+    let scaffold_registry = if lean_wake {
+        json!({ "lean_wake": true })
+    } else {
+        crate::scaffold_versioning::build_scaffold_registry(
+            &metamemory_snap,
+            &consult_gate,
+            "automem_inspired_v1",
+        )
+    };
+    let scaffold_promotion_ok = if lean_wake {
+        true
+    } else {
+        crate::scaffold_versioning::promotion_status_json(
+            &metamemory_snap,
+            store.metamemory.recalls,
+        )
+        .get("ok")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+    };
+
     json!({
         "rehydration_manifest": rehydration_manifest,
         "suggested_actions": build_suggested_actions(store, session_intent),
@@ -1446,16 +1512,9 @@ pub fn build_harness_bundle_with_presentation_k(
         "open_scars_wake": open_scars_wake,
         "uncertainty_receipts_wake": uncertainty_receipts_wake,
         "rehydrate_suggested": rehydrate_suggested,
+        "lean_wake": lean_wake,
         "turn_protocol": crate::metamemory_metrics::build_turn_protocol(),
-        "scaffold_registry": crate::scaffold_versioning::build_scaffold_registry(
-            &store.metamemory_snapshot(),
-            &crate::consult_before_write_gate::gate_status_json(
-                store.metamemory.recall_gate_open(),
-                store.metamemory.recalls,
-                store.metamemory.writes,
-            ),
-            "automem_inspired_v1",
-        ),
+        "scaffold_registry": scaffold_registry,
         "rsi_cycle_metrics": {
             "cycle": crate::continuity_spikes::resolve_rsi_cycle_number(),
             "surprise_pressure": surprise_pressure,
@@ -1469,25 +1528,16 @@ pub fn build_harness_bundle_with_presentation_k(
                 .unwrap_or(false),
             "effective_max_turns": crate::continuity_spikes::effective_max_turns(surprise_pressure),
             "rehydrate_reason": if rehydrate_suggested { rehydrate_reason } else { "" },
-            "metamemory": store.metamemory_snapshot(),
-            "consult_before_write_gate": crate::consult_before_write_gate::gate_status_json(
-                store.metamemory.recall_gate_open(),
-                store.metamemory.recalls,
-                store.metamemory.writes,
-            ),
+            "metamemory": metamemory_snap,
+            "consult_before_write_gate": consult_gate,
             "trajectory_meta_review_hint": "scripts/rsi_trajectory_meta_review.sh aggregates receipt:session_* metamemory",
-            "scaffold_promotion_ok": crate::scaffold_versioning::promotion_status_json(
-                &store.metamemory_snapshot(),
-                store.metamemory.recalls,
-            )
-            .get("ok")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false),
+            "scaffold_promotion_ok": scaffold_promotion_ok,
             "research_refs": [
                 "https://arxiv.org/abs/2508.04435",
                 "https://arxiv.org/abs/2508.05766",
                 "https://arxiv.org/abs/2607.01224"
             ],
+            "lean_wake": lean_wake,
         },
         "trace_chain": {
             "head": trace_chain_head,
