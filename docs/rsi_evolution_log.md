@@ -2580,3 +2580,38 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 3. Full 8192-d σ² tensors (long horizon — not wake path).
 4. Keep warm wake total ≤20ms.
 
+## Cycle 72 — single-pass ultra-lean suggested_actions (2026-07-15)
+
+### Master baseline
+
+- Post Cycle 71: PR **#119** `1524ab5f` — async session_start block.
+- **Live warm (MCP still pre-C71):** total=**18**, readiness=**0**, assemble=**0**, harness=**6**, session_block=**5**.
+- Flags missing: `wake_session_block_async`, `wake_assemble_prefer_bvh_count`.
+
+### Research synthesis
+
+| Source | Insight |
+|--------|---------|
+| ultra_lean harness | Called `resolve_rehydration_manifest_for_wake` then `build_suggested_actions_opts`. |
+| suggested_actions lean | Re-fetched handoff twice + re-read ego.leg3 + re-ran sentinel. |
+| harness_ms≈6 | Dominated by duplicate handoff I/O. |
+
+### Hypothesis
+
+**Single-pass queue:** `build_suggested_actions_ultra_lean` from already-resolved manifest; stub turn_protocol; zero extra store I/O.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Code | `build_suggested_actions_ultra_lean`; ultra-lean no longer calls `build_suggested_actions_opts` |
+| Readiness | `wake_harness_single_pass_actions` |
+| Test | extended `ultra_lean_wake_harness_name_only_presentation` |
+
+### Next vectors
+
+1. MCP swap C70–C72; measure harness_ms ≤3, session_block≈0, total ≤12.
+2. If harness still high: TTL-cache primary_goal resolve.
+3. Full 8192-d σ² tensors (long horizon — not wake path).
+4. Keep warm wake total ≤15ms.
+

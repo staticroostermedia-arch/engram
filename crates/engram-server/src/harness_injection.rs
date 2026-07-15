@@ -1552,10 +1552,17 @@ fn build_harness_bundle_ultra_lean_wake(
             rehydrate_reason,
         },
     );
+    // RSI Cycle 72: build queue from already-resolved manifest — no second handoff fetch /
+    // re-resolve / re-read ego (build_suggested_actions_opts was duplicating all of that).
+    let suggested_actions = build_suggested_actions_ultra_lean(
+        rehydration_manifest.as_ref(),
+        primary_goal.as_deref(),
+        rehydrate_suggested,
+        rehydrate_reason,
+    );
     json!({
         "rehydration_manifest": rehydration_manifest,
-        "suggested_actions": build_suggested_actions_opts(store, session_intent, true),
-        "trusted_tiles": trusted_tiles,
+        "suggested_actions": suggested_actions,
         "verified_processes": [],
         "meta_workflow_registry": { "lean_wake": true },
         "jit_deformation_framework": {
@@ -1568,7 +1575,9 @@ fn build_harness_bundle_ultra_lean_wake(
         "rehydrate_suggested": rehydrate_suggested,
         "lean_wake": true,
         "ultra_lean_wake": true,
-        "turn_protocol": crate::metamemory_metrics::build_turn_protocol(),
+        "trusted_tiles": trusted_tiles,
+        // Static lean stub — full turn_protocol via get_continuation_bundle
+        "turn_protocol": { "lean_wake": true, "version": "automem_inspired_v1" },
         "scaffold_registry": { "lean_wake": true },
         "rsi_cycle_metrics": {
             "cycle": crate::continuity_spikes::resolve_rsi_cycle_number(),
@@ -1594,6 +1603,87 @@ fn build_harness_bundle_ultra_lean_wake(
         "presentation_stratum": presentation_stratum,
         "agent_discipline": { "lean_wake": true },
     })
+}
+
+/// RSI Cycle 72: lean wake queue from pre-resolved manifest (zero extra store I/O).
+fn build_suggested_actions_ultra_lean(
+    manifest: Option<&Value>,
+    primary_goal: Option<&str>,
+    rehydrate_suggested: bool,
+    rehydrate_reason: &str,
+) -> Vec<Value> {
+    let mut actions = Vec::new();
+    if rehydrate_suggested {
+        actions.push(crate::continuity_spikes::rehydrate_nudge_action(
+            rehydrate_reason,
+        ));
+    }
+    if let Some(m) = manifest {
+        if let Some(concept) = m.get("manifest_concept").and_then(|v| v.as_str()) {
+            if !concept.is_empty() {
+                push_action(
+                    &mut actions,
+                    "mcp_engram_read_concept",
+                    json!({ "concept": concept }),
+                    "portable rehydration manifest — priority continuation kit",
+                    0,
+                );
+            }
+        }
+        let goal = m
+            .get("primary_goal")
+            .and_then(|v| v.as_str())
+            .filter(|g| !g.is_empty())
+            .or(primary_goal);
+        if let Some(goal) = goal {
+            push_action(
+                &mut actions,
+                "mcp_engram_recall",
+                json!({ "query": goal, "scope": "anchors", "k": 8 }),
+                "manifest primary_goal — anchor recall without scope=all",
+                0,
+            );
+        }
+        if let Some(head) = m
+            .get("trace_chain_head")
+            .and_then(|v| v.as_str())
+            .filter(|h| !h.is_empty())
+        {
+            push_action(
+                &mut actions,
+                "mcp_engram_read_concept",
+                json!({ "concept": head }),
+                "manifest trace_chain_head — continue chain",
+                1,
+            );
+        }
+    } else if let Some(goal) = primary_goal.filter(|g| !g.is_empty()) {
+        push_action(
+            &mut actions,
+            "mcp_engram_recall",
+            json!({ "query": goal, "scope": "anchors", "k": 8 }),
+            "primary_goal — anchor recall without scope=all",
+            0,
+        );
+    }
+    // Always surface handoff + local profile as low-priority (no existence probe on ultra-lean).
+    push_action(
+        &mut actions,
+        "mcp_engram_read_concept",
+        json!({ "concept": SESSION_HANDOFF_LATEST }),
+        "structured handoff from last session",
+        1,
+    );
+    push_action(
+        &mut actions,
+        "mcp_engram_read_concept",
+        json!({ "concept": crate::local_stratum::LOCAL_HOST_PROFILE }),
+        "local context stratum — sovereign host profile (previews in session_start.local_stratum)",
+        2,
+    );
+    // Cap lean queue (same as lean suggested_actions path).
+    actions.truncate(8);
+    actions
 }
 
 /// RSI Cycle 42/46: harness with explicit presentation K.
@@ -2657,6 +2747,27 @@ SESSION HANDOFF PACKET v1 (structured JSON for next-wake read_concept)
                     .map(|v| v.is_null())
                     .unwrap_or(false),
             "C69 must skip p-norm: {ego:?}"
+        );
+        // RSI Cycle 72: single-pass actions + lean turn_protocol stub
+        let actions = bundle
+            .get("suggested_actions")
+            .and_then(|v| v.as_array())
+            .expect("suggested_actions");
+        assert!(!actions.is_empty(), "ultra-lean queue non-empty");
+        assert!(actions.len() <= 8, "ultra-lean queue cap 8");
+        let tools: Vec<&str> = actions
+            .iter()
+            .filter_map(|a| a.get("tool").and_then(|t| t.as_str()))
+            .collect();
+        assert!(
+            tools.iter().any(|t| *t == "mcp_engram_read_concept"),
+            "queue should include read_concept: {tools:?}"
+        );
+        let tp = bundle.get("turn_protocol").expect("turn_protocol");
+        assert_eq!(
+            tp.get("lean_wake").and_then(|v| v.as_bool()),
+            Some(true),
+            "C72 static lean turn_protocol stub"
         );
         let _ = std::fs::remove_dir_all(&dir);
     }
