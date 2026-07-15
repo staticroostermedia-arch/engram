@@ -2770,6 +2770,7 @@ impl StoreHandle {
                 "wake_csf_lean_hub_crs_neutral": true,
                 "wake_trusted_tiles_mvp_fallback": true,
                 "wake_csf_live_trusted_tiles": true,
+                "mq_verify_series_persist": true,
                 "wake_continuation_soft_stale": true,
                 "wake_continuation_soft_stale_env": "ENGRAM_WAKE_CONTINUATION_SOFT_STALE_SECS",
                 "wake_continuation_soft_stale_secs": 1800,
@@ -5745,6 +5746,98 @@ impl StoreHandle {
             serde_json::to_string_pretty(&series).unwrap_or_else(|_| "[]".to_string())
         );
         let series_key = crate::cold_start_fidelity::COLD_START_FIDELITY_SERIES;
+        if self.fetch_block(series_key).is_some() {
+            let _ = self.update_with_provlog_mode(
+                series_key,
+                &series_body,
+                Some(engram_core::storage::ProvlogSpliceMode::Replace),
+            );
+        } else {
+            let mut sb = self.encode(&series_body);
+            sb.zedos_tag = engram_core::types::ZEDOS_OPERATIONAL;
+            sb.crs_score = crs;
+            sb.energetics.crs = crs;
+            let _ = self.store(series_key, sb);
+        }
+        let _ = self.promote_tile_to_high_priority(series_key);
+        let _ = self.promote_tile_to_high_priority(&metric_key);
+        Some(metric_key)
+    }
+
+    /// MQ Cycle 4: series helper for manifold verify samples (lawfulness cadence).
+    pub const MQ_VERIFY_SERIES: &'static str = "helper:mq_verify_series";
+
+    /// Persist a verify_manifold_integrity sample as `metric:mq_verify_<unix>` + series helper.
+    /// Called from MCP verify tool so every MQ fire VERIFY₀ leaves a trendable artifact.
+    pub fn persist_mq_verify_metric(
+        &mut self,
+        report: &ManifoldHealthReport,
+        min_crs: f32,
+        sample_size: Option<usize>,
+    ) -> Option<String> {
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let metric_key = format!("metric:mq_verify_{ts}");
+        let payload = serde_json::json!({
+            "schema_version": "mq_verify_v1",
+            "ts": ts,
+            "min_crs": min_crs,
+            "sample_size": sample_size,
+            "total_blocks_sampled": report.total_blocks_sampled,
+            "high_value_blocks": report.high_value_blocks,
+            "issues_found": report.issues_found,
+            "overall_health": report.overall_health,
+            "issues": report.issues.iter().take(12).cloned().collect::<Vec<_>>(),
+            "pass": report.overall_health == "healthy" && report.issues_found == 0,
+        });
+        let body = format!(
+            "MQ VERIFY METRIC v1 (lawfulness sample)\n\n{}\n",
+            serde_json::to_string_pretty(&payload).unwrap_or_else(|_| "{}".to_string())
+        );
+        let crs = crate::crs_dynamical::dynamical_crs_for_role(
+            crate::crs_dynamical::CrsRole::Operational,
+        );
+        let mut block = self.encode(&body);
+        block.zedos_tag = engram_core::types::ZEDOS_OPERATIONAL;
+        block.crs_score = crs;
+        block.energetics.crs = crs;
+        let _ = self.store(&metric_key, block);
+        if let Some(goal) = resolve_primary_goal_for_continuation(self) {
+            let _ = self.relate(&metric_key, &goal, "serves");
+        }
+        let entry = serde_json::json!({
+            "ts": ts,
+            "metric": metric_key,
+            "overall_health": report.overall_health,
+            "issues_found": report.issues_found,
+            "sampled": report.total_blocks_sampled,
+            "pass": report.overall_health == "healthy" && report.issues_found == 0,
+        });
+        let mut series: Vec<serde_json::Value> = self
+            .fetch_block(Self::MQ_VERIFY_SERIES)
+            .map(|b| engram_core::storage::read_provlog(&b))
+            .and_then(|t| {
+                let start = t.rfind('[')?;
+                let end = t.rfind(']')?;
+                if start < end {
+                    serde_json::from_str(&t[start..=end]).ok()
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_default();
+        series.push(entry);
+        if series.len() > 20 {
+            let skip = series.len() - 20;
+            series = series.into_iter().skip(skip).collect();
+        }
+        let series_body = format!(
+            "MQ VERIFY SERIES v1 (last ≤20 lawfulness samples; latest-wins Replace)\n\n{}\n",
+            serde_json::to_string_pretty(&series).unwrap_or_else(|_| "[]".to_string())
+        );
+        let series_key = Self::MQ_VERIFY_SERIES;
         if self.fetch_block(series_key).is_some() {
             let _ = self.update_with_provlog_mode(
                 series_key,
@@ -10721,6 +10814,28 @@ mod ingest_ast_tests {
         assert!(store
             .fetch_block(crate::cold_start_fidelity::COLD_START_FIDELITY_SERIES)
             .is_some());
+
+        // MQ Cycle 4: verify series persist
+        let vr = ManifoldHealthReport {
+            total_blocks_sampled: 10,
+            high_value_blocks: 10,
+            issues_found: 0,
+            issues: vec![],
+            overall_health: "healthy".to_string(),
+        };
+        let vm = store
+            .persist_mq_verify_metric(&vr, 0.74, Some(10))
+            .expect("mq verify metric");
+        assert!(vm.starts_with("metric:mq_verify_"));
+        assert!(store.fetch_block(&vm).is_some());
+        assert!(store.fetch_block(StoreHandle::MQ_VERIFY_SERIES).is_some());
+        assert_eq!(
+            store
+                .backend_readiness()
+                .get("mq_verify_series_persist")
+                .and_then(|v| v.as_bool()),
+            Some(true)
+        );
 
         // Rich store: goal + handoff → higher score
         store

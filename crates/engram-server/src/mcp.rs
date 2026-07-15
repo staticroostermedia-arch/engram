@@ -9273,22 +9273,38 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
                 include_relation_integrity: false,
             };
 
-            match store.lock().unwrap().verify_manifold_integrity(options) {
-                Ok(report) => {
-                    let mut msg = format!(
-                        "Manifold Integrity Report\nSampled: {} | High-value (>=0.74): {}\nIssues found: {}\nOverall: {}\n",
-                        report.total_blocks_sampled, report.high_value_blocks, report.issues_found, report.overall_health
-                    );
-                    if !report.issues.is_empty() {
-                        msg.push_str("\nIssues:\n");
-                        for issue in &report.issues {
-                            msg.push_str(&format!("- {}\n", issue));
+            // MQ Cycle 4: hold mut lock so verify samples persist to mq_verify series.
+            match store.lock() {
+                Ok(mut lock) => match lock.verify_manifold_integrity(options) {
+                    Ok(report) => {
+                        let metric_key = lock.persist_mq_verify_metric(&report, min_crs, sample);
+                        let mut msg = format!(
+                            "Manifold Integrity Report\nSampled: {} | High-value (>=0.74): {}\nIssues found: {}\nOverall: {}\n",
+                            report.total_blocks_sampled,
+                            report.high_value_blocks,
+                            report.issues_found,
+                            report.overall_health
+                        );
+                        if !report.issues.is_empty() {
+                            msg.push_str("\nIssues:\n");
+                            for issue in &report.issues {
+                                msg.push_str(&format!("- {}\n", issue));
+                            }
                         }
+                        if let Some(k) = metric_key {
+                            msg.push_str(&format!(
+                                "\nMQ verify cadence: persisted {k} + {}\n",
+                                crate::store::StoreHandle::MQ_VERIFY_SERIES
+                            ));
+                        }
+                        json!({ "content": [{ "type": "text", "text": msg }] })
                     }
-                    json!({ "content": [{ "type": "text", "text": msg }] })
-                }
+                    Err(e) => {
+                        json!({ "content": [{ "type": "text", "text": format!("Verification error: {}", e) }], "isError": true })
+                    }
+                },
                 Err(e) => {
-                    json!({ "content": [{ "type": "text", "text": format!("Verification error: {}", e) }], "isError": true })
+                    json!({ "content": [{ "type": "text", "text": format!("store lock error: {e}") }], "isError": true })
                 }
             }
         }
