@@ -2779,6 +2779,7 @@ impl StoreHandle {
                 "mq_write_hygiene_mint_update": true,
                 "mq_tiles_boundaries_session": true,
                 "mq_csf_session_boundary_prefer": true,
+                "mq_hub_crs_lean_sample": true,
                 "wake_continuation_soft_stale": true,
                 "wake_continuation_soft_stale_env": "ENGRAM_WAKE_CONTINUATION_SOFT_STALE_SECS",
                 "wake_continuation_soft_stale_secs": 1800,
@@ -5609,6 +5610,27 @@ impl StoreHandle {
         };
         let mut fidelity_inputs =
             crate::cold_start_fidelity::inputs_from_continuation(&bundle, &readiness_for_fidelity);
+        // MQ Cycle 12: lean name-only previews leave mean_hub_crs=None → hub weight stuck
+        // neutral. Sample high-priority CRS on hub anchors / trusted tiles (bounded).
+        let mut hub_crs_live_sample = false;
+        if fidelity_inputs.mean_hub_crs.is_none() {
+            let hubs = crate::cold_start_fidelity::hub_concepts_for_crs_sample(&bundle);
+            let mut samples: Vec<f32> = Vec::new();
+            for c in hubs {
+                if let Some(block) = self.fetch_block_high_priority(&c) {
+                    if block.crs_score > 0.01 {
+                        samples.push(block.crs_score);
+                    }
+                }
+                if samples.len() >= 6 {
+                    break;
+                }
+            }
+            if let Some(m) = crate::cold_start_fidelity::mean_hub_crs_from_samples(&samples) {
+                fidelity_inputs.mean_hub_crs = Some(m);
+                hub_crs_live_sample = true;
+            }
+        }
         // MQ Cycle 3: stale rehydration_manifest often has trusted_tiles=[] after
         // child-primary session_ends (pre-MQ2). Live-fill from build_trusted_tiles
         // (mvp fallback included) so CSF does not keep no_trusted_tiles until next handoff.
@@ -5697,6 +5719,11 @@ impl StoreHandle {
                     "trusted_tiles_session_boundary_prefer".to_string(),
                     serde_json::json!(true),
                 );
+            }
+        }
+        if hub_crs_live_sample {
+            if let Some(obj) = fidelity.as_object_mut() {
+                obj.insert("hub_crs_live_sample".to_string(), serde_json::json!(true));
             }
         }
 
