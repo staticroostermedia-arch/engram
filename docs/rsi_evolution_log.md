@@ -1325,4 +1325,42 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 3. Wake path cost reduction.
 4. Adaptive Fisher band count.
 
+---
+
+## Cycle 37 — incremental CSR insert + sheaf TIMING gate (2026-07-15)
+
+### Master baseline
+
+- Post Cycle 36: PR **#82** `6728f326` — RelationIndex CSR dual layout.
+- Hub CRS ~0.88 · CSF ~0.93 · ~89k blocks.
+
+### Research synthesis
+
+| Source | Insight |
+|--------|---------|
+| Cycle 36 | Full `rebuild_csr` O(E) on every relate is wasteful for hot write paths. |
+| Graph CSR | Degree-local insert + offset bump is standard incremental CSR. |
+| Wake latency | TIMING eprintln on every sheaf load adds I/O noise; gate by env. |
+
+### Hypothesis
+
+**Incremental CSR:** `csr_insert_incident` / `csr_resort_row` on add/re-relate; full rebuild only on remove/load. **Sheaf TIMING:** default off via `ENGRAM_SHEAF_TIMING` (wake cost).
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Code | `csr_insert_incident`, `csr_resort_row`; add path no full CSR rebuild |
+| Wake | `sheaf_timing_enabled` gates load_process_sheaf TIMING eprintln |
+| Readiness | `relation_adj_csr_incremental: true` |
+| Tests | existing adj/α suite + prefer-static under incremental CSR |
+| Lexicon | `csr-incremental-insert`, `sheaf-timing-gate` |
+
+### Next vectors
+
+1. Drop dual HashMap adj entirely (CSR-only mutation).
+2. mmap CSR for multi-million edge stalks.
+3. Adaptive Fisher band count.
+4. Further wake path slim (promote batch, etc.).
+
 
