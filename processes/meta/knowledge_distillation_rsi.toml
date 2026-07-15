@@ -72,6 +72,7 @@ list = [
   "lexicon:word:fisher-invvar-precision",
   "lexicon:word:encrypt-remember-dogfood",
   "lexicon:word:fisher-banded-residual",
+  "lexicon:word:relation-adj-csr",
 ]
 
 [execute]

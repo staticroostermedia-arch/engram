@@ -275,7 +275,14 @@ pub struct RelationIndex {
     /// Not serialized — rebuilt on load/refresh/remove; updated incrementally on add.
     /// RSI Cycle 31: each list is prefer-static sorted (ascending effective α) so
     /// `min_incident_edge_volatility` early-exits at the structural floor under cap.
+    /// Mutation working set; CSR is the compact query layout (Cycle 36).
     adj: std::collections::HashMap<String, Vec<usize>>,
+    /// RSI Cycle 36: CSR concept → row id (compact O(deg) query).
+    csr_row: std::collections::HashMap<String, u32>,
+    /// Row offsets into `csr_indices` (len = n_nodes + 1).
+    csr_offsets: Vec<u32>,
+    /// Flattened entry indices (prefer-static ordered within each row).
+    csr_indices: Vec<u32>,
 }
 
 impl RelationIndex {
@@ -302,12 +309,15 @@ impl RelationIndex {
             defer_flush_depth: 0,
             flush_pending: false,
             adj: std::collections::HashMap::new(),
+            csr_row: std::collections::HashMap::new(),
+            csr_offsets: vec![0],
+            csr_indices: Vec::new(),
         };
         idx.rebuild_adj();
         idx
     }
 
-    /// Rebuild adjacency lists from `entries` (O(E)), then prefer-static sort (Cycle 31).
+    /// Rebuild adjacency lists from `entries` (O(E)), prefer-static sort, then CSR (Cycles 30–36).
     pub fn rebuild_adj(&mut self) {
         self.adj.clear();
         for (i, e) in self.entries.iter().enumerate() {
@@ -317,11 +327,56 @@ impl RelationIndex {
             }
         }
         self.sort_all_adj_prefer_static();
+        self.rebuild_csr();
     }
 
     /// Number of concepts with at least one incident edge (for readiness/metrics).
     pub fn adj_node_count(&self) -> usize {
         self.adj.len()
+    }
+
+    /// CSR non-zeros (= 2E for undirected-style from/to, minus self-loops).
+    pub fn csr_nnz(&self) -> usize {
+        self.csr_indices.len()
+    }
+
+    /// CSR row count (concepts with degree > 0).
+    pub fn csr_nrows(&self) -> usize {
+        self.csr_row.len()
+    }
+
+    /// Compact CSR rebuild from prefer-static HashMap adj (RSI Cycle 36).
+    /// Query path uses CSR; HashMap remains mutation working set.
+    pub fn rebuild_csr(&mut self) {
+        let mut keys: Vec<String> = self.adj.keys().cloned().collect();
+        keys.sort();
+        self.csr_row.clear();
+        self.csr_indices.clear();
+        self.csr_offsets.clear();
+        self.csr_offsets.push(0);
+        for (row, k) in keys.iter().enumerate() {
+            self.csr_row.insert(k.clone(), row as u32);
+            if let Some(idxs) = self.adj.get(k) {
+                for &i in idxs {
+                    self.csr_indices.push(i as u32);
+                }
+            }
+            self.csr_offsets.push(self.csr_indices.len() as u32);
+        }
+    }
+
+    /// Incident entry indices for `concept` via CSR (prefer-static order). Empty if unknown.
+    pub fn incident_indices(&self, concept: &str) -> &[u32] {
+        let Some(&row) = self.csr_row.get(concept) else {
+            return &[];
+        };
+        let row = row as usize;
+        if row + 1 >= self.csr_offsets.len() {
+            return &[];
+        }
+        let s = self.csr_offsets[row] as usize;
+        let e = self.csr_offsets[row + 1] as usize;
+        &self.csr_indices[s..e]
     }
 
     /// Sort every adj list by effective α ascending (static first).
@@ -333,6 +388,7 @@ impl RelationIndex {
     }
 
     /// Prefer-static order for one concept's incident indices (O(deg log deg)).
+    /// Does **not** rebuild CSR — caller must `rebuild_csr` after batch of sorts.
     fn sort_adj_prefer_static(&mut self, concept: &str) {
         let Some(idxs) = self.adj.get(concept).cloned() else {
             return;
@@ -421,11 +477,12 @@ impl RelationIndex {
         {
             // Refresh volatility on re-relate (append-only edge, mutable α)
             e.volatility = vol;
-            // Cycle 31: α change may reorder prefer-static adj
+            // Cycle 31: α change may reorder prefer-static adj; Cycle 36: refresh CSR
             self.sort_adj_prefer_static(from);
             if to != from {
                 self.sort_adj_prefer_static(to);
             }
+            self.rebuild_csr();
             self.flush_if_needed();
             return;
         }
@@ -441,11 +498,12 @@ impl RelationIndex {
             if to != from {
                 self.adj.entry(to.to_string()).or_default().push(idx);
             }
-            // Cycle 31: keep static-first order under incremental add
+            // Cycle 31: keep static-first order under incremental add; Cycle 36: CSR
             self.sort_adj_prefer_static(from);
             if to != from {
                 self.sort_adj_prefer_static(to);
             }
+            self.rebuild_csr();
             self.flush_if_needed();
         }
     }
@@ -2147,6 +2205,9 @@ impl StoreHandle {
             "relation_adj_nodes": self.relation_index.adj_node_count(),
             "relation_edge_count": self.relation_index.entries.len(),
             "relation_adj_prefer_static": true,
+            "relation_adj_csr_nrows": self.relation_index.csr_nrows(),
+            "relation_adj_csr_nnz": self.relation_index.csr_nnz(),
+            "relation_adj_csr": true,
             // RSI Cycle 34: sovereignty encrypt-at-rest dogfood surface
             "encrypt_at_rest_enabled": crate::secure_context::encrypt_at_rest_enabled(),
             "encrypt_at_rest_env": "ENGRAM_ENCRYPT_AT_REST",
@@ -7096,18 +7157,20 @@ impl StoreHandle {
     /// RSI Cycle 29: cap + static early-exit.
     /// RSI Cycle 30: O(deg) via RelationIndex adjacency (no full E scan).
     /// RSI Cycle 31: adj lists prefer-static sorted so early-exit hits under cap.
+    /// RSI Cycle 36: CSR incident walk (compact layout, same semantics).
     pub fn min_incident_edge_volatility(&self, concept: &str) -> f32 {
         if concept.is_empty() {
             return 0.0;
         }
-        let Some(idxs) = self.relation_index.adj.get(concept) else {
+        let idxs = self.relation_index.incident_indices(concept);
+        if idxs.is_empty() {
             return 0.0;
-        };
+        }
         let cap = Self::incident_alpha_scan_cap();
         let mut best = f32::MAX;
         let mut seen = 0usize;
         for &i in idxs {
-            let Some(e) = self.relation_index.entries.get(i) else {
+            let Some(e) = self.relation_index.entries.get(i as usize) else {
                 continue;
             };
             let vol = effective_relation_volatility(e);
@@ -9699,6 +9762,15 @@ SESSION HANDOFF PACKET v1
             store.relation_index.adj_node_count() >= 4,
             "adj should index hub + peers"
         );
+        assert_eq!(
+            store.relation_index.csr_nrows(),
+            store.relation_index.adj_node_count(),
+            "CSR nrows match HashMap nodes"
+        );
+        assert!(
+            store.relation_index.csr_nnz() >= 3,
+            "CSR nnz >= edges (from+to inflate)"
+        );
         assert_eq!(store.relation_index.entries.len(), 3);
 
         let min_hub = store.min_incident_edge_volatility("hub:adj");
@@ -9754,19 +9826,18 @@ SESSION HANDOFF PACKET v1
         store
             .relate_with_volatility("hub:ps", "stat", "implements", Some(0.12))
             .unwrap();
-        // Adj head should be static after prefer-static sort
-        let idxs = store
-            .relation_index
-            .adj
-            .get("hub:ps")
-            .cloned()
-            .expect("adj for hub");
-        assert!(!idxs.is_empty());
+        // Adj head should be static after prefer-static sort (CSR query path)
+        let idxs = store.relation_index.incident_indices("hub:ps");
+        assert!(!idxs.is_empty(), "CSR incident for hub");
+        assert!(
+            store.relation_index.csr_nnz() >= idxs.len(),
+            "CSR nnz should cover hub degree"
+        );
         let head_vol = effective_relation_volatility(
             store
                 .relation_index
                 .entries
-                .get(idxs[0])
+                .get(idxs[0] as usize)
                 .expect("head entry"),
         );
         assert!(

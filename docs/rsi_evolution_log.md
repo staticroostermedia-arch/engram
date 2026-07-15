@@ -1287,4 +1287,42 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 3. Optional agent-profile encrypt default.
 4. Adaptive band count / PCA residual dims.
 
+---
+
+## Cycle 36 — RelationIndex CSR adjacency (2026-07-15)
+
+### Master baseline
+
+- Post Cycle 35: PR **#81** `71784587` — Fisher banded residual.
+- Hub CRS ~0.88 · CSF ~0.93 · ~89k blocks.
+
+### Research synthesis
+
+| Source | Insight |
+|--------|---------|
+| Cycles 30–31 | HashMap adj + prefer-static lists = correct O(deg) but high per-node Vec overhead. |
+| Graph engines | CSR (offsets + flat indices) is standard compact incident layout. |
+| Mutation path | Keep HashMap for incremental relate; CSR as query snapshot. |
+
+### Hypothesis
+
+**CSR dual layout:** rebuild CSR after adj mutations; `min_incident` walks `incident_indices` CSR slices. Same semantics, denser memory + cache-friendly walks at multi-million edge scale.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Code | `csr_row`, `csr_offsets`, `csr_indices`, `rebuild_csr`, `incident_indices` |
+| Query | `min_incident_edge_volatility` uses CSR |
+| Readiness | `relation_adj_csr`, `relation_adj_csr_nrows`, `relation_adj_csr_nnz` |
+| Tests | CSR nrows/nnz checks; prefer-static via CSR head |
+| Lexicon | `relation-adj-csr` |
+
+### Next vectors
+
+1. Drop HashMap once CSR supports incremental degree insert without full rebuild.
+2. Optional mmap of CSR for multi-million edge stalks.
+3. Wake path cost reduction.
+4. Adaptive Fisher band count.
+
 
