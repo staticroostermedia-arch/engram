@@ -1849,3 +1849,37 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 3. Query_pure TIMING full gate.
 4. Compact tombstone + CSR sidecar consistency stress at 1M+ edges.
 
+## Cycle 51 — continuation sub-phase timers (2026-07-14)
+
+### Master baseline
+
+- Post Cycle 50: PR **#96** `2384d3e0` — mmap CSR sidecar.
+- Warm wake: continuation_ms≈2.1s (still dominant residual inside total).
+
+### Research synthesis
+
+| Source | Insight |
+|--------|---------|
+| Cycle 45 wake_phase_ms | Outer sheaf/continuation/session buckets insufficient for next cut. |
+| Cycle 49 lean path | Multiple stages remain inside continuation (gather, local, harness, fidelity). |
+| Profiling practice | Nested timers before optimizing further. |
+
+### Hypothesis
+
+**continuation_phase_ms:** time gather / local_stratum / harness / fidelity; nest under wake_phase_ms.continuation_detail.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Code | `continuation_phase_ms` on bundle; mcp nests as `continuation_detail` |
+| Readiness | `wake_continuation_subphase_ms: true` |
+| Test | asserts keys on `build_continuation_bundle_emits_injection_observables` |
+
+### Next vectors
+
+1. Cut largest sub-phase from measured continuation_detail.
+2. Partial σ² beyond 16-d.
+3. Query_pure TIMING full gate.
+4. MCP binary swap hygiene (deleted-exe holders).
+
