@@ -2122,3 +2122,38 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 3. Full 8192-d σ² tensors (long horizon).
 4. Keep wake total ≤1.0s warm.
 
+## Cycle 59 — ultra-lean wake gather (cut gather_ms) (2026-07-15)
+
+### Master baseline
+
+- Post Cycle 58: PR **#106** `b4a3c29a` — lean wake fidelity.
+- **Measured warm:** total=**294**, cont=287, gather=**88**, harness=39, local=18, fidelity=0.
+- Prompt backlog C50–C56 already shipped; residual is gather sub-phase.
+
+### Research synthesis
+
+| Source | Insight |
+|--------|---------|
+| continuation_detail | gather_ms ≈40% of warm cont after C58. |
+| C57 hub-only presentation | Distillates already on presentation_stratum hubs. |
+| C49 lean gather | Still walked goal_serves + recent(24) + hot(12) + ranking. |
+
+### Hypothesis
+
+**Ultra-lean wake gather:** primary_goal + session_handoff only; skip session_end/compression scans, serves/recent/hot/momentum, and injection ranking on wake_lean.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Code | `build_continuation_bundle_inner` wake_lean gather branch |
+| Readiness | `wake_gather_ultra_lean: true` |
+| Test | `wake_ultra_lean_gather_core_anchors_only` |
+
+### Next vectors
+
+1. Measure gather_ms after MCP swap (target ≪40ms).
+2. If harness residual remains, micro-cut harness.
+3. Full 8192-d σ² tensors (long horizon).
+4. Keep warm wake total ≤250ms.
+

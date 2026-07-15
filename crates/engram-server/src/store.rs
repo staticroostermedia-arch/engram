@@ -2567,6 +2567,7 @@ impl StoreHandle {
             "wake_presentation_lean": true,
             "wake_suggested_actions_lean": true,
             "wake_artifact_gather_lean": true,
+            "wake_gather_ultra_lean": true,
             "sheaf_fingerprint_disk": true,
             "sheaf_fingerprint_path_env": "ENGRAM_STORE parent/process_sheaf_fingerprint",
             "crs_alpha_joint_enabled": crate::injection_priority::crs_alpha_joint_enabled(),
@@ -4461,6 +4462,10 @@ impl StoreHandle {
             }
         };
 
+        // Cycle 49/59: wake path (presentation_k Some) ultra-lean gather.
+        // Hub-only presentation (C57) already surfaces distillates — skip serves/recent/hot.
+        let wake_lean = presentation_k.is_some();
+
         let primary_goal_name = resolve_primary_goal_for_continuation(self);
         if self.fetch_block_high_priority("primary_goal").is_some() {
             push(
@@ -4473,30 +4478,34 @@ impl StoreHandle {
         }
 
         let mut last_session_end: Option<serde_json::Value> = None;
-        for (concept, ts) in self.access_index.recent(50) {
-            if concept.starts_with("session_end_") {
-                if let Some(block) = self.fetch_block_high_priority(&concept) {
-                    let text = engram_core::storage::read_provlog(&block);
-                    let preview: String = text.chars().take(400).collect();
-                    last_session_end = Some(serde_json::json!({
-                        "concept": concept,
-                        "age_secs": std::time::SystemTime::now()
-                            .duration_since(std::time::UNIX_EPOCH)
-                            .map(|d| d.as_secs())
-                            .unwrap_or(0)
-                            .saturating_sub(ts),
-                        "preview": if text.len() > 400 { format!("{}…", preview) } else { preview },
-                    }));
-                    push(self, &mut entries, &mut seen, &concept, "last_session_end");
+        // RSI Cycle 59: wake skips recent(50) session_end scan (handoff carries chain).
+        if !wake_lean {
+            for (concept, ts) in self.access_index.recent(50) {
+                if concept.starts_with("session_end_") {
+                    if let Some(block) = self.fetch_block_high_priority(&concept) {
+                        let text = engram_core::storage::read_provlog(&block);
+                        let preview: String = text.chars().take(400).collect();
+                        last_session_end = Some(serde_json::json!({
+                            "concept": concept,
+                            "age_secs": std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .map(|d| d.as_secs())
+                                .unwrap_or(0)
+                                .saturating_sub(ts),
+                            "preview": if text.len() > 400 { format!("{}…", preview) } else { preview },
+                        }));
+                        push(self, &mut entries, &mut seen, &concept, "last_session_end");
+                    }
+                    break;
                 }
-                break;
             }
         }
 
         let hydration_cache_present = self
             .fetch_block_high_priority("helper:session_hydration_cache")
             .is_some();
-        if hydration_cache_present {
+        // Wake: existence probe only (no entry push) — saves preview fetch.
+        if hydration_cache_present && !wake_lean {
             push(
                 self,
                 &mut entries,
@@ -4520,23 +4529,22 @@ impl StoreHandle {
         }
 
         let mut latest_compression_handoff: Option<String> = None;
-        for (concept, _) in self.access_index.recent(50) {
-            if concept.starts_with("compression_handoff_") {
-                latest_compression_handoff = Some(concept.clone());
-                push(
-                    self,
-                    &mut entries,
-                    &mut seen,
-                    &concept,
-                    "compression_handoff_latest",
-                );
-                break;
+        // RSI Cycle 59: wake skips compression_handoff recent walk.
+        if !wake_lean {
+            for (concept, _) in self.access_index.recent(50) {
+                if concept.starts_with("compression_handoff_") {
+                    latest_compression_handoff = Some(concept.clone());
+                    push(
+                        self,
+                        &mut entries,
+                        &mut seen,
+                        &concept,
+                        "compression_handoff_latest",
+                    );
+                    break;
+                }
             }
         }
-
-        // Cycle 49: wake path (presentation_k Some) caps relation/recent/hot gathers and
-        // skips momentum recall — harness lean presentation already surfaces distillates.
-        let wake_lean = presentation_k.is_some();
 
         if !wake_lean {
             for seed in HANDOFF_SEEDS {
@@ -4556,58 +4564,47 @@ impl StoreHandle {
                     }
                 }
             }
-        }
 
-        if let Some(ref goal) = primary_goal_name {
-            let mut serves_n = 0usize;
-            let serves_cap = if wake_lean { 8 } else { usize::MAX };
-            for (_label, other) in self.search_relations(goal, Some("serves"), "to") {
-                if other.starts_with("tile:") || other.starts_with("trace:") {
-                    push(self, &mut entries, &mut seen, &other, "goal_serves_lineage");
-                    serves_n = serves_n.saturating_add(1);
-                    if serves_n >= serves_cap {
-                        break;
+            if let Some(ref goal) = primary_goal_name {
+                for (_label, other) in self.search_relations(goal, Some("serves"), "to") {
+                    if other.starts_with("tile:") || other.starts_with("trace:") {
+                        push(self, &mut entries, &mut seen, &other, "goal_serves_lineage");
                     }
                 }
             }
-        }
 
-        let recent_cap = if wake_lean { 24 } else { 120 };
-        for (concept, _) in self.access_index.recent(recent_cap) {
-            if concept.starts_with("tile:")
-                || concept.starts_with("helper:")
-                || concept.starts_with("ritual:")
-                || concept.starts_with("metric:")
-            {
-                push(self, &mut entries, &mut seen, &concept, "recent_access");
+            for (concept, _) in self.access_index.recent(120) {
+                if concept.starts_with("tile:")
+                    || concept.starts_with("helper:")
+                    || concept.starts_with("ritual:")
+                    || concept.starts_with("metric:")
+                {
+                    push(self, &mut entries, &mut seen, &concept, "recent_access");
+                }
             }
-        }
 
-        let hot_cap = if wake_lean { 12 } else { usize::MAX };
-        let hot_candidates: Vec<String> = self
-            .hot_set
-            .read()
-            .ok()
-            .map(|set| {
-                let mut hot: Vec<String> = set
-                    .iter()
-                    .filter(|c| {
-                        c.starts_with("tile:")
-                            || c.starts_with("helper:")
-                            || c.starts_with("ritual:")
-                    })
-                    .cloned()
-                    .collect();
-                hot.sort();
-                hot.truncate(hot_cap);
-                hot
-            })
-            .unwrap_or_default();
-        for c in hot_candidates {
-            push(self, &mut entries, &mut seen, &c, "hot_set");
-        }
+            let hot_candidates: Vec<String> = self
+                .hot_set
+                .read()
+                .ok()
+                .map(|set| {
+                    let mut hot: Vec<String> = set
+                        .iter()
+                        .filter(|c| {
+                            c.starts_with("tile:")
+                                || c.starts_with("helper:")
+                                || c.starts_with("ritual:")
+                        })
+                        .cloned()
+                        .collect();
+                    hot.sort();
+                    hot
+                })
+                .unwrap_or_default();
+            for c in hot_candidates {
+                push(self, &mut entries, &mut seen, &c, "hot_set");
+            }
 
-        if !wake_lean {
             for mem in self
                 .recall_scoped(
                     "active thought tile roadmap handoff lawfulness substrate",
@@ -4628,50 +4625,49 @@ impl StoreHandle {
             }
         }
 
-        let recency_rank =
-            crate::injection_priority::recency_rank_map(&self.access_index.recent(if wake_lean {
-                24
-            } else {
-                120
-            }));
+        // RSI Cycle 59: wake keeps entries as-is (≤2 cores); full path still ranks.
+        if !wake_lean {
+            let recency_rank =
+                crate::injection_priority::recency_rank_map(&self.access_index.recent(120));
 
-        let mut artifacts: Vec<crate::injection_priority::InjectionArtifact> = entries
-            .iter()
-            .map(|e| {
-                crate::injection_priority::artifact_for_concept(
-                    &e.concept,
-                    e.crs,
-                    e.hot,
-                    &recency_rank,
-                    if e.source == "momentum_recall" {
-                        0.75
-                    } else {
-                        0.0
-                    },
-                    &e.source,
-                    SESSION_HANDOFF_LATEST,
-                )
-            })
-            .collect();
-        artifacts = crate::injection_priority::prioritize_artifacts(artifacts);
-        let rank_by_concept: std::collections::HashMap<String, f32> = artifacts
-            .iter()
-            .map(|a| {
-                (
-                    a.concept.clone(),
-                    crate::injection_priority::injection_rank_score(a),
-                )
-            })
-            .collect();
-        entries.sort_by(|a, b| {
-            rank_by_concept
-                .get(&b.concept)
-                .copied()
-                .unwrap_or(0.0)
-                .partial_cmp(&rank_by_concept.get(&a.concept).copied().unwrap_or(0.0))
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
-        entries.truncate(MAX_ARTIFACTS);
+            let mut artifacts: Vec<crate::injection_priority::InjectionArtifact> = entries
+                .iter()
+                .map(|e| {
+                    crate::injection_priority::artifact_for_concept(
+                        &e.concept,
+                        e.crs,
+                        e.hot,
+                        &recency_rank,
+                        if e.source == "momentum_recall" {
+                            0.75
+                        } else {
+                            0.0
+                        },
+                        &e.source,
+                        SESSION_HANDOFF_LATEST,
+                    )
+                })
+                .collect();
+            artifacts = crate::injection_priority::prioritize_artifacts(artifacts);
+            let rank_by_concept: std::collections::HashMap<String, f32> = artifacts
+                .iter()
+                .map(|a| {
+                    (
+                        a.concept.clone(),
+                        crate::injection_priority::injection_rank_score(a),
+                    )
+                })
+                .collect();
+            entries.sort_by(|a, b| {
+                rank_by_concept
+                    .get(&b.concept)
+                    .copied()
+                    .unwrap_or(0.0)
+                    .partial_cmp(&rank_by_concept.get(&a.concept).copied().unwrap_or(0.0))
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
+            entries.truncate(MAX_ARTIFACTS);
+        }
 
         let active_tiles: Vec<serde_json::Value> = entries
             .iter()
@@ -8994,6 +8990,58 @@ mod ingest_ast_tests {
             "suggested_actions must carry injection_rank after composite sort"
         );
 
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// RSI Cycle 59: ultra-lean wake gather keeps core anchors only (primary + handoff).
+    #[test]
+    fn wake_ultra_lean_gather_core_anchors_only() {
+        let dir = test_store_dir("wake_gather_ul");
+        let mut store = StoreHandle::new(&dir.to_string_lossy());
+        store
+            .remember(
+                "primary_goal",
+                "PRIMARY GOAL\n\n**goal:** goal:engram_mvp_v1\n**set_at:** test",
+            )
+            .unwrap();
+        store
+            .remember(
+                crate::harness_injection::SESSION_HANDOFF_LATEST,
+                "SESSION HANDOFF PACKET v1\n\n{\"decisions\":[\"c59\"]}",
+            )
+            .unwrap();
+        // Noise that full gather would pull; wake ultra-lean must ignore.
+        for i in 0..8 {
+            let c = format!("tile:noise_c59_{i}");
+            store.remember(&c, "noise tile for gather skip").unwrap();
+            store.promote_tile_to_high_priority(&c).unwrap();
+        }
+        let bundle = store.build_continuation_bundle_wake(Some("c59 ultra lean gather"));
+        let arts = bundle
+            .get("active_artifacts")
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default();
+        // Prefer presentation nodes when present; active_artifacts may be stratum copy.
+        // Core: primary_goal + handoff should be fetchable; no noise tile: noise_c59_* required.
+        let names: Vec<String> = arts
+            .iter()
+            .filter_map(|a| a.get("concept").and_then(|c| c.as_str()).map(|s| s.to_string()))
+            .collect();
+        assert!(
+            !names.iter().any(|n| n.starts_with("tile:noise_c59_")),
+            "wake gather must not pull hot noise tiles: {names:?}"
+        );
+        let cpm = bundle
+            .get("continuation_phase_ms")
+            .and_then(|v| v.as_object())
+            .expect("continuation_phase_ms");
+        assert!(cpm.get("gather_ms").and_then(|v| v.as_u64()).is_some());
+        let ready = store.backend_readiness();
+        assert_eq!(
+            ready.get("wake_gather_ultra_lean").and_then(|v| v.as_bool()),
+            Some(true)
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
