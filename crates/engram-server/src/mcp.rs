@@ -4275,7 +4275,7 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
             // Registration now (light): tomls -> process:* blocks + relations.
             let _ = load_process_sheaf(store);
 
-            let (continuation, readiness) = {
+            let (continuation, readiness, warm_promoted) = {
                 let mut lock = match store.lock() {
                     Ok(l) => l,
                     Err(p) => {
@@ -4285,12 +4285,13 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
                         })
                     }
                 };
-                lock.warm_wake_anchors();
+                // Cycle 43: skip already-hot anchors (covers former bg promote set)
+                let warm_promoted = lock.warm_wake_anchors();
                 lock.sentinel_on_session_start();
                 // Cycle 42: wake-path slim presentation K; avoid polluting full-bundle TTL cache
                 let continuation = lock.build_continuation_bundle_wake(Some(&intent));
                 let readiness = lock.backend_readiness();
-                (continuation, readiness)
+                (continuation, readiness, warm_promoted)
             };
 
             let spatial = if include_spatial {
@@ -4304,27 +4305,6 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
                 None
             };
 
-            // Light non-blocking promotes (hot anchors for rehydrate; no internal handle_tool_call).
-            let store_for_bg = store.clone();
-            std::thread::spawn(move || {
-                let mut hlock = match store_for_bg.lock() {
-                    Ok(l) => l,
-                    Err(p) => {
-                        tracing::error!("bg promote poisoned: {}", p);
-                        return;
-                    }
-                };
-                let _ = hlock.promote_tile_to_high_priority("ritual:wake_up_anchor");
-                let _ = hlock.promote_tile_to_high_priority("ritual:engram.working-memory");
-                let _ = hlock.promote_tile_to_high_priority("process:engram.ritual.wake-up");
-                let _ = hlock.promote_tile_to_high_priority(
-                    "process:engram.ritual.local-context-working-memory",
-                );
-                let _ =
-                    hlock.promote_tile_to_high_priority(crate::local_stratum::LOCAL_HOST_PROFILE);
-                let _ = hlock.promote_tile_to_high_priority(crate::local_stratum::LOCAL_HOST_MCP);
-            });
-
             let queue_len = continuation
                 .get("harness_injection")
                 .and_then(|h| h.get("suggested_actions"))
@@ -4336,25 +4316,28 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
             crate::session_lifecycle::on_mcp_session_start(&session_key, &intent);
 
             let bundle_tier = crate::wake_bundle::WakeBundleTier::from_env();
-            // Persist cold-start fidelity metric (habit path) + build mcp_health.
+            // Cold-start fidelity for mcp_health (sync); metric persist deferred (Cycle 43).
             let fidelity_report = continuation
                 .get("cold_start_fidelity")
                 .cloned()
                 .unwrap_or_else(
                     || serde_json::json!({ "score": 0.0, "version": "cold_start_fidelity_v1" }),
                 );
-            {
-                let mut lock = match store.lock() {
+            // RSI Cycle 43: fidelity metric store/relate off critical wake path (bg thread).
+            // Replaces prior duplicate bg promote thread (subset of warm_wake_anchors).
+            let store_for_fid = store.clone();
+            let session_key_bg = session_key.clone();
+            let fidelity_bg = fidelity_report.clone();
+            std::thread::spawn(move || {
+                let mut hlock = match store_for_fid.lock() {
                     Ok(l) => l,
                     Err(p) => {
-                        return json!({
-                            "content": [{ "type": "text", "text": format!("Error: store mutex poisoned: {}", p) }],
-                            "isError": true
-                        })
+                        tracing::error!("bg fidelity persist poisoned: {}", p);
+                        return;
                     }
                 };
-                let _ = lock.persist_cold_start_fidelity_metric(&session_key, &fidelity_report);
-            }
+                let _ = hlock.persist_cold_start_fidelity_metric(&session_key_bg, &fidelity_bg);
+            });
             let mcp_health =
                 crate::cold_start_fidelity::build_mcp_health(&readiness, &fidelity_report, true);
 
@@ -4376,6 +4359,9 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
                 "mcp_health": mcp_health,
                 "wake_queue_gate": wake_gate,
                 "edit_arc_gate": edit_arc_gate,
+                // RSI Cycle 43 observability
+                "warm_anchors_promoted": warm_promoted,
+                "fidelity_persist": "async",
             });
             if let Some(spatial_val) = spatial {
                 wake_packet["spatial"] = spatial_val;
