@@ -1663,4 +1663,41 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 3. Partial σ² tensors beyond 16-d capsule (long horizon).
 4. Query_pure TIMING full gate.
 
+---
+
+## Cycle 46 — lean wake harness (skip heavy walks) (2026-07-14)
+
+### Master baseline
+
+- Post Cycle 45: PR **#91** `12ebb716` — wake_phase_ms + skip ki_rebake.
+- Hub CRS ~0.89 · CSF ~0.94 · ~89k blocks · session_start still ~40–50s.
+
+### Research synthesis
+
+| Source | Insight |
+|--------|---------|
+| Cycle 45 | Phase histogram targets continuation as likely dominant. |
+| Slim wake | Only needs goal/handoff/trace/presentation — not scars/verified/JIT FS. |
+| Full bundle | `get_continuation_bundle` still builds full harness. |
+
+### Hypothesis
+
+**Lean wake harness:** when `build_continuation_bundle_wake`, skip open_scars, uncertainty receipts, condensation, verified_processes, scaffold FS validate; shorter trace walk (depth 3, recent 64).
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Code | `lean_wake` flag on harness; wake path `true` |
+| Full path | `get_continuation_bundle` / `build_harness_bundle` unchanged (lean=false) |
+| Readiness | `wake_harness_lean: true` |
+| Lexicon | `wake-harness-lean` |
+
+### Next vectors
+
+1. mmap CSR for multi-million edge stalks.
+2. Measure `wake_phase_ms.continuation_ms` after binary swap; cut presentation gather further.
+3. Partial σ² tensors beyond 16-d capsule (long horizon).
+4. Query_pure TIMING full gate.
+
 
