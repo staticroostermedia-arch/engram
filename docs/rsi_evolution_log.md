@@ -2228,3 +2228,38 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 3. Full 8192-d σ² tensors (long horizon).
 4. Keep warm wake total ≤150ms.
 
+## Cycle 62 — ultra-lean wake local stratum (2026-07-15)
+
+### Master baseline
+
+- Post Cycle 61: PR **#109** `7489c214` — lean assemble.
+- **Measured warm:** total=**115**, local_stratum=**22**, harness=12, gather=4, assemble=0, fidelity=0.
+- Prompt backlog C50–C56 already shipped; residual is local stratum.
+
+### Research synthesis
+
+| Source | Insight |
+|--------|---------|
+| continuation_detail | local_stratum_ms ≈58% of cont detail after C61. |
+| readiness_cache | Multi-KB JSON re-previewed every wake though session_start emits readiness. |
+| build_local_stratum_slice | Also walked recent local: + project git + readiness. |
+
+### Hypothesis
+
+**Core-only wake LCS:** profile + mcp only; short previews; skip readiness_cache and recent local scan on wake.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Code | `build_local_stratum_slice_for_wake` + store wake path |
+| Readiness | `wake_local_stratum_core_only: true` |
+| Test | `wake_local_slice_core_only_skips_readiness` |
+
+### Next vectors
+
+1. Measure local_stratum_ms after MCP swap (target ≪10ms).
+2. Micro-cut harness if still >10ms.
+3. Full 8192-d σ² tensors (long horizon).
+4. Keep warm wake total ≤100ms.
+
