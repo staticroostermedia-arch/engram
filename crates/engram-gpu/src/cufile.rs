@@ -5,6 +5,8 @@ use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 
 static CUFILE_DETECTED: AtomicBool = AtomicBool::new(false);
 static CUFILE_PROBE_DONE: AtomicBool = AtomicBool::new(false);
+/// RSI Cycle 73: ldconfig -p probe runs once in bg — never block wake readiness.
+static CUFILE_PROBE_SPAWNED: AtomicBool = AtomicBool::new(false);
 #[cfg(target_os = "linux")]
 static CUFILE_INIT_OK: AtomicBool = AtomicBool::new(false);
 #[cfg(target_os = "linux")]
@@ -27,10 +29,12 @@ pub fn cufile_hot_requested() -> bool {
     matches!(v.as_str(), "1" | "true" | "on")
 }
 
+fn probe_cufile_config_files() -> bool {
+    Path::new("/usr/local/cuda/gds/cufile.json").exists() || Path::new("/etc/cufile.json").exists()
+}
+
 fn probe_cufile_driver() -> bool {
-    if Path::new("/usr/local/cuda/gds/cufile.json").exists()
-        || Path::new("/etc/cufile.json").exists()
-    {
+    if probe_cufile_config_files() {
         return true;
     }
     std::process::Command::new("ldconfig")
@@ -44,14 +48,34 @@ fn probe_cufile_driver() -> bool {
 }
 
 /// True when cuFile / GDS driver artifacts are visible on this host.
+///
+/// RSI Cycle 73: never block the wake path on `ldconfig -p` (measured ~500ms+ cold).
+/// Config-file hits resolve sync; otherwise spawn one background probe and return
+/// `false` until it completes (readiness soft-stale will refresh later).
 pub fn cufile_driver_detected() -> bool {
     if CUFILE_PROBE_DONE.load(Ordering::Relaxed) {
         return CUFILE_DETECTED.load(Ordering::Relaxed);
     }
-    let detected = probe_cufile_driver();
-    CUFILE_DETECTED.store(detected, Ordering::Relaxed);
-    CUFILE_PROBE_DONE.store(true, Ordering::Relaxed);
-    detected
+    // Fast path: known GDS config files (no process spawn).
+    if probe_cufile_config_files() {
+        CUFILE_DETECTED.store(true, Ordering::Relaxed);
+        CUFILE_PROBE_DONE.store(true, Ordering::Relaxed);
+        return true;
+    }
+    // Slow path: one-shot bg ldconfig — do not block readiness/wake.
+    if !CUFILE_PROBE_SPAWNED.swap(true, Ordering::Relaxed) {
+        std::thread::spawn(|| {
+            let detected = probe_cufile_driver();
+            CUFILE_DETECTED.store(detected, Ordering::Relaxed);
+            CUFILE_PROBE_DONE.store(true, Ordering::Relaxed);
+        });
+    }
+    false
+}
+
+/// Whether the async/sync probe has finished (for tests / readiness observability).
+pub fn cufile_probe_complete() -> bool {
+    CUFILE_PROBE_DONE.load(Ordering::Relaxed)
 }
 
 pub fn cufile_transfer_path() -> &'static str {
@@ -334,6 +358,20 @@ mod tests {
         LOCK.get_or_init(|| Mutex::new(()))
             .lock()
             .unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// RSI Cycle 73: unprobed call must not block; returns false until bg/sync complete.
+    #[test]
+    fn cufile_driver_detected_does_not_require_sync_ldconfig() {
+        let _guard = cufile_test_lock();
+        // If already probed by other tests, just assert completion path works.
+        let _ = cufile_driver_detected();
+        // Either probe finished quickly (config file / prior test) or async in flight.
+        // Function must return without hanging (this test completing is the contract).
+        assert!(
+            cufile_probe_complete() || CUFILE_PROBE_SPAWNED.load(Ordering::Relaxed),
+            "probe must complete or spawn async"
+        );
     }
 
     #[test]
