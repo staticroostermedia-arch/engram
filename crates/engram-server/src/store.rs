@@ -2894,6 +2894,7 @@ impl StoreHandle {
                 "ub_holographic_bind_roundtrip": true,
                 "ub_temporal_geometry_frame_lawful": true,
                 "ub_sheaf_glue_relations": true,
+                "mq_praxis_store_contract_seal": true,
                 "mq_goal_children_prefer_active": true,
                 "mq_goal_child_pin_matches_rank": true,
                 "mq_write_hygiene_prior_any_activity": true,
@@ -7385,6 +7386,18 @@ impl StoreHandle {
         if Self::is_hub_anchor_concept(concept) && block.l2_norm_residual <= 0.0 {
             if let Some(prior) = self.hub_anchor_prior_q(concept) {
                 engram_core::ops::apply_prediction_residual(&mut block, &prior);
+            }
+        }
+
+        // MQ Cycle 47: PRAXIS must carry evidence_update-only contract.
+        // `remember()` already calls assign_reflexive_contract; many paths (thought
+        // tiles verified_sequence, hypothesis promotion) use store() with zedos=PRAXIS
+        // but leave encode's default v1 DSL (`full|read|bind|update|…`) which fails
+        // verify_manifold_integrity ("permissive contract"). Seal when missing.
+        if block.zedos_tag == engram_core::types::ZEDOS_PRAXIS {
+            let contract = std::str::from_utf8(&block.allowed_transforms).unwrap_or("");
+            if !contract.contains("evidence_update") {
+                assign_reflexive_contract(&mut block);
             }
         }
 
@@ -14383,6 +14396,85 @@ SESSION HANDOFF PACKET v1
         assert!(classic_tos.contains(&"s2") && classic_tos.contains(&"d2"));
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+/// MQ Cycle 47: PRAXIS store() seals evidence_update contract.
+#[cfg(test)]
+mod mq_praxis_store_contract_tests {
+    use super::*;
+
+    fn test_store_dir(suffix: &str) -> std::path::PathBuf {
+        std::env::set_var("ENGRAM_DISABLE_SHEAF", "1");
+        std::env::set_var("ENGRAM_FORCE_CPU_BACKEND", "1");
+        std::env::set_var("ENGRAM_KI_DISABLE", "1");
+        let dir = std::env::temp_dir().join(format!(
+            "mq_praxis_{}_{}_{}",
+            suffix,
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).ok();
+        dir
+    }
+
+    /// store() of a PRAXIS block (tile-like path) must not leave default v1 DSL without evidence_update.
+    #[test]
+    fn mq_praxis_store_seals_evidence_update_contract() {
+        let dir = test_store_dir("seal");
+        let mut store = StoreHandle::new(&dir.to_string_lossy());
+        let mut block = store.encode(
+            "THOUGHT TILE\n\n**tile_type:** verified_sequence\n**title:** mq47 praxis contract\n",
+        );
+        // Simulate thought-tile mint: set PRAXIS without assign_reflexive_contract.
+        block.zedos_tag = engram_core::types::ZEDOS_PRAXIS;
+        block.crs_score = 0.88;
+        // Encode default is v1 full DSL — must not contain evidence_update yet.
+        let before = std::str::from_utf8(&block.allowed_transforms).unwrap_or("");
+        assert!(
+            !before.contains("evidence_update") || before.starts_with('\u{1}') || before.as_bytes().first() == Some(&1),
+            "precondition: encode default should not already be evidence_update-only; got {before:?}"
+        );
+
+        store
+            .store("tile:verified_sequence_mq47_contract_test", block)
+            .expect("store");
+
+        let loaded = store
+            .fetch_block("tile:verified_sequence_mq47_contract_test")
+            .expect("fetch");
+        assert_eq!(loaded.zedos_tag, engram_core::types::ZEDOS_PRAXIS);
+        let contract = std::str::from_utf8(&loaded.allowed_transforms).unwrap_or("");
+        assert!(
+            contract.contains("evidence_update"),
+            "PRAXIS store must seal evidence_update contract, got {contract:?}"
+        );
+
+        // verify_manifold sample path would not flag this block.
+        let report = store
+            .verify_manifold_integrity(ManifoldVerificationOptions {
+                min_crs: 0.0,
+                sample_size: Some(20),
+                include_relation_integrity: false,
+            })
+            .expect("verify");
+        let praxis_issues: Vec<&String> = report
+            .issues
+            .iter()
+            .filter(|i| i.contains("mq47_contract_test") && i.contains("PRAXIS"))
+            .collect();
+        assert!(
+            praxis_issues.is_empty(),
+            "sealed PRAXIS must not fail verify: {praxis_issues:?}"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+        std::env::remove_var("ENGRAM_DISABLE_SHEAF");
+        std::env::remove_var("ENGRAM_FORCE_CPU_BACKEND");
+        std::env::remove_var("ENGRAM_KI_DISABLE");
     }
 }
 
