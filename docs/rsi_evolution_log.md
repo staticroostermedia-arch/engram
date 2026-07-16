@@ -4728,3 +4728,28 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 
 1. MCP swap UB10 LIVE.
 2. Next distill: ub_secure_context / pure unit-phase encode / legacy PRAXIS heal.
+
+## MQ Cycle 48 — heal legacy PRAXIS contracts (2026-07-16)
+
+### VERIFY₀ baseline
+
+- master@`83b99317` UB10 #191.
+- CSF **0.937**; continuity green.
+- Lawfulness **needs_review**: 2 legacy `tile:verified_sequence_*` PRAXIS without `evidence_update` (pre-MQ47).
+
+### SELECT
+
+**Lawfulness residual (MQ)** — no distill feature. `heal_praxis_store_contracts` reseals legacy PRAXIS.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| API | `StoreHandle::heal_praxis_store_contracts(max_heal)` |
+| Test | `mq_praxis_legacy_contract_heal` (raw plant → heal → verify) |
+| Flag | `mq_praxis_legacy_contract_heal` |
+
+### Next vectors
+
+1. MCP swap; run heal on live stalk if VERIFY still samples legacy PRAXIS.
+2. Resume UB distill: ub_secure_context / pure unit-phase encode.
