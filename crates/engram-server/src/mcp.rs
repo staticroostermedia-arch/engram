@@ -4109,8 +4109,7 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
             let leg = lock.leg_block_count();
             let large = leg > crate::store::StoreHandle::LARGE_MANIFOLD_THRESHOLD;
             let edges = lock.relation_index.live_edge_count();
-            let risk =
-                crate::store::StoreHandle::classify_capacity_risk(large, hot_set_len, edges);
+            let risk = crate::store::StoreHandle::classify_capacity_risk(large, hot_set_len, edges);
             let plan = crate::store::StoreHandle::plan_capacity_hot_compress_ex(
                 risk,
                 hot_set_len,
@@ -9043,12 +9042,7 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
                     .strip_prefix("scar:")
                     .unwrap_or(&raw_concept)
                     .to_string();
-                match lock.mint_research_scar(
-                    &slug,
-                    &ruled_out,
-                    &why,
-                    &preferred_alternative,
-                ) {
+                match lock.mint_research_scar(&slug, &ruled_out, &why, &preferred_alternative) {
                     Ok((minted, action)) => {
                         relate_realized_by(&mut lock, &minted, &process_context);
                         warn!(
@@ -11299,11 +11293,10 @@ list = ["unit_hypersphere_unchanged"]
             );
             // geo still hot (no-op under nominal).
             let lock = store.lock().unwrap();
-            assert!(
-                lock.hot_concepts()
-                    .iter()
-                    .any(|c| c == "geo_context:drop_mcp")
-            );
+            assert!(lock
+                .hot_concepts()
+                .iter()
+                .any(|c| c == "geo_context:drop_mcp"));
             assert!(lock.hot_concepts().iter().any(|c| c == "goal:keep_mcp"));
             drop(lock);
             let _ = std::fs::remove_dir_all(&tmp);
@@ -11369,7 +11362,10 @@ list = ["unit_hypersphere_unchanged"]
                 &store,
             );
             assert!(
-                resp_err.get("isError").and_then(|v| v.as_bool()).unwrap_or(false)
+                resp_err
+                    .get("isError")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false)
                     || mcp_text(&resp_err).contains("why is required"),
                 "expected why required error: {}",
                 mcp_text(&resp_err)
