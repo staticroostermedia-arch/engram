@@ -4263,3 +4263,30 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 1. MCP swap MQ40; confirm live write_hygiene mints>0 after quick_trace-only activity.
 2. Optional #134 C86 if soft-stale warm floor fails.
 3. Next quality child (capacity if measured / consult residual / tiles).
+
+## MQ Cycle 41 — ungated hygiene mints skip consult-violation accounting (2026-07-15)
+
+### VERIFY₀ baseline
+
+- master@`360a63f4` MQ40 #174.
+- MCP swapped: `mq_write_hygiene_trace_session_mint` LIVE; after quick_trace write_hygiene mints=1 source=session_metamemory ✓.
+- Residual: ungated distillate mints still inflated `writes_without_prior_recall` and closed recall gate → false consult-violation signal + friction before remember.
+- CSF warm **0.941**; handoff complete; verify healthy 50/50; dual-gate green.
+
+### SELECT
+
+**mq_write_hygiene** residual — ungated mints skip violation counter and preserve open recall gate.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| note_write | ungated tools skip writes_without_prior_recall; do not close recall gate |
+| Flag | `mq_write_hygiene_ungated_no_violation` |
+| Test | `mq_write_hygiene_ungated_mint_skips_without_prior_recall` |
+
+### Next vectors
+
+1. MCP swap MQ41; confirm writes_without_prior_recall stays 0 after quick_trace-only.
+2. Optional #134 C86 if soft-stale warm floor fails.
+3. Next quality child (capacity if measured / structure preview / tiles).

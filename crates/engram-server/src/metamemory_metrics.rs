@@ -45,8 +45,11 @@ impl SessionMetamemoryCounters {
     }
 
     /// Record a gated write. `tool` classifies mint vs update for write hygiene.
+    /// MQ Cycle 41: ungated distillate mints (quick_trace/session_end) count as mints but do
+    /// **not** inflate writes_without_prior_recall or close the recall gate (false consult signal).
     pub fn note_write(&mut self, tool: &str) {
-        if !self.recall_gate_open {
+        let ungated = is_ungated_hygiene_mint_tool(tool);
+        if !self.recall_gate_open && !ungated {
             self.writes_without_prior_recall = self.writes_without_prior_recall.saturating_add(1);
         }
         self.writes = self.writes.saturating_add(1);
@@ -55,7 +58,9 @@ impl SessionMetamemoryCounters {
         } else if is_update_write_tool(tool) {
             self.updates = self.updates.saturating_add(1);
         }
-        self.recall_gate_open = false;
+        if !ungated {
+            self.recall_gate_open = false;
+        }
     }
 
     pub fn writes_per_recall(&self) -> f32 {
@@ -437,6 +442,36 @@ mod tests {
             !hint.contains("zero mint"),
             "quick_trace mint must clear zero-mint false signal; hint={hint}"
         );
+    }
+
+    /// MQ Cycle 41: ungated distillate mint must not count as consult-before-write violation.
+    #[test]
+    fn mq_write_hygiene_ungated_mint_skips_without_prior_recall() {
+        let mut c = SessionMetamemoryCounters::default();
+        // No recall — remember would violate; quick_trace must not inflate violation counter.
+        c.note_write("mcp_engram_quick_trace");
+        assert_eq!(c.mints, 1);
+        assert_eq!(c.writes_without_prior_recall, 0);
+        assert!(
+            !c.recall_gate_open(),
+            "ungated mint does not open gate if it was closed"
+        );
+        // Real mint without recall still violates.
+        c.note_write("mcp_engram_remember");
+        assert_eq!(c.writes_without_prior_recall, 1);
+        assert!(!c.recall_gate_open());
+        // After recall, ungated mint must not re-close gate (remember can follow).
+        c.note_recall(1);
+        assert!(c.recall_gate_open());
+        c.note_write("mcp_engram_session_end");
+        assert!(
+            c.recall_gate_open(),
+            "ungated mint must preserve open recall gate"
+        );
+        assert_eq!(c.writes_without_prior_recall, 1); // unchanged
+        c.note_write("mcp_engram_update");
+        assert_eq!(c.updates, 1);
+        assert!(!c.recall_gate_open());
     }
 
     #[test]
