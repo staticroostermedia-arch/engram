@@ -4650,3 +4650,29 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 
 1. MCP swap UB8 flag LIVE.
 2. Next distill: ub_provlog_richness / ub_geosphere_frame / ub_secure_context / pure unit-phase encode.
+
+## MQ Cycle 47 — PRAXIS store() seals evidence_update contract (2026-07-16)
+
+### VERIFY₀ baseline
+
+- master@`c95b5bb8` UB8 #188.
+- CSF **0.937**; UB flags LIVE; continuity/handoff complete.
+- Lawfulness **needs_review**: PRAXIS `tile:verified_sequence_*` permissive contract (sample-dependent).
+- Root cause: `store()` does not call `assign_reflexive_contract`; thought-tile PRAXIS keeps encode v1 DSL without `evidence_update`.
+
+### SELECT
+
+**Lawfulness residual (MQ regression)** — no distill feature this fire.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Fix | `StoreHandle::store` seals PRAXIS when contract lacks `evidence_update` |
+| Test | `mq_praxis_store_seals_evidence_update_contract` |
+| Flag | `mq_praxis_store_contract_seal` |
+
+### Next vectors
+
+1. MCP swap; new PRAXIS tiles lawful. Legacy tiles heal on re-store/update or optional repair pass.
+2. Resume UB distill: ub_provlog_richness / ub_geosphere_frame / ub_secure_context.
