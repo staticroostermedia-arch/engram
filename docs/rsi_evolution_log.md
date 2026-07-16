@@ -4831,3 +4831,30 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 
 1. MCP swap UB12 LIVE.
 2. Next distill: ub_research_scar / ub_trust_surface / lexicon optional unit-phase bind.
+
+## UB Cycle 13 — structured research scar mint + lean open-scar surface (2026-07-16)
+
+### VERIFY₀ baseline
+
+- master@`e6f73cc9` UB12 #195.
+- CSF **0.937**; lawfulness **healthy** 50/50; dual-gate green; warm_ms 1; `ub_unit_phase_encode` LIVE.
+- Residual: research dead-ends free-form `remember("scar:…")` without ruled_out/why/alternative structure or update-over-mint.
+
+### SELECT
+
+**ub_research_scar** — structured mint/update path for research dead-ends + lean open_scars hoist property.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| API | `StoreHandle::mint_research_scar(slug, ruled_out, why, preferred_alternative)` |
+| CRS | `CrsRole::ResearchScar` base 0.78 (≥ lean open-scar floor 0.5) |
+| Tests | `ub_research_scar_structured_mint_and_lean_open_scars`, `research_scar_role_above_lean_open_scar_floor` |
+| Flag | `ub_research_scar` |
+| Invariants | scar: prefix; body fields; update>mint; fail-closed empty fields; collect_open_scars_lean surfaces |
+
+### Next vectors
+
+1. MCP swap UB13 LIVE.
+2. Next distill: ub_trust_surface / lexicon optional unit-phase bind / MCP wire scar tool to mint_research_scar.
