@@ -1762,6 +1762,23 @@ fn tool_list() -> Value {
                 }
             },
             {
+                "name": "mcp_engram_apply_capacity_hot_compress",
+                "description": "UB21 capacity NREM/hot compress path: when soft_elevated_hot_set or elevated_hot_set, unmark non-protected hot residency toward HOT_SET_SOFT (1k). Does NOT delete blocks — residency demote only. Protects goal:/trace:/tile:session_boundary/helper:session_*/scar:/process:/ritual:. Prefer dry_run=true first. Wake compress_path.suggested + nrem_candidate_count guide when to call. Default max_unmark=64 (cap 500).",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "max_unmark": {
+                            "type": "integer",
+                            "description": "Max concepts to unmark this call (default 64, clamped 1..500)"
+                        },
+                        "dry_run": {
+                            "type": "boolean",
+                            "description": "If true, return plan + would_unmark without mutating hot_set (default false)"
+                        }
+                    }
+                }
+            },
+            {
                 "name": "mcp_engram_thought_tile_write_result",
                 "description": "Write result/update data back into an existing Thought Tile. Triggers momentum + ki_hijacker refresh. Especially useful after state changes in Research Offload, State Machine, or Tabular tiles. Consider creating a visualization companion for high-value results.",
                 "inputSchema": {
@@ -4072,6 +4089,77 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
                 }
             }
             json!({ "content": [{ "type": "text", "text": format!("✓ Batch relate: {} relations created.", created) }] })
+        }
+
+        "mcp_engram_apply_capacity_hot_compress" => {
+            // UB Cycle 21: agent-facing NREM/hot residency trim under soft/hard elevated.
+            let max_unmark = args
+                .get("max_unmark")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(64) as usize;
+            let dry_run = args
+                .get("dry_run")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            let lock = store.lock().unwrap();
+            let hot = lock.hot_concepts();
+            let hot_set_len = hot.len();
+            let (demotable, protected) =
+                crate::store::StoreHandle::count_capacity_hot_compress_classes(&hot);
+            let leg = lock.leg_block_count();
+            let large = leg > crate::store::StoreHandle::LARGE_MANIFOLD_THRESHOLD;
+            let edges = lock.relation_index.live_edge_count();
+            let risk =
+                crate::store::StoreHandle::classify_capacity_risk(large, hot_set_len, edges);
+            let plan = crate::store::StoreHandle::plan_capacity_hot_compress_ex(
+                risk,
+                hot_set_len,
+                Some(demotable),
+                Some(protected),
+            );
+            if dry_run {
+                let target = crate::store::StoreHandle::HOT_SET_SOFT_THRESHOLD;
+                let (would_unmark, protected_skipped) =
+                    crate::store::StoreHandle::select_capacity_hot_compress_unmarks(
+                        &hot, max_unmark, target,
+                    );
+                let report = json!({
+                    "version": "ub_capacity_compress_v1",
+                    "dry_run": true,
+                    "applied": false,
+                    "risk": risk,
+                    "hot_set_len": hot_set_len,
+                    "nrem_demotable_count": demotable,
+                    "nrem_protected_count": protected,
+                    "nrem_candidate_count": demotable,
+                    "would_unmark": would_unmark.len(),
+                    "would_unmark_concepts": would_unmark,
+                    "protected_skipped": protected_skipped,
+                    "plan": plan,
+                    "ub_capacity_hot_compress_mcp": true,
+                });
+                return json!({
+                    "content": [{ "type": "text", "text": format!(
+                        "✓ Capacity hot compress dry_run (ub_capacity_hot_compress_mcp)\n{}",
+                        serde_json::to_string_pretty(&report).unwrap_or_else(|_| report.to_string())
+                    ) }]
+                });
+            }
+            let result = lock.apply_capacity_hot_compress(max_unmark);
+            let mut out = result;
+            if let Some(obj) = out.as_object_mut() {
+                obj.insert("plan".into(), plan);
+                obj.insert("nrem_demotable_count".into(), json!(demotable));
+                obj.insert("nrem_protected_count".into(), json!(protected));
+                obj.insert("nrem_candidate_count".into(), json!(demotable));
+                obj.insert("ub_capacity_hot_compress_mcp".into(), json!(true));
+            }
+            json!({
+                "content": [{ "type": "text", "text": format!(
+                    "✓ Capacity hot compress (ub_capacity_hot_compress_mcp)\n{}",
+                    serde_json::to_string_pretty(&out).unwrap_or_else(|_| out.to_string())
+                ) }]
+            })
         }
 
         "mcp_engram_promote_hot" => {
@@ -11168,6 +11256,56 @@ list = ["unit_hypersphere_unchanged"]
                 text.contains("Uncertainty receipt minted"),
                 "expected uncertainty mint: {text}"
             );
+            let _ = std::fs::remove_dir_all(&tmp);
+        }
+
+        /// UB Cycle 21: mcp_engram_apply_capacity_hot_compress dry_run + flag.
+        #[test]
+        fn ub_capacity_hot_compress_mcp_wires_apply() {
+            let tmp = unique_tmp("hot-compress-mcp");
+            let store = prep_store(&tmp);
+            {
+                let lock = store.lock().unwrap();
+                lock.mark_hot("goal:keep_mcp");
+                lock.mark_hot("geo_context:drop_mcp");
+                lock.mark_hot("receipt:drop_mcp");
+            }
+            let dry = handle_tool_on_big_stack(
+                "mcp_engram_apply_capacity_hot_compress",
+                &json!({ "max_unmark": 8, "dry_run": true }),
+                &store,
+            );
+            let text = mcp_text(&dry);
+            assert!(
+                text.contains("ub_capacity_hot_compress_mcp") || text.contains("dry_run"),
+                "expected dry_run compress: {text}"
+            );
+            assert!(
+                text.contains("nrem_candidate_count") || text.contains("nrem_demotable"),
+                "expected demotable counts: {text}"
+            );
+            // Nominal small store → apply no-ops (risk not elevated).
+            let apply = handle_tool_on_big_stack(
+                "mcp_engram_apply_capacity_hot_compress",
+                &json!({ "max_unmark": 8, "dry_run": false }),
+                &store,
+            );
+            let text2 = mcp_text(&apply);
+            assert!(
+                text2.contains("ub_capacity_hot_compress_mcp")
+                    || text2.contains("risk_not_hot_set_elevated")
+                    || text2.contains("applied"),
+                "expected apply report: {text2}"
+            );
+            // geo still hot (no-op under nominal).
+            let lock = store.lock().unwrap();
+            assert!(
+                lock.hot_concepts()
+                    .iter()
+                    .any(|c| c == "geo_context:drop_mcp")
+            );
+            assert!(lock.hot_concepts().iter().any(|c| c == "goal:keep_mcp"));
+            drop(lock);
             let _ = std::fs::remove_dir_all(&tmp);
         }
 

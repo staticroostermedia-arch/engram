@@ -2903,6 +2903,7 @@ impl StoreHandle {
                 "mq_capacity_snapshot_lean": true,
                 "ub_capacity_soft_elevated_hot_set": true,
                 "ub_capacity_nrem_hot_compress_path": true,
+                "ub_capacity_hot_compress_mcp": true,
                 "mq_tiles_capacity_in_boundary": true,
                 "mq_tiles_boundary_legacy_upgrade": true,
                 "mq_tiles_boundary_next_vector_upgrade": true,
@@ -6686,7 +6687,18 @@ impl StoreHandle {
 
     /// Pure plan for capacity hot compress (no store mutation).
     /// Target is soft threshold so soft_elevated and elevated_hot_set both drain toward 1k.
+    /// UB Cycle 21: optional demotable/protected counts + MCP tool name for agent invoke.
     pub fn plan_capacity_hot_compress(risk: &str, hot_set_len: usize) -> serde_json::Value {
+        Self::plan_capacity_hot_compress_ex(risk, hot_set_len, None, None)
+    }
+
+    /// Extended plan with live demotable/protected residency counts (UB21).
+    pub fn plan_capacity_hot_compress_ex(
+        risk: &str,
+        hot_set_len: usize,
+        nrem_demotable_count: Option<usize>,
+        nrem_protected_count: Option<usize>,
+    ) -> serde_json::Value {
         let suggested = Self::capacity_hot_compress_path_suggested(risk);
         let target = Self::HOT_SET_SOFT_THRESHOLD;
         let overshoot = if suggested {
@@ -6694,7 +6706,7 @@ impl StoreHandle {
         } else {
             0
         };
-        serde_json::json!({
+        let mut plan = serde_json::json!({
             "version": "ub_capacity_compress_v1",
             "suggested": suggested,
             "mode": "nrem_hot_trim",
@@ -6702,13 +6714,40 @@ impl StoreHandle {
             "overshoot": overshoot,
             "hot_set_len": hot_set_len,
             "risk": risk,
+            "mcp_tool": "mcp_engram_apply_capacity_hot_compress",
             "action": if suggested {
-                "apply_capacity_hot_compress — unmark non-protected hot until soft threshold"
+                "mcp_engram_apply_capacity_hot_compress(max_unmark) — unmark non-protected hot until soft threshold"
             } else {
                 "idle — compress path only when soft_elevated_hot_set or elevated_hot_set"
             },
             "ub_capacity_nrem_hot_compress_path": true,
-        })
+            "ub_capacity_hot_compress_mcp": true,
+        });
+        if let Some(d) = nrem_demotable_count {
+            plan["nrem_demotable_count"] = serde_json::json!(d);
+        }
+        if let Some(p) = nrem_protected_count {
+            plan["nrem_protected_count"] = serde_json::json!(p);
+        }
+        // nrem_candidate_count aliases demotable for daemon/agent vocabulary.
+        if let Some(d) = nrem_demotable_count {
+            plan["nrem_candidate_count"] = serde_json::json!(d);
+        }
+        plan
+    }
+
+    /// Count demotable vs protected concepts in a hot set (O(n), no mutation).
+    pub fn count_capacity_hot_compress_classes(hot: &[String]) -> (usize, usize) {
+        let mut demotable = 0usize;
+        let mut protected = 0usize;
+        for c in hot {
+            if Self::is_capacity_hot_compress_protected(c) {
+                protected += 1;
+            } else {
+                demotable += 1;
+            }
+        }
+        (demotable, protected)
     }
 
     /// Select demotable hot concepts for capacity compress (pure; no mutation).
@@ -6798,10 +6837,13 @@ impl StoreHandle {
     /// Cheap O(1) counts — enables evidence-based mq_capacity_policy without full stats dump.
     /// UB Cycle 19: soft_elevated_hot_set when large_manifold && hot_set in (1k, 2k].
     /// UB Cycle 20: embed compress_path plan when soft/hard hot_set elevated.
+    /// UB Cycle 21: nrem demotable/protected counts + mcp_tool on compress_path.
     pub fn build_lean_capacity_snapshot(store: &Self) -> serde_json::Value {
         let leg_block_count = store.leg_block_count_prefer_cached();
         let large_manifold = leg_block_count > Self::LARGE_MANIFOLD_THRESHOLD;
-        let hot_set_len = store.hot_concepts().len();
+        let hot = store.hot_concepts();
+        let hot_set_len = hot.len();
+        let (nrem_demotable, nrem_protected) = Self::count_capacity_hot_compress_classes(&hot);
         let relation_edge_count = store.relation_index.live_edge_count();
         let relation_nodes = store.relation_index.adj_node_count();
         let relation_tombstones = store.relation_index.tombstone_count();
@@ -6813,11 +6855,16 @@ impl StoreHandle {
         };
         let risk = Self::classify_capacity_risk(large_manifold, hot_set_len, relation_edge_count);
         let soft_elevated = risk == "soft_elevated_hot_set";
-        let compress_path = Self::plan_capacity_hot_compress(risk, hot_set_len);
+        let compress_path = Self::plan_capacity_hot_compress_ex(
+            risk,
+            hot_set_len,
+            Some(nrem_demotable),
+            Some(nrem_protected),
+        );
         let hint = if soft_elevated {
-            "lean capacity — soft_elevated_hot_set (hot_set>1k): compress_path.suggested — apply_capacity_hot_compress / NREM before hard elevated (>2k)"
+            "lean capacity — soft_elevated_hot_set: compress_path.suggested → mcp_engram_apply_capacity_hot_compress (capped)"
         } else if Self::capacity_hot_compress_path_suggested(risk) {
-            "lean capacity — elevated_hot_set: compress_path.suggested — apply_capacity_hot_compress toward soft threshold"
+            "lean capacity — elevated_hot_set: mcp_engram_apply_capacity_hot_compress toward soft threshold"
         } else if Self::capacity_risk_is_elevated(risk) {
             "lean capacity — SELECT mq_capacity_policy when risk elevated or hot/edge scale measured"
         } else {
@@ -6839,6 +6886,7 @@ impl StoreHandle {
             "soft_elevated": soft_elevated,
             "ub_capacity_soft_elevated_hot_set": true,
             "ub_capacity_nrem_hot_compress_path": true,
+            "ub_capacity_hot_compress_mcp": true,
             "compress_path": compress_path,
             "hint": hint,
         })
@@ -12077,6 +12125,20 @@ mod ingest_ast_tests {
         assert_eq!(plan["target_hot_set"], 1_000);
         assert_eq!(plan["mode"], "nrem_hot_trim");
         assert_eq!(plan["ub_capacity_nrem_hot_compress_path"], true);
+        assert_eq!(
+            plan["mcp_tool"],
+            "mcp_engram_apply_capacity_hot_compress"
+        );
+        let plan_ex = StoreHandle::plan_capacity_hot_compress_ex(
+            "soft_elevated_hot_set",
+            1_239,
+            Some(200),
+            Some(39),
+        );
+        assert_eq!(plan_ex["nrem_demotable_count"], 200);
+        assert_eq!(plan_ex["nrem_protected_count"], 39);
+        assert_eq!(plan_ex["nrem_candidate_count"], 200);
+        assert_eq!(plan_ex["ub_capacity_hot_compress_mcp"], true);
 
         let idle = StoreHandle::plan_capacity_hot_compress("large_manifold_nominal", 500);
         assert_eq!(idle["suggested"], false);
@@ -12127,6 +12189,13 @@ mod ingest_ast_tests {
                 .and_then(|v| v.as_bool()),
             Some(true)
         );
+        assert_eq!(
+            store
+                .backend_readiness()
+                .get("ub_capacity_hot_compress_mcp")
+                .and_then(|v| v.as_bool()),
+            Some(true)
+        );
 
         store.mark_hot("goal:keep_me");
         store.mark_hot("geo_context:drop_me");
@@ -12137,11 +12206,18 @@ mod ingest_ast_tests {
         assert_eq!(noop["unmarked"], 0);
         assert!(store.hot_concepts().iter().any(|c| c == "geo_context:drop_me"));
 
-        // Snapshot embeds compress_path.
+        // Snapshot embeds compress_path with demotable counts + mcp_tool.
         let snap = StoreHandle::build_lean_capacity_snapshot(&store);
         assert!(snap.get("compress_path").is_some());
         assert_eq!(snap["ub_capacity_nrem_hot_compress_path"], true);
+        assert_eq!(snap["ub_capacity_hot_compress_mcp"], true);
         assert_eq!(snap["compress_path"]["version"], "ub_capacity_compress_v1");
+        assert_eq!(
+            snap["compress_path"]["mcp_tool"],
+            "mcp_engram_apply_capacity_hot_compress"
+        );
+        assert!(snap["compress_path"]["nrem_candidate_count"].as_u64().unwrap_or(0) >= 2);
+        assert!(snap["compress_path"]["nrem_protected_count"].as_u64().unwrap_or(0) >= 1);
 
         // Direct unmark path still works for demotable.
         store.unmark_hot("geo_context:drop_me");
