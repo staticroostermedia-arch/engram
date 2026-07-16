@@ -2811,6 +2811,7 @@ impl StoreHandle {
                 "mq_write_hygiene_mint_tile_scar": true,
                 "mq_write_hygiene_goal_mint": true,
                 "mq_goal_children_prefer_active": true,
+                "mq_goal_child_pin_matches_rank": true,
                 "mq_write_hygiene_prior_any_activity": true,
                 "mq_lean_open_scars_access_index": true,
                 "mq_lean_open_scars_slim_hoist": true,

@@ -4097,3 +4097,30 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 1. MCP swap MQ34; confirm active child ranked first when completed sibling present.
 2. Optional #134 C86 if soft-stale warm floor fails.
 3. Next quality child (relation harness / capacity if measured).
+
+## MQ Cycle 35 — pin first goal child from ranked goal_children head (2026-07-15)
+
+### VERIFY₀ baseline
+
+- master@`7e2ea8dd` MQ34 #168.
+- MCP swapped: `mq_goal_children_prefer_active` LIVE; ranking=`active_first_v1` ✓.
+- Residual: live wake pin used relation-scan order while `goal_children[0]` used alpha among actives → surface and queue disagreed (capacity-policy vs rehydrate-graph).
+- CSF warm **0.941**; dual-gate green; verify healthy.
+
+### SELECT
+
+**mq_rehydrate_graph** residual — SELECT queue pin must equal ranked `goal_children.children[0]`.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Pin | `first_lean_goal_child_concept` → `build_lean_goal_children` head |
+| Flag | `mq_goal_child_pin_matches_rank` |
+| Test | `first_lean_goal_child_matches_ranked_goal_children_head` (+ prefer-active still holds) |
+
+### Next vectors
+
+1. MCP swap MQ35; confirm suggested_actions goal pin == goal_children[0].concept.
+2. Optional #134 C86 if soft-stale warm floor fails.
+3. Next quality child (relation harness / capacity if measured).
