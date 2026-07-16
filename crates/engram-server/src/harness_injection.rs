@@ -3314,7 +3314,10 @@ SESSION HANDOFF PACKET v1 (structured JSON for next-wake read_concept)
             )
             .unwrap();
         store
-            .remember("goal:mq32_child", "GOAL BLOCK (subgoal)\n\n**status:** active\n")
+            .remember(
+                "goal:mq32_child",
+                "GOAL BLOCK (subgoal)\n\n**status:** active\n",
+            )
             .unwrap();
         let _ = store.relate(
             "goal:engram_memory_quality_v1",
