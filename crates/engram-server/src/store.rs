@@ -2904,6 +2904,7 @@ impl StoreHandle {
                 "ub_capacity_soft_elevated_hot_set": true,
                 "ub_capacity_nrem_hot_compress_path": true,
                 "ub_capacity_hot_compress_mcp": true,
+                "ub_capacity_wake_compress_suggest": true,
                 "mq_tiles_capacity_in_boundary": true,
                 "mq_tiles_boundary_legacy_upgrade": true,
                 "mq_tiles_boundary_next_vector_upgrade": true,

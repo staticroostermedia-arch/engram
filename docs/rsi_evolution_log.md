@@ -5073,3 +5073,29 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 
 1. MCP kill/swap UB21 LIVE — compress_path.suggested + tool invocable; dry_run then capped apply on soft_elevated.
 2. Optional daemon auto-trim when soft_elevated (capped, after agent path proven).
+
+## UB Cycle 22 — wake suggested_action dry_run capacity compress (2026-07-16)
+
+### VERIFY₀ baseline
+
+- master@`80c8cb17` UB21 #204.
+- CSF **0.949**; trust_ok **true**; lawfulness **healthy**; warm_ms **1**; capacity **soft_elevated_hot_set** hot~1219 overshoot~219; compress_path.suggested **true** LIVE.
+- Residual: wake queue never pinned `mcp_engram_apply_capacity_hot_compress` despite suggested compress_path.
+
+### SELECT
+
+**ub_capacity_wake_compress_suggest** — ultra-lean priority-0 dry_run pin when compress_path.suggested.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Pure | `capacity_compress_wake_dry_run_args` (overshoot clamp 1..64) |
+| Queue | ultra-lean injects `mcp_engram_apply_capacity_hot_compress` dry_run |
+| Flag | `ub_capacity_wake_compress_suggest` |
+| Test | `ub_capacity_wake_compress_suggest_dry_run_args` |
+
+### Next vectors
+
+1. MCP swap UB22 LIVE — soft_elevated wake queue includes dry_run compress action.
+2. Optional daemon capped auto-trim after agents routinely dry_run+apply.
