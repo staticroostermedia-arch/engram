@@ -4180,3 +4180,30 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 1. MCP swap MQ37; confirm ranking=`recency_structure_active_v1` + flag live; completed siblings never sole structure edge when active exists.
 2. Optional #134 C86 if soft-stale warm floor fails (remeasure post-swap soft-stale path).
 3. Next quality child (spatial_locus / write_hygiene residual / capacity if measured).
+
+## MQ Cycle 38 — relation_resume structure edges carry neighbor_status (2026-07-15)
+
+### VERIFY₀ baseline
+
+- master@`6e834354` MQ37 #171.
+- MCP swapped: `mq_relation_resume_structure_active` LIVE; ranking=`recency_structure_active_v1`; structure_edges_in_top=1 (capacity-policy active) ✓.
+- Residual: structure edges exposed concept only — SELECT still needed `goal_children` hop for status; lean relation graph not self-sufficient.
+- CSF warm **0.941**; handoff complete; verify healthy 50/50; dual-gate green.
+
+### SELECT
+
+**mq_relation_retrieval** residual — annotate structure edges with `neighbor_status` from goal block.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Field | `neighbor_status` on decomposes_into/has_child edges only |
+| Flag | `mq_relation_resume_neighbor_status` |
+| Test | `mq_relation_resume_structure_edge_includes_neighbor_status` (+ MQ37 status assert) |
+
+### Next vectors
+
+1. MCP swap MQ38; confirm live structure edge has neighbor_status=active.
+2. Optional #134 C86 if soft-stale warm floor fails.
+3. Next quality child (spatial_locus / write_hygiene residual / capacity if measured).

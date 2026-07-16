@@ -396,13 +396,19 @@ fn relation_resume_label_boost(label: &str) -> u64 {
 
 /// MQ Cycle 37: structure reserved slot prefers **active** goal neighbors (align goal_children).
 fn relation_resume_structure_neighbor_active(store: &StoreHandle, other: &str) -> bool {
+    relation_resume_neighbor_status(store, other)
+        .map(|s| s.eq_ignore_ascii_case("active"))
+        .unwrap_or(false)
+}
+
+/// MQ Cycle 38: goal-neighbor status for structure edges (self-sufficient lean resume).
+fn relation_resume_neighbor_status(store: &StoreHandle, other: &str) -> Option<String> {
     if !other.starts_with("goal:") {
-        return false;
+        return None;
     }
     store
         .fetch_block_high_priority(other)
-        .map(|b| goal_status_is_active(&goal_block_text(&b)))
-        .unwrap_or(false)
+        .and_then(|b| goal_current_status(&goal_block_text(&b)))
 }
 
 pub fn default_relation_volatility(label: &str) -> f32 {
@@ -2829,6 +2835,7 @@ impl StoreHandle {
                 "mq_relation_resume_full_incident": true,
                 "mq_relation_resume_structure_boost": true,
                 "mq_relation_resume_structure_active": true,
+                "mq_relation_resume_neighbor_status": true,
                 "wake_lawfulness_snapshot": true,
                 "wake_slim_mq_resume_hoist": true,
                 "mq_spatial_locus_aabb_test": true,
@@ -5971,6 +5978,7 @@ impl StoreHandle {
     /// MQ Cycle 36: reserve ≥1 decomposes_into/has_child slot so goal-graph structure survives
     /// serves-trace spam without outranking freshest traces (label boost alone loses to 2e12+ts).
     /// MQ Cycle 37: structure reserved slot prefers **active** goal children (align goal_children).
+    /// MQ Cycle 38: structure edges annotate `neighbor_status` for self-sufficient SELECT.
     pub fn build_lean_relation_resume(store: &Self, seed: Option<&str>) -> serde_json::Value {
         const TOP_K: usize = 8;
         /// Guarantee structure visibility under high serves degree (goal children are stable/low ts).
@@ -6065,10 +6073,16 @@ impl StoreHandle {
         let mut edges: Vec<serde_json::Value> = Vec::new();
         let mut structure_edges = 0u32;
         for (score, label, other, direction, seed_s) in picked {
-            if relation_resume_is_structure_label(&label) {
+            let is_structure = relation_resume_is_structure_label(&label);
+            if is_structure {
                 structure_edges = structure_edges.saturating_add(1);
             }
-            let edge = if direction == "from" {
+            let neighbor_status = if is_structure {
+                relation_resume_neighbor_status(store, &other)
+            } else {
+                None
+            };
+            let mut edge = if direction == "from" {
                 serde_json::json!({
                     "from": seed_s,
                     "label": label,
@@ -6085,6 +6099,11 @@ impl StoreHandle {
                     "resume_rank": score,
                 })
             };
+            if let Some(status) = neighbor_status {
+                edge.as_object_mut()
+                    .expect("edge object")
+                    .insert("neighbor_status".into(), serde_json::json!(status));
+            }
             edges.push(edge);
         }
         serde_json::json!({
@@ -6095,7 +6114,7 @@ impl StoreHandle {
             "ranking": "recency_structure_active_v1",
             "structure_edges_in_top": structure_edges,
             "candidates_scanned": candidates_scanned,
-            "hint": "lean graph rehydrate — serves recency + reserved active decomposes_into/has_child",
+            "hint": "lean graph rehydrate — serves recency + reserved active structure + neighbor_status",
         })
     }
 
@@ -11186,6 +11205,98 @@ mod ingest_ast_tests {
             store
                 .backend_readiness()
                 .get("mq_relation_resume_structure_active")
+                .and_then(|v| v.as_bool()),
+            Some(true)
+        );
+        // MQ38: active structure edge must carry neighbor_status.
+        let active_status = edges.iter().find_map(|e| {
+            let is_active_child = e.get("to").and_then(|v| v.as_str())
+                == Some("goal:1000_mq37-active-low-ts")
+                || e.get("from").and_then(|v| v.as_str()) == Some("goal:1000_mq37-active-low-ts");
+            if is_active_child {
+                e.get("neighbor_status")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())
+            } else {
+                None
+            }
+        });
+        assert_eq!(
+            active_status.as_deref(),
+            Some("active"),
+            "structure edge must annotate neighbor_status=active; edges={edges:?}"
+        );
+        assert_eq!(
+            store
+                .backend_readiness()
+                .get("mq_relation_resume_neighbor_status")
+                .and_then(|v| v.as_bool()),
+            Some(true)
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// MQ Cycle 38: structure edge neighbor_status is self-sufficient for SELECT.
+    #[test]
+    fn mq_relation_resume_structure_edge_includes_neighbor_status() {
+        let dir = test_store_dir("mq38_relation_neighbor_status");
+        let mut store = StoreHandle::new(&dir.to_string_lossy());
+        store
+            .remember(
+                "goal:engram_memory_quality_v1",
+                "GOAL\n\n**status:** active\n",
+            )
+            .unwrap();
+        for i in 0..10 {
+            let name = format!("trace:178410200{i}_mq38-serves");
+            store
+                .remember(&name, "REASONING TRACE\n\n**decision_point:** filler\n")
+                .unwrap();
+            let _ = store.relate(&name, "goal:engram_memory_quality_v1", "serves");
+        }
+        store
+            .remember(
+                "goal:mq38_child_active",
+                "GOAL BLOCK (subgoal)\n\n**status:** active\n",
+            )
+            .unwrap();
+        let _ = store.relate(
+            "goal:engram_memory_quality_v1",
+            "goal:mq38_child_active",
+            "decomposes_into",
+        );
+        let rr =
+            StoreHandle::build_lean_relation_resume(&store, Some("goal:engram_memory_quality_v1"));
+        let edges = rr.get("edges").and_then(|v| v.as_array()).expect("edges");
+        let structure = edges.iter().find(|e| {
+            e.get("label").and_then(|v| v.as_str()) == Some("decomposes_into")
+                && (e.get("to").and_then(|v| v.as_str()) == Some("goal:mq38_child_active")
+                    || e.get("from").and_then(|v| v.as_str()) == Some("goal:mq38_child_active"))
+        });
+        assert!(
+            structure.is_some(),
+            "structure edge missing; edges={edges:?}"
+        );
+        assert_eq!(
+            structure
+                .and_then(|e| e.get("neighbor_status"))
+                .and_then(|v| v.as_str()),
+            Some("active"),
+            "neighbor_status must be active; edge={structure:?}"
+        );
+        // Serves edges must not claim neighbor_status (goal-only annotation).
+        let serves_with_status = edges.iter().any(|e| {
+            e.get("label").and_then(|v| v.as_str()) == Some("serves")
+                && e.get("neighbor_status").is_some()
+        });
+        assert!(
+            !serves_with_status,
+            "serves edges must not carry neighbor_status; edges={edges:?}"
+        );
+        assert_eq!(
+            store
+                .backend_readiness()
+                .get("mq_relation_resume_neighbor_status")
                 .and_then(|v| v.as_bool()),
             Some(true)
         );
