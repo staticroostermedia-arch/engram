@@ -4911,3 +4911,29 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 
 1. MCP swap UB15 LIVE.
 2. Next distill: lexicon optional unit-phase bind / trust_surface on session_end boundary.
+
+## UB Cycle 16 — lexicon unit-phase OP_BIND for exact HRR (2026-07-16)
+
+### VERIFY₀ baseline
+
+- master@`b5b330d1` UB15 #198.
+- CSF **0.937**; trust_ok **true**; lawfulness **healthy** 50/50; warm_ms 1; `ub_research_scar_mcp` LIVE.
+- Residual: `bind_lexicon_q` used spiral `encode` (~0.89 unbind) despite unit-phase encode path (UB12).
+
+### SELECT
+
+**ub_lexicon_unit_phase_bind** — lexicon role–filler bind uses `encode_unit_phase` (exact HRR >0.95).
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| API | `bind_lexicon_q` → `encode_unit_phase` for word/def/etym |
+| Tests | `ub_lexicon_unit_phase_bind_recovery_gt_095`; raised holographic floor to 0.95 |
+| Flag | `ub_lexicon_unit_phase_bind` |
+| Invariants | OP_UNBIND recovery **>0.95**; ProvLog body still spiral-encode packed; unit hypersphere |
+
+### Next vectors
+
+1. MCP swap UB16 LIVE.
+2. Next distill: trust_surface on session_end boundary / capacity residual.

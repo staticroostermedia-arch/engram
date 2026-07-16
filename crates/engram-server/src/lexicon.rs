@@ -47,19 +47,24 @@ fn build_lexicon_source_text(word: &str, definition: &str, etymology_note: &str)
     )
 }
 
-/// Bind word×definition×etymology into unit phase (same geometry as original mint).
+/// Bind word×definition×etymology into unit phase for lexicon `q`.
+///
+/// UB Cycle 16: uses [`StoreHandle::encode_unit_phase`] (exact HRR geometry) so
+/// OP_UNBIND recovery of definition/etymology is **>0.95**. Default spiral
+/// `encode` remains the manifold/search path for ProvLog body packing — only
+/// the role–filler bind chain uses unit-phase.
 fn bind_lexicon_q(
     store: &StoreHandle,
     word: &str,
     definition: &str,
     etymology_note: &str,
 ) -> engram_core::types::Leg3Pointer {
-    let word_block = store.encode(word);
-    let def_block = store.encode(definition);
-    let etym_block = store.encode(etymology_note);
+    let word_block = store.encode_unit_phase(word);
+    let def_block = store.encode_unit_phase(definition);
+    let etym_block = store.encode_unit_phase(etymology_note);
     let bound_def = op_bind(&word_block.q, &def_block.q);
     let bound_all = op_bind(&bound_def, &etym_block.q);
-    let mut phase_carrier = store.encode(word);
+    let mut phase_carrier = store.encode_unit_phase(word);
     phase_carrier.q = normalize(&bound_all);
     phase_carrier
 }
@@ -461,7 +466,8 @@ mod tests {
         std::env::remove_var("ENGRAM_FORCE_CPU_BACKEND");
     }
 
-    /// UB Cycle 6: lexicon word⋉definition unbind recovers definition under store encode.
+    /// UB Cycle 6 + 16: lexicon word⋉definition unbind recovers definition.
+    /// Floor raised to **>0.95** after unit-phase bind path (was spiral ~0.85–0.89).
     #[test]
     fn ub_lexicon_holographic_bind_recovers_definition_similarity() {
         let (dir, mut store) = open_iso_store();
@@ -476,17 +482,16 @@ mod tests {
             &["language"],
         )
         .expect("mint");
-        let word_q = store.encode(word).q;
-        let def_q = store.encode(definition).q;
-        // First bind step: word ⋉ definition (before etymology).
+        // Must use unit-phase encode to match bind_lexicon_q geometry.
+        let word_q = store.encode_unit_phase(word).q;
+        let def_q = store.encode_unit_phase(definition).q;
         let bound_def = op_bind(&word_q, &def_q);
         let rec = op_unbind(&bound_def, &word_q);
         let sim = cosine_similarity(&rec, &def_q);
         assert!(
-            sim > 0.85,
-            "lexicon word⋉def unbind recovery low: {sim} (store-encode floor 0.85)"
+            sim > 0.95,
+            "lexicon word⋉def unbind recovery low: {sim} (unit-phase floor 0.95)"
         );
-        // Full mint q is unit-normalized.
         let block = store.fetch_block(&concept).expect("block");
         let mag: f32 = block
             .q
@@ -495,6 +500,52 @@ mod tests {
             .sum::<f32>()
             .sqrt();
         assert!((mag - 1.0).abs() < 1e-3, "mint q mag={mag}");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::env::remove_var("ENGRAM_DISABLE_SHEAF");
+        std::env::remove_var("ENGRAM_FORCE_CPU_BACKEND");
+    }
+
+    /// UB Cycle 16: lexicon mint bind uses unit-phase; unbind word recovers def >0.95.
+    #[test]
+    fn ub_lexicon_unit_phase_bind_recovery_gt_095() {
+        let (dir, mut store) = open_iso_store();
+        let word = "engram_ub16";
+        let definition = "Durable geometric memory atom with exact HRR role-filler geometry.";
+        let etymology = "Test etymology for unit-phase lexicon bind.";
+        let concept = mint_lexicon_word(
+            &mut store,
+            word,
+            definition,
+            etymology,
+            &["language"],
+        )
+        .expect("mint");
+        let word_q = store.encode_unit_phase(word).q;
+        let def_q = store.encode_unit_phase(definition).q;
+        let etym_q = store.encode_unit_phase(etymology).q;
+        // Reconstruct two-step bind (word⋉def)⋉etym and unbind stepwise.
+        let bound_def = op_bind(&word_q, &def_q);
+        let bound_all = op_bind(&bound_def, &etym_q);
+        let rec_def_etym = op_unbind(&bound_all, &word_q);
+        // After unbind word: should recover (def⋉etym) composite near def after unbind etym
+        let rec_def = op_unbind(&rec_def_etym, &etym_q);
+        let sim = cosine_similarity(&rec_def, &def_q);
+        assert!(
+            sim > 0.95,
+            "lexicon unit-phase full bind unbind recovery too low: {sim}"
+        );
+        // Spiral encode of same strings is weaker (document residual).
+        let w_s = store.encode(word).q;
+        let d_s = store.encode(definition).q;
+        let bound_s = op_bind(&w_s, &d_s);
+        let rec_s = op_unbind(&bound_s, &w_s);
+        let sim_s = cosine_similarity(&rec_s, &d_s);
+        assert!(
+            sim + 1e-3 >= sim_s,
+            "unit-phase lexicon bind must not underperform spiral: unit={sim} spiral={sim_s}"
+        );
+        let block = store.fetch_block(&concept).expect("block");
+        assert!((block.crs_score - dynamical_crs_for_role(CrsRole::Lexicon)).abs() < 0.05);
         let _ = std::fs::remove_dir_all(&dir);
         std::env::remove_var("ENGRAM_DISABLE_SHEAF");
         std::env::remove_var("ENGRAM_FORCE_CPU_BACKEND");

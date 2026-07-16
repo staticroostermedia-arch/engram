@@ -2909,6 +2909,7 @@ impl StoreHandle {
                 "ub_relation_resume_structure_reserve_3": true,
                 "ub_goal_children_demote_capacity_nominal": true,
                 "ub_lexicon_update_path": true,
+                "ub_lexicon_unit_phase_bind": true,
                 "ub_holographic_bind_roundtrip": true,
                 "ub_temporal_geometry_frame_lawful": true,
                 "ub_sheaf_glue_relations": true,
