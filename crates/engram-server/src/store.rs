@@ -2808,6 +2808,8 @@ impl StoreHandle {
                 "mq_write_hygiene_mint_update": true,
                 "mq_write_hygiene_slim_wake": true,
                 "mq_write_hygiene_prior_receipt_seed": true,
+                "mq_write_hygiene_mint_tile_scar": true,
+                "mq_write_hygiene_prior_any_activity": true,
                 "mq_tiles_boundaries_session": true,
                 "mq_csf_session_boundary_prefer": true,
                 "mq_trusted_tiles_boundary_recency": true,
@@ -6003,6 +6005,10 @@ impl StoreHandle {
             "mints": mm.get("mints").cloned().unwrap_or(serde_json::json!(0)),
             "updates": mm.get("updates").cloned().unwrap_or(serde_json::json!(0)),
             "mint_update_ratio": mm.get("mint_update_ratio").cloned().unwrap_or(serde_json::json!(0.0)),
+            "writes": mm.get("writes").cloned().unwrap_or(serde_json::json!(0)),
+            "recalls": mm.get("recalls").cloned().unwrap_or(serde_json::json!(0)),
+            "plan_tools": mm.get("plan_tools").cloned().unwrap_or(serde_json::json!(0)),
+            "log_tools": mm.get("log_tools").cloned().unwrap_or(serde_json::json!(0)),
             "writes_without_prior_recall": mm
                 .get("writes_without_prior_recall")
                 .cloned()
@@ -6040,9 +6046,15 @@ impl StoreHandle {
             let Some(mm) = crate::metamemory_metrics::parse_metamemory_from_provlog(&body) else {
                 continue;
             };
+            // MQ Cycle 27: prior receipts often have plan/log activity with mint/update
+            // still zero (pre-tile/scar mint classification). Seed on any activity.
             let m = mm.get("mints").and_then(|v| v.as_u64()).unwrap_or(0);
             let u = mm.get("updates").and_then(|v| v.as_u64()).unwrap_or(0);
-            if m > 0 || u > 0 {
+            let writes = mm.get("writes").and_then(|v| v.as_u64()).unwrap_or(0);
+            let recalls = mm.get("recalls").and_then(|v| v.as_u64()).unwrap_or(0);
+            let plan = mm.get("plan_tools").and_then(|v| v.as_u64()).unwrap_or(0);
+            let log = mm.get("log_tools").and_then(|v| v.as_u64()).unwrap_or(0);
+            if m > 0 || u > 0 || writes > 0 || recalls > 0 || plan > 0 || log > 0 {
                 return Some((concept, mm));
             }
         }
@@ -10678,6 +10690,30 @@ mod ingest_ast_tests {
             snap.get("receipt_concept").and_then(|v| v.as_str()),
             Some("receipt:session_1784162004")
         );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// MQ Cycle 27: seed even when receipt only has plan/log activity (mints=updates=0).
+    #[test]
+    fn mq_write_hygiene_seeds_from_plan_log_only_receipt() {
+        let dir = test_store_dir("mq27_write_hygiene_plan_log");
+        let mut store = StoreHandle::new(&dir.to_string_lossy());
+        let receipt = r#"SESSION RECEIPT
+
+{"version":"session_receipt_v1","metamemory":{"mints":0,"updates":0,"mint_update_ratio":0.0,"writes":0,"recalls":0,"plan_tools":3,"log_tools":2,"write_hygiene_hint":"session had plan/log activity with zero mint/update — prefer update; ensure tile/scar paths count as mints"},"created_unix":1784162783}
+"#;
+        let mut b = store.encode(receipt);
+        b.crs_score = 0.9;
+        store.store("receipt:session_1784162783", b).unwrap();
+        store.access_index.touch("receipt:session_1784162783");
+        let snap = StoreHandle::build_lean_write_hygiene_snapshot(&store);
+        assert_eq!(
+            snap.get("source").and_then(|v| v.as_str()),
+            Some("receipt_prior_session"),
+            "got {snap:?}"
+        );
+        assert_eq!(snap.get("plan_tools").and_then(|v| v.as_u64()), Some(3));
+        assert_eq!(snap.get("log_tools").and_then(|v| v.as_u64()), Some(2));
         let _ = std::fs::remove_dir_all(&dir);
     }
 
