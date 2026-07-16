@@ -4373,3 +4373,32 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 1. MCP swap MQ44; confirm latest boundary tile body contains capacity_snapshot + risk after session_end.
 2. If risk elevated → capacity policy ship; else next residual (rehydrate_graph / write hygiene under load / spatial).
 3. Optional #134 C86 if soft-stale warm floor fails.
+
+## MQ Cycle 45 — legacy boundary upgrade + markdown next_vector (2026-07-15)
+
+### VERIFY₀ baseline
+
+- master@`8e7d7136` MQ44 #178.
+- MCP swapped: `mq_tiles_capacity_in_boundary` LIVE after rebuild+kill.
+- Residual: live `tile:session_boundary_1784177605` lacked capacity_snapshot (pre-swap mint); early-return skipped upgrade; `next_vector_hint` fell back because summary used `### next_vector` not `next_vector:`.
+- capacity risk=`large_manifold_nominal` (no policy ship).
+- CSF warm **0.936**; handoff complete; verify healthy 50/50; dual-gate green.
+
+### SELECT
+
+**mq_tiles_boundaries** residual — upgrade legacy boundary via `update` + parse markdown next_vector sections.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Upgrade | if boundary exists without `mq_capacity_v1`, rewrite via `update` (not promote-only) |
+| Parse | `extract_next_vector_hint` supports `### next_vector` + following line |
+| Flag | `mq_tiles_boundary_legacy_upgrade` |
+| Tests | `mq_tiles_boundary_legacy_upgrade_embeds_capacity`, `extract_next_vector_hint_markdown_section` |
+
+### Next vectors
+
+1. MCP swap MQ45; re-mint/upgrade path on next session_end; confirm latest boundary has capacity + real next_vector_hint.
+2. If risk elevated → capacity policy; else rehydrate_graph / write_hygiene / spatial residual.
+3. Optional #134 C86 if soft-stale warm floor fails.
