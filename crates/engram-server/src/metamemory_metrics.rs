@@ -236,6 +236,7 @@ pub fn is_metamemory_write_tool(tool: &str) -> bool {
 
 /// Mint-class writes (new concept creation) — prefer update when match exists.
 /// MQ Cycle 27: include thought_tile_create + scar (distillate / deflection mints).
+/// MQ Cycle 33: goal_create + goal_decompose mint goal-graph structure (was invisible to hygiene).
 pub fn is_mint_write_tool(tool: &str) -> bool {
     matches!(
         tool,
@@ -245,14 +246,19 @@ pub fn is_mint_write_tool(tool: &str) -> bool {
             | "mcp_engram_import"
             | "mcp_engram_thought_tile_create"
             | "mcp_engram_scar"
+            | "mcp_engram_goal_create"
+            | "mcp_engram_goal_decompose"
     )
 }
 
 /// Update-class writes (Lyapunov / p-momentum preserving).
+/// MQ Cycle 33: goal_update_status preserves goal identity (status field only).
 pub fn is_update_write_tool(tool: &str) -> bool {
     matches!(
         tool,
-        "mcp_engram_update" | "mcp_engram_update_with_tensor_bond"
+        "mcp_engram_update"
+            | "mcp_engram_update_with_tensor_bond"
+            | "mcp_engram_goal_update_status"
     )
 }
 
@@ -265,7 +271,12 @@ pub fn classify_mcp_tool(tool: &str) -> Option<&'static str> {
         | "mcp_engram_context_for_edit"
         | "mcp_engram_context_for_file"
         | "mcp_engram_read_concept"
-        | "mcp_engram_get_continuation_bundle" => Some("plan"),
+        | "mcp_engram_get_continuation_bundle"
+        | "mcp_engram_goal_status"
+        | "mcp_engram_goal_list"
+        | "mcp_engram_goal_search"
+        | "mcp_engram_goal_get_children"
+        | "mcp_engram_goal_set_primary" => Some("plan"),
         "mcp_engram_quick_trace"
         | "mcp_engram_remember"
         | "mcp_engram_update"
@@ -275,7 +286,10 @@ pub fn classify_mcp_tool(tool: &str) -> Option<&'static str> {
         | "mcp_engram_scar"
         | "mcp_engram_remember_solution"
         | "mcp_engram_batch_remember"
-        | "mcp_engram_import" => Some("log"),
+        | "mcp_engram_import"
+        | "mcp_engram_goal_create"
+        | "mcp_engram_goal_decompose"
+        | "mcp_engram_goal_update_status" => Some("log"),
         _ => None,
     }
 }
@@ -362,6 +376,18 @@ mod tests {
         assert!(is_mint_write_tool("mcp_engram_scar"));
         assert!(is_metamemory_write_tool("mcp_engram_thought_tile_create"));
         assert!(is_update_write_tool("mcp_engram_update"));
+        // MQ Cycle 33: goal graph structural mints + status update.
+        assert!(is_mint_write_tool("mcp_engram_goal_create"));
+        assert!(is_mint_write_tool("mcp_engram_goal_decompose"));
+        assert!(is_metamemory_write_tool("mcp_engram_goal_decompose"));
+        assert!(is_update_write_tool("mcp_engram_goal_update_status"));
+        assert_eq!(classify_mcp_tool("mcp_engram_goal_decompose"), Some("log"));
+        assert_eq!(classify_mcp_tool("mcp_engram_goal_list"), Some("plan"));
+        let mut c = SessionMetamemoryCounters::default();
+        c.note_recall(1);
+        c.note_write("mcp_engram_goal_decompose");
+        assert_eq!(c.mints, 1);
+        assert_eq!(c.updates, 0);
     }
 
     #[test]

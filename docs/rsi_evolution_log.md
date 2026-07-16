@@ -4039,3 +4039,33 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 1. MCP swap MQ32; confirm suggested_actions contains goal child pin when children exist.
 2. Optional #134 C86 if soft-stale warm floor fails.
 3. Next quality child (relation harness / write_hygiene residual / capacity if measured).
+
+## MQ Cycle 33 — goal_create/decompose as mint-class write hygiene (2026-07-15)
+
+### VERIFY₀ baseline
+
+- master@`ab78e1c2` MQ32 #166.
+- MCP swapped: `mq_goal_child_suggested_action` LIVE; goal child pin in suggested_actions ✓.
+- Residual: goal_decompose/goal_create mint structural goals but `is_mint_write_tool` omitted them → write_hygiene mints=0 despite graph mints; no consult gate on those paths.
+- CSF warm **0.941**; goal_children=4; verify healthy.
+
+### SELECT
+
+**mq_write_hygiene** — count goal graph structural mints + consult-before-write on goal create/decompose.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Mint class | +`mcp_engram_goal_create`, +`mcp_engram_goal_decompose` |
+| Update class | +`mcp_engram_goal_update_status` |
+| Classify | goal reads → plan; goal mints/status → log |
+| Gate | consult_before_write on goal_create/decompose handlers |
+| Flag | `mq_write_hygiene_goal_mint` |
+| Test | extended `metamemory_remember_solution_counts_as_write` |
+
+### Next vectors
+
+1. MCP swap MQ33; confirm goal_decompose increments mints after recall gate open.
+2. Optional #134 C86 if soft-stale warm floor fails.
+3. Next quality child (relation harness / capacity if measured).
