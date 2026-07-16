@@ -1947,30 +1947,18 @@ fn build_harness_bundle_ultra_lean_wake(
     })
 }
 
-/// MQ Cycle 32: first `goal:*` child via decomposes_into (no list-all, single relation query).
-/// MQ Cycle 34: prefer **active** children; fall back to first goal:* only if none active.
+/// MQ Cycle 32/34/35: first goal child for SELECT queue pin.
+/// Uses the same `build_lean_goal_children` ranking (`active_first_v1`) as slim surface
+/// so `suggested_actions` pin == `goal_children.children[0]` (MQ35).
 fn first_lean_goal_child_concept(store: &StoreHandle, parent: Option<&str>) -> Option<String> {
-    let parent = parent.filter(|s| !s.is_empty() && *s != "unset")?;
-    let mut fallback: Option<String> = None;
-    for (_label, other) in store.search_relations(parent, Some("decomposes_into"), "from") {
-        if !other.starts_with("goal:") {
-            continue;
-        }
-        let active = store
-            .fetch_block_high_priority(&other)
-            .map(|b| {
-                let text = crate::store::goal_block_text(&b);
-                crate::store::goal_status_is_active(&text)
-            })
-            .unwrap_or(false);
-        if active {
-            return Some(other);
-        }
-        if fallback.is_none() {
-            fallback = Some(other);
-        }
-    }
-    fallback
+    let gc = crate::store::StoreHandle::build_lean_goal_children(store, parent);
+    gc.get("children")
+        .and_then(|v| v.as_array())
+        .and_then(|arr| arr.first())
+        .and_then(|c| c.get("concept"))
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
 }
 
 /// RSI Cycle 72: lean wake queue from pre-resolved manifest (zero extra store I/O).
@@ -3395,6 +3383,84 @@ SESSION HANDOFF PACKET v1 (structured JSON for next-wake read_concept)
             first_lean_goal_child_concept(&store, Some("goal:engram_memory_quality_v1")).as_deref(),
             Some("goal:mq34_active"),
             "must skip completed sibling for SELECT pin"
+        );
+        // MQ Cycle 35: pin must equal ranked goal_children[0].
+        let gc = crate::store::StoreHandle::build_lean_goal_children(
+            &store,
+            Some("goal:engram_memory_quality_v1"),
+        );
+        let ranked0 = gc
+            .get("children")
+            .and_then(|v| v.as_array())
+            .and_then(|a| a.first())
+            .and_then(|c| c.get("concept"))
+            .and_then(|v| v.as_str());
+        assert_eq!(
+            first_lean_goal_child_concept(&store, Some("goal:engram_memory_quality_v1")).as_deref(),
+            ranked0,
+            "pin must match goal_children[0] after active_first ranking"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// MQ Cycle 35: among multiple actives, pin matches ranked[0] (not relation scan order).
+    #[test]
+    fn first_lean_goal_child_matches_ranked_goal_children_head() {
+        std::env::set_var("ENGRAM_DISABLE_SHEAF", "1");
+        std::env::set_var("ENGRAM_FORCE_CPU_BACKEND", "1");
+        std::env::set_var("ENGRAM_KI_DISABLE", "1");
+        let dir = std::env::temp_dir().join(format!(
+            "mq35_pin_matches_rank_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).ok();
+        let mut store = StoreHandle::new(&dir.to_string_lossy());
+        store
+            .remember(
+                "goal:engram_memory_quality_v1",
+                "GOAL\n\n**status:** active\n",
+            )
+            .unwrap();
+        // Relate z-name first (scan order) then a-name — ranking should put a first.
+        store
+            .remember(
+                "goal:mq35_zebra",
+                "GOAL BLOCK (subgoal)\n\n**status:** active\n",
+            )
+            .unwrap();
+        store
+            .remember(
+                "goal:mq35_alpha",
+                "GOAL BLOCK (subgoal)\n\n**status:** active\n",
+            )
+            .unwrap();
+        let _ = store.relate(
+            "goal:engram_memory_quality_v1",
+            "goal:mq35_zebra",
+            "decomposes_into",
+        );
+        let _ = store.relate(
+            "goal:engram_memory_quality_v1",
+            "goal:mq35_alpha",
+            "decomposes_into",
+        );
+        let pin = first_lean_goal_child_concept(&store, Some("goal:engram_memory_quality_v1"));
+        assert_eq!(pin.as_deref(), Some("goal:mq35_alpha"));
+        let gc = crate::store::StoreHandle::build_lean_goal_children(
+            &store,
+            Some("goal:engram_memory_quality_v1"),
+        );
+        assert_eq!(
+            gc.get("children")
+                .and_then(|v| v.as_array())
+                .and_then(|a| a.first())
+                .and_then(|c| c.get("concept"))
+                .and_then(|v| v.as_str()),
+            Some("goal:mq35_alpha")
         );
         let _ = std::fs::remove_dir_all(&dir);
     }
