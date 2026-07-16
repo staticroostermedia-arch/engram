@@ -4152,3 +4152,31 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 1. MCP swap MQ36; confirm relation_resume ranking=`recency_structure_v1` and structure_edges_in_top≥1 on live goal seed.
 2. Optional #134 C86 if soft-stale warm floor fails.
 3. Next quality child (spatial locus / write hygiene residual / capacity if measured).
+
+## MQ Cycle 37 — relation_resume structure slot prefers active goals (2026-07-15)
+
+### VERIFY₀ baseline
+
+- master@`26189abd` MQ36 #170.
+- MCP swapped: `mq_relation_resume_structure_boost` LIVE; ranking was `recency_structure_v1`; structure_edges_in_top=1 with capacity-policy child ✓.
+- Residual: structure reserved slot ranked by score (ts+boost) only — completed high-ts sibling can steal the sole structure slot from active backlog (misaligns with goal_children active_first).
+- CSF warm **0.936**; handoff complete; verify healthy 50/50; dual-gate green.
+
+### SELECT
+
+**mq_relation_retrieval** residual — structure reserved slot prefers **active** goal children.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Pick | active goal structure first, then any structure fallback |
+| Rank | `recency_structure_active_v1` |
+| Flag | `mq_relation_resume_structure_active` |
+| Test | `mq_relation_resume_structure_slot_prefers_active_goal` (+ MQ36/19/20 still green) |
+
+### Next vectors
+
+1. MCP swap MQ37; confirm ranking=`recency_structure_active_v1` + flag live; completed siblings never sole structure edge when active exists.
+2. Optional #134 C86 if soft-stale warm floor fails (remeasure post-swap soft-stale path).
+3. Next quality child (spatial_locus / write_hygiene residual / capacity if measured).
