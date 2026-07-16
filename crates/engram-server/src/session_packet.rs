@@ -720,6 +720,35 @@ MCP swap MQ16
         );
     }
 
+    /// UB Cycle 2: summary lines recover selected_child when packet fields absent.
+    #[test]
+    fn handoff_parse_selected_child_from_summary_lines_recovers_ub_child() {
+        let summary = r#"- master_sha: b66a5300
+- ub_cycle: 1
+- selected_child: ub_handoff_distillate
+- property_test: handoff_distillation_completeness_ub_requires_selected_child_and_test
+- next_vector: MCP swap then ub_relation_density
+"#;
+        assert_eq!(
+            handoff_parse_selected_child(summary).as_deref(),
+            Some("ub_handoff_distillate")
+        );
+        assert!(handoff_parse_property_test(summary)
+            .as_deref()
+            .unwrap()
+            .contains("handoff_distillation"));
+        let d = handoff_distillation_completeness(
+            handoff_parse_selected_child(summary).as_deref(),
+            handoff_parse_next_vector(summary).as_deref(),
+            handoff_parse_property_test(summary).as_deref(),
+            Some("goal:engram_ultimate_backend_v1"),
+        );
+        assert_eq!(
+            d["complete"], true,
+            "reparse should complete distillate: {d}"
+        );
+    }
+
     /// UB Cycle 1: distillation completeness requires selected_child + property_test for ub_*.
     #[test]
     fn handoff_distillation_completeness_ub_requires_selected_child_and_test() {

@@ -2887,6 +2887,7 @@ impl StoreHandle {
                 "mq_tiles_boundary_legacy_upgrade": true,
                 "mq_tiles_boundary_next_vector_upgrade": true,
                 "ub_handoff_distillate": true,
+                "ub_handoff_distillate_summary_reparse": true,
                 "mq_goal_children_prefer_active": true,
                 "mq_goal_child_pin_matches_rank": true,
                 "mq_write_hygiene_prior_any_activity": true,
@@ -5427,22 +5428,37 @@ impl StoreHandle {
                         primary.as_deref(),
                     )
                 });
+                // UB Cycle 2: re-parse selected_child/property_test from summary (or full
+                // handoff text) when packet was minted by pre-UB1 MCP without those fields.
+                let summary_for_parse =
+                    packet.get("summary").and_then(|v| v.as_str()).unwrap_or("");
+                let parse_src = if !summary_for_parse.is_empty() {
+                    summary_for_parse
+                } else {
+                    latest_text.as_str()
+                };
                 let selected_child = packet
                     .get("selected_child")
                     .and_then(|v| v.as_str())
-                    .map(|s| s.to_string());
+                    .filter(|s| !s.is_empty())
+                    .map(|s| s.to_string())
+                    .or_else(|| handoff_parse_selected_child(parse_src))
+                    .or_else(|| handoff_parse_selected_child(&latest_text));
                 let property_test = packet
                     .get("property_test")
                     .and_then(|v| v.as_str())
-                    .map(|s| s.to_string());
-                let distillation = packet.get("distillation").cloned().unwrap_or_else(|| {
-                    handoff_distillation_completeness(
-                        selected_child.as_deref(),
-                        next.as_deref(),
-                        property_test.as_deref(),
-                        primary.as_deref(),
-                    )
-                });
+                    .filter(|s| !s.is_empty())
+                    .map(|s| s.to_string())
+                    .or_else(|| handoff_parse_property_test(parse_src))
+                    .or_else(|| handoff_parse_property_test(&latest_text));
+                // Always recompute distillation from best-available fields so incomplete
+                // stale packets heal at wake without re-session_end.
+                let distillation = handoff_distillation_completeness(
+                    selected_child.as_deref(),
+                    next.as_deref(),
+                    property_test.as_deref(),
+                    primary.as_deref(),
+                );
                 let preview = next
                     .clone()
                     .or_else(|| decisions_head.first().cloned())
