@@ -2923,6 +2923,7 @@ impl StoreHandle {
                 "ub_research_scar": true,
                 "ub_research_scar_mcp": true,
                 "ub_trust_surface": true,
+                "ub_trust_surface_boundary": true,
                 "mq_goal_children_prefer_active": true,
                 "mq_goal_child_pin_matches_rank": true,
                 "mq_write_hygiene_prior_any_activity": true,
@@ -7063,6 +7064,71 @@ impl StoreHandle {
     /// Placeholder next_vector_hint when extract fails — signals weak compression survival.
     const BOUNDARY_NEXT_VECTOR_FALLBACK: &'static str = "(see helper:session_handoff_latest)";
 
+    /// Latest CSF score from `helper:cold_start_fidelity_series` (O(1) series read).
+    /// Returns `None` when series missing or empty — boundary mint falls back honestly.
+    pub fn latest_cold_start_fidelity_score(&self) -> Option<f64> {
+        let series: Vec<serde_json::Value> = self
+            .fetch_block(crate::cold_start_fidelity::COLD_START_FIDELITY_SERIES)
+            .map(|b| engram_core::storage::read_provlog(&b))
+            .and_then(|t| {
+                let start = t.rfind('[')?;
+                let end = t.rfind(']')?;
+                if start < end {
+                    serde_json::from_str(&t[start..=end]).ok()
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_default();
+        series
+            .last()
+            .and_then(|e| e.get("score").and_then(|v| v.as_f64()))
+    }
+
+    /// UB Cycle 17: lean dual-gate trust_surface for session_boundary distillate.
+    /// Uses CSF series head when present; otherwise structural fallback (primary+BVH → 0.85)
+    /// so boundary still carries a dual-gate object without full wake rebuild.
+    pub fn build_boundary_trust_surface(&self, primary_goal: &str) -> serde_json::Value {
+        let lawfulness = self.mq_verify_series_head();
+        let capacity = Self::build_lean_capacity_snapshot(self);
+        let bvh_ready = self.bvh_is_ready();
+        let nvme_ready =
+            crate::injection_priority::nvme_recall_path_ready(self.recall_mode());
+        let primary_present = !primary_goal.is_empty() && primary_goal != "(none)";
+        let (csf, csf_source) = match self.latest_cold_start_fidelity_score() {
+            Some(s) => (s, "cold_start_fidelity_series"),
+            None => {
+                // Honest structural fallback — not a live CSF sample.
+                let s = if primary_present && bvh_ready && nvme_ready {
+                    0.85
+                } else {
+                    0.50
+                };
+                (s, "boundary_structural_fallback")
+            }
+        };
+        let mut trust = Self::build_trust_surface(
+            csf,
+            &lawfulness,
+            &capacity,
+            bvh_ready,
+            nvme_ready,
+            primary_present,
+            None,
+        );
+        if let Some(obj) = trust.as_object_mut() {
+            obj.insert(
+                "csf_source".to_string(),
+                serde_json::json!(csf_source),
+            );
+            obj.insert(
+                "boundary_embed".to_string(),
+                serde_json::json!(true),
+            );
+        }
+        trust
+    }
+
     /// MQ Cycle 10 (`mq_tiles_boundaries`): mint one thought tile at session/compression
     /// boundary so the next mind rehydrates from a structured distillate, not only phase_ms.
     /// MQ Cycle 44: embed lean capacity_snapshot so scale risk survives compression.
@@ -7070,6 +7136,7 @@ impl StoreHandle {
     /// parse markdown `### next_vector` sections for next_vector_hint.
     /// MQ Cycle 46: also upgrade when capacity present but next_vector_hint still fallback
     /// and the current summary yields a real vector (ride-along without forget+remember).
+    /// UB Cycle 17: embed `trust_surface` (dual-gate) so trust_ok survives compression.
     pub fn mint_session_boundary_tile(
         &mut self,
         session_end_key: &str,
@@ -7084,12 +7151,14 @@ impl StoreHandle {
             let body = engram_core::storage::read_provlog(&existing);
             let has_capacity =
                 body.contains("capacity_snapshot") && body.contains("mq_capacity_v1");
+            let has_trust =
+                body.contains("trust_surface") && body.contains("ub_trust_surface_v1");
             let has_fallback_nv = body.contains(Self::BOUNDARY_NEXT_VECTOR_FALLBACK);
             let can_improve_nv = has_fallback_nv
                 && next_vector != Self::BOUNDARY_NEXT_VECTOR_FALLBACK
                 && !next_vector.is_empty();
-            // Fresh complete tile: promote-only. Upgrade if missing capacity OR weak next_vector.
-            if has_capacity && !can_improve_nv {
+            // Fresh complete tile: promote-only. Upgrade if missing capacity/trust OR weak next_vector.
+            if has_capacity && has_trust && !can_improve_nv {
                 let _ = self.promote_tile_to_high_priority(&tile_key);
                 return Some(tile_key);
             }
@@ -7098,6 +7167,8 @@ impl StoreHandle {
 
         // MQ44: ride capacity signals into the boundary distillate (O(1) snapshot).
         let capacity = Self::build_lean_capacity_snapshot(self);
+        // UB17: dual-gate trust_surface for compression survival.
+        let trust_surface = self.build_boundary_trust_surface(primary_goal);
 
         let payload = serde_json::json!({
             "version": "mq_session_boundary_v1",
@@ -7106,6 +7177,7 @@ impl StoreHandle {
             "summary_head": summary_snippet.chars().take(400).collect::<String>(),
             "next_vector_hint": next_vector,
             "capacity_snapshot": capacity,
+            "trust_surface": trust_surface,
             "survival": "compression_boundary_tile — prefer over raw episodic noise at wake",
             "leg_display": {
                 "role": "boundary",
@@ -13160,6 +13232,19 @@ mod ingest_ast_tests {
             body.contains("\"risk\""),
             "capacity risk field required: {body}"
         );
+        // UB17: trust_surface dual-gate rides in boundary for compression survival.
+        assert!(
+            body.contains("trust_surface"),
+            "boundary tile must embed trust_surface: {body}"
+        );
+        assert!(
+            body.contains("ub_trust_surface_v1"),
+            "trust_surface version required: {body}"
+        );
+        assert!(
+            body.contains("trust_ok") || body.contains("\"trust_ok\""),
+            "trust_ok field required: {body}"
+        );
         // Idempotent re-mint returns same key.
         let again = store.mint_session_boundary_tile(
             "session_end_1784150999",
@@ -13167,6 +13252,64 @@ mod ingest_ast_tests {
             "goal:engram_memory_quality_v1",
         );
         assert_eq!(again.as_deref(), Some(tile));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// UB Cycle 17: legacy boundary missing trust_surface is upgraded via update.
+    #[test]
+    fn ub_trust_surface_boundary_legacy_upgrade() {
+        let dir = test_store_dir("ub17_boundary_trust");
+        let mut store = StoreHandle::new(&dir.to_string_lossy());
+        let tile_key = "tile:session_boundary_1784202700";
+        // Pre-UB17: capacity present, no trust_surface.
+        let legacy = r#"THOUGHT TILE
+
+**tile_type:** session_boundary
+**title:** legacy capacity only
+
+**payload:** {
+  "version": "mq_session_boundary_v1",
+  "session_end": "session_end_1784202700",
+  "next_vector_hint": "trust_surface on session_end boundary",
+  "capacity_snapshot": { "version": "mq_capacity_v1", "risk": "nominal" }
+}
+"#;
+        store.remember(tile_key, legacy).unwrap();
+        let body_before = store
+            .fetch_block(tile_key)
+            .map(|b| engram_core::storage::read_provlog(&b))
+            .unwrap();
+        assert!(body_before.contains("capacity_snapshot"));
+        assert!(!body_before.contains("ub_trust_surface_v1"));
+
+        let summary = "## handoff\n\n### next_vector\ncapacity residual\n\n### decisions\n- ub17\n";
+        let out = store
+            .mint_session_boundary_tile(
+                "session_end_1784202700",
+                summary,
+                "goal:engram_ultimate_backend_v1",
+            )
+            .expect("upgrade");
+        assert_eq!(out, tile_key);
+        let body = store
+            .fetch_block(tile_key)
+            .map(|b| engram_core::storage::read_provlog(&b))
+            .expect("upgraded");
+        assert!(
+            body.contains("ub_trust_surface_v1"),
+            "upgrade must embed trust_surface: {body}"
+        );
+        assert!(
+            body.contains("boundary_embed") || body.contains("trust_ok"),
+            "trust fields required: {body}"
+        );
+        // Second call promotes only (idempotent complete).
+        let again = store.mint_session_boundary_tile(
+            "session_end_1784202700",
+            summary,
+            "goal:engram_ultimate_backend_v1",
+        );
+        assert_eq!(again.as_deref(), Some(tile_key));
         let _ = std::fs::remove_dir_all(&dir);
     }
 

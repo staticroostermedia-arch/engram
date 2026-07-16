@@ -4937,3 +4937,29 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 
 1. MCP swap UB16 LIVE.
 2. Next distill: trust_surface on session_end boundary / capacity residual.
+
+## UB Cycle 17 — trust_surface on session_end boundary (2026-07-16)
+
+### VERIFY₀ baseline
+
+- master@`c14de955` UB16 #199.
+- CSF **0.937**; trust_ok **true**; lawfulness **healthy** 50/50; warm_ms 0; `ub_lexicon_unit_phase_bind` LIVE.
+- Residual: dual-gate trust_surface only on live wake — session_boundary tiles carried capacity but not trust_ok after compression.
+
+### SELECT
+
+**ub_trust_surface_boundary** — embed trust_surface into `mint_session_boundary_tile` + legacy upgrade.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| API | `latest_cold_start_fidelity_score`, `build_boundary_trust_surface` |
+| Boundary | payload.trust_surface (ub_trust_surface_v1); upgrade if missing |
+| Tests | `ub_trust_surface_boundary_legacy_upgrade`; boundary mint asserts |
+| Flag | `ub_trust_surface_boundary` |
+
+### Next vectors
+
+1. MCP swap UB17 LIVE.
+2. Next distill: capacity residual / relation density harness wins.
