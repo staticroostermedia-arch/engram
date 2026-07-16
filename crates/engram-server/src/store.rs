@@ -2917,6 +2917,7 @@ impl StoreHandle {
                 "mq_praxis_heal_prefer_verified_sequence": true,
                 "ub_provlog_richness_recorded_at": true,
                 "ub_geosphere_frame_hot_geo_context": true,
+                "ub_secure_context_redact_fail_closed": true,
                 "mq_goal_children_prefer_active": true,
                 "mq_goal_child_pin_matches_rank": true,
                 "mq_write_hygiene_prior_any_activity": true,

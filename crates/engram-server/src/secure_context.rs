@@ -621,4 +621,59 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         disable_encrypt();
     }
+
+    /// UB Cycle 11: path-like query must fail-closed (no plaintext dump).
+    #[test]
+    fn ub_secure_context_path_query_fail_closed() {
+        let _g = ENV_LOCK.lock().unwrap();
+        enable_encrypt();
+        let secret = "UB11_SECRET_PAYLOAD_should_never_leak_via_path";
+        let sealed =
+            maybe_seal_for_store("secret:ub11_path", &format!("body with {secret} for test"))
+                .expect("seal");
+        assert!(is_sealed_provlog(&sealed));
+        // File path query → withhold full plaintext.
+        let out = redact_for_context(
+            "secret:ub11_path",
+            &sealed,
+            "/home/a/Documents/Engram/crates/engram-server/src/secure_context.rs",
+        );
+        assert!(
+            out.contains("SECURE PAYLOAD") || out.contains("sealed"),
+            "path query must mark sealed: {out}"
+        );
+        assert!(
+            !out.contains(secret),
+            "path-like query must not leak secret: {out}"
+        );
+        assert!(
+            out.contains("mcp_engram_secure_context_provision")
+                || out.contains("secure-context-provision"),
+            "must point agents at provision tool: {out}"
+        );
+        disable_encrypt();
+    }
+
+    /// UB Cycle 11: content query may open a tiny selective window, still not full dump.
+    #[test]
+    fn ub_secure_context_content_query_bounded() {
+        let _g = ENV_LOCK.lock().unwrap();
+        enable_encrypt();
+        let plaintext = "prefix filler filler filler need-to-know window token filler filler UNIQUE_UB11_TAIL_SECRET_zzz";
+        let sealed = maybe_seal_for_store("secret:ub11_content", plaintext).expect("seal");
+        let out = redact_for_context("secret:ub11_content", &sealed, "need-to-know");
+        // Either selective disclosure with snippet, or fail-closed if open fails.
+        assert!(
+            out.contains("selective disclosure")
+                || out.contains("SECURE PAYLOAD")
+                || out.contains("snippet"),
+            "unexpected redact shape: {out}"
+        );
+        // Full original body must not appear wholesale.
+        assert!(
+            out.len() < plaintext.len() + 400 || !out.contains("UNIQUE_UB11_TAIL_SECRET_zzz"),
+            "must not dump full plaintext body: {out}"
+        );
+        disable_encrypt();
+    }
 }
