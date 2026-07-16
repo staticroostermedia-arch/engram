@@ -2814,6 +2814,7 @@ impl StoreHandle {
                 "mq_lean_open_scars_slim_hoist": true,
                 "mq_lean_open_scars_preview": true,
                 "mq_goal_children_lean": true,
+                "mq_goal_child_suggested_action": true,
                 "mq_tiles_boundaries_session": true,
                 "mq_csf_session_boundary_prefer": true,
                 "mq_trusted_tiles_boundary_recency": true,

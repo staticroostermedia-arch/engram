@@ -1892,12 +1892,15 @@ fn build_harness_bundle_ultra_lean_wake(
         .first()
         .and_then(|s| s.get("concept"))
         .and_then(|c| c.as_str());
+    // MQ Cycle 32: first active goal child pin (decomposes_into index walk, ≤1 edge).
+    let first_goal_child = first_lean_goal_child_concept(store, primary_goal.as_deref());
     let suggested_actions = build_suggested_actions_ultra_lean(
         rehydration_manifest.as_ref(),
         primary_goal.as_deref(),
         rehydrate_suggested,
         rehydrate_reason,
         first_open_scar,
+        first_goal_child.as_deref(),
     );
     json!({
         "rehydration_manifest": rehydration_manifest,
@@ -1944,14 +1947,27 @@ fn build_harness_bundle_ultra_lean_wake(
     })
 }
 
+/// MQ Cycle 32: first `goal:*` child via decomposes_into (no list-all, single relation query).
+fn first_lean_goal_child_concept(store: &StoreHandle, parent: Option<&str>) -> Option<String> {
+    let parent = parent.filter(|s| !s.is_empty() && *s != "unset")?;
+    for (_label, other) in store.search_relations(parent, Some("decomposes_into"), "from") {
+        if other.starts_with("goal:") {
+            return Some(other);
+        }
+    }
+    None
+}
+
 /// RSI Cycle 72: lean wake queue from pre-resolved manifest (zero extra store I/O).
 /// MQ Cycle 29: optional `first_open_scar` from access_index pin (no BVH walk).
+/// MQ Cycle 32: optional `first_goal_child` from decomposes_into pin.
 fn build_suggested_actions_ultra_lean(
     manifest: Option<&Value>,
     primary_goal: Option<&str>,
     rehydrate_suggested: bool,
     rehydrate_reason: &str,
     first_open_scar: Option<&str>,
+    first_goal_child: Option<&str>,
 ) -> Vec<Value> {
     let mut actions = Vec::new();
     if rehydrate_suggested {
@@ -1966,6 +1982,16 @@ fn build_suggested_actions_ultra_lean(
             "mcp_engram_read_concept",
             json!({ "concept": scar }),
             "open scar — repulsion before repeating dead approach (lean pin)",
+            0,
+        );
+    }
+    // Priority 0: first goal child — SELECT backlog without scanning goal_children only.
+    if let Some(child) = first_goal_child.filter(|s| !s.is_empty()) {
+        push_action(
+            &mut actions,
+            "mcp_engram_read_concept",
+            json!({ "concept": child }),
+            "goal child — active decomposes_into pin for SELECT (lean)",
             0,
         );
     }
@@ -3200,6 +3226,7 @@ SESSION HANDOFF PACKET v1 (structured JSON for next-wake read_concept)
             false,
             "",
             Some("scar:mq29_lean_pin"),
+            None,
         );
         let scar_action = actions.iter().find(|a| {
             a.get("reason")
@@ -3225,6 +3252,7 @@ SESSION HANDOFF PACKET v1 (structured JSON for next-wake read_concept)
             false,
             "",
             None,
+            None,
         );
         assert!(
             bare.iter().all(|a| {
@@ -3235,6 +3263,72 @@ SESSION HANDOFF PACKET v1 (structured JSON for next-wake read_concept)
             }),
             "no scar pin → no open scar action"
         );
+    }
+
+    /// MQ Cycle 32: ultra-lean queue pins first goal child when provided.
+    #[test]
+    fn ultra_lean_suggested_actions_include_first_goal_child() {
+        let actions = build_suggested_actions_ultra_lean(
+            None,
+            Some("goal:engram_memory_quality_v1"),
+            false,
+            "",
+            None,
+            Some("goal:mq_rehydrate_graph_child"),
+        );
+        let child_action = actions.iter().find(|a| {
+            a.get("reason")
+                .and_then(|r| r.as_str())
+                .is_some_and(|r| r.contains("goal child"))
+        });
+        assert!(
+            child_action.is_some(),
+            "expected goal child action in ultra-lean queue, got {actions:?}"
+        );
+        assert_eq!(
+            child_action
+                .unwrap()
+                .get("args")
+                .and_then(|a| a.get("concept"))
+                .and_then(|c| c.as_str()),
+            Some("goal:mq_rehydrate_graph_child")
+        );
+        // Integration: first_lean_goal_child_concept finds decomposes_into.
+        std::env::set_var("ENGRAM_DISABLE_SHEAF", "1");
+        std::env::set_var("ENGRAM_FORCE_CPU_BACKEND", "1");
+        std::env::set_var("ENGRAM_KI_DISABLE", "1");
+        let dir = std::env::temp_dir().join(format!(
+            "mq32_goal_child_pin_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).ok();
+        let mut store = StoreHandle::new(&dir.to_string_lossy());
+        store
+            .remember(
+                "goal:engram_memory_quality_v1",
+                "GOAL\n\n**status:** active\n",
+            )
+            .unwrap();
+        store
+            .remember(
+                "goal:mq32_child",
+                "GOAL BLOCK (subgoal)\n\n**status:** active\n",
+            )
+            .unwrap();
+        let _ = store.relate(
+            "goal:engram_memory_quality_v1",
+            "goal:mq32_child",
+            "decomposes_into",
+        );
+        assert_eq!(
+            first_lean_goal_child_concept(&store, Some("goal:engram_memory_quality_v1")).as_deref(),
+            Some("goal:mq32_child")
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

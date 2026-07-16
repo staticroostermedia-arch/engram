@@ -4011,3 +4011,31 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 1. MCP swap MQ31; confirm slim `goal_children.count>0` after decompose.
 2. Optional #134 C86 if soft-stale warm floor fails.
 3. Next quality child if dual-gate holds.
+
+## MQ Cycle 32 — ultra-lean goal child suggested_action pin (2026-07-15)
+
+### VERIFY₀ baseline
+
+- master@`e563e745` MQ31 #165.
+- MCP swapped: `mq_goal_children_lean` LIVE; `goal_children.count=4` active ✓.
+- Residual: slim queue had scar/manifest/recall only — no pin for first active child → SELECT backlog requires field scan.
+- CSF warm **0.941**; injection **1.0**; handoff complete; verify healthy (sample 50).
+
+### SELECT
+
+**mq_rehydrate_graph** residual — queue-level goal child pin (parallel to scar pin).
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Helper | `first_lean_goal_child_concept` (decomposes_into first goal:*) |
+| Queue | ultra-lean priority-0 `read_concept` for first child |
+| Flag | `mq_goal_child_suggested_action` |
+| Test | `ultra_lean_suggested_actions_include_first_goal_child` |
+
+### Next vectors
+
+1. MCP swap MQ32; confirm suggested_actions contains goal child pin when children exist.
+2. Optional #134 C86 if soft-stale warm floor fails.
+3. Next quality child (relation harness / write_hygiene residual / capacity if measured).
