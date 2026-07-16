@@ -1894,6 +1894,9 @@ fn build_harness_bundle_ultra_lean_wake(
         .and_then(|c| c.as_str());
     // MQ Cycle 32: first active goal child pin (decomposes_into index walk, ≤1 edge).
     let first_goal_child = first_lean_goal_child_concept(store, primary_goal.as_deref());
+    // UB Cycle 22: capacity compress dry_run pin when soft/hard elevated hot_set.
+    let capacity_snap = crate::store::StoreHandle::build_lean_capacity_snapshot(store);
+    let capacity_compress_path = capacity_snap.get("compress_path");
     let suggested_actions = build_suggested_actions_ultra_lean(
         rehydration_manifest.as_ref(),
         primary_goal.as_deref(),
@@ -1901,6 +1904,7 @@ fn build_harness_bundle_ultra_lean_wake(
         rehydrate_reason,
         first_open_scar,
         first_goal_child.as_deref(),
+        capacity_compress_path,
     );
     json!({
         "rehydration_manifest": rehydration_manifest,
@@ -1961,9 +1965,34 @@ fn first_lean_goal_child_concept(store: &StoreHandle, parent: Option<&str>) -> O
         .map(|s| s.to_string())
 }
 
+/// UB Cycle 22: pure — when `compress_path.suggested`, build dry_run wake action args.
+/// Caps max_unmark at min(overshoot, 64) so agents preview before apply.
+pub fn capacity_compress_wake_dry_run_args(compress_path: &Value) -> Option<Value> {
+    let suggested = compress_path
+        .get("suggested")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    if !suggested {
+        return None;
+    }
+    let overshoot = compress_path
+        .get("overshoot")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0) as usize;
+    if overshoot == 0 {
+        return None;
+    }
+    let max_unmark = overshoot.clamp(1, 64);
+    Some(json!({
+        "dry_run": true,
+        "max_unmark": max_unmark,
+    }))
+}
+
 /// RSI Cycle 72: lean wake queue from pre-resolved manifest (zero extra store I/O).
 /// MQ Cycle 29: optional `first_open_scar` from access_index pin (no BVH walk).
 /// MQ Cycle 32: optional `first_goal_child` from decomposes_into pin.
+/// UB Cycle 22: optional `capacity_compress_path` → dry_run apply_capacity_hot_compress pin.
 fn build_suggested_actions_ultra_lean(
     manifest: Option<&Value>,
     primary_goal: Option<&str>,
@@ -1971,12 +2000,31 @@ fn build_suggested_actions_ultra_lean(
     rehydrate_reason: &str,
     first_open_scar: Option<&str>,
     first_goal_child: Option<&str>,
+    capacity_compress_path: Option<&Value>,
 ) -> Vec<Value> {
     let mut actions = Vec::new();
     if rehydrate_suggested {
         actions.push(crate::continuity_spikes::rehydrate_nudge_action(
             rehydrate_reason,
         ));
+    }
+    // Priority 0: capacity NREM compress dry_run when soft/hard elevated hot_set (UB22).
+    if let Some(cp) = capacity_compress_path {
+        if let Some(args) = capacity_compress_wake_dry_run_args(cp) {
+            let overshoot = cp
+                .get("overshoot")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+            push_action(
+                &mut actions,
+                "mcp_engram_apply_capacity_hot_compress",
+                args,
+                &format!(
+                    "capacity soft/hard elevated (overshoot={overshoot}) — dry_run hot compress before SELECT (ub_capacity_wake_compress_suggest)"
+                ),
+                0,
+            );
+        }
     }
     // Priority 0: open scar pin — SELECT deflection without full continuation bundle.
     if let Some(scar) = first_open_scar.filter(|s| !s.is_empty()) {
@@ -3220,6 +3268,94 @@ SESSION HANDOFF PACKET v1 (structured JSON for next-wake read_concept)
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// UB Cycle 22: pure dry_run args only when compress_path.suggested + overshoot>0.
+    #[test]
+    fn ub_capacity_wake_compress_suggest_dry_run_args() {
+        let idle = json!({
+            "suggested": false,
+            "overshoot": 0,
+            "risk": "large_manifold_nominal",
+        });
+        assert!(capacity_compress_wake_dry_run_args(&idle).is_none());
+        let soft = json!({
+            "suggested": true,
+            "overshoot": 219,
+            "risk": "soft_elevated_hot_set",
+            "mcp_tool": "mcp_engram_apply_capacity_hot_compress",
+        });
+        let args = capacity_compress_wake_dry_run_args(&soft).expect("dry_run args");
+        assert_eq!(args["dry_run"], true);
+        assert_eq!(args["max_unmark"], 64); // clamped
+        let small = json!({ "suggested": true, "overshoot": 12 });
+        let args2 = capacity_compress_wake_dry_run_args(&small).unwrap();
+        assert_eq!(args2["max_unmark"], 12);
+        // Queue pin when path suggested.
+        let actions = build_suggested_actions_ultra_lean(
+            None,
+            Some("goal:engram_ultimate_backend_v1"),
+            false,
+            "",
+            None,
+            None,
+            Some(&soft),
+        );
+        let compress = actions.iter().find(|a| {
+            a.get("tool").and_then(|t| t.as_str())
+                == Some("mcp_engram_apply_capacity_hot_compress")
+        });
+        assert!(
+            compress.is_some(),
+            "expected capacity compress dry_run in ultra-lean queue: {actions:?}"
+        );
+        assert!(
+            compress
+                .unwrap()
+                .get("reason")
+                .and_then(|r| r.as_str())
+                .unwrap_or("")
+                .contains("ub_capacity_wake_compress_suggest"),
+            "reason should tag UB22 flag"
+        );
+        // Nominal path → no compress action.
+        let bare = build_suggested_actions_ultra_lean(
+            None,
+            Some("goal:engram_ultimate_backend_v1"),
+            false,
+            "",
+            None,
+            None,
+            Some(&idle),
+        );
+        assert!(
+            bare.iter().all(|a| {
+                a.get("tool").and_then(|t| t.as_str())
+                    != Some("mcp_engram_apply_capacity_hot_compress")
+            }),
+            "idle compress_path must not pin compress tool"
+        );
+        std::env::set_var("ENGRAM_DISABLE_SHEAF", "1");
+        std::env::set_var("ENGRAM_FORCE_CPU_BACKEND", "1");
+        std::env::set_var("ENGRAM_KI_DISABLE", "1");
+        let dir = std::env::temp_dir().join(format!(
+            "ub22_wake_compress_flag_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = std::fs::create_dir_all(&dir);
+        let store = crate::store::StoreHandle::new(&dir.to_string_lossy());
+        assert_eq!(
+            store
+                .backend_readiness()
+                .get("ub_capacity_wake_compress_suggest")
+                .and_then(|v| v.as_bool()),
+            Some(true)
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// MQ Cycle 29: ultra-lean queue includes first lean scar pin (no BVH).
     #[test]
     fn ultra_lean_suggested_actions_include_first_open_scar() {
@@ -3229,6 +3365,7 @@ SESSION HANDOFF PACKET v1 (structured JSON for next-wake read_concept)
             false,
             "",
             Some("scar:mq29_lean_pin"),
+            None,
             None,
         );
         let scar_action = actions.iter().find(|a| {
@@ -3256,6 +3393,7 @@ SESSION HANDOFF PACKET v1 (structured JSON for next-wake read_concept)
             "",
             None,
             None,
+            None,
         );
         assert!(
             bare.iter().all(|a| {
@@ -3278,6 +3416,7 @@ SESSION HANDOFF PACKET v1 (structured JSON for next-wake read_concept)
             "",
             None,
             Some("goal:mq_rehydrate_graph_child"),
+            None,
         );
         let child_action = actions.iter().find(|a| {
             a.get("reason")
