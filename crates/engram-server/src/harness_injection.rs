@@ -1883,11 +1883,17 @@ fn build_harness_bundle_ultra_lean_wake(
     );
     // RSI Cycle 72: build queue from already-resolved manifest — no second handoff fetch /
     // re-resolve / re-read ego (build_suggested_actions_opts was duplicating all of that).
+    // MQ Cycle 29: queue first lean scar pin (zero extra I/O — already collected).
+    let first_open_scar = open_scars_wake
+        .first()
+        .and_then(|s| s.get("concept"))
+        .and_then(|c| c.as_str());
     let suggested_actions = build_suggested_actions_ultra_lean(
         rehydration_manifest.as_ref(),
         primary_goal.as_deref(),
         rehydrate_suggested,
         rehydrate_reason,
+        first_open_scar,
     );
     json!({
         "rehydration_manifest": rehydration_manifest,
@@ -1935,17 +1941,29 @@ fn build_harness_bundle_ultra_lean_wake(
 }
 
 /// RSI Cycle 72: lean wake queue from pre-resolved manifest (zero extra store I/O).
+/// MQ Cycle 29: optional `first_open_scar` from access_index pin (no BVH walk).
 fn build_suggested_actions_ultra_lean(
     manifest: Option<&Value>,
     primary_goal: Option<&str>,
     rehydrate_suggested: bool,
     rehydrate_reason: &str,
+    first_open_scar: Option<&str>,
 ) -> Vec<Value> {
     let mut actions = Vec::new();
     if rehydrate_suggested {
         actions.push(crate::continuity_spikes::rehydrate_nudge_action(
             rehydrate_reason,
         ));
+    }
+    // Priority 0: open scar pin — SELECT deflection without full continuation bundle.
+    if let Some(scar) = first_open_scar.filter(|s| !s.is_empty()) {
+        push_action(
+            &mut actions,
+            "mcp_engram_read_concept",
+            json!({ "concept": scar }),
+            "open scar — repulsion before repeating dead approach (lean pin)",
+            0,
+        );
     }
     if let Some(m) = manifest {
         if let Some(concept) = m.get("manifest_concept").and_then(|v| v.as_str()) {
@@ -3158,6 +3176,52 @@ SESSION HANDOFF PACKET v1 (structured JSON for next-wake read_concept)
             Some("access_index_recent")
         );
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// MQ Cycle 29: ultra-lean queue includes first lean scar pin (no BVH).
+    #[test]
+    fn ultra_lean_suggested_actions_include_first_open_scar() {
+        let actions = build_suggested_actions_ultra_lean(
+            None,
+            Some("goal:engram_memory_quality_v1"),
+            false,
+            "",
+            Some("scar:mq29_lean_pin"),
+        );
+        let scar_action = actions.iter().find(|a| {
+            a.get("reason")
+                .and_then(|r| r.as_str())
+                .is_some_and(|r| r.contains("open scar"))
+        });
+        assert!(
+            scar_action.is_some(),
+            "expected open scar action in ultra-lean queue, got {actions:?}"
+        );
+        assert_eq!(
+            scar_action
+                .unwrap()
+                .get("args")
+                .and_then(|a| a.get("concept"))
+                .and_then(|c| c.as_str()),
+            Some("scar:mq29_lean_pin")
+        );
+        // Without scar pin, no open-scar reason.
+        let bare = build_suggested_actions_ultra_lean(
+            None,
+            Some("goal:engram_memory_quality_v1"),
+            false,
+            "",
+            None,
+        );
+        assert!(
+            bare.iter().all(|a| {
+                !a.get("reason")
+                    .and_then(|r| r.as_str())
+                    .unwrap_or("")
+                    .contains("open scar")
+            }),
+            "no scar pin → no open scar action"
+        );
     }
 
     #[test]
