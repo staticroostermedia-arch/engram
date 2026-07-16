@@ -4124,3 +4124,31 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 1. MCP swap MQ35; confirm suggested_actions goal pin == goal_children[0].concept.
 2. Optional #134 C86 if soft-stale warm floor fails.
 3. Next quality child (relation harness / capacity if measured).
+
+## MQ Cycle 36 — relation_resume reserved structure slot under serves spam (2026-07-15)
+
+### VERIFY₀ baseline
+
+- master@`29e4cacd` MQ35 #169.
+- MCP swapped: `mq_goal_child_pin_matches_rank` LIVE; pin==goal_children[0] capacity-policy ✓.
+- Residual: live `relation_resume` still `recency_neighbor_v1` — top-8 all `serves` traces; goal-graph `decomposes_into` never appears despite 252 incident edges. Label boost alone (1.75e12) loses to traces (2e12+ts).
+- CSF warm **0.941**; handoff complete (decisions/next_vector/falsifiers); verify healthy (50/50); warm total_ms 176 first wake (not soft-stale path).
+
+### SELECT
+
+**mq_relation_retrieval** — reserve ≥1 structure edge (`decomposes_into`/`has_child`) in relation_resume top-8 under serves spam without breaking recency-first.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Rank | `recency_structure_v1` — label boost + **STRUCTURE_RESERVED=1** two-pass fill |
+| Flag | `mq_relation_resume_structure_boost` |
+| Metric | `structure_edges_in_top` on lean relation_resume |
+| Tests | `mq_relation_resume_surfaces_decomposes_into_under_serves_spam` (+ recency + full-incident still green) |
+
+### Next vectors
+
+1. MCP swap MQ36; confirm relation_resume ranking=`recency_structure_v1` and structure_edges_in_top≥1 on live goal seed.
+2. Optional #134 C86 if soft-stale warm floor fails.
+3. Next quality child (spatial locus / write hygiene residual / capacity if measured).
