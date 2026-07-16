@@ -4676,3 +4676,29 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 
 1. MCP swap; new PRAXIS tiles lawful. Legacy tiles heal on re-store/update or optional repair pass.
 2. Resume UB distill: ub_provlog_richness / ub_geosphere_frame / ub_secure_context.
+
+## UB Cycle 9 — ProvLog richness recorded_at stamp (2026-07-16)
+
+### VERIFY₀ baseline
+
+- master@`add1ba55` MQ47 #189.
+- CSF **0.937**; lawfulness **healthy** 50/50; MQ47 + UB6–8 flags LIVE.
+- Residual: ProvLog bodies often lack parseable `recorded_at` for distillation / bi-temporal tooling.
+
+### SELECT
+
+**ub_provlog_richness** — stamp `**recorded_at:**` + `**concept:**` on `store()` when missing (idempotent).
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Helper | `ensure_provlog_recorded_at` |
+| Path | `StoreHandle::store` (covers remember/tiles/traces) |
+| Test | `ub_provlog_richness_store_stamps_recorded_at`, idempotent unit |
+| Flag | `ub_provlog_richness_recorded_at` |
+
+### Next vectors
+
+1. MCP swap UB9 LIVE.
+2. Next distill: ub_geosphere_frame / ub_secure_context / pure unit-phase encode / legacy PRAXIS heal pass.
