@@ -2891,6 +2891,7 @@ impl StoreHandle {
                 "ub_relation_resume_structure_reserve_3": true,
                 "ub_goal_children_demote_capacity_nominal": true,
                 "ub_lexicon_update_path": true,
+                "ub_holographic_bind_roundtrip": true,
                 "mq_goal_children_prefer_active": true,
                 "mq_goal_child_pin_matches_rank": true,
                 "mq_write_hygiene_prior_any_activity": true,
