@@ -6878,8 +6878,8 @@ impl StoreHandle {
             "lean capacity — soft_elevated_hot_set: compress_path.suggested → mcp_engram_apply_capacity_hot_compress (capped)"
         } else if Self::capacity_hot_compress_path_suggested(risk) {
             "lean capacity — elevated_hot_set: mcp_engram_apply_capacity_hot_compress toward soft threshold"
-        } else if Self::capacity_risk_is_elevated(risk) {
-            "lean capacity — SELECT mq_capacity_policy when risk elevated or hot/edge scale measured"
+        } else if risk == "elevated_edge_scale" {
+            "lean capacity — elevated_edge_scale: SELECT mq_capacity_policy (relation hygiene)"
         } else {
             "lean capacity — SELECT mq_capacity_policy when risk elevated or hot/edge scale measured"
         };
