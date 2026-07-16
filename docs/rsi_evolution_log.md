@@ -4858,3 +4858,30 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 
 1. MCP swap UB13 LIVE.
 2. Next distill: ub_trust_surface / lexicon optional unit-phase bind / MCP wire scar tool to mint_research_scar.
+
+## UB Cycle 14 — dual-gate trust_surface on slim wake (2026-07-16)
+
+### VERIFY₀ baseline
+
+- master@`1f7f9809` UB13 #196.
+- CSF **0.937**; lawfulness **healthy** 50/50; dual-gate green; warm_ms 1; `ub_research_scar` LIVE.
+- Residual: dual-gate signals scattered (CSF / lawfulness_snapshot / nvme / primary) — no single trust_ok object.
+
+### SELECT
+
+**ub_trust_surface** — one dual-gate trust object on lean wake continuation + slim hoist.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| API | `StoreHandle::build_trust_surface(...)` |
+| Wake | `trust_surface` after CSF assemble; slim hoist in `wake_bundle` |
+| Tests | `ub_trust_surface_dual_gate_ok_and_fail_closed`; slim hoist assert |
+| Flag | `ub_trust_surface` |
+| Invariants | `trust_ok` = CSF≥0.70 ∧ lawfulness (when sample) ∧ BVH+NVMe ∧ primary; fail-closed missing[] |
+
+### Next vectors
+
+1. MCP swap UB14 LIVE.
+2. Next distill: lexicon optional unit-phase bind / MCP wire scar→mint_research_scar / trust_surface on session_end boundary.

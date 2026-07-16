@@ -255,6 +255,12 @@ pub fn slim_continuation_bundle(full: &Value) -> Value {
             "capacity_snapshot",
             full.get("capacity_snapshot").cloned(),
         );
+        // UB Cycle 14: dual-gate trust surface on slim session_start.
+        crate::continuity_spikes::insert_optional(
+            obj,
+            "trust_surface",
+            full.get("trust_surface").cloned(),
+        );
         // MQ Cycle 29: scar pins (concept list) when non-empty — count alone is not actionable.
         if !open_scars_wake.is_empty() {
             obj.insert("open_scars_wake".into(), json!(open_scars_wake));
@@ -334,6 +340,13 @@ mod tests {
                 "updates": 1,
                 "mint_update_ratio": 3.0,
                 "write_hygiene_hint": "prefer update over remember when concept exists (match >0.85)"
+            },
+            // UB Cycle 14: dual-gate trust surface must survive slim tier.
+            "trust_surface": {
+                "version": "ub_trust_surface_v1",
+                "trust_ok": true,
+                "dual_gate": { "continuity_ok": true, "lawfulness_ok": true, "csf_floor": 0.70 },
+                "cold_start_fidelity": 0.94
             }
         });
 
@@ -366,6 +379,9 @@ mod tests {
         );
         assert_eq!(slim["write_hygiene_snapshot"]["mints"], 3);
         assert_eq!(slim["write_hygiene_snapshot"]["mint_update_ratio"], 3.0);
+        // UB Cycle 14
+        assert_eq!(slim["trust_surface"]["version"], "ub_trust_surface_v1");
+        assert_eq!(slim["trust_surface"]["trust_ok"], true);
     }
 
     #[test]
