@@ -2920,6 +2920,7 @@ impl StoreHandle {
                 "ub_secure_context_redact_fail_closed": true,
                 "ub_unit_phase_encode": true,
                 "ub_research_scar": true,
+                "ub_trust_surface": true,
                 "mq_goal_children_prefer_active": true,
                 "mq_goal_child_pin_matches_rank": true,
                 "mq_write_hygiene_prior_any_activity": true,
@@ -6057,6 +6058,56 @@ impl StoreHandle {
                 }
             }
             obj.insert("cold_start_fidelity".to_string(), fidelity);
+            // UB Cycle 14: dual-gate trust surface after CSF is known.
+            let csf_score = obj
+                .get("cold_start_fidelity")
+                .and_then(|f| f.get("score"))
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.0);
+            let mean_hub = obj
+                .get("cold_start_fidelity")
+                .and_then(|f| f.pointer("/components/mean_hub_crs"))
+                .and_then(|v| v.as_f64());
+            let lawfulness = obj
+                .get("lawfulness_snapshot")
+                .cloned()
+                .unwrap_or_else(|| serde_json::json!({}));
+            let capacity = obj
+                .get("capacity_snapshot")
+                .cloned()
+                .unwrap_or_else(|| serde_json::json!({}));
+            let (bvh_ready, nvme_ready) = {
+                let nvme = obj.get("nvme_context");
+                (
+                    nvme.and_then(|n| n.get("bvh_ready"))
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false),
+                    nvme.and_then(|n| n.get("nvme_recall_ready"))
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false),
+                )
+            };
+            let primary_present = obj
+                .get("primary_goal")
+                .and_then(|v| v.as_str())
+                .map(|s| !s.is_empty())
+                .unwrap_or(false)
+                || obj
+                    .get("rehydration_manifest")
+                    .and_then(|m| m.get("primary_goal"))
+                    .and_then(|v| v.as_str())
+                    .map(|s| !s.is_empty())
+                    .unwrap_or(false);
+            let trust = Self::build_trust_surface(
+                csf_score,
+                &lawfulness,
+                &capacity,
+                bvh_ready,
+                nvme_ready,
+                primary_present,
+                mean_hub,
+            );
+            obj.insert("trust_surface".to_string(), trust);
         }
         mark_cont(&mut cont_phase_ms, "fidelity_ms", t_fidelity);
         mark_cont(&mut cont_phase_ms, "total_ms", t_cont);
@@ -6451,6 +6502,80 @@ impl StoreHandle {
             } else {
                 "lean goal graph — prefer active child SELECT over episodic noise"
             },
+        })
+    }
+
+    /// UB Cycle 14: dual-gate **trust surface** for agents — one object for continuity +
+    /// lawfulness + backend + primary-goal readiness (VERIFY₀ dual-gate read).
+    ///
+    /// Pure function of already-assembled wake fields (no extra I/O). `trust_ok` is true
+    /// only when CSF ≥ 0.70, lawfulness latest pass (when sample exists), BVH+NVMe ready,
+    /// and primary goal resolvable. Missing lawfulness sample does not fail lawfulness_ok
+    /// (agent must still call `verify_manifold_integrity` for live VERIFY₀).
+    pub fn build_trust_surface(
+        csf_score: f64,
+        lawfulness: &serde_json::Value,
+        capacity: &serde_json::Value,
+        bvh_ready: bool,
+        nvme_recall_ready: bool,
+        primary_goal_present: bool,
+        mean_hub_crs: Option<f64>,
+    ) -> serde_json::Value {
+        const CSF_FLOOR: f64 = 0.70;
+        let law_pass = lawfulness
+            .pointer("/latest/pass")
+            .and_then(|v| v.as_bool());
+        let law_health = lawfulness
+            .pointer("/latest/overall_health")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown");
+        let issues = lawfulness
+            .pointer("/latest/issues_found")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        let capacity_risk = capacity
+            .get("risk")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown");
+        let continuity_ok = csf_score >= CSF_FLOOR;
+        let lawfulness_ok = match law_pass {
+            Some(p) => p && issues == 0,
+            None => true, // no sample yet — soft; VERIFY₀ still samples live
+        };
+        let backend_ok = bvh_ready && nvme_recall_ready;
+        let trust_ok = continuity_ok && lawfulness_ok && backend_ok && primary_goal_present;
+        let mut missing: Vec<&str> = Vec::new();
+        if !continuity_ok {
+            missing.push("csf_below_floor");
+        }
+        if !lawfulness_ok {
+            missing.push("lawfulness_fail");
+        }
+        if !backend_ok {
+            missing.push("backend_not_ready");
+        }
+        if !primary_goal_present {
+            missing.push("primary_goal_missing");
+        }
+        serde_json::json!({
+            "version": "ub_trust_surface_v1",
+            "trust_ok": trust_ok,
+            "dual_gate": {
+                "continuity_ok": continuity_ok,
+                "lawfulness_ok": lawfulness_ok,
+                "csf_floor": CSF_FLOOR,
+            },
+            "cold_start_fidelity": csf_score,
+            "mean_hub_crs": mean_hub_crs,
+            "lawfulness_pass": law_pass,
+            "lawfulness_health": law_health,
+            "lawfulness_issues_found": issues,
+            "bvh_ready": bvh_ready,
+            "nvme_recall_ready": nvme_recall_ready,
+            "primary_goal_present": primary_goal_present,
+            "capacity_risk": capacity_risk,
+            "missing": missing,
+            "hint": "UB dual-gate trust — trust_ok = continuity+lawfulness+backend+primary; still run verify_manifold for live VERIFY₀ sample",
         })
     }
 
@@ -11478,6 +11603,104 @@ mod ingest_ast_tests {
         assert_eq!(snap.get("plan_tools").and_then(|v| v.as_u64()), Some(3));
         assert_eq!(snap.get("log_tools").and_then(|v| v.as_u64()), Some(2));
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// UB Cycle 14: dual-gate trust surface pure properties.
+    #[test]
+    fn ub_trust_surface_dual_gate_ok_and_fail_closed() {
+        let law_ok = serde_json::json!({
+            "version": "mq_lawfulness_snapshot_v1",
+            "latest": {
+                "pass": true,
+                "overall_health": "healthy",
+                "issues_found": 0,
+                "sampled": 50
+            }
+        });
+        let law_fail = serde_json::json!({
+            "latest": {
+                "pass": false,
+                "overall_health": "needs_review",
+                "issues_found": 2
+            }
+        });
+        let capacity = serde_json::json!({
+            "version": "mq_capacity_v1",
+            "risk": "large_manifold_nominal"
+        });
+        let ok = StoreHandle::build_trust_surface(
+            0.937,
+            &law_ok,
+            &capacity,
+            true,
+            true,
+            true,
+            Some(0.89),
+        );
+        assert_eq!(ok["version"], "ub_trust_surface_v1");
+        assert_eq!(ok["trust_ok"], true);
+        assert_eq!(ok["dual_gate"]["continuity_ok"], true);
+        assert_eq!(ok["dual_gate"]["lawfulness_ok"], true);
+        assert_eq!(ok["capacity_risk"], "large_manifold_nominal");
+        assert!(ok["missing"].as_array().unwrap().is_empty());
+
+        let low_csf = StoreHandle::build_trust_surface(
+            0.50,
+            &law_ok,
+            &capacity,
+            true,
+            true,
+            true,
+            None,
+        );
+        assert_eq!(low_csf["trust_ok"], false);
+        assert_eq!(low_csf["dual_gate"]["continuity_ok"], false);
+        assert!(low_csf["missing"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|m| m.as_str() == Some("csf_below_floor")));
+
+        let bad_law = StoreHandle::build_trust_surface(
+            0.95,
+            &law_fail,
+            &capacity,
+            true,
+            true,
+            true,
+            None,
+        );
+        assert_eq!(bad_law["trust_ok"], false);
+        assert_eq!(bad_law["dual_gate"]["lawfulness_ok"], false);
+
+        // No lawfulness sample → lawfulness_ok soft-true (VERIFY₀ still samples live).
+        let no_sample = StoreHandle::build_trust_surface(
+            0.90,
+            &serde_json::json!({"version": "mq_lawfulness_snapshot_v1", "sample_count": 0}),
+            &capacity,
+            true,
+            true,
+            true,
+            None,
+        );
+        assert_eq!(no_sample["trust_ok"], true);
+        assert_eq!(no_sample["dual_gate"]["lawfulness_ok"], true);
+
+        let no_primary = StoreHandle::build_trust_surface(
+            0.95,
+            &law_ok,
+            &capacity,
+            true,
+            true,
+            false,
+            None,
+        );
+        assert_eq!(no_primary["trust_ok"], false);
+        assert!(no_primary["missing"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|m| m.as_str() == Some("primary_goal_missing")));
     }
 
     /// MQ Cycle 43: lean capacity snapshot exposes measured scale for SELECT.
