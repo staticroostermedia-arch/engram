@@ -477,6 +477,30 @@ fn load_process_sheaf(store: &SharedStore) -> Result<(), String> {
         eprintln!("TIMING[load_process_sheaf]: toml parse+fs done (off-lock), collected={}, elapsed_so_far={:.2}s", procs.len(), t_load.elapsed().as_secs_f32());
     }
     // Now per-proc short lock for the geometric ops (shrinks the critical section from one big hold for all ~7 procs to per-proc; allows user query_pure/list_concepts to interleave during bg rehydrate load. Per subagent review of the Mutex as the 45min killer in bg + user calls. The register/relates/fetches per p are now short, total time similar but no starvation).
+    //
+    // UB Cycle 8 (`ub_sheaf_glue`): `relate` requires both endpoints as blocks.
+    // Prior path used `let _ = relate(...)` against missing ritual/tool/require
+    // concepts → silent no-op → zero structural glue edges. Ensure lightweight
+    // OPERATIONAL stubs for glue targets before relating.
+    fn ensure_sheaf_glue_endpoint(lock: &mut crate::store::StoreHandle, concept: &str) {
+        if concept.is_empty() {
+            return;
+        }
+        if lock
+            .fetch_block(concept)
+            .or_else(|| lock.fetch_block_high_priority(concept))
+            .is_some()
+        {
+            return;
+        }
+        let mut stub = lock.encode(&format!(
+            "SHEAF GLUE ENDPOINT\n\n**concept:** {concept}\n**role:** process-sheaf structural target (auto-minted for relate)\n"
+        ));
+        stub.zedos_tag = engram_core::types::ZEDOS_OPERATIONAL;
+        stub.crs_score = 0.80;
+        let _ = lock.store(concept, stub);
+    }
+
     for p in &procs {
         let mut lock = store.lock().unwrap();
         let mut b = lock.encode(&format!("Process Sheaf: {} - {}", p.key, p.desc));
@@ -485,20 +509,21 @@ fn load_process_sheaf(store: &SharedStore) -> Result<(), String> {
         if lock.store(&p.key, b).is_ok() {
             registered += 1;
             for r in &p.requires {
+                ensure_sheaf_glue_endpoint(&mut lock, r);
                 let _ = lock.relate(&p.key, r, "requires");
             }
             for pr in &p.produces {
+                ensure_sheaf_glue_endpoint(&mut lock, pr);
                 let _ = lock.relate(&p.key, pr, "produces");
             }
             for t in &p.mcp_tools {
+                ensure_sheaf_glue_endpoint(&mut lock, t);
                 let _ = lock.relate(&p.key, t, "uses_mcp_tool");
             }
             if !p.phase_seed.is_empty() {
-                let _ = lock.relate(
-                    &p.key,
-                    &format!("phase_seed:{}", p.phase_seed),
-                    "has_phase_seed",
-                );
+                let seed_key = format!("phase_seed:{}", p.phase_seed);
+                ensure_sheaf_glue_endpoint(&mut lock, &seed_key);
+                let _ = lock.relate(&p.key, &seed_key, "has_phase_seed");
             }
             if lock
                 .fetch_block_high_priority(
@@ -512,6 +537,8 @@ fn load_process_sheaf(store: &SharedStore) -> Result<(), String> {
                     "serves",
                 );
             }
+            ensure_sheaf_glue_endpoint(&mut lock, "ritual:wake_up_anchor");
+            ensure_sheaf_glue_endpoint(&mut lock, "ritual:engram.working-memory");
             let _ = lock.relate(&p.key, "ritual:wake_up_anchor", "declared_in");
             let _ = lock.relate(&p.key, "ritual:engram.working-memory", "enforced_by");
         }
@@ -10094,6 +10121,146 @@ mod tests {
         }
 
         let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    /// UB Cycle 8: process sheaf **glue** — structural relations + fingerprint stability.
+    ///
+    /// Uses a **mini fixture** processes/ (not full repo) so load stays fast under test.
+    /// Registration alone is insufficient: sections must glue via `declared_in` /
+    /// `enforced_by` / `uses_mcp_tool` / `has_phase_seed` / `requires` / `produces`.
+    #[test]
+    fn ub_sheaf_glue_process_edges_and_fingerprint() {
+        std::env::set_var("ENGRAM_FORCE_CPU_BACKEND", "1");
+        std::env::set_var("ENGRAM_KI_DISABLE", "1");
+        std::env::set_var("ENGRAM_DISABLE_SHEAF", "1");
+        std::env::set_var("ENGRAM_SHEAF_SOFT_STALE_SECS", "0");
+
+        let tmp = unique_tmp("ub_sheaf_glue");
+        let proc_dir = format!("{tmp}/processes");
+        std::fs::create_dir_all(format!("{proc_dir}/ritual")).unwrap();
+        // Minimal [process] TOML with tools, requires, produces, phase_seed.
+        let toml = r#"
+[process]
+name = "agent:engram.ritual.ub8-glue-probe"
+zedos_type = "ritual"
+phase_seed = "0xUB8GLUE20260716"
+
+[category]
+object = "ub8_sheaf_glue_probe"
+morphism = "OP_BIND"
+sheaf_role = "test section for glue property"
+h1_handler = "OP_INVERT"
+
+[mcp_tools]
+list = ["mcp_engram_session_start", "mcp_engram_quick_trace"]
+
+[requires]
+list = ["__system_state__"]
+
+[produces]
+list = ["helper:session_handoff_latest"]
+
+[invariants]
+list = ["unit_hypersphere_unchanged"]
+"#;
+        std::fs::write(format!("{proc_dir}/ritual/ub8-glue-probe.toml"), toml).unwrap();
+
+        std::env::set_var("ENGRAM_PROCESSES_DIR", &proc_dir);
+        std::env::set_var("ENGRAM_STORE", &tmp);
+        if let Ok(mut cache) = PROCESS_SHEAF_CACHE.lock() {
+            cache.loaded = false;
+            cache.fingerprint = 0;
+            cache.last_ok = None;
+        }
+
+        let fp1 = processes_dir_fingerprint(&proc_dir);
+        let fp2 = processes_dir_fingerprint(&proc_dir);
+        assert_eq!(fp1, fp2, "processes_dir_fingerprint must be deterministic");
+        assert_ne!(fp1, 0, "fingerprint must be non-zero for fixture with toml");
+
+        let store: SharedStore = open_store(&tmp);
+        assert!(
+            load_process_sheaf(&store).is_ok(),
+            "fixture sheaf load must succeed"
+        );
+
+        let key = "process:engram.ritual.ub8-glue-probe";
+        {
+            let lock = store.lock().unwrap();
+            let block = lock
+                .fetch_block_high_priority(key)
+                .or_else(|| lock.fetch_block(key))
+                .expect("fixture process block registered");
+            assert!(
+                block.crs_score >= 0.85,
+                "sheaf process CRS must be ≥0.85, got {}",
+                block.crs_score
+            );
+
+            let edges = lock.relation_index.query(key, None, "from");
+            let labels: Vec<&str> = edges.iter().map(|(l, _)| l.as_str()).collect();
+            for want in [
+                "declared_in",
+                "enforced_by",
+                "uses_mcp_tool",
+                "has_phase_seed",
+                "requires",
+                "produces",
+            ] {
+                assert!(
+                    labels.contains(&want),
+                    "missing glue label {want}, got {labels:?}"
+                );
+            }
+            let declared_to: Vec<&str> = edges
+                .iter()
+                .filter(|(l, _)| l == "declared_in")
+                .map(|(_, t)| t.as_str())
+                .collect();
+            assert!(
+                declared_to.contains(&"ritual:wake_up_anchor"),
+                "declared_in → ritual:wake_up_anchor missing: {declared_to:?}"
+            );
+            let tools: Vec<&str> = edges
+                .iter()
+                .filter(|(l, _)| l == "uses_mcp_tool")
+                .map(|(_, t)| t.as_str())
+                .collect();
+            assert!(
+                tools.contains(&"mcp_engram_session_start"),
+                "uses_mcp_tool glue incomplete: {tools:?}"
+            );
+            assert!(
+                edges.len() >= 6,
+                "glue edge density too low: {} labels={labels:?}",
+                edges.len()
+            );
+        }
+
+        write_disk_sheaf_fingerprint(fp1);
+        let disk = read_disk_sheaf_fingerprint();
+        assert_eq!(
+            disk,
+            Some(fp1),
+            "disk sheaf fingerprint roundtrip failed: {disk:?}"
+        );
+        assert!(
+            warm_sheaf_cache_from_disk(fp1),
+            "warm_sheaf_cache_from_disk must accept matching fingerprint"
+        );
+
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::env::remove_var("ENGRAM_SHEAF_SOFT_STALE_SECS");
+        std::env::remove_var("ENGRAM_STORE");
+        std::env::remove_var("ENGRAM_PROCESSES_DIR");
+        std::env::remove_var("ENGRAM_FORCE_CPU_BACKEND");
+        std::env::remove_var("ENGRAM_KI_DISABLE");
+        std::env::remove_var("ENGRAM_DISABLE_SHEAF");
+        if let Ok(mut cache) = PROCESS_SHEAF_CACHE.lock() {
+            cache.loaded = false;
+            cache.fingerprint = 0;
+            cache.last_ok = None;
+        }
     }
 
     #[test]

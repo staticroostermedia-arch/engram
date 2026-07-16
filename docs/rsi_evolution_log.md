@@ -4623,3 +4623,30 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 
 1. MCP swap UB6+UB7 flags LIVE.
 2. Next distill: ub_sheaf_glue / ub_provlog_richness / ub_geosphere_frame (hot geo residency) / pure unit-phase encode.
+
+## UB Cycle 8 — process sheaf glue relations + fingerprint (2026-07-16)
+
+### VERIFY₀ baseline
+
+- master@`1d39124d` UB7 #187.
+- CSF **0.937**; handoff complete; UB6/UB7 flags LIVE.
+- Lawfulness: **healthy** 50/50 (prior PRAXIS soft sample cleared).
+- Residual: sheaf load registers process blocks; glue edges + fingerprint stability not property-pinned.
+
+### SELECT
+
+**ub_sheaf_glue** — property test structural relations (`declared_in`, `enforced_by`, `uses_mcp_tool`, `has_phase_seed`) + deterministic processes/ fingerprint + disk warm.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Fix | `ensure_sheaf_glue_endpoint` before relate — silent no-op when target missing |
+| Test | `ub_sheaf_glue_process_edges_and_fingerprint` (mini fixture processes/) |
+| Flag | `ub_sheaf_glue_relations` |
+| Invariants | declared_in/enforced_by/uses_mcp_tool/has_phase_seed/requires/produces edges land; fp deterministic; disk roundtrip |
+
+### Next vectors
+
+1. MCP swap UB8 flag LIVE.
+2. Next distill: ub_provlog_richness / ub_geosphere_frame / ub_secure_context / pure unit-phase encode.
