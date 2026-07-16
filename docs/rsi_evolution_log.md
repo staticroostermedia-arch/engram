@@ -3774,3 +3774,34 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 1. MCP swap MQ23; wake presentation first tile boundary == trusted_tiles[0].
 2. Optional #134 C86 cold assemble residual (floor held).
 3. Capacity only if landfill metrics measured.
+
+## MQ Cycle 24 — write_hygiene_snapshot on slim wake (2026-07-15)
+
+### VERIFY₀ baseline
+
+- master@`aae71454` MQ23 #157.
+- MCP swapped: `mq_presentation_prefer_trusted_boundary` LIVE; presentation tile == trusted_tiles[0]=`1784160439` ✓.
+- CSF warm **0.941**; injection **1.0**; handoff complete; verify healthy (metric:mq_verify_1784160702).
+- Soft-stale warm total_ms=**0** floor held.
+- Residual: mint/update counters existed in metamemory but slim wake never surfaced them → write-path SELECT blind.
+- Unit tests lean + MQ23 prefer green.
+
+### SELECT
+
+**mq_write_hygiene** — hoist `write_hygiene_snapshot` onto lean assemble + slim session_start.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Snapshot | `build_lean_write_hygiene_snapshot` (mints, updates, ratio, hint) |
+| Assemble | wake_lean inserts write_hygiene_snapshot |
+| Slim | `slim_continuation_bundle` hoists field |
+| Flag | `mq_write_hygiene_slim_wake` |
+| Tests | `slim_bundle_hoists_write_hygiene_snapshot` + extended strip test |
+
+### Next vectors
+
+1. MCP swap MQ24; wake write_hygiene_snapshot present with version mq_write_hygiene_v1.
+2. Optional #134 C86 if floor fails.
+3. Capacity only if landfill measured.

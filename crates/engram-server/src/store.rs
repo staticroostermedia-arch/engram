@@ -2806,6 +2806,7 @@ impl StoreHandle {
                 "mq_spatial_locus_aabb_test": true,
                 "mq_consult_before_write_agent_hard": true,
                 "mq_write_hygiene_mint_update": true,
+                "mq_write_hygiene_slim_wake": true,
                 "mq_tiles_boundaries_session": true,
                 "mq_csf_session_boundary_prefer": true,
                 "mq_trusted_tiles_boundary_recency": true,
@@ -5632,6 +5633,12 @@ impl StoreHandle {
                     "lawfulness_snapshot".to_string(),
                     self.mq_verify_series_head(),
                 );
+                // MQ Cycle 24: mint/update hygiene on lean wake so agents can SELECT
+                // write-path debt without full continuation bundle.
+                obj.insert(
+                    "write_hygiene_snapshot".to_string(),
+                    Self::build_lean_write_hygiene_snapshot(self),
+                );
             }
         }
         mark_cont(&mut cont_phase_ms, "assemble_ms", t_assemble);
@@ -5960,6 +5967,30 @@ impl StoreHandle {
             "ranking": "recency_neighbor_v1",
             "candidates_scanned": candidates_scanned,
             "hint": "lean graph rehydrate — search_by_relation for deeper walks",
+        })
+    }
+
+    /// MQ Cycle 24: lean write-path hygiene for slim wake (mint vs update).
+    pub fn build_lean_write_hygiene_snapshot(store: &Self) -> serde_json::Value {
+        let mm = store.metamemory_snapshot();
+        serde_json::json!({
+            "version": "mq_write_hygiene_v1",
+            "mints": mm.get("mints").cloned().unwrap_or(serde_json::json!(0)),
+            "updates": mm.get("updates").cloned().unwrap_or(serde_json::json!(0)),
+            "mint_update_ratio": mm.get("mint_update_ratio").cloned().unwrap_or(serde_json::json!(0.0)),
+            "writes_without_prior_recall": mm
+                .get("writes_without_prior_recall")
+                .cloned()
+                .unwrap_or(serde_json::json!(0)),
+            "writes_per_recall": mm
+                .get("writes_per_recall")
+                .cloned()
+                .unwrap_or(serde_json::json!(0.0)),
+            "write_hygiene_hint": mm
+                .get("write_hygiene_hint")
+                .cloned()
+                .unwrap_or(serde_json::json!("mint/update within nominal bounds")),
+            "source": "session_metamemory",
         })
     }
 

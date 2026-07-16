@@ -222,6 +222,12 @@ pub fn slim_continuation_bundle(full: &Value) -> Value {
             "lawfulness_snapshot",
             full.get("lawfulness_snapshot").cloned(),
         );
+        // MQ Cycle 24: write hygiene (mint/update) on slim wake for write-path SELECT.
+        crate::continuity_spikes::insert_optional(
+            obj,
+            "write_hygiene_snapshot",
+            full.get("write_hygiene_snapshot").cloned(),
+        );
     }
     slim
 }
@@ -289,6 +295,14 @@ mod tests {
                 "series_concept": "helper:mq_verify_series",
                 "sample_count": 2,
                 "pass_rate": 1.0
+            },
+            // MQ Cycle 24: write hygiene must survive slim tier.
+            "write_hygiene_snapshot": {
+                "version": "mq_write_hygiene_v1",
+                "mints": 3,
+                "updates": 1,
+                "mint_update_ratio": 3.0,
+                "write_hygiene_hint": "prefer update over remember when concept exists (match >0.85)"
             }
         });
 
@@ -314,5 +328,41 @@ mod tests {
             "mq_lawfulness_snapshot_v1"
         );
         assert_eq!(slim["lawfulness_snapshot"]["sample_count"], 2);
+        // MQ Cycle 24
+        assert_eq!(
+            slim["write_hygiene_snapshot"]["version"],
+            "mq_write_hygiene_v1"
+        );
+        assert_eq!(slim["write_hygiene_snapshot"]["mints"], 3);
+        assert_eq!(slim["write_hygiene_snapshot"]["mint_update_ratio"], 3.0);
+    }
+
+    #[test]
+    fn slim_bundle_hoists_write_hygiene_snapshot() {
+        let full = json!({
+            "primary_goal": "goal:engram_memory_quality_v1",
+            "harness_injection": {
+                "suggested_actions": [],
+                "trace_chain": { "head": "trace:mq24" },
+                "ego_snapshot": {}
+            },
+            "write_hygiene_snapshot": {
+                "version": "mq_write_hygiene_v1",
+                "mints": 2,
+                "updates": 5,
+                "mint_update_ratio": 0.4,
+                "write_hygiene_hint": "mint/update within nominal bounds"
+            }
+        });
+        let slim = slim_continuation_bundle(&full);
+        assert_eq!(
+            slim["write_hygiene_snapshot"]["version"],
+            "mq_write_hygiene_v1"
+        );
+        assert_eq!(slim["write_hygiene_snapshot"]["updates"], 5);
+        assert_eq!(
+            slim["write_hygiene_snapshot"]["write_hygiene_hint"],
+            "mint/update within nominal bounds"
+        );
     }
 }
