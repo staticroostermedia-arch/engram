@@ -3835,3 +3835,33 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 1. MCP swap MQ25; wake trusted_tiles[0] == tile:session_boundary_{session_end_ts}.
 2. Optional #134 C86 if floor fails.
 3. Capacity only if landfill measured.
+
+## MQ Cycle 26 — seed write_hygiene from prior session receipt (2026-07-15)
+
+### VERIFY₀ baseline
+
+- master@`86c8b5d2` MQ25 #159.
+- MCP swapped: `mq_trusted_tiles_session_end_pin` LIVE; trusted_tiles[0]=`1784161998` matches session_end_key with source `session_end_key_pin` ✓.
+- CSF warm **0.941**; injection **1.0**; handoff complete; verify healthy (metric:mq_verify_1784162283).
+- Soft-stale / post-verify assemble held as constraint.
+- Residual: `write_hygiene_snapshot` always mints=0/updates=0 after MCP restart despite 747 session receipts on disk.
+- Unit tests lean + MQ25 pin green.
+
+### SELECT
+
+**mq_write_hygiene** — when live counters zero, seed snapshot from access_index-recent `receipt:session_*` with mint/update activity.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Seed | `recent_receipt_metamemory_with_activity` (recent 64) |
+| Source | `receipt_prior_session` + `receipt_concept` |
+| Flag | `mq_write_hygiene_prior_receipt_seed` |
+| Test | `mq_write_hygiene_seeds_from_prior_receipt_when_live_zero` |
+
+### Next vectors
+
+1. MCP swap MQ26; wake write_hygiene_snapshot.source=receipt_prior_session when live zero.
+2. Optional #134 C86 if floor fails.
+3. Capacity only if landfill measured.

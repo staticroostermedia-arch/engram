@@ -2807,6 +2807,7 @@ impl StoreHandle {
                 "mq_consult_before_write_agent_hard": true,
                 "mq_write_hygiene_mint_update": true,
                 "mq_write_hygiene_slim_wake": true,
+                "mq_write_hygiene_prior_receipt_seed": true,
                 "mq_tiles_boundaries_session": true,
                 "mq_csf_session_boundary_prefer": true,
                 "mq_trusted_tiles_boundary_recency": true,
@@ -5981,9 +5982,23 @@ impl StoreHandle {
     }
 
     /// MQ Cycle 24: lean write-path hygiene for slim wake (mint vs update).
+    /// MQ Cycle 26: when live session counters are still zero (fresh MCP process),
+    /// seed from the most recent `receipt:session_*` on access_index so write-path
+    /// SELECT survives restarts.
     pub fn build_lean_write_hygiene_snapshot(store: &Self) -> serde_json::Value {
-        let mm = store.metamemory_snapshot();
-        serde_json::json!({
+        let live = store.metamemory_snapshot();
+        let live_mints = live.get("mints").and_then(|v| v.as_u64()).unwrap_or(0);
+        let live_updates = live.get("updates").and_then(|v| v.as_u64()).unwrap_or(0);
+        let (mm, source, receipt_concept) = if live_mints == 0 && live_updates == 0 {
+            if let Some((concept, prior)) = Self::recent_receipt_metamemory_with_activity(store) {
+                (prior, "receipt_prior_session", Some(concept))
+            } else {
+                (live, "session_metamemory", None)
+            }
+        } else {
+            (live, "session_metamemory", None)
+        };
+        let mut out = serde_json::json!({
             "version": "mq_write_hygiene_v1",
             "mints": mm.get("mints").cloned().unwrap_or(serde_json::json!(0)),
             "updates": mm.get("updates").cloned().unwrap_or(serde_json::json!(0)),
@@ -6000,8 +6015,38 @@ impl StoreHandle {
                 .get("write_hygiene_hint")
                 .cloned()
                 .unwrap_or(serde_json::json!("mint/update within nominal bounds")),
-            "source": "session_metamemory",
-        })
+            "source": source,
+        });
+        if let Some(c) = receipt_concept {
+            if let Some(obj) = out.as_object_mut() {
+                obj.insert("receipt_concept".to_string(), serde_json::json!(c));
+            }
+        }
+        out
+    }
+
+    /// Lean scan: first access_index-recent session receipt with mint/update activity.
+    fn recent_receipt_metamemory_with_activity(
+        store: &Self,
+    ) -> Option<(String, serde_json::Value)> {
+        for (concept, _) in store.access_index.recent(64) {
+            if !concept.starts_with("receipt:session_") {
+                continue;
+            }
+            let Some(block) = store.fetch_block_high_priority(&concept) else {
+                continue;
+            };
+            let body = engram_core::storage::read_provlog(&block);
+            let Some(mm) = crate::metamemory_metrics::parse_metamemory_from_provlog(&body) else {
+                continue;
+            };
+            let m = mm.get("mints").and_then(|v| v.as_u64()).unwrap_or(0);
+            let u = mm.get("updates").and_then(|v| v.as_u64()).unwrap_or(0);
+            if m > 0 || u > 0 {
+                return Some((concept, mm));
+            }
+        }
+        None
     }
 
     /// Latest entry from `helper:mq_verify_series` (or empty snapshot).
@@ -10603,6 +10648,35 @@ mod ingest_ast_tests {
                 .get("wake_skip_warm_on_cont_soft_stale")
                 .and_then(|v| v.as_bool()),
             Some(true)
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// MQ Cycle 26: zero live counters seed write_hygiene from prior session receipt.
+    #[test]
+    fn mq_write_hygiene_seeds_from_prior_receipt_when_live_zero() {
+        let dir = test_store_dir("mq26_write_hygiene_prior");
+        let mut store = StoreHandle::new(&dir.to_string_lossy());
+        // Live metamemory is default-zero.
+        let receipt = r#"SESSION RECEIPT
+
+{"version":"session_receipt_v1","metamemory":{"mints":4,"updates":1,"mint_update_ratio":4.0,"writes_without_prior_recall":0,"writes_per_recall":0.5,"write_hygiene_hint":"prefer update over remember when concept exists (match >0.85)"},"created_unix":1784162004}
+"#;
+        let mut b = store.encode(receipt);
+        b.crs_score = 0.9;
+        store.store("receipt:session_1784162004", b).unwrap();
+        store.access_index.touch("receipt:session_1784162004");
+        let snap = StoreHandle::build_lean_write_hygiene_snapshot(&store);
+        assert_eq!(
+            snap.get("source").and_then(|v| v.as_str()),
+            Some("receipt_prior_session"),
+            "got {snap:?}"
+        );
+        assert_eq!(snap.get("mints").and_then(|v| v.as_u64()), Some(4));
+        assert_eq!(snap.get("updates").and_then(|v| v.as_u64()), Some(1));
+        assert_eq!(
+            snap.get("receipt_concept").and_then(|v| v.as_str()),
+            Some("receipt:session_1784162004")
         );
         let _ = std::fs::remove_dir_all(&dir);
     }
