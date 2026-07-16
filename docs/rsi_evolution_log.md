@@ -5016,3 +5016,32 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 
 1. MCP swap UB19 LIVE — expect live risk soft_elevated_hot_set when hot_set>1k.
 2. Next distill: NREM/hot compress path when soft_elevated / elevated.
+
+## UB Cycle 20 — NREM/hot compress path when soft_elevated (2026-07-16)
+
+### VERIFY₀ baseline
+
+- master@`38e3c297` UB19 #202.
+- CSF **0.937**; trust_ok **true**; lawfulness **healthy**; warm_ms **0**; capacity **soft_elevated_hot_set** hot_set **~1238**.
+- Residual: soft_elevated classifies but no actionable compress plan / protected hot trim path.
+
+### SELECT
+
+**ub_capacity_nrem_hot_compress_path** — plan + apply hot_set trim under soft/hard elevated (NREM-style residency demote, no block delete).
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Plan | `plan_capacity_hot_compress` / `capacity_hot_compress_path_suggested` |
+| Protect | `is_capacity_hot_compress_protected` — goals/tiles/helpers/traces/scars/process… |
+| Select | `select_capacity_hot_compress_unmarks` — geo_context→receipt→metric→local rank |
+| Apply | `apply_capacity_hot_compress` — unmark toward HOT_SET_SOFT when risk hot_set elevated |
+| Snapshot | `compress_path` embedded in lean capacity_snapshot |
+| Test | `ub_capacity_nrem_hot_compress_path` |
+| Flag | `ub_capacity_nrem_hot_compress_path` |
+
+### Next vectors
+
+1. MCP swap UB20 LIVE — expect compress_path.suggested under soft_elevated.
+2. Wire MCP tool or daemon soft_elevated auto-trim (capped); optional nrem candidate count on plan.
