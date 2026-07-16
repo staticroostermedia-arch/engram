@@ -4290,3 +4290,30 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 1. MCP swap MQ41; confirm writes_without_prior_recall stays 0 after quick_trace-only.
 2. Optional #134 C86 if soft-stale warm floor fails.
 3. Next quality child (capacity if measured / structure preview / tiles).
+
+## MQ Cycle 42 — relation_resume structure edges carry neighbor_preview (2026-07-15)
+
+### VERIFY₀ baseline
+
+- master@`ba058128` MQ41 #175.
+- MCP swapped: `mq_write_hygiene_ungated_no_violation` LIVE; after quick_trace mints=1 and writes_without_prior_recall=0 ✓.
+- Residual: structure edges expose concept + neighbor_status only — SELECT still needs read_concept/goal_children for goal statement content.
+- CSF warm **0.941**; handoff complete; verify healthy 50/50; dual-gate green.
+
+### SELECT
+
+**mq_relation_retrieval** residual — annotate structure edges with `neighbor_preview` (goal_statement snippet).
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Field | `neighbor_preview` on decomposes_into/has_child (≤120 chars) |
+| Flag | `mq_relation_resume_neighbor_preview` |
+| Test | `mq_relation_resume_structure_edge_includes_neighbor_preview` (+ status test extended) |
+
+### Next vectors
+
+1. MCP swap MQ42; confirm live structure edge has neighbor_preview with goal_statement.
+2. Optional #134 C86 if soft-stale warm floor fails.
+3. Next quality child (capacity if measured / tiles residual).
