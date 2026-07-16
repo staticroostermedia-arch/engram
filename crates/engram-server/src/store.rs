@@ -2810,6 +2810,7 @@ impl StoreHandle {
                 "mq_write_hygiene_prior_receipt_seed": true,
                 "mq_write_hygiene_mint_tile_scar": true,
                 "mq_write_hygiene_prior_any_activity": true,
+                "mq_lean_open_scars_access_index": true,
                 "mq_tiles_boundaries_session": true,
                 "mq_csf_session_boundary_prefer": true,
                 "mq_trusted_tiles_boundary_recency": true,
