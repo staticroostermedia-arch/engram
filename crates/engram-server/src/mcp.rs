@@ -5758,6 +5758,16 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
             if statement.is_empty() {
                 return json!({ "content": [{ "type": "text", "text": "Error: statement is required." }], "isError": true });
             }
+            // MQ Cycle 33: goal_create is mint-class — consult-before-write applies.
+            {
+                let lock = store.lock().unwrap();
+                if let Some(block) = consult_before_write_block(
+                    "mcp_engram_goal_create",
+                    lock.metamemory.recall_gate_open(),
+                ) {
+                    return block;
+                }
+            }
 
             let parent = args
                 .get("parent")
@@ -6007,6 +6017,16 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
 
             if parent.is_empty() || statements.is_empty() {
                 return json!({ "content": [{ "type": "text", "text": "Error: parent and at least one statement are required." }], "isError": true });
+            }
+            // MQ Cycle 33: goal_decompose is mint-class — consult-before-write applies.
+            {
+                let lock = store.lock().unwrap();
+                if let Some(block) = consult_before_write_block(
+                    "mcp_engram_goal_decompose",
+                    lock.metamemory.recall_gate_open(),
+                ) {
+                    return block;
+                }
             }
 
             let mut lock = store.lock().unwrap();
