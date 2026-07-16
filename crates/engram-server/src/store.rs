@@ -2907,6 +2907,7 @@ impl StoreHandle {
                 "ub_handoff_distillate": true,
                 "ub_handoff_distillate_summary_reparse": true,
                 "ub_relation_resume_structure_reserve_3": true,
+                "ub_relation_resume_demote_capacity_nominal": true,
                 "ub_goal_children_demote_capacity_nominal": true,
                 "ub_lexicon_update_path": true,
                 "ub_lexicon_unit_phase_bind": true,
@@ -6229,6 +6230,9 @@ impl StoreHandle {
     /// MQ Cycle 42: structure edges also annotate `neighbor_preview` (goal statement snippet).
     /// UB Cycle 3: reserve up to 3 active structure edges so goal backlogs are multi-visible
     /// (structure_edges_in_top=1 pinned only one capacity child under ultimate_backend).
+    /// UB Cycle 18: when capacity risk is not elevated, demote capacity_policy structure
+    /// neighbors from the reserve (mirror goal_children demote) so SELECT sees continuity /
+    /// handoff / lexicon / relation-density children instead of landfill policy.
     pub fn build_lean_relation_resume(store: &Self, seed: Option<&str>) -> serde_json::Value {
         const TOP_K: usize = 8;
         /// Guarantee structure visibility under high serves degree (goal children are stable/low ts).
@@ -6238,6 +6242,12 @@ impl StoreHandle {
         let seed = seed
             .filter(|s| !s.is_empty() && *s != "unset")
             .unwrap_or("goal:engram_mvp_v1");
+        let capacity_risk = Self::build_lean_capacity_snapshot(store)
+            .get("risk")
+            .and_then(|v| v.as_str())
+            .unwrap_or("nominal")
+            .to_string();
+        let demote_capacity_structure = !capacity_risk.starts_with("elevated");
         // Full incident set for seed (index query is O(degree); degree ≪ total edges).
         // Ranking after a fixed take(N) re-hides recent SELECT forks when degree > N.
         let mut candidates: Vec<(u64, String, String, &'static str, String)> = Vec::new();
@@ -6264,7 +6274,15 @@ impl StoreHandle {
             }
         }
         // Structure reserve: prefer active goal children, then any structure (MQ36+MQ37).
+        // UB18: skip capacity_policy neighbors in reserve when risk not elevated.
         type EdgeCand = (u64, String, String, &'static str, String);
+        let is_cap_struct = |other: &str| -> bool {
+            if !demote_capacity_structure {
+                return false;
+            }
+            let preview = relation_resume_neighbor_preview(store, other).unwrap_or_default();
+            Self::goal_child_is_capacity_policy(other, &preview)
+        };
         let mut picked: Vec<EdgeCand> = Vec::new();
         let mut structure_picked = 0usize;
         let already = |picked: &[EdgeCand], c: &EdgeCand| -> bool {
@@ -6278,6 +6296,7 @@ impl StoreHandle {
             }
             if relation_resume_is_structure_label(&c.1)
                 && relation_resume_structure_neighbor_active(store, &c.2)
+                && !is_cap_struct(&c.2)
             {
                 picked.push(c.clone());
                 structure_picked += 1;
@@ -6287,9 +6306,27 @@ impl StoreHandle {
             if structure_picked >= STRUCTURE_RESERVED {
                 break;
             }
-            if relation_resume_is_structure_label(&c.1) && !already(&picked, c) {
+            if relation_resume_is_structure_label(&c.1)
+                && !already(&picked, c)
+                && !is_cap_struct(&c.2)
+            {
                 picked.push(c.clone());
                 structure_picked += 1;
+            }
+        }
+        // If reserve still short after demote, allow capacity structure as last-resort fill.
+        if structure_picked < STRUCTURE_RESERVED && demote_capacity_structure {
+            for c in &unique {
+                if structure_picked >= STRUCTURE_RESERVED {
+                    break;
+                }
+                if relation_resume_is_structure_label(&c.1)
+                    && !already(&picked, c)
+                    && is_cap_struct(&c.2)
+                {
+                    picked.push(c.clone());
+                    structure_picked += 1;
+                }
             }
         }
         // Fill remaining with non-structure by score order.
@@ -6374,7 +6411,9 @@ impl StoreHandle {
             "structure_reserve": STRUCTURE_RESERVED,
             "structure_edges_in_top": structure_edges,
             "candidates_scanned": candidates_scanned,
-            "hint": "lean graph rehydrate — serves recency + up to 3 reserved active structure + status/preview",
+            "capacity_risk": capacity_risk,
+            "capacity_structure_demoted": demote_capacity_structure,
+            "hint": "lean graph rehydrate — serves recency + up to 3 reserved active structure (capacity demoted when risk not elevated) + status/preview",
         })
     }
 
@@ -12038,6 +12077,118 @@ mod ingest_ast_tests {
             Some(true)
         );
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// UB Cycle 18: under nominal capacity risk, structure reserve prefers non-capacity children.
+    #[test]
+    fn ub_relation_resume_demote_capacity_structure_when_nominal() {
+        let dir = test_store_dir("ub18_relation_demote_capacity");
+        std::env::set_var("ENGRAM_DISABLE_SHEAF", "1");
+        std::env::set_var("ENGRAM_FORCE_CPU_BACKEND", "1");
+        let mut store = StoreHandle::new(&dir.to_string_lossy());
+        store
+            .remember(
+                "goal:engram_ultimate_backend_v1",
+                "GOAL\n\n**status:** active\n",
+            )
+            .unwrap();
+        // Serves spam so structure reserve matters.
+        for i in 0..10 {
+            let name = format!("trace:178420180{i}_ub18-serves");
+            store
+                .remember(&name, "REASONING TRACE\n\n**decision_point:** filler\n")
+                .unwrap();
+            let _ = store.relate(&name, "goal:engram_ultimate_backend_v1", "serves");
+        }
+        // Capacity child first alphabetically / high ts would dominate without demote.
+        store
+            .remember(
+                "goal:1784181351_ub-capacity-policy---nrem-hot-compress-w_sub4",
+                "GOAL BLOCK (subgoal)\n\n**goal_statement:** ub_capacity_policy — NREM/hot/compress when capacity risk elevated\n**status:** active\n",
+            )
+            .unwrap();
+        let _ = store.relate(
+            "goal:engram_ultimate_backend_v1",
+            "goal:1784181351_ub-capacity-policy---nrem-hot-compress-w_sub4",
+            "decomposes_into",
+        );
+        for (id, stmt) in [
+            (
+                "goal:ub18_continuity",
+                "ub_continuity_gate — dual-gate floor",
+            ),
+            (
+                "goal:ub18_handoff",
+                "ub_handoff_distillate — handoff fields",
+            ),
+            (
+                "goal:ub18_relation_density",
+                "ub_relation_density — relation wins",
+            ),
+        ] {
+            store
+                .remember(
+                    id,
+                    &format!(
+                        "GOAL BLOCK (subgoal)\n\n**goal_statement:** {stmt}\n**status:** active\n"
+                    ),
+                )
+                .unwrap();
+            let _ = store.relate("goal:engram_ultimate_backend_v1", id, "decomposes_into");
+        }
+        // Iso store is small → risk nominal → demote capacity structure.
+        let risk = StoreHandle::build_lean_capacity_snapshot(&store)
+            .get("risk")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        assert!(
+            !risk.starts_with("elevated"),
+            "test precondition: risk not elevated, got {risk}"
+        );
+        let rr = StoreHandle::build_lean_relation_resume(
+            &store,
+            Some("goal:engram_ultimate_backend_v1"),
+        );
+        assert_eq!(
+            rr.get("capacity_structure_demoted")
+                .and_then(|v| v.as_bool()),
+            Some(true)
+        );
+        let edges = rr.get("edges").and_then(|v| v.as_array()).expect("edges");
+        let struct_children: Vec<&str> = edges
+            .iter()
+            .filter(|e| e.get("label").and_then(|v| v.as_str()) == Some("decomposes_into"))
+            .filter_map(|e| e.get("to").and_then(|v| v.as_str()))
+            .collect();
+        // Non-capacity children must appear in structure reserve.
+        let non_cap = struct_children
+            .iter()
+            .filter(|c| {
+                !StoreHandle::goal_child_is_capacity_policy(c, "")
+            })
+            .count();
+        assert!(
+            non_cap >= 2,
+            "expect ≥2 non-capacity structure children under demote; edges={struct_children:?} rr={rr}"
+        );
+        // Capacity may appear only if reserve was short — prefer non-cap first.
+        if let Some(first_struct) = struct_children.first() {
+            assert!(
+                !first_struct.contains("capacity"),
+                "first structure child must not be capacity under demote: {first_struct}"
+            );
+        }
+        assert_eq!(
+            store
+                .backend_readiness()
+                .get("ub_relation_resume_demote_capacity_nominal")
+                .and_then(|v| v.as_bool()),
+            Some(true)
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+        std::env::remove_var("ENGRAM_DISABLE_SHEAF");
+        std::env::remove_var("ENGRAM_FORCE_CPU_BACKEND");
     }
 
     /// UB Cycle 3: structure reserve ≥3 surfaces multiple active goal children under serves spam.
