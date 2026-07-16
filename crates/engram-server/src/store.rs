@@ -2889,6 +2889,7 @@ impl StoreHandle {
                 "ub_handoff_distillate": true,
                 "ub_handoff_distillate_summary_reparse": true,
                 "ub_relation_resume_structure_reserve_3": true,
+                "ub_goal_children_demote_capacity_nominal": true,
                 "mq_goal_children_prefer_active": true,
                 "mq_goal_child_pin_matches_rank": true,
                 "mq_write_hygiene_prior_any_activity": true,
@@ -6226,8 +6227,19 @@ impl StoreHandle {
         })
     }
 
+    /// True when a goal child is capacity-policy focused (mq_/ub_ capacity).
+    fn goal_child_is_capacity_policy(concept: &str, preview: &str) -> bool {
+        let blob = format!("{concept} {preview}").to_ascii_lowercase();
+        blob.contains("capacity_policy")
+            || blob.contains("mq_capacity")
+            || blob.contains("ub_capacity")
+            || blob.contains("capacity-policy")
+    }
+
     /// MQ Cycle 31: lean goal children via `decomposes_into` / `has_child` (index walk, no list-all).
     /// Complements relation_resume which ranks recent serves traces and buries stable backlog children.
+    /// UB Cycle 4: when capacity risk is not elevated, demote capacity_policy children so SELECT
+    /// is not alphabetically pinned to landfill policy under nominal scale.
     pub fn build_lean_goal_children(store: &Self, seed: Option<&str>) -> serde_json::Value {
         let seed = seed
             .filter(|s| !s.is_empty() && *s != "unset")
@@ -6279,7 +6291,14 @@ impl StoreHandle {
                 break;
             }
         }
+        let risk = Self::build_lean_capacity_snapshot(store)
+            .get("risk")
+            .and_then(|v| v.as_str())
+            .unwrap_or("nominal")
+            .to_string();
+        let risk_elevated = risk.starts_with("elevated");
         // MQ Cycle 34: active children first so SELECT pin + surface match.
+        // UB Cycle 4: demote capacity_policy when risk not elevated (after active rank).
         children.sort_by(|a, b| {
             let a_active = a
                 .get("status")
@@ -6292,20 +6311,46 @@ impl StoreHandle {
                 .map(|s| s.eq_ignore_ascii_case("active"))
                 .unwrap_or(false);
             b_active.cmp(&a_active).then_with(|| {
-                let ac = a.get("concept").and_then(|v| v.as_str()).unwrap_or("");
-                let bc = b.get("concept").and_then(|v| v.as_str()).unwrap_or("");
-                ac.cmp(bc)
+                if !risk_elevated {
+                    let a_cap = Self::goal_child_is_capacity_policy(
+                        a.get("concept").and_then(|v| v.as_str()).unwrap_or(""),
+                        a.get("preview").and_then(|v| v.as_str()).unwrap_or(""),
+                    );
+                    let b_cap = Self::goal_child_is_capacity_policy(
+                        b.get("concept").and_then(|v| v.as_str()).unwrap_or(""),
+                        b.get("preview").and_then(|v| v.as_str()).unwrap_or(""),
+                    );
+                    // false (non-capacity) sorts before true (capacity)
+                    a_cap.cmp(&b_cap).then_with(|| {
+                        let ac = a.get("concept").and_then(|v| v.as_str()).unwrap_or("");
+                        let bc = b.get("concept").and_then(|v| v.as_str()).unwrap_or("");
+                        ac.cmp(bc)
+                    })
+                } else {
+                    let ac = a.get("concept").and_then(|v| v.as_str()).unwrap_or("");
+                    let bc = b.get("concept").and_then(|v| v.as_str()).unwrap_or("");
+                    ac.cmp(bc)
+                }
             })
         });
         children.truncate(8);
+        let ranking = if risk_elevated {
+            "active_first_v1"
+        } else {
+            "active_first_demote_capacity_nominal_v1"
+        };
         serde_json::json!({
             "version": "mq_goal_children_v1",
             "parent": seed,
             "count": children.len(),
             "children": children,
-            "ranking": "active_first_v1",
+            "ranking": ranking,
+            "capacity_risk": risk,
+            "capacity_demoted": !risk_elevated,
             "hint": if children.is_empty() {
                 "no decomposes_into/has_child under primary — goal_decompose backlog or relate children"
+            } else if !risk_elevated {
+                "lean goal graph — active first; capacity_policy demoted while risk not elevated"
             } else {
                 "lean goal graph — prefer active child SELECT over episodic noise"
             },
@@ -11871,9 +11916,10 @@ mod ingest_ast_tests {
         );
         let gc =
             StoreHandle::build_lean_goal_children(&store, Some("goal:engram_memory_quality_v1"));
-        assert_eq!(
-            gc.get("ranking").and_then(|v| v.as_str()),
-            Some("active_first_v1")
+        let ranking = gc.get("ranking").and_then(|v| v.as_str()).unwrap_or("");
+        assert!(
+            ranking == "active_first_v1" || ranking == "active_first_demote_capacity_nominal_v1",
+            "unexpected ranking {ranking}"
         );
         let kids = gc
             .get("children")
@@ -11888,6 +11934,75 @@ mod ingest_ast_tests {
             store
                 .backend_readiness()
                 .get("mq_goal_children_prefer_active")
+                .and_then(|v| v.as_bool()),
+            Some(true)
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// UB Cycle 4: capacity_policy child ranks after other active children when risk not elevated.
+    #[test]
+    fn ub_goal_children_demotes_capacity_when_risk_nominal() {
+        let dir = test_store_dir("ub4_demote_capacity_nominal");
+        let mut store = StoreHandle::new(&dir.to_string_lossy());
+        // Empty/small store → risk nominal (not elevated_*).
+        store
+            .remember(
+                "goal:engram_ultimate_backend_v1",
+                "GOAL\n\n**status:** active\n",
+            )
+            .unwrap();
+        store
+            .remember(
+                "goal:aaa_capacity_policy_child",
+                "GOAL BLOCK (subgoal)\n\n**goal_statement:** ub_capacity_policy — NREM/hot/compress when landfill measured\n\n**status:** active\n",
+            )
+            .unwrap();
+        store
+            .remember(
+                "goal:zzz_lexicon_child",
+                "GOAL BLOCK (subgoal)\n\n**goal_statement:** ub_lexicon_update_path — update over mint\n\n**status:** active\n",
+            )
+            .unwrap();
+        let _ = store.relate(
+            "goal:engram_ultimate_backend_v1",
+            "goal:aaa_capacity_policy_child",
+            "decomposes_into",
+        );
+        let _ = store.relate(
+            "goal:engram_ultimate_backend_v1",
+            "goal:zzz_lexicon_child",
+            "decomposes_into",
+        );
+        let gc =
+            StoreHandle::build_lean_goal_children(&store, Some("goal:engram_ultimate_backend_v1"));
+        assert_eq!(
+            gc.get("ranking").and_then(|v| v.as_str()),
+            Some("active_first_demote_capacity_nominal_v1")
+        );
+        assert_eq!(
+            gc.get("capacity_demoted").and_then(|v| v.as_bool()),
+            Some(true)
+        );
+        let kids = gc
+            .get("children")
+            .and_then(|v| v.as_array())
+            .expect("children");
+        assert_eq!(kids.len(), 2);
+        // Alphabetically capacity (aaa_) would win; demote puts lexicon first.
+        assert_eq!(
+            kids[0].get("concept").and_then(|v| v.as_str()),
+            Some("goal:zzz_lexicon_child"),
+            "lexicon should outrank demoted capacity; kids={kids:?}"
+        );
+        assert_eq!(
+            kids[1].get("concept").and_then(|v| v.as_str()),
+            Some("goal:aaa_capacity_policy_child")
+        );
+        assert_eq!(
+            store
+                .backend_readiness()
+                .get("ub_goal_children_demote_capacity_nominal")
                 .and_then(|v| v.as_bool()),
             Some(true)
         );

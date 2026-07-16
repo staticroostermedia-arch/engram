@@ -4514,3 +4514,30 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 1. MCP swap UB3; confirm structure_edges_in_top≥3 under ultimate_backend with 5 children.
 2. Optional demote capacity_policy when risk nominal.
 3. Next distill: ub_lexicon_update_path / ub_holographic_bind.
+
+## UB Cycle 4 — demote capacity goal pin when risk nominal (2026-07-15)
+
+### VERIFY₀ baseline
+
+- master@`cf2a1345` UB3 #183.
+- MCP swapped: `ub_relation_resume_structure_reserve_3` LIVE; structure_edges_in_top=3 ✓.
+- Residual: goal_children + suggested_actions still pin `ub_capacity_policy` first alphabetically while capacity risk=`large_manifold_nominal`.
+- CSF **0.937**; verify healthy; dual-gate green.
+
+### SELECT
+
+**ub_capacity_policy / goal hygiene** — demote capacity_policy children when risk not elevated.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Ranking | `active_first_demote_capacity_nominal_v1` when risk not elevated |
+| Fields | `capacity_risk`, `capacity_demoted` on goal_children |
+| Flag | `ub_goal_children_demote_capacity_nominal` |
+| Test | `ub_goal_children_demotes_capacity_when_risk_nominal` |
+
+### Next vectors
+
+1. MCP swap UB4; confirm first goal_child is not capacity when risk nominal.
+2. Next distill: ub_lexicon_update_path / ub_holographic_bind.
