@@ -5099,3 +5099,30 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 
 1. MCP swap UB22 LIVE — soft_elevated wake queue includes dry_run compress action.
 2. Optional daemon capped auto-trim after agents routinely dry_run+apply.
+
+## UB Cycle 23 — daemon capped hot compress when soft_elevated (2026-07-16)
+
+### VERIFY₀ baseline
+
+- master@`0424b192` UB22 #205.
+- CSF **0.937**; trust_ok **true**; lawfulness **healthy**; capacity **soft_elevated_hot_set** hot~1210 overshoot~210; wake dry_run pin **LIVE**.
+- Residual: agents pin dry_run but residency still grows without background apply.
+
+### SELECT
+
+**ub_capacity_daemon_hot_compress** — daemon tick + post-NREM capped apply when soft/hard elevated.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Gate | `capacity_daemon_hot_compress_should_run` (= path suggested) |
+| Daemon | `maybe_capacity_hot_compress` every 900s (env) + after NREM |
+| Env | `ENGRAM_CAPACITY_HOT_COMPRESS_DISABLE`, `_SECS`, `_MAX` |
+| Flag | `ub_capacity_daemon_hot_compress` |
+| Test | `ub_capacity_daemon_hot_compress_gate` |
+
+### Next vectors
+
+1. MCP/daemon swap UB23 LIVE — soft_elevated → auto unmark ≤64/tick.
+2. Wake suggested_action optional post-dry_run apply (or prove daemon alone drains overshoot).
