@@ -4317,3 +4317,31 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 1. MCP swap MQ42; confirm live structure edge has neighbor_preview with goal_statement.
 2. Optional #134 C86 if soft-stale warm floor fails.
 3. Next quality child (capacity if measured / tiles residual).
+
+## MQ Cycle 43 — lean capacity_snapshot on slim wake (2026-07-15)
+
+### VERIFY₀ baseline
+
+- master@`48dbb7ae` MQ42 #176.
+- MCP swapped: `mq_relation_resume_neighbor_preview` LIVE; structure edge preview=`mq_capacity_policy — NREM/hot/compress when landfill measured` ✓.
+- Residual: goal_children[0] capacity-policy pinned for many fires without measured scale signals on lean wake — SELECT could not evidence landfill vs nominal.
+- CSF warm **0.941**; handoff complete; verify healthy 50/50; dual-gate green.
+
+### SELECT
+
+**mq_capacity_policy** — first-class lean `capacity_snapshot` (blocks/edges/hot_set/risk) on slim wake.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Snapshot | `mq_capacity_v1`: leg_block_count, hot_set_len, relation_edge_count, risk |
+| Hoist | slim wake + wake_bundle |
+| Flag | `mq_capacity_snapshot_lean` |
+| Tests | `mq_capacity_snapshot_lean_surfaces_scale_signals`, `slim_bundle_hoists_capacity_snapshot` |
+
+### Next vectors
+
+1. MCP swap MQ43; confirm capacity_snapshot.risk + counts live on session_start.
+2. If risk elevated → SELECT capacity policy ship; else next residual (tiles).
+3. Optional #134 C86 if soft-stale warm floor fails.
