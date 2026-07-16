@@ -1,10 +1,10 @@
-# Tool Decision Map — All 86 MCP Tools
+# Tool Decision Map — All 87 MCP Tools
 
 **Audience:** Any agent on Engram MCP (Grok Build, Cursor, Claude, custom)  
 **Companion:** [AGENT_MEMORY_CONTRACT.md](AGENT_MEMORY_CONTRACT.md) — the **8-tool lean highway** + preferred composites  
 **Principle:** Layer 0 is default throttle; escalate through Layers 1–4 when the highway cannot answer your question.
 
-Engram exposes **86 tools** (82 `mcp_engram_*` + 4 linguistic; source: mcp.rs `tool_list()`). Do not call all 86 every session. Use this map to pick **one path** per situation. JIT orchestration: [`DEFORMATION_PLAYBOOKS.md`](DEFORMATION_PLAYBOOKS.md).
+Engram exposes **87 tools** (83 `mcp_engram_*` + 4 linguistic; source: mcp.rs `tool_list()`). Do not call all 87 every session. Use this map to pick **one path** per situation. JIT orchestration: [`DEFORMATION_PLAYBOOKS.md`](DEFORMATION_PLAYBOOKS.md).
 
 **Edit/update default:** prefer `mcp_engram_safe_edit_and_verify` and `mcp_engram_update_with_tensor_bond` over raw multi-step chains (matches AGENT_MEMORY_CONTRACT preferred composites).
 

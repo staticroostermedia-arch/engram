@@ -6572,9 +6572,7 @@ impl StoreHandle {
         mean_hub_crs: Option<f64>,
     ) -> serde_json::Value {
         const CSF_FLOOR: f64 = 0.70;
-        let law_pass = lawfulness
-            .pointer("/latest/pass")
-            .and_then(|v| v.as_bool());
+        let law_pass = lawfulness.pointer("/latest/pass").and_then(|v| v.as_bool());
         let law_health = lawfulness
             .pointer("/latest/overall_health")
             .and_then(|v| v.as_str())
@@ -6773,7 +6771,12 @@ impl StoreHandle {
         let need = hot.len().saturating_sub(target);
         let max_unmark = max_unmark.clamp(1, 500).min(need);
         if max_unmark == 0 {
-            return (vec![], hot.iter().filter(|c| Self::is_capacity_hot_compress_protected(c)).count());
+            return (
+                vec![],
+                hot.iter()
+                    .filter(|c| Self::is_capacity_hot_compress_protected(c))
+                    .count(),
+            );
         }
         let mut protected_skipped = 0usize;
         let mut candidates: Vec<String> = Vec::new();
@@ -6878,8 +6881,8 @@ impl StoreHandle {
             "lean capacity — soft_elevated_hot_set: compress_path.suggested → mcp_engram_apply_capacity_hot_compress (capped)"
         } else if Self::capacity_hot_compress_path_suggested(risk) {
             "lean capacity — elevated_hot_set: mcp_engram_apply_capacity_hot_compress toward soft threshold"
-        } else if Self::capacity_risk_is_elevated(risk) {
-            "lean capacity — SELECT mq_capacity_policy when risk elevated or hot/edge scale measured"
+        } else if risk == "elevated_edge_scale" {
+            "lean capacity — elevated_edge_scale: SELECT mq_capacity_policy (relation hygiene)"
         } else {
             "lean capacity — SELECT mq_capacity_policy when risk elevated or hot/edge scale measured"
         };
@@ -7376,8 +7379,7 @@ impl StoreHandle {
         let lawfulness = self.mq_verify_series_head();
         let capacity = Self::build_lean_capacity_snapshot(self);
         let bvh_ready = self.bvh_is_ready();
-        let nvme_ready =
-            crate::injection_priority::nvme_recall_path_ready(self.recall_mode());
+        let nvme_ready = crate::injection_priority::nvme_recall_path_ready(self.recall_mode());
         let primary_present = !primary_goal.is_empty() && primary_goal != "(none)";
         let (csf, csf_source) = match self.latest_cold_start_fidelity_score() {
             Some(s) => (s, "cold_start_fidelity_series"),
@@ -7401,14 +7403,8 @@ impl StoreHandle {
             None,
         );
         if let Some(obj) = trust.as_object_mut() {
-            obj.insert(
-                "csf_source".to_string(),
-                serde_json::json!(csf_source),
-            );
-            obj.insert(
-                "boundary_embed".to_string(),
-                serde_json::json!(true),
-            );
+            obj.insert("csf_source".to_string(), serde_json::json!(csf_source));
+            obj.insert("boundary_embed".to_string(), serde_json::json!(true));
         }
         trust
     }
@@ -7435,8 +7431,7 @@ impl StoreHandle {
             let body = engram_core::storage::read_provlog(&existing);
             let has_capacity =
                 body.contains("capacity_snapshot") && body.contains("mq_capacity_v1");
-            let has_trust =
-                body.contains("trust_surface") && body.contains("ub_trust_surface_v1");
+            let has_trust = body.contains("trust_surface") && body.contains("ub_trust_surface_v1");
             let has_fallback_nv = body.contains(Self::BOUNDARY_NEXT_VECTOR_FALLBACK);
             let can_improve_nv = has_fallback_nv
                 && next_vector != Self::BOUNDARY_NEXT_VECTOR_FALLBACK
@@ -10776,11 +10771,7 @@ impl StoreHandle {
 
     /// Test-only: write a block bypassing store-path PRAXIS seal / provlog stamp.
     #[cfg(test)]
-    pub(crate) fn test_backend_store_raw(
-        &self,
-        concept: &str,
-        block: Leg3Pointer,
-    ) -> Result<()> {
+    pub(crate) fn test_backend_store_raw(&self, concept: &str, block: Leg3Pointer) -> Result<()> {
         self.backend.store(concept, block)?;
         self.invalidate_leg_block_count();
         Ok(())
@@ -11324,7 +11315,16 @@ mod ingest_ast_tests {
             label_cos < full_cos,
             "q should prefer full_source over embed_label (full={full_cos}, label={label_cos})"
         );
-        assert_eq!(read_provlog(&block), full);
+        // UB provlog richness stamps **recorded_at:** after store; body must still lead with full_source.
+        let body = read_provlog(&block);
+        assert!(
+            body.starts_with(full),
+            "provlog should start with full_source; got {body:?}"
+        );
+        assert!(
+            body.contains("**recorded_at:**") || body == full,
+            "expected richness stamp or exact full_source"
+        );
 
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -12002,15 +12002,8 @@ mod ingest_ast_tests {
         assert_eq!(ok["capacity_risk"], "large_manifold_nominal");
         assert!(ok["missing"].as_array().unwrap().is_empty());
 
-        let low_csf = StoreHandle::build_trust_surface(
-            0.50,
-            &law_ok,
-            &capacity,
-            true,
-            true,
-            true,
-            None,
-        );
+        let low_csf =
+            StoreHandle::build_trust_surface(0.50, &law_ok, &capacity, true, true, true, None);
         assert_eq!(low_csf["trust_ok"], false);
         assert_eq!(low_csf["dual_gate"]["continuity_ok"], false);
         assert!(low_csf["missing"]
@@ -12019,15 +12012,8 @@ mod ingest_ast_tests {
             .iter()
             .any(|m| m.as_str() == Some("csf_below_floor")));
 
-        let bad_law = StoreHandle::build_trust_surface(
-            0.95,
-            &law_fail,
-            &capacity,
-            true,
-            true,
-            true,
-            None,
-        );
+        let bad_law =
+            StoreHandle::build_trust_surface(0.95, &law_fail, &capacity, true, true, true, None);
         assert_eq!(bad_law["trust_ok"], false);
         assert_eq!(bad_law["dual_gate"]["lawfulness_ok"], false);
 
@@ -12044,15 +12030,8 @@ mod ingest_ast_tests {
         assert_eq!(no_sample["trust_ok"], true);
         assert_eq!(no_sample["dual_gate"]["lawfulness_ok"], true);
 
-        let no_primary = StoreHandle::build_trust_surface(
-            0.95,
-            &law_ok,
-            &capacity,
-            true,
-            true,
-            false,
-            None,
-        );
+        let no_primary =
+            StoreHandle::build_trust_surface(0.95, &law_ok, &capacity, true, true, false, None);
         assert_eq!(no_primary["trust_ok"], false);
         assert!(no_primary["missing"]
             .as_array()
@@ -12097,9 +12076,13 @@ mod ingest_ast_tests {
             "elevated_edge_scale"
         );
         // soft/hard elevated un-demote capacity SELECT.
-        assert!(StoreHandle::capacity_risk_is_elevated("soft_elevated_hot_set"));
+        assert!(StoreHandle::capacity_risk_is_elevated(
+            "soft_elevated_hot_set"
+        ));
         assert!(StoreHandle::capacity_risk_is_elevated("elevated_hot_set"));
-        assert!(!StoreHandle::capacity_risk_is_elevated("large_manifold_nominal"));
+        assert!(!StoreHandle::capacity_risk_is_elevated(
+            "large_manifold_nominal"
+        ));
         assert!(!StoreHandle::capacity_risk_is_elevated("nominal"));
         let dir = test_store_dir("ub19_soft_elevated_flag");
         let store = StoreHandle::new(&dir.to_string_lossy());
@@ -12128,15 +12111,11 @@ mod ingest_ast_tests {
         assert!(!StoreHandle::capacity_daemon_hot_compress_should_run(
             "large_manifold_nominal"
         ));
-        assert!(!StoreHandle::capacity_daemon_hot_compress_should_run("nominal"));
-        assert_eq!(
-            StoreHandle::CAPACITY_DAEMON_HOT_COMPRESS_DEFAULT_MAX,
-            64
-        );
-        assert_eq!(
-            StoreHandle::CAPACITY_DAEMON_HOT_COMPRESS_DEFAULT_SECS,
-            900
-        );
+        assert!(!StoreHandle::capacity_daemon_hot_compress_should_run(
+            "nominal"
+        ));
+        assert_eq!(StoreHandle::CAPACITY_DAEMON_HOT_COMPRESS_DEFAULT_MAX, 64);
+        assert_eq!(StoreHandle::CAPACITY_DAEMON_HOT_COMPRESS_DEFAULT_SECS, 900);
         // Align with path suggested (agent + daemon same gate).
         assert_eq!(
             StoreHandle::capacity_daemon_hot_compress_should_run("soft_elevated_hot_set"),
@@ -12153,9 +12132,8 @@ mod ingest_ast_tests {
         );
         // Nominal small store apply no-op (daemon would idle).
         store.mark_hot("geo_context:daemon_noise");
-        let noop = store.apply_capacity_hot_compress(
-            StoreHandle::CAPACITY_DAEMON_HOT_COMPRESS_DEFAULT_MAX,
-        );
+        let noop = store
+            .apply_capacity_hot_compress(StoreHandle::CAPACITY_DAEMON_HOT_COMPRESS_DEFAULT_MAX);
         assert_eq!(noop["applied"], false);
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -12176,19 +12154,17 @@ mod ingest_ast_tests {
         assert!(!StoreHandle::capacity_hot_compress_path_suggested(
             "large_manifold_nominal"
         ));
-        assert!(!StoreHandle::capacity_hot_compress_path_suggested("nominal"));
+        assert!(!StoreHandle::capacity_hot_compress_path_suggested(
+            "nominal"
+        ));
 
-        let plan =
-            StoreHandle::plan_capacity_hot_compress("soft_elevated_hot_set", 1_239);
+        let plan = StoreHandle::plan_capacity_hot_compress("soft_elevated_hot_set", 1_239);
         assert_eq!(plan["suggested"], true);
         assert_eq!(plan["overshoot"], 239);
         assert_eq!(plan["target_hot_set"], 1_000);
         assert_eq!(plan["mode"], "nrem_hot_trim");
         assert_eq!(plan["ub_capacity_nrem_hot_compress_path"], true);
-        assert_eq!(
-            plan["mcp_tool"],
-            "mcp_engram_apply_capacity_hot_compress"
-        );
+        assert_eq!(plan["mcp_tool"], "mcp_engram_apply_capacity_hot_compress");
         let plan_ex = StoreHandle::plan_capacity_hot_compress_ex(
             "soft_elevated_hot_set",
             1_239,
@@ -12214,9 +12190,7 @@ mod ingest_ast_tests {
         assert!(StoreHandle::is_capacity_hot_compress_protected(
             "helper:session_handoff_latest"
         ));
-        assert!(StoreHandle::is_capacity_hot_compress_protected(
-            "trace:abc"
-        ));
+        assert!(StoreHandle::is_capacity_hot_compress_protected("trace:abc"));
         assert!(!StoreHandle::is_capacity_hot_compress_protected(
             "geo_context:foo"
         ));
@@ -12233,8 +12207,7 @@ mod ingest_ast_tests {
             "trace:keep".into(),
         ];
         // overshoot 2 from target 3 → unmark 2 demotable in rank order
-        let (unmarks, protected) =
-            StoreHandle::select_capacity_hot_compress_unmarks(&hot, 10, 3);
+        let (unmarks, protected) = StoreHandle::select_capacity_hot_compress_unmarks(&hot, 10, 3);
         assert_eq!(protected, 2); // goal + trace
         assert_eq!(unmarks.len(), 2);
         assert_eq!(unmarks[0], "geo_context:g1");
@@ -12264,7 +12237,10 @@ mod ingest_ast_tests {
         let noop = store.apply_capacity_hot_compress(10);
         assert_eq!(noop["applied"], false);
         assert_eq!(noop["unmarked"], 0);
-        assert!(store.hot_concepts().iter().any(|c| c == "geo_context:drop_me"));
+        assert!(store
+            .hot_concepts()
+            .iter()
+            .any(|c| c == "geo_context:drop_me"));
 
         // Snapshot embeds compress_path with demotable counts + mcp_tool.
         let snap = StoreHandle::build_lean_capacity_snapshot(&store);
@@ -12276,12 +12252,25 @@ mod ingest_ast_tests {
             snap["compress_path"]["mcp_tool"],
             "mcp_engram_apply_capacity_hot_compress"
         );
-        assert!(snap["compress_path"]["nrem_candidate_count"].as_u64().unwrap_or(0) >= 2);
-        assert!(snap["compress_path"]["nrem_protected_count"].as_u64().unwrap_or(0) >= 1);
+        assert!(
+            snap["compress_path"]["nrem_candidate_count"]
+                .as_u64()
+                .unwrap_or(0)
+                >= 2
+        );
+        assert!(
+            snap["compress_path"]["nrem_protected_count"]
+                .as_u64()
+                .unwrap_or(0)
+                >= 1
+        );
 
         // Direct unmark path still works for demotable.
         store.unmark_hot("geo_context:drop_me");
-        assert!(!store.hot_concepts().iter().any(|c| c == "geo_context:drop_me"));
+        assert!(!store
+            .hot_concepts()
+            .iter()
+            .any(|c| c == "geo_context:drop_me"));
         assert!(store.hot_concepts().iter().any(|c| c == "goal:keep_me"));
 
         let _ = std::fs::remove_dir_all(&dir);
@@ -12334,13 +12323,11 @@ mod ingest_ast_tests {
         );
         assert!(snap.get("risk").and_then(|v| v.as_str()).is_some());
         assert_eq!(
-            snap.get("hot_set_soft_threshold")
-                .and_then(|v| v.as_u64()),
+            snap.get("hot_set_soft_threshold").and_then(|v| v.as_u64()),
             Some(StoreHandle::HOT_SET_SOFT_THRESHOLD as u64)
         );
         assert_eq!(
-            snap.get("hot_set_hard_threshold")
-                .and_then(|v| v.as_u64()),
+            snap.get("hot_set_hard_threshold").and_then(|v| v.as_u64()),
             Some(StoreHandle::HOT_SET_HARD_THRESHOLD as u64)
         );
         assert_eq!(
@@ -12644,9 +12631,7 @@ mod ingest_ast_tests {
         // Non-capacity children must appear in structure reserve.
         let non_cap = struct_children
             .iter()
-            .filter(|c| {
-                !StoreHandle::goal_child_is_capacity_policy(c, "")
-            })
+            .filter(|c| !StoreHandle::goal_child_is_capacity_policy(c, ""))
             .count();
         assert!(
             non_cap >= 2,
@@ -13709,7 +13694,10 @@ mod ingest_ast_tests {
             body.contains("**preferred_alternative:**"),
             "missing preferred_alternative: {body}"
         );
-        assert!(body.contains("ub_research_scar"), "missing flag field: {body}");
+        assert!(
+            body.contains("ub_research_scar"),
+            "missing flag field: {body}"
+        );
         assert!(body.contains("nested schedulers") || body.contains("Arming nested"));
         // Lean open scars must hoist (access_index touch happens in mint).
         let open = crate::harness_injection::collect_open_scars_lean(&store, 5);
@@ -13735,12 +13723,8 @@ mod ingest_ast_tests {
             "update must land: {body2}"
         );
         // Fail-closed on empty ruled_out / why.
-        assert!(store
-            .mint_research_scar("x", "", "why", "alt")
-            .is_err());
-        assert!(store
-            .mint_research_scar("x", "ruled", "", "alt")
-            .is_err());
+        assert!(store.mint_research_scar("x", "", "why", "alt").is_err());
+        assert!(store.mint_research_scar("x", "ruled", "", "alt").is_err());
         let _ = std::fs::remove_dir_all(&dir);
         std::env::remove_var("ENGRAM_DISABLE_SHEAF");
         std::env::remove_var("ENGRAM_FORCE_CPU_BACKEND");
@@ -15903,9 +15887,7 @@ mod mq_praxis_store_contract_tests {
             format!("{home}/.engram/stalks/")
         });
         let mut store = StoreHandle::new(&path);
-        let n = store
-            .heal_praxis_store_contracts(200)
-            .expect("live heal");
+        let n = store.heal_praxis_store_contracts(200).expect("live heal");
         eprintln!("mq_praxis_heal_live: healed={n} store={path}");
         assert!(n < 200 || n == 200, "healed count {n}");
     }
@@ -15934,10 +15916,7 @@ mod mq_praxis_store_contract_tests {
         assert!(healed >= 1, "seeded verified_sequence must be healed first");
         let fixed = store.fetch_block(key).expect("fetch");
         let c = std::str::from_utf8(&fixed.allowed_transforms).unwrap_or("");
-        assert!(
-            c.contains("evidence_update"),
-            "seeded key must seal: {c:?}"
-        );
+        assert!(c.contains("evidence_update"), "seeded key must seal: {c:?}");
 
         let _ = std::fs::remove_dir_all(&dir);
         std::env::remove_var("ENGRAM_DISABLE_SHEAF");
@@ -16051,9 +16030,7 @@ mod ub_temporal_geometry_tests {
         let dir = test_store_dir("frame");
         let mut store = StoreHandle::new(&dir.to_string_lossy());
 
-        let (origin0, step0, _) = store
-            .get_current_geosphere_frame()
-            .expect("native frame");
+        let (origin0, step0, _) = store.get_current_geosphere_frame().expect("native frame");
         assert_eq!(origin0, "native");
         assert_eq!(step0, 0);
 

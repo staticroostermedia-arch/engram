@@ -512,12 +512,11 @@ mod tests {
         let a = from_text_unit_phase("role:ub12_phase");
         let b = from_text_unit_phase("role:ub12_phase");
         assert!((cosine_similarity(&a.q, &b.q) - 1.0).abs() < 1e-5);
-        let mag: f32 = a
-            .q
-            .iter()
-            .map(|c| c.re * c.re + c.im * c.im)
-            .sum::<f32>()
-            .sqrt();
+        let mag: f32 =
+            a.q.iter()
+                .map(|c| c.re * c.re + c.im * c.im)
+                .sum::<f32>()
+                .sqrt();
         assert!((mag - 1.0).abs() < 1e-4, "mag={mag}");
         // Per-component magnitudes nearly equal (pure phase before global normalize).
         let inv_sqrt_n = 1.0 / (DIMENSION as f32).sqrt();

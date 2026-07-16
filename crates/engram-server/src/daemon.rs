@@ -561,9 +561,7 @@ fn maybe_capacity_hot_compress(store: &crate::store::SharedStore) {
         let edges = lock.relation_index.live_edge_count();
         let risk = crate::store::StoreHandle::classify_capacity_risk(large, hot_len, edges);
         if !crate::store::StoreHandle::capacity_daemon_hot_compress_should_run(risk) {
-            tracing::debug!(
-                "[CAPACITY] hot compress idle (risk={risk}, hot_set_len={hot_len})"
-            );
+            tracing::debug!("[CAPACITY] hot compress idle (risk={risk}, hot_set_len={hot_len})");
             return;
         }
         lock.apply_capacity_hot_compress(max_unmark)
@@ -572,10 +570,7 @@ fn maybe_capacity_hot_compress(store: &crate::store::SharedStore) {
         .get("applied")
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
-    let unmarked = report
-        .get("unmarked")
-        .and_then(|v| v.as_u64())
-        .unwrap_or(0);
+    let unmarked = report.get("unmarked").and_then(|v| v.as_u64()).unwrap_or(0);
     if applied {
         info!(
             "[CAPACITY] daemon hot compress applied unmarked={unmarked} max_unmark={max_unmark} (ub_capacity_daemon_hot_compress)"

@@ -1977,10 +1977,7 @@ pub fn capacity_compress_wake_apply_args(compress_path: &Value) -> Option<Value>
 }
 
 /// Shared pure args builder for capacity wake dry_run / apply pins.
-pub fn capacity_compress_wake_action_args(
-    compress_path: &Value,
-    dry_run: bool,
-) -> Option<Value> {
+pub fn capacity_compress_wake_action_args(compress_path: &Value, dry_run: bool) -> Option<Value> {
     let suggested = compress_path
         .get("suggested")
         .and_then(|v| v.as_bool())
@@ -2023,10 +2020,7 @@ fn build_suggested_actions_ultra_lean(
     }
     // Priority 0: capacity NREM compress dry_run then apply when soft/hard elevated (UB22/24).
     if let Some(cp) = capacity_compress_path {
-        let overshoot = cp
-            .get("overshoot")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0);
+        let overshoot = cp.get("overshoot").and_then(|v| v.as_u64()).unwrap_or(0);
         if let Some(args) = capacity_compress_wake_dry_run_args(cp) {
             push_action(
                 &mut actions,

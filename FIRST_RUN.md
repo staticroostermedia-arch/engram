@@ -180,7 +180,7 @@ This produces a structured handoff packet. Your **next** `session_start` will su
 | `mcp_engram_safe_edit_and_verify` | raw `context_for_edit` → `quick_trace` → `update` chain | Substantive code edits |
 | `mcp_engram_update_with_tensor_bond` | raw `update` alone | Verified memory writes / tile sync |
 
-**~78 power tools** remain available (**86 total** — `tool_list()` in `mcp.rs`) — see [docs/MCP_TOOLS_REFERENCE.md](docs/MCP_TOOLS_REFERENCE.md). Do not call `watch_workspace`, `rebuild_bvh`, or `summarize` at wake.
+**~79 power tools** remain available (**87 total** — `tool_list()` in `mcp.rs`) — see [docs/MCP_TOOLS_REFERENCE.md](docs/MCP_TOOLS_REFERENCE.md). Do not call `watch_workspace`, `rebuild_bvh`, or `summarize` at wake.
 
 ---
 

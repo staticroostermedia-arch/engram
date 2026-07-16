@@ -474,14 +474,8 @@ mod tests {
         let word = "hologram";
         let definition = "A geometric role-filler memory construct recoverable by unbind.";
         let etymology = "Greek holos + gramma (test).";
-        let concept = mint_lexicon_word(
-            &mut store,
-            word,
-            definition,
-            etymology,
-            &["language"],
-        )
-        .expect("mint");
+        let concept = mint_lexicon_word(&mut store, word, definition, etymology, &["language"])
+            .expect("mint");
         // Must use unit-phase encode to match bind_lexicon_q geometry.
         let word_q = store.encode_unit_phase(word).q;
         let def_q = store.encode_unit_phase(definition).q;
@@ -512,14 +506,8 @@ mod tests {
         let word = "engram_ub16";
         let definition = "Durable geometric memory atom with exact HRR role-filler geometry.";
         let etymology = "Test etymology for unit-phase lexicon bind.";
-        let concept = mint_lexicon_word(
-            &mut store,
-            word,
-            definition,
-            etymology,
-            &["language"],
-        )
-        .expect("mint");
+        let concept = mint_lexicon_word(&mut store, word, definition, etymology, &["language"])
+            .expect("mint");
         let word_q = store.encode_unit_phase(word).q;
         let def_q = store.encode_unit_phase(definition).q;
         let etym_q = store.encode_unit_phase(etymology).q;
