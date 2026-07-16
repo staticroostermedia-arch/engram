@@ -428,6 +428,39 @@ mod tests {
         std::env::remove_var("ENGRAM_FORCE_CPU_BACKEND");
     }
 
+    /// UB Cycle 12: store `encode_unit_phase` OP_BIND/OP_UNBIND recovers filler >0.95.
+    /// Default spiral `encode` stays ~0.85–0.89; unit-phase is the exact HRR path.
+    #[test]
+    fn ub_unit_phase_encode_store_holographic_gt_095() {
+        let (dir, store) = open_iso_store();
+        let role = store.encode_unit_phase("role:ub12_store_test");
+        let filler = store.encode_unit_phase("filler:ub12_store_payload");
+        let bound = op_bind(&role.q, &filler.q);
+        assert!(
+            cosine_similarity(&bound, &role.q).abs() < 0.5,
+            "bound too similar to role"
+        );
+        let recovered = op_unbind(&bound, &role.q);
+        let sim = cosine_similarity(&recovered, &filler.q);
+        assert!(
+            sim > 0.95,
+            "store unit-phase unbind recovery too low: {sim} (expect >0.95)"
+        );
+        // Readiness contract: spiral path still available and weaker-or-equal floor.
+        let role_s = store.encode("role:ub12_store_test");
+        let filler_s = store.encode("filler:ub12_store_payload");
+        let bound_s = op_bind(&role_s.q, &filler_s.q);
+        let rec_s = op_unbind(&bound_s, &role_s.q);
+        let sim_s = cosine_similarity(&rec_s, &filler_s.q);
+        assert!(
+            sim + 1e-3 >= sim_s,
+            "unit-phase must not underperform spiral: unit={sim} spiral={sim_s}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+        std::env::remove_var("ENGRAM_DISABLE_SHEAF");
+        std::env::remove_var("ENGRAM_FORCE_CPU_BACKEND");
+    }
+
     /// UB Cycle 6: lexicon word⋉definition unbind recovers definition under store encode.
     #[test]
     fn ub_lexicon_holographic_bind_recovers_definition_similarity() {

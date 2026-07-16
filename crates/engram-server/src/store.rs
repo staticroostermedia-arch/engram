@@ -2918,6 +2918,7 @@ impl StoreHandle {
                 "ub_provlog_richness_recorded_at": true,
                 "ub_geosphere_frame_hot_geo_context": true,
                 "ub_secure_context_redact_fail_closed": true,
+                "ub_unit_phase_encode": true,
                 "mq_goal_children_prefer_active": true,
                 "mq_goal_child_pin_matches_rank": true,
                 "mq_write_hygiene_prior_any_activity": true,
@@ -7240,6 +7241,15 @@ impl StoreHandle {
     }
     pub fn encode(&self, text: &str) -> Leg3Pointer {
         self.backend.encode(text)
+    }
+
+    /// Pure unit-phase encode for exact HRR (VSA bind/unbind recovery >0.95).
+    ///
+    /// Additive path — does **not** replace default spiral [`Self::encode`] /
+    /// `from_text` (manifold continuity). See `engram_core::encode::from_text_unit_phase`.
+    /// UB Cycle 12 / flag `ub_unit_phase_encode`.
+    pub fn encode_unit_phase(&self, text: &str) -> Leg3Pointer {
+        engram_core::encode::from_text_unit_phase(text)
     }
     pub fn query(&mut self, query_vec: &[engram_core::Complex32; 8192], k: usize) -> Vec<Memory> {
         // WS3-B: apply current Geosphere frame/lens from SymplecticState before

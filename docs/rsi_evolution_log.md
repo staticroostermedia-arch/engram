@@ -4804,3 +4804,30 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 
 1. MCP swap UB11 LIVE.
 2. Next distill: pure unit-phase encode / ub_research_scar / ub_trust_surface.
+
+## UB Cycle 12 — pure unit-phase encode for exact HRR (2026-07-16)
+
+### VERIFY₀ baseline
+
+- master@`94d4ad10` UB11 #194.
+- CSF **0.938**; lawfulness **healthy** 50/50; dual-gate green; warm total_ms 0.
+- Residual: store spiral `from_text` cos(θ_re)/sin(θ_im) → ~0.89 unbind; core unit-phase >0.95 only in private `hash_vec`.
+
+### SELECT
+
+**ub_unit_phase_encode** — additive pure unit-phase encode path (does not rewrite default spiral manifold encode).
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Core API | `unit_phase_q`, `from_text_unit_phase` |
+| Store API | `StoreHandle::encode_unit_phase` |
+| Tests | `ub_unit_phase_encode_deterministic_unit_hypersphere`, `ub_unit_phase_encode_holographic_unbind_gt_095`, `ub_unit_phase_encode_store_holographic_gt_095` |
+| Flag | `ub_unit_phase_encode` |
+| Invariants | unit hypersphere; `|q_i|≈1/√N`; OP_UNBIND recovery **>0.95**; default `encode`/`from_text` unchanged |
+
+### Next vectors
+
+1. MCP swap UB12 LIVE.
+2. Next distill: ub_research_scar / ub_trust_surface / lexicon optional unit-phase bind.
