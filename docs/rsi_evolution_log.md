@@ -4402,3 +4402,30 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 1. MCP swap MQ45; re-mint/upgrade path on next session_end; confirm latest boundary has capacity + real next_vector_hint.
 2. If risk elevated → capacity policy; else rehydrate_graph / write_hygiene / spatial residual.
 3. Optional #134 C86 if soft-stale warm floor fails.
+
+## MQ Cycle 46 — boundary next_vector upgrade when capacity already present (2026-07-15)
+
+### VERIFY₀ baseline
+
+- master@`378a5e08` MQ45 #179.
+- MCP swapped: `mq_tiles_boundary_legacy_upgrade` LIVE.
+- Measured: `tile:session_boundary_1784178501` has capacity_snapshot + risk but `next_vector_hint` still fallback; early-return on capacity blocked markdown next_vector ride-along.
+- capacity risk=`large_manifold_nominal`; CSF **0.936**; verify 50/50 healthy; dual-gate green.
+
+### SELECT
+
+**mq_tiles_boundaries** residual — upgrade when capacity present but next_vector is placeholder and summary yields a real vector.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Path | mint_session_boundary_tile upgrades on fallback next_vector even with capacity |
+| Flag | `mq_tiles_boundary_next_vector_upgrade` |
+| Test | `mq_tiles_boundary_next_vector_upgrade_when_fallback` |
+
+### Next vectors
+
+1. MCP swap MQ46; session_end → boundary next_vector_hint is real (not fallback).
+2. If risk elevated → capacity policy; else rehydrate_graph / write_hygiene / spatial.
+3. Optional #134 C86 if soft-stale warm floor fails.

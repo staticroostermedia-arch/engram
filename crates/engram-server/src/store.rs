@@ -2884,6 +2884,7 @@ impl StoreHandle {
                 "mq_capacity_snapshot_lean": true,
                 "mq_tiles_capacity_in_boundary": true,
                 "mq_tiles_boundary_legacy_upgrade": true,
+                "mq_tiles_boundary_next_vector_upgrade": true,
                 "mq_goal_children_prefer_active": true,
                 "mq_goal_child_pin_matches_rank": true,
                 "mq_write_hygiene_prior_any_activity": true,
@@ -6733,14 +6734,19 @@ impl StoreHandle {
                 return raw.trim().to_string();
             }
         }
-        "(see helper:session_handoff_latest)".to_string()
+        Self::BOUNDARY_NEXT_VECTOR_FALLBACK.to_string()
     }
+
+    /// Placeholder next_vector_hint when extract fails — signals weak compression survival.
+    const BOUNDARY_NEXT_VECTOR_FALLBACK: &'static str = "(see helper:session_handoff_latest)";
 
     /// MQ Cycle 10 (`mq_tiles_boundaries`): mint one thought tile at session/compression
     /// boundary so the next mind rehydrates from a structured distillate, not only phase_ms.
     /// MQ Cycle 44: embed lean capacity_snapshot so scale risk survives compression.
     /// MQ Cycle 45: upgrade legacy boundary tiles missing capacity via update (not early-return);
     /// parse markdown `### next_vector` sections for next_vector_hint.
+    /// MQ Cycle 46: also upgrade when capacity present but next_vector_hint still fallback
+    /// and the current summary yields a real vector (ride-along without forget+remember).
     pub fn mint_session_boundary_tile(
         &mut self,
         session_end_key: &str,
@@ -6749,19 +6755,23 @@ impl StoreHandle {
     ) -> Option<String> {
         let ts = session_end_key.strip_prefix("session_end_").unwrap_or("0");
         let tile_key = format!("tile:session_boundary_{ts}");
+        let next_vector = Self::extract_next_vector_hint(summary_snippet);
         let mut legacy_upgrade = false;
         if let Some(existing) = self.fetch_block(&tile_key) {
             let body = engram_core::storage::read_provlog(&existing);
-            // Fresh MQ44+ tile: keep idempotent promote-only path.
-            if body.contains("capacity_snapshot") && body.contains("mq_capacity_v1") {
+            let has_capacity =
+                body.contains("capacity_snapshot") && body.contains("mq_capacity_v1");
+            let has_fallback_nv = body.contains(Self::BOUNDARY_NEXT_VECTOR_FALLBACK);
+            let can_improve_nv = has_fallback_nv
+                && next_vector != Self::BOUNDARY_NEXT_VECTOR_FALLBACK
+                && !next_vector.is_empty();
+            // Fresh complete tile: promote-only. Upgrade if missing capacity OR weak next_vector.
+            if has_capacity && !can_improve_nv {
                 let _ = self.promote_tile_to_high_priority(&tile_key);
                 return Some(tile_key);
             }
-            // Pre-MQ44 (or partial) boundary: upgrade in place via update.
             legacy_upgrade = true;
         }
-
-        let next_vector = Self::extract_next_vector_hint(summary_snippet);
 
         // MQ44: ride capacity signals into the boundary distillate (O(1) snapshot).
         let capacity = Self::build_lean_capacity_snapshot(self);
@@ -12429,6 +12439,12 @@ mod ingest_ast_tests {
             Some(true),
             "readiness must advertise MQ45 legacy boundary upgrade: {r}"
         );
+        assert_eq!(
+            r.get("mq_tiles_boundary_next_vector_upgrade")
+                .and_then(|v| v.as_bool()),
+            Some(true),
+            "readiness must advertise MQ46 next_vector upgrade: {r}"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -12492,6 +12508,55 @@ mod ingest_ast_tests {
         assert!(h.contains("ship mq_rehydrate_graph residual"), "got {h}");
         let line = "- next_vector: mq_spatial_locus\n";
         assert!(StoreHandle::extract_next_vector_hint(line).contains("mq_spatial_locus"));
+    }
+
+    /// MQ Cycle 46: capacity present + fallback next_vector → upgrade when summary has real vector.
+    #[test]
+    fn mq_tiles_boundary_next_vector_upgrade_when_fallback() {
+        let dir = test_store_dir("mq46_boundary_nv_upgrade");
+        let mut store = StoreHandle::new(&dir.to_string_lossy());
+        let tile_key = "tile:session_boundary_1784178501";
+        // Simulate MQ44 body: capacity ok, next_vector still fallback.
+        let partial = r#"THOUGHT TILE
+
+**tile_type:** session_boundary
+**title:** partial
+**payload:** {
+  "version": "mq_session_boundary_v1",
+  "capacity_snapshot": {"version": "mq_capacity_v1", "risk": "large_manifold_nominal"},
+  "next_vector_hint": "(see helper:session_handoff_latest)"
+}
+"#;
+        store.remember(tile_key, partial).unwrap();
+        let summary = "## MQ handoff\n\n### next_vector\nmq_rehydrate_graph residual after NV upgrade\n\n### decisions\n- fix fallback\n";
+        let out = store
+            .mint_session_boundary_tile(
+                "session_end_1784178501",
+                summary,
+                "goal:engram_memory_quality_v1",
+            )
+            .expect("upgrade");
+        assert_eq!(out, tile_key);
+        let body = store
+            .fetch_block(tile_key)
+            .map(|b| engram_core::storage::read_provlog(&b))
+            .unwrap();
+        assert!(
+            body.contains("mq_rehydrate_graph residual"),
+            "must replace fallback next_vector: {body}"
+        );
+        assert!(
+            body.contains("mq_capacity_v1"),
+            "must keep capacity: {body}"
+        );
+        // Idempotent when already good.
+        let again = store.mint_session_boundary_tile(
+            "session_end_1784178501",
+            summary,
+            "goal:engram_memory_quality_v1",
+        );
+        assert_eq!(again.as_deref(), Some(tile_key));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
