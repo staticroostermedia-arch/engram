@@ -2881,6 +2881,7 @@ impl StoreHandle {
                 "mq_write_hygiene_goal_mint": true,
                 "mq_write_hygiene_trace_session_mint": true,
                 "mq_write_hygiene_ungated_no_violation": true,
+                "mq_capacity_snapshot_lean": true,
                 "mq_goal_children_prefer_active": true,
                 "mq_goal_child_pin_matches_rank": true,
                 "mq_write_hygiene_prior_any_activity": true,
@@ -5730,6 +5731,11 @@ impl StoreHandle {
                     "goal_children".to_string(),
                     Self::build_lean_goal_children(self, seed),
                 );
+                // MQ Cycle 43: capacity signals for measured SELECT (landfill / scale).
+                obj.insert(
+                    "capacity_snapshot".to_string(),
+                    Self::build_lean_capacity_snapshot(self),
+                );
             }
         }
         mark_cont(&mut cont_phase_ms, "assemble_ms", t_assemble);
@@ -6246,6 +6252,45 @@ impl StoreHandle {
             } else {
                 "lean goal graph — prefer active child SELECT over episodic noise"
             },
+        })
+    }
+
+    /// MQ Cycle 43: lean capacity signals for slim wake (measured scale SELECT).
+    /// Cheap O(1) counts — enables evidence-based mq_capacity_policy without full stats dump.
+    pub fn build_lean_capacity_snapshot(store: &Self) -> serde_json::Value {
+        let leg_block_count = store.leg_block_count_prefer_cached();
+        let large_manifold = leg_block_count > Self::LARGE_MANIFOLD_THRESHOLD;
+        let hot_set_len = store.hot_concepts().len();
+        let relation_edge_count = store.relation_index.live_edge_count();
+        let relation_nodes = store.relation_index.adj_node_count();
+        let relation_tombstones = store.relation_index.tombstone_count();
+        // Soft landfill risk: hot_set large vs blocks, or multi-10k edges without tombstone hygiene.
+        let hot_ratio = if leg_block_count == 0 {
+            0.0
+        } else {
+            hot_set_len as f64 / leg_block_count as f64
+        };
+        let risk = if large_manifold && hot_set_len > 2_000 {
+            "elevated_hot_set"
+        } else if relation_edge_count > 100_000 {
+            "elevated_edge_scale"
+        } else if large_manifold {
+            "large_manifold_nominal"
+        } else {
+            "nominal"
+        };
+        serde_json::json!({
+            "version": "mq_capacity_v1",
+            "leg_block_count": leg_block_count,
+            "large_manifold": large_manifold,
+            "large_manifold_threshold": Self::LARGE_MANIFOLD_THRESHOLD,
+            "hot_set_len": hot_set_len,
+            "hot_ratio": hot_ratio,
+            "relation_edge_count": relation_edge_count,
+            "relation_nodes": relation_nodes,
+            "relation_edge_tombstones": relation_tombstones,
+            "risk": risk,
+            "hint": "lean capacity — SELECT mq_capacity_policy when risk elevated or hot/edge scale measured",
         })
     }
 
@@ -11053,6 +11098,63 @@ mod ingest_ast_tests {
         );
         assert_eq!(snap.get("plan_tools").and_then(|v| v.as_u64()), Some(3));
         assert_eq!(snap.get("log_tools").and_then(|v| v.as_u64()), Some(2));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// MQ Cycle 43: lean capacity snapshot exposes measured scale for SELECT.
+    #[test]
+    fn mq_capacity_snapshot_lean_surfaces_scale_signals() {
+        let dir = test_store_dir("mq43_capacity_snapshot");
+        let mut store = StoreHandle::new(&dir.to_string_lossy());
+        store
+            .remember(
+                "goal:engram_memory_quality_v1",
+                "GOAL\n\n**status:** active\n",
+            )
+            .unwrap();
+        store
+            .remember("goal:mq43_child", "GOAL BLOCK\n\n**status:** active\n")
+            .unwrap();
+        let _ = store.relate(
+            "goal:engram_memory_quality_v1",
+            "goal:mq43_child",
+            "decomposes_into",
+        );
+        let _ = store.promote_tile_to_high_priority("goal:engram_memory_quality_v1");
+        let snap = StoreHandle::build_lean_capacity_snapshot(&store);
+        assert_eq!(
+            snap.get("version").and_then(|v| v.as_str()),
+            Some("mq_capacity_v1")
+        );
+        assert!(
+            snap.get("leg_block_count")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0)
+                >= 2,
+            "blocks present; snap={snap:?}"
+        );
+        assert!(
+            snap.get("relation_edge_count")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0)
+                >= 1,
+            "edge present; snap={snap:?}"
+        );
+        assert!(
+            snap.get("hot_set_len")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0)
+                >= 1,
+            "hot promote; snap={snap:?}"
+        );
+        assert!(snap.get("risk").and_then(|v| v.as_str()).is_some());
+        assert_eq!(
+            store
+                .backend_readiness()
+                .get("mq_capacity_snapshot_lean")
+                .and_then(|v| v.as_bool()),
+            Some(true)
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 

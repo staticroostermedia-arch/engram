@@ -249,6 +249,12 @@ pub fn slim_continuation_bundle(full: &Value) -> Value {
             "goal_children",
             full.get("goal_children").cloned(),
         );
+        // MQ Cycle 43: capacity signals for measured scale SELECT on slim wake.
+        crate::continuity_spikes::insert_optional(
+            obj,
+            "capacity_snapshot",
+            full.get("capacity_snapshot").cloned(),
+        );
         // MQ Cycle 29: scar pins (concept list) when non-empty — count alone is not actionable.
         if !open_scars_wake.is_empty() {
             obj.insert("open_scars_wake".into(), json!(open_scars_wake));
@@ -389,6 +395,31 @@ mod tests {
             slim["write_hygiene_snapshot"]["write_hygiene_hint"],
             "mint/update within nominal bounds"
         );
+    }
+
+    /// MQ Cycle 43: slim must hoist capacity_snapshot for measured scale SELECT.
+    #[test]
+    fn slim_bundle_hoists_capacity_snapshot() {
+        let full = json!({
+            "primary_goal": "goal:engram_memory_quality_v1",
+            "harness_injection": {
+                "suggested_actions": [],
+                "trace_chain": { "head": "trace:mq43" },
+                "ego_snapshot": {}
+            },
+            "capacity_snapshot": {
+                "version": "mq_capacity_v1",
+                "leg_block_count": 93000,
+                "large_manifold": true,
+                "hot_set_len": 120,
+                "relation_edge_count": 26000,
+                "risk": "large_manifold_nominal"
+            }
+        });
+        let slim = slim_continuation_bundle(&full);
+        assert_eq!(slim["capacity_snapshot"]["version"], "mq_capacity_v1");
+        assert_eq!(slim["capacity_snapshot"]["leg_block_count"], 93000);
+        assert_eq!(slim["capacity_snapshot"]["risk"], "large_manifold_nominal");
     }
 
     /// MQ Cycle 29: slim must surface scar concepts, not only open_scars_count.
