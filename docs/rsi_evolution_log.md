@@ -3895,3 +3895,32 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 1. MCP swap MQ27; wake source=receipt_prior_session with plan/log from prior receipt.
 2. Optional #134 C86 if floor fails.
 3. Capacity only if landfill measured.
+
+## MQ Cycle 28 — lean open_scars via access_index (2026-07-15)
+
+### VERIFY₀ baseline
+
+- master@`c50cfc60` MQ27 #161.
+- MCP swapped: write_hygiene `source=receipt_prior_session` plan_tools=3 log_tools=2 ✓.
+- CSF warm **0.941**; injection **1.0**; handoff complete; verify healthy.
+- Residual: 10 `scar:*` on disk but lean/ultra-lean `open_scars_wake=[]` → open_scars_count always 0 (SELECT cannot deflect).
+- Unit tests lean + MQ27 hygiene green.
+
+### SELECT
+
+**mq_rehydrate_graph** — lean scar pin via access_index.recent + prefix fallback.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Helper | `collect_open_scars_lean` |
+| Wire | lean harness + ultra-lean wake |
+| Flag | `mq_lean_open_scars_access_index` |
+| Test | `collect_open_scars_lean_finds_access_index_scars` |
+
+### Next vectors
+
+1. MCP swap MQ28; wake open_scars_count > 0 when scars indexed.
+2. Optional #134 C86 if floor fails.
+3. Capacity only if landfill measured.

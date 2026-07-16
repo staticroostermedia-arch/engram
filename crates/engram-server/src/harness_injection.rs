@@ -285,6 +285,60 @@ pub fn collect_open_scars(store: &mut StoreHandle, limit: usize) -> Vec<Value> {
         .collect()
 }
 
+/// MQ Cycle 28: lean/ultra-lean scar surface via access_index (no BVH recall walk).
+/// Empty lean open_scars_wake hid scars on disk and blocked SELECT deflection.
+pub fn collect_open_scars_lean(store: &StoreHandle, limit: usize) -> Vec<Value> {
+    let limit = limit.clamp(1, 5);
+    let mut out = Vec::new();
+    let mut seen = HashSet::new();
+    for (concept, _) in store.access_index.recent(96) {
+        if !concept.starts_with("scar:") || !seen.insert(concept.clone()) {
+            continue;
+        }
+        let Some(block) = store.fetch_block_high_priority(&concept) else {
+            continue;
+        };
+        if block.crs_score < 0.5 {
+            continue;
+        }
+        out.push(json!({
+            "concept": concept,
+            "crs": block.crs_score,
+            "preview": "",
+            "source": "access_index_recent",
+            "reason": "lean scar pin — read before repeating dead approach",
+        }));
+        if out.len() >= limit {
+            return out;
+        }
+    }
+    // Fallback: prefix index when scars exist but were not recently accessed.
+    if out.is_empty() {
+        for concept in store.access_index.keys_with_prefix("scar:") {
+            if !seen.insert(concept.clone()) {
+                continue;
+            }
+            let Some(block) = store.fetch_block_high_priority(&concept) else {
+                continue;
+            };
+            if block.crs_score < 0.5 {
+                continue;
+            }
+            out.push(json!({
+                "concept": concept,
+                "crs": block.crs_score,
+                "preview": "",
+                "source": "access_index_prefix",
+                "reason": "lean scar pin — read before repeating dead approach",
+            }));
+            if out.len() >= limit {
+                break;
+            }
+        }
+    }
+    out
+}
+
 /// Parse verified_sequence_v0 JSON from tile ProvLog body.
 pub fn parse_verified_sequence_payload(body: &str) -> Option<Value> {
     let start = body.find('{')?;
@@ -1812,7 +1866,9 @@ fn build_harness_bundle_ultra_lean_wake(
             minutes,
             surprise_pressure,
         );
-    let task_type = infer_task_type(None, session_intent, false, 0);
+    // MQ Cycle 28: ultra-lean scar pin for open_scars_count + deflection.
+    let open_scars_wake = collect_open_scars_lean(store, 3);
+    let task_type = infer_task_type(None, session_intent, false, open_scars_wake.len());
     let ego_snapshot = build_ego_snapshot_ultra_lean(
         ego_block.as_ref(),
         UltraLeanEgoSentinel {
@@ -1843,7 +1899,7 @@ fn build_harness_bundle_ultra_lean_wake(
             "hint": "call mcp_engram_get_continuation_bundle for full JIT framework",
         },
         "task_type": task_type,
-        "open_scars_wake": [],
+        "open_scars_wake": open_scars_wake,
         "uncertainty_receipts_wake": [],
         "rehydrate_suggested": rehydrate_suggested,
         "lean_wake": true,
@@ -2013,14 +2069,15 @@ pub fn build_harness_bundle_with_presentation_k(
         false,
     );
 
-    // Cycle 46: lean wake skips store-walking scars/verified/condensation (full via get_continuation_bundle).
+    // Cycle 46: lean wake skips verified/condensation walks (full via get_continuation_bundle).
+    // MQ Cycle 28: lean still surfaces scars via access_index pin (deflection at SELECT).
     let condensation_hints = if lean_wake {
         Vec::new()
     } else {
         build_condensation_hints(store, primary_goal.as_deref())
     };
     let open_scars_wake = if lean_wake {
-        Vec::new()
+        collect_open_scars_lean(store, 3)
     } else {
         collect_open_scars(store, 5)
     };
@@ -3067,6 +3124,40 @@ SESSION HANDOFF PACKET v1 (structured JSON for next-wake read_concept)
             })
             .expect("hint action");
         assert!(hint_action.get("args_hint").is_some());
+    }
+
+    /// MQ Cycle 28: lean scar collect finds access_index-recent scar:* without BVH.
+    #[test]
+    fn collect_open_scars_lean_finds_access_index_scars() {
+        std::env::set_var("ENGRAM_DISABLE_SHEAF", "1");
+        std::env::set_var("ENGRAM_FORCE_CPU_BACKEND", "1");
+        std::env::set_var("ENGRAM_KI_DISABLE", "1");
+        let dir = std::env::temp_dir().join(format!(
+            "mq28_lean_scars_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).ok();
+        let mut store = StoreHandle::new(&dir.to_string_lossy());
+        let body = "SCAR\n\n**status:** open\n**ruled_out:** doom loop exploration\n";
+        let mut b = store.encode(body);
+        b.crs_score = 0.88;
+        store.store("scar:subagent_doom_loop_test", b).unwrap();
+        store.access_index.touch("scar:subagent_doom_loop_test");
+        let scars = collect_open_scars_lean(&store, 3);
+        assert!(!scars.is_empty(), "expected lean scar pin, got {scars:?}");
+        assert_eq!(
+            scars[0].get("concept").and_then(|v| v.as_str()),
+            Some("scar:subagent_doom_loop_test")
+        );
+        assert_eq!(
+            scars[0].get("source").and_then(|v| v.as_str()),
+            Some("access_index_recent")
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
