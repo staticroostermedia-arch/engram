@@ -651,10 +651,21 @@ fn trusted_tile_concept_recency(concept: &str) -> u64 {
 /// MQ Cycle 21: re-sort existing boundaries by concept unix (latest-first).
 /// MQ Cycle 22: also **merge fresher** session_boundary from access_index when the
 /// frozen set is already all-boundary but stale (max unix lagging live hubs).
+/// MQ Cycle 25: pin `tile:session_boundary_{ts}` from `session_end_key` when
+/// access_index.recent misses the on-disk boundary under write churn.
 /// Returns true if the list was modified.
 pub fn ensure_session_boundary_in_trusted_tiles(
     store: &mut StoreHandle,
     tiles: &mut Vec<Value>,
+) -> bool {
+    ensure_session_boundary_in_trusted_tiles_opts(store, tiles, None)
+}
+
+/// Like [`ensure_session_boundary_in_trusted_tiles`] with optional `session_end_*` pin.
+pub fn ensure_session_boundary_in_trusted_tiles_opts(
+    store: &mut StoreHandle,
+    tiles: &mut Vec<Value>,
+    session_end_key: Option<&str>,
 ) -> bool {
     let max_boundary_recency = tiles
         .iter()
@@ -690,6 +701,31 @@ pub fn ensure_session_boundary_in_trusted_tiles(
         })
         .collect();
     let mut found: Vec<Value> = Vec::new();
+
+    // MQ Cycle 25: pin boundary derived from session_end_key (disk-true even if
+    // access_index.recent is flooded and misses the freshest boundary).
+    if let Some(sek) = session_end_key {
+        if let Some(ts) = sek.strip_prefix("session_end_") {
+            let pin = format!("tile:session_boundary_{ts}");
+            if seen.insert(pin.clone()) {
+                let rec = trusted_tile_concept_recency(&pin);
+                if max_boundary_recency == 0 || rec > max_boundary_recency {
+                    if let Some(block) = store.fetch_block_high_priority(&pin) {
+                        if block.crs_score >= 0.85 {
+                            found.push(json!({
+                                "concept": pin,
+                                "crs": block.crs_score,
+                                "tile_type": "session_boundary",
+                                "source": "session_end_key_pin",
+                                "reason": "session_end_key → boundary tile (access_index miss recovery)",
+                            }));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     for (concept, _) in store.access_index.recent(48) {
         if !concept.starts_with("tile:session_boundary_") || !seen.insert(concept.clone()) {
             continue;
@@ -1726,8 +1762,13 @@ fn build_harness_bundle_ultra_lean_wake(
         .and_then(|v| v.as_array())
         .map(|arr| arr.iter().take(6).cloned().collect::<Vec<_>>())
         .unwrap_or_default();
-    // MQ21/22: ensure freshest session_boundary in trusted_tiles before presentation hubs.
-    let _ = ensure_session_boundary_in_trusted_tiles(store, &mut trusted_tiles);
+    // MQ21/22/25: ensure freshest session_boundary (pin session_end_key if access miss).
+    let session_end_key = rehydration_manifest
+        .as_ref()
+        .and_then(|m| m.get("session_end_key"))
+        .and_then(|v| v.as_str());
+    let _ =
+        ensure_session_boundary_in_trusted_tiles_opts(store, &mut trusted_tiles, session_end_key);
     let mut hubs = hub_anchors_from_manifest(rehydration_manifest.as_ref());
     if hubs.is_empty() {
         hubs.push("primary_goal".into());
@@ -3164,6 +3205,63 @@ SESSION HANDOFF PACKET v1 (structured JSON for next-wake read_concept)
         assert_eq!(
             shuffled[0].get("concept").and_then(|v| v.as_str()),
             Some("tile:session_boundary_1784159999")
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// MQ Cycle 25: session_end_key pin recovers boundary missing from access_index.recent.
+    #[test]
+    fn ensure_session_boundary_pins_session_end_key_tile() {
+        std::env::set_var("ENGRAM_DISABLE_SHEAF", "1");
+        std::env::set_var("ENGRAM_FORCE_CPU_BACKEND", "1");
+        std::env::set_var("ENGRAM_KI_DISABLE", "1");
+        let dir = std::env::temp_dir().join(format!(
+            "mq25_session_end_pin_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).ok();
+        let mut store = StoreHandle::new(&dir.to_string_lossy());
+        let body =
+            "THOUGHT TILE\n\n**tile_type:** session_boundary\n**title:** t\n\n**payload:** {}\n";
+        // Older boundary is on access_index; newer exists only by direct store (pin path).
+        let mut old_b = store.encode(body);
+        old_b.crs_score = 0.91;
+        store
+            .store("tile:session_boundary_1784160439", old_b)
+            .unwrap();
+        store.access_index.touch("tile:session_boundary_1784160439");
+        let mut new_b = store.encode(body);
+        new_b.crs_score = 0.91;
+        // Store without touch — simulates access_index.recent miss.
+        store
+            .store("tile:session_boundary_1784161281", new_b)
+            .unwrap();
+
+        let mut frozen = vec![json!({
+            "concept": "tile:session_boundary_1784160439",
+            "crs": 0.91,
+            "tile_type": "session_boundary",
+            "source": "frozen",
+        })];
+        // Without pin: recent may only see old (or nothing fresher).
+        // With pin from session_end_key: must surface 1281.
+        assert!(ensure_session_boundary_in_trusted_tiles_opts(
+            &mut store,
+            &mut frozen,
+            Some("session_end_1784161281"),
+        ));
+        assert_eq!(
+            frozen[0].get("concept").and_then(|v| v.as_str()),
+            Some("tile:session_boundary_1784161281"),
+            "session_end pin must win, got {frozen:?}"
+        );
+        assert_eq!(
+            frozen[0].get("source").and_then(|v| v.as_str()),
+            Some("session_end_key_pin")
         );
         let _ = std::fs::remove_dir_all(&dir);
     }

@@ -2811,6 +2811,7 @@ impl StoreHandle {
                 "mq_csf_session_boundary_prefer": true,
                 "mq_trusted_tiles_boundary_recency": true,
                 "mq_trusted_tiles_boundary_merge_fresh": true,
+                "mq_trusted_tiles_session_end_pin": true,
                 "mq_presentation_prefer_trusted_boundary": true,
                 "mq_hub_crs_lean_sample": true,
                 "mq_rehydrate_injection_completeness_lean": true,
@@ -5733,16 +5734,25 @@ impl StoreHandle {
             }
         }
         // MQ Cycle 11: non-empty mvp formal_spec list still freezes without session_boundary.
+        // MQ Cycle 25: pass session_end_key so pin recovers access_index.recent misses.
         let mut boundary_prefer = false;
         {
+            let session_end_key = bundle
+                .get("rehydration_manifest")
+                .and_then(|m| m.get("session_end_key"))
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
             let mut tiles: Vec<serde_json::Value> = bundle
                 .get("rehydration_manifest")
                 .and_then(|m| m.get("trusted_tiles"))
                 .and_then(|v| v.as_array())
                 .cloned()
                 .unwrap_or_default();
-            if crate::harness_injection::ensure_session_boundary_in_trusted_tiles(self, &mut tiles)
-            {
+            if crate::harness_injection::ensure_session_boundary_in_trusted_tiles_opts(
+                self,
+                &mut tiles,
+                session_end_key.as_deref(),
+            ) {
                 boundary_prefer = true;
                 fidelity_inputs.trusted_tile_count = tiles.len().min(12);
                 if let Some(obj) = bundle.as_object_mut() {
