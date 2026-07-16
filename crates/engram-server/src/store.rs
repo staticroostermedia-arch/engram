@@ -2913,6 +2913,7 @@ impl StoreHandle {
                 "ub_temporal_geometry_frame_lawful": true,
                 "ub_sheaf_glue_relations": true,
                 "mq_praxis_store_contract_seal": true,
+                "mq_praxis_legacy_contract_heal": true,
                 "ub_provlog_richness_recorded_at": true,
                 "ub_geosphere_frame_hot_geo_context": true,
                 "mq_goal_children_prefer_active": true,
@@ -10125,6 +10126,60 @@ impl StoreHandle {
         })
     }
 
+    /// MQ Cycle 48: re-seal **legacy** PRAXIS blocks whose `allowed_transforms` lack
+    /// `evidence_update` (minted via paths that skipped `assign_reflexive_contract`
+    /// before MQ47 store-path seal). Bounded sample/heal; idempotent.
+    ///
+    /// Returns count of concepts healed. Prefer calling after VERIFY₀ needs_review
+    /// on PRAXIS permissive-contract samples.
+    pub fn heal_praxis_store_contracts(&mut self, max_heal: usize) -> Result<u32> {
+        let max_heal = max_heal.clamp(1, 500);
+        let total = self.leg_block_count();
+        let large = total > Self::LARGE_MANIFOLD_THRESHOLD;
+        let probe_cap = (max_heal * 40).clamp(200, 5000);
+        let concepts: Vec<String> = if large {
+            self.sample_concepts_for_overview(probe_cap)
+        } else {
+            self.backend.list()
+        };
+        let mut healed = 0u32;
+        for concept in concepts {
+            if healed as usize >= max_heal {
+                break;
+            }
+            let Some(mut block) = self
+                .fetch_block(&concept)
+                .or_else(|| self.fetch_block_high_priority(&concept))
+            else {
+                continue;
+            };
+            if block.zedos_tag != engram_core::types::ZEDOS_PRAXIS {
+                continue;
+            }
+            let contract = std::str::from_utf8(&block.allowed_transforms).unwrap_or("");
+            if contract.contains("evidence_update") {
+                continue;
+            }
+            assign_reflexive_contract(&mut block);
+            // store() re-checks seal + stamps provlog richness; activity logged.
+            self.store(&concept, block)?;
+            healed += 1;
+        }
+        Ok(healed)
+    }
+
+    /// Test-only: write a block bypassing store-path PRAXIS seal / provlog stamp.
+    #[cfg(test)]
+    pub(crate) fn test_backend_store_raw(
+        &self,
+        concept: &str,
+        block: Leg3Pointer,
+    ) -> Result<()> {
+        self.backend.store(concept, block)?;
+        self.invalidate_leg_block_count();
+        Ok(())
+    }
+
     /// Invoke an executable Praxis Protocol (Item 3 vertical slice).
     /// Performs the full 7-point verification gate before dispatch.
     pub fn invoke_protocol(
@@ -14581,6 +14636,93 @@ mod mq_praxis_store_contract_tests {
         std::env::remove_var("ENGRAM_DISABLE_SHEAF");
         std::env::remove_var("ENGRAM_FORCE_CPU_BACKEND");
         std::env::remove_var("ENGRAM_KI_DISABLE");
+    }
+
+    /// MQ Cycle 48: heal_praxis_store_contracts reseals legacy raw PRAXIS.
+    #[test]
+    fn mq_praxis_legacy_contract_heal() {
+        let dir = test_store_dir("heal");
+        let mut store = StoreHandle::new(&dir.to_string_lossy());
+        let mut block = store.encode(
+            "THOUGHT TILE\n\n**tile_type:** verified_sequence\n**title:** mq48 legacy heal\n",
+        );
+        block.zedos_tag = engram_core::types::ZEDOS_PRAXIS;
+        block.crs_score = 0.90;
+        // Plant legacy: v1 full DSL without evidence_update, bypass store seal.
+        block.allowed_transforms = engram_core::types::default_allowed_transforms_v1();
+        let before = std::str::from_utf8(&block.allowed_transforms).unwrap_or("");
+        assert!(
+            !before.contains("evidence_update"),
+            "precondition bad contract: {before:?}"
+        );
+        store
+            .test_backend_store_raw("tile:verified_sequence_mq48_legacy_heal", block)
+            .expect("raw plant");
+
+        let planted = store
+            .fetch_block("tile:verified_sequence_mq48_legacy_heal")
+            .expect("fetch planted");
+        let planted_c = std::str::from_utf8(&planted.allowed_transforms).unwrap_or("");
+        assert!(
+            !planted_c.contains("evidence_update"),
+            "planted must still be unsealed: {planted_c:?}"
+        );
+
+        let healed = store.heal_praxis_store_contracts(50).expect("heal");
+        assert!(healed >= 1, "expected at least one heal, got {healed}");
+
+        let fixed = store
+            .fetch_block("tile:verified_sequence_mq48_legacy_heal")
+            .expect("fetch fixed");
+        let fixed_c = std::str::from_utf8(&fixed.allowed_transforms).unwrap_or("");
+        assert!(
+            fixed_c.contains("evidence_update"),
+            "healed PRAXIS must contain evidence_update: {fixed_c:?}"
+        );
+
+        let healed2 = store.heal_praxis_store_contracts(50).expect("re-heal");
+        assert_eq!(healed2, 0, "idempotent heal");
+
+        let report = store
+            .verify_manifold_integrity(ManifoldVerificationOptions {
+                min_crs: 0.0,
+                sample_size: Some(20),
+                include_relation_integrity: false,
+            })
+            .expect("verify");
+        let praxis_issues: Vec<&String> = report
+            .issues
+            .iter()
+            .filter(|i| i.contains("mq48_legacy_heal") && i.contains("PRAXIS"))
+            .collect();
+        assert!(
+            praxis_issues.is_empty(),
+            "healed tile must not fail verify: {praxis_issues:?}"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+        std::env::remove_var("ENGRAM_DISABLE_SHEAF");
+        std::env::remove_var("ENGRAM_FORCE_CPU_BACKEND");
+        std::env::remove_var("ENGRAM_KI_DISABLE");
+    }
+
+    /// Live stalk heal: `ENGRAM_HEAL_LIVE=1 cargo test -p engram-server mq_praxis_heal_live -- --ignored --nocapture`
+    #[test]
+    #[ignore = "live stalk — opt-in via ENGRAM_HEAL_LIVE=1"]
+    fn mq_praxis_heal_live_store() {
+        if std::env::var("ENGRAM_HEAL_LIVE").ok().as_deref() != Some("1") {
+            return;
+        }
+        let path = std::env::var("ENGRAM_STORE").unwrap_or_else(|_| {
+            let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
+            format!("{home}/.engram/stalks/")
+        });
+        let mut store = StoreHandle::new(&path);
+        let n = store
+            .heal_praxis_store_contracts(200)
+            .expect("live heal");
+        eprintln!("mq_praxis_heal_live: healed={n} store={path}");
+        assert!(n < 200 || n == 200, "healed count {n}");
     }
 }
 
