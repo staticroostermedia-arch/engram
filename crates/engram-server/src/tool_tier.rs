@@ -88,6 +88,7 @@ pub fn is_lean_ok(tool: &str) -> bool {
             | "mcp_engram_tensor_recall"
             | "mcp_engram_tensor_upsert"
             | "mcp_engram_promote_hot"
+            | "mcp_engram_apply_capacity_hot_compress"
             | "mcp_engram_demote_from_context"
             | "mcp_engram_evolution_at_locus"
             | "mcp_engram_context_for_file"

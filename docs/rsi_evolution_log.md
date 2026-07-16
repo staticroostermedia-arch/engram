@@ -5045,3 +5045,31 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 
 1. MCP swap UB20 LIVE — expect compress_path.suggested under soft_elevated.
 2. Wire MCP tool or daemon soft_elevated auto-trim (capped); optional nrem candidate count on plan.
+
+## UB Cycle 21 — MCP wire apply_capacity_hot_compress + nrem counts (2026-07-16)
+
+### VERIFY₀ baseline
+
+- master@`9584630a` UB20 #203.
+- CSF **0.943**; trust_ok **true**; lawfulness **healthy**; warm_ms **1**; capacity **soft_elevated_hot_set** hot~1248.
+- Residual: live MCP missing `ub_capacity_nrem_hot_compress_path` / `compress_path` (stale process); agents cannot invoke apply.
+
+### SELECT
+
+**ub_capacity_hot_compress_mcp** — MCP tool + plan demotable counts / mcp_tool name.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| MCP | `mcp_engram_apply_capacity_hot_compress` (max_unmark, dry_run) |
+| Lean tier | tool allowed on agent lean highway |
+| Plan | `plan_capacity_hot_compress_ex` + `nrem_candidate_count` / demotable / protected |
+| Snapshot | compress_path.mcp_tool + counts |
+| Flag | `ub_capacity_hot_compress_mcp` |
+| Test | `ub_capacity_hot_compress_mcp_wires_apply` |
+
+### Next vectors
+
+1. MCP kill/swap UB21 LIVE — compress_path.suggested + tool invocable; dry_run then capped apply on soft_elevated.
+2. Optional daemon auto-trim when soft_elevated (capped, after agent path proven).
