@@ -1645,13 +1645,65 @@ fn build_ego_snapshot_ultra_lean(
     snap
 }
 
+/// MQ Cycle 23: lean presentation hubs should surface `trusted_tiles[0]` session_boundary
+/// (latest-wins) instead of frozen rehydration_manifest hub order (often an old boundary).
+/// Returns true if hub list was modified.
+pub fn prefer_trusted_boundary_in_hub_anchors(
+    hubs: &mut Vec<String>,
+    trusted_tiles: &[Value],
+) -> bool {
+    let top = match trusted_tiles.first().and_then(|t| {
+        let c = t.get("concept").and_then(|v| v.as_str()).unwrap_or("");
+        let tt = t.get("tile_type").and_then(|v| v.as_str()).unwrap_or("");
+        if tt == "session_boundary" || c.starts_with("tile:session_boundary_") {
+            Some(c.to_string())
+        } else {
+            None
+        }
+    }) {
+        Some(c) if !c.is_empty() => c,
+        _ => return false,
+    };
+
+    let first_boundary = hubs
+        .iter()
+        .position(|h| h.starts_with("tile:session_boundary_"));
+    if first_boundary.map(|i| hubs[i].as_str()) == Some(top.as_str()) {
+        return false;
+    }
+
+    hubs.retain(|h| !h.starts_with("tile:session_boundary_"));
+    // Insert after core continuity slots (primary / goal / handoff / traces).
+    let mut insert_at = 0usize;
+    for (i, h) in hubs.iter().enumerate() {
+        if h == "primary_goal"
+            || h.starts_with("goal:")
+            || h.starts_with("helper:")
+            || h.starts_with("trace:")
+        {
+            insert_at = i + 1;
+        }
+    }
+    hubs.insert(insert_at.min(hubs.len()), top.clone());
+    // Follow with remaining trusted boundaries (already recency-ranked).
+    for t in trusted_tiles.iter().skip(1).take(4) {
+        if let Some(c) = t.get("concept").and_then(|v| v.as_str()) {
+            if c.starts_with("tile:session_boundary_") && !hubs.iter().any(|h| h == c) {
+                hubs.push(c.to_string());
+            }
+        }
+    }
+    let _ = top;
+    true
+}
+
 /// RSI Cycle 68: session_start harness — essentials only (no hub ProvLog body reads).
 fn build_harness_bundle_ultra_lean_wake(
     store: &mut StoreHandle,
     session_intent: Option<&str>,
     presentation_k: usize,
 ) -> Value {
-    let rehydration_manifest = store.resolve_rehydration_manifest_for_wake();
+    let mut rehydration_manifest = store.resolve_rehydration_manifest_for_wake();
     // RSI Cycle 76: prefer manifest primary_goal — skip resolve_active_primary_goal (2–3 block reads)
     // when handoff already carries the name.
     let primary_goal = rehydration_manifest
@@ -1668,6 +1720,14 @@ fn build_harness_bundle_ultra_lean_wake(
         .and_then(|v| v.as_str())
         .filter(|h| !h.is_empty())
         .map(|s| s.to_string());
+    let mut trusted_tiles = rehydration_manifest
+        .as_ref()
+        .and_then(|m| m.get("trusted_tiles"))
+        .and_then(|v| v.as_array())
+        .map(|arr| arr.iter().take(6).cloned().collect::<Vec<_>>())
+        .unwrap_or_default();
+    // MQ21/22: ensure freshest session_boundary in trusted_tiles before presentation hubs.
+    let _ = ensure_session_boundary_in_trusted_tiles(store, &mut trusted_tiles);
     let mut hubs = hub_anchors_from_manifest(rehydration_manifest.as_ref());
     if hubs.is_empty() {
         hubs.push("primary_goal".into());
@@ -1676,16 +1736,25 @@ fn build_harness_bundle_ultra_lean_wake(
         }
         hubs.push(SESSION_HANDOFF_LATEST.to_string());
     }
+    // MQ Cycle 23: presentation must not rank stale frozen boundary over trusted_tiles[0].
+    let hubs_prefer = prefer_trusted_boundary_in_hub_anchors(&mut hubs, &trusted_tiles);
+    if hubs_prefer {
+        if let Some(m) = rehydration_manifest
+            .as_mut()
+            .and_then(|v| v.as_object_mut())
+        {
+            m.insert("hub_anchors".to_string(), json!(hubs.clone()));
+            m.insert(
+                "hub_anchors_prefer_trusted_boundary".to_string(),
+                json!(true),
+            );
+            m.insert("trusted_tiles".to_string(), json!(trusted_tiles.clone()));
+        }
+    }
     let budget = presentation_k.clamp(5, 8);
     // Name-only presentation: hub concepts without ProvLog preview reads (C68).
     let presentation_stratum =
         crate::presentation_stratum::build_presentation_stratum_from_hub_names(&hubs, budget);
-    let trusted_tiles = rehydration_manifest
-        .as_ref()
-        .and_then(|m| m.get("trusted_tiles"))
-        .and_then(|v| v.as_array())
-        .map(|arr| arr.iter().take(6).cloned().collect::<Vec<_>>())
-        .unwrap_or_default();
     // RSI Cycle 76: skip ego.leg3 entirely on ultra-lean (C69 still paid one read).
     // Turn/minute sentinel alone drives rehydrate nudge; ego drift via get_continuation_bundle.
     let ego_block: Option<engram_core::types::HolographicBlock> = None;
@@ -3097,6 +3166,47 @@ SESSION HANDOFF PACKET v1 (structured JSON for next-wake read_concept)
             Some("tile:session_boundary_1784159999")
         );
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// MQ Cycle 23: presentation hubs prefer trusted_tiles[0] over frozen hub order.
+    #[test]
+    fn prefer_trusted_boundary_rewrites_stale_hub_first_tile() {
+        let mut hubs = vec![
+            "primary_goal".to_string(),
+            "helper:session_handoff_latest".to_string(),
+            "trace:1784159744_session_end_boundary_auto".to_string(),
+            "tile:session_boundary_1784156060".to_string(),
+            "tile:session_boundary_1784151768".to_string(),
+        ];
+        let trusted = vec![
+            json!({
+                "concept": "tile:session_boundary_1784159744",
+                "crs": 0.91,
+                "tile_type": "session_boundary",
+            }),
+            json!({
+                "concept": "tile:session_boundary_1784158968",
+                "crs": 0.91,
+                "tile_type": "session_boundary",
+            }),
+        ];
+        assert!(prefer_trusted_boundary_in_hub_anchors(&mut hubs, &trusted));
+        let first_boundary = hubs
+            .iter()
+            .find(|h| h.starts_with("tile:session_boundary_"))
+            .map(|s| s.as_str());
+        assert_eq!(
+            first_boundary,
+            Some("tile:session_boundary_1784159744"),
+            "presentation first boundary must be trusted_tiles[0], got {hubs:?}"
+        );
+        // Core anchors preserved ahead of boundary.
+        assert_eq!(hubs[0], "primary_goal");
+        assert_eq!(hubs[1], "helper:session_handoff_latest");
+        assert_eq!(hubs[2], "trace:1784159744_session_end_boundary_auto");
+        assert_eq!(hubs[3], "tile:session_boundary_1784159744");
+        // Idempotent when already preferred.
+        assert!(!prefer_trusted_boundary_in_hub_anchors(&mut hubs, &trusted));
     }
 
     /// MQ Cycle 22: frozen all-boundary list must merge fresher access_index tiles.
