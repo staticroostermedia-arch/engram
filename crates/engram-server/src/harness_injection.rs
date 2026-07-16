@@ -1948,14 +1948,29 @@ fn build_harness_bundle_ultra_lean_wake(
 }
 
 /// MQ Cycle 32: first `goal:*` child via decomposes_into (no list-all, single relation query).
+/// MQ Cycle 34: prefer **active** children; fall back to first goal:* only if none active.
 fn first_lean_goal_child_concept(store: &StoreHandle, parent: Option<&str>) -> Option<String> {
     let parent = parent.filter(|s| !s.is_empty() && *s != "unset")?;
+    let mut fallback: Option<String> = None;
     for (_label, other) in store.search_relations(parent, Some("decomposes_into"), "from") {
-        if other.starts_with("goal:") {
+        if !other.starts_with("goal:") {
+            continue;
+        }
+        let active = store
+            .fetch_block_high_priority(&other)
+            .map(|b| {
+                let text = crate::store::goal_block_text(&b);
+                crate::store::goal_status_is_active(&text)
+            })
+            .unwrap_or(false);
+        if active {
             return Some(other);
         }
+        if fallback.is_none() {
+            fallback = Some(other);
+        }
     }
-    None
+    fallback
 }
 
 /// RSI Cycle 72: lean wake queue from pre-resolved manifest (zero extra store I/O).
@@ -3327,6 +3342,59 @@ SESSION HANDOFF PACKET v1 (structured JSON for next-wake read_concept)
         assert_eq!(
             first_lean_goal_child_concept(&store, Some("goal:engram_memory_quality_v1")).as_deref(),
             Some("goal:mq32_child")
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// MQ Cycle 34: prefer active child over completed when both exist.
+    #[test]
+    fn first_lean_goal_child_prefers_active_over_completed() {
+        std::env::set_var("ENGRAM_DISABLE_SHEAF", "1");
+        std::env::set_var("ENGRAM_FORCE_CPU_BACKEND", "1");
+        std::env::set_var("ENGRAM_KI_DISABLE", "1");
+        let dir = std::env::temp_dir().join(format!(
+            "mq34_prefer_active_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).ok();
+        let mut store = StoreHandle::new(&dir.to_string_lossy());
+        store
+            .remember(
+                "goal:engram_memory_quality_v1",
+                "GOAL\n\n**status:** active\n",
+            )
+            .unwrap();
+        // Relation order: completed first (would steal pin pre-MQ34).
+        store
+            .remember(
+                "goal:mq34_done",
+                "GOAL BLOCK (subgoal)\n\n**status:** completed\n",
+            )
+            .unwrap();
+        store
+            .remember(
+                "goal:mq34_active",
+                "GOAL BLOCK (subgoal)\n\n**status:** active\n",
+            )
+            .unwrap();
+        let _ = store.relate(
+            "goal:engram_memory_quality_v1",
+            "goal:mq34_done",
+            "decomposes_into",
+        );
+        let _ = store.relate(
+            "goal:engram_memory_quality_v1",
+            "goal:mq34_active",
+            "decomposes_into",
+        );
+        assert_eq!(
+            first_lean_goal_child_concept(&store, Some("goal:engram_memory_quality_v1")).as_deref(),
+            Some("goal:mq34_active"),
+            "must skip completed sibling for SELECT pin"
         );
         let _ = std::fs::remove_dir_all(&dir);
     }

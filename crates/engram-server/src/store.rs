@@ -2810,6 +2810,7 @@ impl StoreHandle {
                 "mq_write_hygiene_prior_receipt_seed": true,
                 "mq_write_hygiene_mint_tile_scar": true,
                 "mq_write_hygiene_goal_mint": true,
+                "mq_goal_children_prefer_active": true,
                 "mq_write_hygiene_prior_any_activity": true,
                 "mq_lean_open_scars_access_index": true,
                 "mq_lean_open_scars_slim_hoist": true,
@@ -6041,19 +6042,40 @@ impl StoreHandle {
                     "status": status,
                     "preview": preview,
                 }));
-                if children.len() >= 8 {
+                if children.len() >= 16 {
+                    // Collect a bit more then rank active first (cap 8 after sort).
                     break;
                 }
             }
-            if children.len() >= 8 {
+            if children.len() >= 16 {
                 break;
             }
         }
+        // MQ Cycle 34: active children first so SELECT pin + surface match.
+        children.sort_by(|a, b| {
+            let a_active = a
+                .get("status")
+                .and_then(|v| v.as_str())
+                .map(|s| s.eq_ignore_ascii_case("active"))
+                .unwrap_or(false);
+            let b_active = b
+                .get("status")
+                .and_then(|v| v.as_str())
+                .map(|s| s.eq_ignore_ascii_case("active"))
+                .unwrap_or(false);
+            b_active.cmp(&a_active).then_with(|| {
+                let ac = a.get("concept").and_then(|v| v.as_str()).unwrap_or("");
+                let bc = b.get("concept").and_then(|v| v.as_str()).unwrap_or("");
+                ac.cmp(bc)
+            })
+        });
+        children.truncate(8);
         serde_json::json!({
             "version": "mq_goal_children_v1",
             "parent": seed,
             "count": children.len(),
             "children": children,
+            "ranking": "active_first_v1",
             "hint": if children.is_empty() {
                 "no decomposes_into/has_child under primary — goal_decompose backlog or relate children"
             } else {
@@ -10984,6 +11006,64 @@ mod ingest_ast_tests {
             store
                 .backend_readiness()
                 .get("mq_goal_children_lean")
+                .and_then(|v| v.as_bool()),
+            Some(true)
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// MQ Cycle 34: goal_children ranks active before completed.
+    #[test]
+    fn mq_goal_children_prefers_active_first() {
+        let dir = test_store_dir("mq34_goal_children_active");
+        let mut store = StoreHandle::new(&dir.to_string_lossy());
+        store
+            .remember(
+                "goal:engram_memory_quality_v1",
+                "GOAL\n\n**status:** active\n",
+            )
+            .unwrap();
+        store
+            .remember(
+                "goal:mq34_completed",
+                "GOAL BLOCK (subgoal)\n\n**status:** completed\n",
+            )
+            .unwrap();
+        store
+            .remember(
+                "goal:mq34_active",
+                "GOAL BLOCK (subgoal)\n\n**status:** active\n",
+            )
+            .unwrap();
+        let _ = store.relate(
+            "goal:engram_memory_quality_v1",
+            "goal:mq34_completed",
+            "decomposes_into",
+        );
+        let _ = store.relate(
+            "goal:engram_memory_quality_v1",
+            "goal:mq34_active",
+            "decomposes_into",
+        );
+        let gc =
+            StoreHandle::build_lean_goal_children(&store, Some("goal:engram_memory_quality_v1"));
+        assert_eq!(
+            gc.get("ranking").and_then(|v| v.as_str()),
+            Some("active_first_v1")
+        );
+        let kids = gc
+            .get("children")
+            .and_then(|v| v.as_array())
+            .expect("children");
+        assert_eq!(kids.len(), 2);
+        assert_eq!(
+            kids[0].get("concept").and_then(|v| v.as_str()),
+            Some("goal:mq34_active")
+        );
+        assert_eq!(
+            store
+                .backend_readiness()
+                .get("mq_goal_children_prefer_active")
                 .and_then(|v| v.as_bool()),
             Some(true)
         );
