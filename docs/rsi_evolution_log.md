@@ -4069,3 +4069,31 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 1. MCP swap MQ33; confirm goal_decompose increments mints after recall gate open.
 2. Optional #134 C86 if soft-stale warm floor fails.
 3. Next quality child (relation harness / capacity if measured).
+
+## MQ Cycle 34 — prefer active goal children for pin + ranking (2026-07-15)
+
+### VERIFY₀ baseline
+
+- master@`1eacd99a` MQ33 #167.
+- MCP swapped: `mq_write_hygiene_goal_mint` LIVE ✓.
+- Residual: `first_lean_goal_child_concept` claimed “active” but returned first `goal:*` regardless of status — completed siblings could steal SELECT pin; `goal_children` list unranked.
+- CSF warm **0.941**; goal_children=4; dual-gate green; verify healthy.
+
+### SELECT
+
+**mq_write_hygiene** residual — goal stack hygiene: pin/rank **active** children first.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Pin | `first_lean_goal_child_concept` skips non-active (fallback if none active) |
+| Surface | `build_lean_goal_children` ranking `active_first_v1` |
+| Flag | `mq_goal_children_prefer_active` |
+| Tests | `first_lean_goal_child_prefers_active_over_completed`, `mq_goal_children_prefers_active_first` |
+
+### Next vectors
+
+1. MCP swap MQ34; confirm active child ranked first when completed sibling present.
+2. Optional #134 C86 if soft-stale warm floor fails.
+3. Next quality child (relation harness / capacity if measured).
