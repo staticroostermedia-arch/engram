@@ -4541,3 +4541,30 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 
 1. MCP swap UB4; confirm first goal_child is not capacity when risk nominal.
 2. Next distill: ub_lexicon_update_path / ub_holographic_bind.
+
+## UB Cycle 5 — lexicon upsert prefers update over mint (2026-07-16)
+
+### VERIFY₀ baseline
+
+- master@`895299f5` UB4 #184.
+- MCP swapped: `ub_goal_children_demote_capacity_nominal` LIVE; capacity_demoted=true; first child=continuity_gate.
+- Residual: `mcp_engram_lexicon_mint_word` always `store()`d — re-seed of known words = mint spam.
+- CSF **0.937**; verify healthy; dual-gate green; capacity risk nominal.
+
+### SELECT
+
+**ub_lexicon_update_path** — upsert routes existing `lexicon:word:*` through Lyapunov update + VSA rebind.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| API | `upsert_lexicon_word` / `update_lexicon_word`; mint fails-closed if exists |
+| MCP | mint tool returns `action` mint\|update + `preferred_update_over_mint` |
+| Flag | `ub_lexicon_update_path` |
+| Test | `ub_lexicon_upsert_prefers_update_when_exists` |
+
+### Next vectors
+
+1. MCP swap UB5; re-seed a known word → action=update.
+2. Next distill: ub_holographic_bind / ub_temporal_geometry / ub_sheaf_glue.

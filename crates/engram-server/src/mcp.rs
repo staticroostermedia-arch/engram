@@ -1863,7 +1863,7 @@ fn tool_list() -> Value {
             },
             {
                 "name": "mcp_engram_lexicon_mint_word",
-                "description": "Lexicon seed — mint a lexicon:word:* atom with definition + etymology ProvLog, VSA OP_BIND of def/etym phases, dynamical CRS ≥ 0.74, and relate to genesis pillars + linguistic_reference_frame. Ritual: process:engram.ritual.lexicon-seed. FEW-SHOT: {\"word\":\"engram\",\"definition\":\"A durable geometric memory atom.\",\"etymology\":\"Greek en- + gramma\",\"pillars\":[\"language\",\"self\"]}",
+                "description": "Lexicon seed — upsert lexicon:word:* (mint if new; **update** if exists — UB5 write wisdom). Definition + etymology ProvLog, VSA OP_BIND, CRS ≥ 0.74, pillar glue. Returns action mint|update. Ritual: process:engram.ritual.lexicon-seed. FEW-SHOT: {\"word\":\"engram\",\"definition\":\"A durable geometric memory atom.\",\"etymology\":\"Greek en- + gramma\",\"pillars\":[\"language\",\"self\"]}",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
