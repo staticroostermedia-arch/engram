@@ -4486,3 +4486,31 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 1. MCP swap UB2; confirm distillation.complete or has_selected_child on wake from prior handoff body.
 2. goal_decompose ub_* children under goal:engram_ultimate_backend_v1.
 3. Next distill: ub_relation_density / ub_lexicon_update_path.
+
+## UB Cycle 3 — relation_resume structure reserve 3 (2026-07-15)
+
+### VERIFY₀ baseline
+
+- master@`d1b9da45` UB2 #182.
+- MCP swapped: `ub_handoff_distillate_summary_reparse` LIVE; distillation.complete=true, has_selected_child=true.
+- goal_children=5 under ultimate_backend; residual: relation_resume structure_edges_in_top=1 pinned only ub_capacity_policy.
+- CSF **0.937**; verify healthy; dual-gate green; capacity risk nominal.
+
+### SELECT
+
+**ub_relation_density** — STRUCTURE_RESERVED 1→3 so multiple active goal children surface for SELECT.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Reserve | STRUCTURE_RESERVED=3; ranking `recency_structure_active_v2` |
+| Field | `structure_reserve` on relation_resume |
+| Flag | `ub_relation_resume_structure_reserve_3` |
+| Test | `ub_relation_resume_structure_reserve_three_active_children` |
+
+### Next vectors
+
+1. MCP swap UB3; confirm structure_edges_in_top≥3 under ultimate_backend with 5 children.
+2. Optional demote capacity_policy when risk nominal.
+3. Next distill: ub_lexicon_update_path / ub_holographic_bind.
