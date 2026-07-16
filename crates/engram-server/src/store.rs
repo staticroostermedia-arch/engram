@@ -1420,6 +1420,24 @@ fn oracle_fallthrough_inner(query: &str) -> Option<Memory> {
     })
 }
 
+/// UB Cycle 9: if ProvLog lacks `**recorded_at:**`, append recorded_at + concept stamps.
+/// Returns `Some(enriched)` when a stamp was applied, else `None` (already rich / empty skip).
+pub(crate) fn ensure_provlog_recorded_at(body: &str, concept: &str) -> Option<String> {
+    if body.contains("**recorded_at:**") {
+        return None;
+    }
+    // Avoid stamping empty/whitespace-only (placeholder blocks) — still stamp short content.
+    let ts = chrono::Utc::now().to_rfc3339();
+    let mut out = body.to_string();
+    if !out.is_empty() && !out.ends_with('\n') {
+        out.push('\n');
+    }
+    out.push_str(&format!(
+        "\n**recorded_at:** {ts}\n**concept:** {concept}\n**ub_provlog_richness:** v1\n"
+    ));
+    Some(out)
+}
+
 pub(crate) fn assign_reflexive_contract(block: &mut engram_core::types::Leg3Pointer) {
     use engram_core::types::{
         ZEDOS_DECLARATIVE, ZEDOS_EPISODIC, ZEDOS_PRAXIS, ZEDOS_RELATION, ZEDOS_TRAINING,
@@ -2895,6 +2913,7 @@ impl StoreHandle {
                 "ub_temporal_geometry_frame_lawful": true,
                 "ub_sheaf_glue_relations": true,
                 "mq_praxis_store_contract_seal": true,
+                "ub_provlog_richness_recorded_at": true,
                 "mq_goal_children_prefer_active": true,
                 "mq_goal_child_pin_matches_rank": true,
                 "mq_write_hygiene_prior_any_activity": true,
@@ -3524,33 +3543,9 @@ impl StoreHandle {
         // RSI Cycle 34: encrypt-at-rest seals ProvLog after geometric encode (q stays plaintext-derived).
         Self::maybe_seal_block_provlog(concept, &mut block);
 
-        let trace_fork_detail = if concept.starts_with("trace:") {
-            let text = engram_core::storage::read_provlog(&block);
-            // Fork detail from sealed body is opaque; unwrap if needed for mirror metadata.
-            let plain = Self::plain_provlog_for_update(concept, &text).unwrap_or(text);
-            crate::mirror::trace_fork_detail(&plain)
-        } else {
-            None
-        };
-
-        let r = self.backend.store(concept, block);
-        if r.is_ok() {
-            self.invalidate_leg_block_count();
-            self.access_index.touch(concept);
-            if concept.starts_with("trace:") {
-                self.log_activity(concept, "trace_fork", trace_fork_detail.as_deref());
-            } else {
-                let action = if concept.starts_with("tile:") {
-                    "tile"
-                } else if concept.starts_with("goal:") {
-                    "goal"
-                } else {
-                    "write"
-                };
-                self.log_activity(concept, action, None);
-            }
-        }
-        r
+        // UB Cycle 9: route through StoreHandle::store so PRAXIS seal + provlog
+        // recorded_at stamp + activity log share one write path (was backend.store).
+        self.store(concept, block)
     }
 
     pub fn recall(&mut self, query: &str, k: usize) -> Vec<Memory> {
@@ -7398,6 +7393,17 @@ impl StoreHandle {
             let contract = std::str::from_utf8(&block.allowed_transforms).unwrap_or("");
             if !contract.contains("evidence_update") {
                 assign_reflexive_contract(&mut block);
+            }
+        }
+
+        // UB Cycle 9 (`ub_provlog_richness`): stamp parseable temporal + concept
+        // provenance when missing so distillation / bi-temporal tooling can bind.
+        // Idempotent — does not re-stamp if **recorded_at:** already present.
+        {
+            let body = engram_core::storage::read_provlog(&block);
+            if let Some(rich) = ensure_provlog_recorded_at(&body, concept) {
+                engram_core::storage::write_provlog(&mut block, &rich);
+                Self::maybe_seal_block_provlog(concept, &mut block);
             }
         }
 
@@ -14396,6 +14402,86 @@ SESSION HANDOFF PACKET v1
         assert!(classic_tos.contains(&"s2") && classic_tos.contains(&"d2"));
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+/// UB Cycle 9: ProvLog richness — recorded_at + concept stamps on store.
+#[cfg(test)]
+mod ub_provlog_richness_tests {
+    use super::*;
+
+    fn test_store_dir(suffix: &str) -> std::path::PathBuf {
+        std::env::set_var("ENGRAM_DISABLE_SHEAF", "1");
+        std::env::set_var("ENGRAM_FORCE_CPU_BACKEND", "1");
+        std::env::set_var("ENGRAM_KI_DISABLE", "1");
+        let dir = std::env::temp_dir().join(format!(
+            "ub_provlog_{}_{}_{}",
+            suffix,
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).ok();
+        dir
+    }
+
+    #[test]
+    fn ensure_provlog_recorded_at_idempotent() {
+        let c = "test:ub9_concept";
+        let a = ensure_provlog_recorded_at("body line", c).expect("stamp");
+        assert!(a.contains("**recorded_at:**"));
+        assert!(a.contains("**concept:** test:ub9_concept"));
+        assert!(a.contains("**ub_provlog_richness:** v1"));
+        assert!(
+            ensure_provlog_recorded_at(&a, c).is_none(),
+            "second stamp must be no-op"
+        );
+    }
+
+    #[test]
+    fn ub_provlog_richness_store_stamps_recorded_at() {
+        let dir = test_store_dir("stamp");
+        let mut store = StoreHandle::new(&dir.to_string_lossy());
+        store
+            .remember(
+                "test:ub9_provlog_richness",
+                "Provlog richness body for distillation provenance.",
+            )
+            .expect("remember");
+        let block = store
+            .fetch_block("test:ub9_provlog_richness")
+            .expect("fetch");
+        let body = engram_core::storage::read_provlog(&block);
+        assert!(
+            body.contains("**recorded_at:**"),
+            "store path must stamp recorded_at: {body}"
+        );
+        assert!(
+            body.contains("**concept:** test:ub9_provlog_richness"),
+            "store path must stamp concept: {body}"
+        );
+        // Re-store must not duplicate stamps.
+        let mut again = block;
+        store
+            .store("test:ub9_provlog_richness", again)
+            .expect("re-store");
+        let body2 = engram_core::storage::read_provlog(
+            &store
+                .fetch_block("test:ub9_provlog_richness")
+                .expect("fetch2"),
+        );
+        assert_eq!(
+            body2.matches("**recorded_at:**").count(),
+            1,
+            "recorded_at must appear exactly once after re-store"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+        std::env::remove_var("ENGRAM_DISABLE_SHEAF");
+        std::env::remove_var("ENGRAM_FORCE_CPU_BACKEND");
+        std::env::remove_var("ENGRAM_KI_DISABLE");
     }
 }
 
