@@ -411,6 +411,38 @@ fn relation_resume_neighbor_status(store: &StoreHandle, other: &str) -> Option<S
         .and_then(|b| goal_current_status(&goal_block_text(&b)))
 }
 
+/// MQ Cycle 42: short goal-neighbor preview for structure edges (SELECT without read_concept hop).
+fn relation_resume_neighbor_preview(store: &StoreHandle, other: &str) -> Option<String> {
+    if !other.starts_with("goal:") {
+        return None;
+    }
+    let block = store.fetch_block_high_priority(other)?;
+    let text = goal_block_text(&block);
+    if text.trim().is_empty() {
+        return None;
+    }
+    // Prefer goal_statement line when present; else first non-empty body line.
+    let statement = text.lines().find_map(|l| {
+        let t = l.trim();
+        t.strip_prefix("**goal_statement:**")
+            .or_else(|| t.strip_prefix("goal_statement:"))
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+    });
+    let snippet = statement.unwrap_or_else(|| {
+        text.lines()
+            .map(str::trim)
+            .find(|l| !l.is_empty() && !l.starts_with("GOAL") && !l.starts_with("**status"))
+            .unwrap_or("")
+            .to_string()
+    });
+    if snippet.is_empty() {
+        None
+    } else {
+        Some(snippet.chars().take(120).collect())
+    }
+}
+
 pub fn default_relation_volatility(label: &str) -> f32 {
     let l = label.to_ascii_lowercase();
     if l.contains("supersedes") || l.contains("replaces") || l.contains("invalid") {
@@ -2836,6 +2868,7 @@ impl StoreHandle {
                 "mq_relation_resume_structure_boost": true,
                 "mq_relation_resume_structure_active": true,
                 "mq_relation_resume_neighbor_status": true,
+                "mq_relation_resume_neighbor_preview": true,
                 "wake_lawfulness_snapshot": true,
                 "wake_slim_mq_resume_hoist": true,
                 "mq_spatial_locus_aabb_test": true,
@@ -5982,6 +6015,7 @@ impl StoreHandle {
     /// serves-trace spam without outranking freshest traces (label boost alone loses to 2e12+ts).
     /// MQ Cycle 37: structure reserved slot prefers **active** goal children (align goal_children).
     /// MQ Cycle 38: structure edges annotate `neighbor_status` for self-sufficient SELECT.
+    /// MQ Cycle 42: structure edges also annotate `neighbor_preview` (goal statement snippet).
     pub fn build_lean_relation_resume(store: &Self, seed: Option<&str>) -> serde_json::Value {
         const TOP_K: usize = 8;
         /// Guarantee structure visibility under high serves degree (goal children are stable/low ts).
@@ -6085,6 +6119,11 @@ impl StoreHandle {
             } else {
                 None
             };
+            let neighbor_preview = if is_structure {
+                relation_resume_neighbor_preview(store, &other)
+            } else {
+                None
+            };
             let mut edge = if direction == "from" {
                 serde_json::json!({
                     "from": seed_s,
@@ -6102,10 +6141,13 @@ impl StoreHandle {
                     "resume_rank": score,
                 })
             };
-            if let Some(status) = neighbor_status {
-                edge.as_object_mut()
-                    .expect("edge object")
-                    .insert("neighbor_status".into(), serde_json::json!(status));
+            if let Some(obj) = edge.as_object_mut() {
+                if let Some(status) = neighbor_status {
+                    obj.insert("neighbor_status".into(), serde_json::json!(status));
+                }
+                if let Some(preview) = neighbor_preview {
+                    obj.insert("neighbor_preview".into(), serde_json::json!(preview));
+                }
             }
             edges.push(edge);
         }
@@ -6117,7 +6159,7 @@ impl StoreHandle {
             "ranking": "recency_structure_active_v1",
             "structure_edges_in_top": structure_edges,
             "candidates_scanned": candidates_scanned,
-            "hint": "lean graph rehydrate — serves recency + reserved active structure + neighbor_status",
+            "hint": "lean graph rehydrate — serves recency + reserved active structure + status/preview",
         })
     }
 
@@ -11313,6 +11355,7 @@ mod ingest_ast_tests {
     }
 
     /// MQ Cycle 38: structure edge neighbor_status is self-sufficient for SELECT.
+    /// MQ Cycle 42: also neighbor_preview from goal_statement.
     #[test]
     fn mq_relation_resume_structure_edge_includes_neighbor_status() {
         let dir = test_store_dir("mq38_relation_neighbor_status");
@@ -11333,7 +11376,7 @@ mod ingest_ast_tests {
         store
             .remember(
                 "goal:mq38_child_active",
-                "GOAL BLOCK (subgoal)\n\n**status:** active\n",
+                "GOAL BLOCK (subgoal)\n\n**goal_statement:** mq_capacity_policy when landfill measured\n\n**status:** active\n",
             )
             .unwrap();
         let _ = store.relate(
@@ -11360,14 +11403,22 @@ mod ingest_ast_tests {
             Some("active"),
             "neighbor_status must be active; edge={structure:?}"
         );
+        let preview = structure
+            .and_then(|e| e.get("neighbor_preview"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        assert!(
+            preview.contains("mq_capacity_policy") || preview.contains("landfill"),
+            "neighbor_preview must carry goal_statement; edge={structure:?}"
+        );
         // Serves edges must not claim neighbor_status (goal-only annotation).
         let serves_with_status = edges.iter().any(|e| {
             e.get("label").and_then(|v| v.as_str()) == Some("serves")
-                && e.get("neighbor_status").is_some()
+                && (e.get("neighbor_status").is_some() || e.get("neighbor_preview").is_some())
         });
         assert!(
             !serves_with_status,
-            "serves edges must not carry neighbor_status; edges={edges:?}"
+            "serves edges must not carry neighbor_status/preview; edges={edges:?}"
         );
         assert_eq!(
             store
@@ -11375,6 +11426,58 @@ mod ingest_ast_tests {
                 .get("mq_relation_resume_neighbor_status")
                 .and_then(|v| v.as_bool()),
             Some(true)
+        );
+        assert_eq!(
+            store
+                .backend_readiness()
+                .get("mq_relation_resume_neighbor_preview")
+                .and_then(|v| v.as_bool()),
+            Some(true)
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// MQ Cycle 42: dedicated preview field on structure edges.
+    #[test]
+    fn mq_relation_resume_structure_edge_includes_neighbor_preview() {
+        let dir = test_store_dir("mq42_relation_neighbor_preview");
+        let mut store = StoreHandle::new(&dir.to_string_lossy());
+        store
+            .remember(
+                "goal:engram_memory_quality_v1",
+                "GOAL\n\n**status:** active\n",
+            )
+            .unwrap();
+        for i in 0..10 {
+            let name = format!("trace:178410300{i}_mq42-serves");
+            store
+                .remember(&name, "REASONING TRACE\n\n**decision_point:** filler\n")
+                .unwrap();
+            let _ = store.relate(&name, "goal:engram_memory_quality_v1", "serves");
+        }
+        store
+            .remember(
+                "goal:mq42_preview_child",
+                "GOAL BLOCK (subgoal)\n\n**goal_statement:** surface goal statement on structure edge\n\n**status:** active\n",
+            )
+            .unwrap();
+        let _ = store.relate(
+            "goal:engram_memory_quality_v1",
+            "goal:mq42_preview_child",
+            "decomposes_into",
+        );
+        let rr =
+            StoreHandle::build_lean_relation_resume(&store, Some("goal:engram_memory_quality_v1"));
+        let edges = rr.get("edges").and_then(|v| v.as_array()).expect("edges");
+        let structure = edges.iter().find(|e| {
+            e.get("to").and_then(|v| v.as_str()) == Some("goal:mq42_preview_child")
+                || e.get("from").and_then(|v| v.as_str()) == Some("goal:mq42_preview_child")
+        });
+        assert_eq!(
+            structure
+                .and_then(|e| e.get("neighbor_preview"))
+                .and_then(|v| v.as_str()),
+            Some("surface goal statement on structure edge")
         );
         let _ = std::fs::remove_dir_all(&dir);
     }
