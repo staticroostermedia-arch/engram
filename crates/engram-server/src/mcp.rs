@@ -9772,10 +9772,10 @@ mod tests {
         );
         assert!(names.contains(&"mcp_engram_session_start"));
         // Docs must mention live count (parse first **N** / "N total" / "N tools" claims).
-        // Hard-code sync: if this fails, update docs to match `n` (currently 84).
+        // Hard-code sync: if this fails, update docs to match `n` (currently 87 = 83 mcp + 4 linguistic).
         assert_eq!(
-            n, 86,
-            "tool_list length {n} != documented 86 — update docs/MCP_TOOLS_REFERENCE.md and AGENT_MEMORY_CONTRACT.md"
+            n, 87,
+            "tool_list length {n} != documented 87 — update docs/MCP_TOOLS_REFERENCE.md and AGENT_MEMORY_CONTRACT.md"
         );
         assert!(
             names.contains(&"mcp_engram_secure_context_provision"),

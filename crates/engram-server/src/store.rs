@@ -11324,7 +11324,16 @@ mod ingest_ast_tests {
             label_cos < full_cos,
             "q should prefer full_source over embed_label (full={full_cos}, label={label_cos})"
         );
-        assert_eq!(read_provlog(&block), full);
+        // UB provlog richness stamps **recorded_at:** after store; body must still lead with full_source.
+        let body = read_provlog(&block);
+        assert!(
+            body.starts_with(full),
+            "provlog should start with full_source; got {body:?}"
+        );
+        assert!(
+            body.contains("**recorded_at:**") || body == full,
+            "expected richness stamp or exact full_source"
+        );
 
         let _ = std::fs::remove_dir_all(&dir);
     }

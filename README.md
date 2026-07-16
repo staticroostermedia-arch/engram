@@ -163,7 +163,7 @@ flowchart LR
 - **Goal hygiene:** 72h stale autopause + `session_end` audit (active goal stack stays bounded).
 - **Code atlas continuity v2:** situated edit memory at the locus — atlas v2.1, `evolution_at_locus`, hard wake gate, `post_edit_palette`, update coherence. [CODE_ATLAS_CONTINUITY.md](docs/CODE_ATLAS_CONTINUITY.md)
 - **Large-store perf:** relational lean v2, cuFile DMA readiness, bounded NREM + relation batching — wake on ~192k blocks in seconds when BVH is warm.
-- **86 MCP tools** registered (`tool_list()` in `mcp.rs` — 82 `mcp_engram_*` + 4 linguistic); lean default remains **8 essential**.
+- **87 MCP tools** registered (`tool_list()` in `mcp.rs` — 83 `mcp_engram_*` + 4 linguistic); lean default remains **8 essential**.
 - **LEG evolution panel:** `./scripts/leg --live` + `GET /api/code-atlas?evolution=1`.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
@@ -212,7 +212,7 @@ Build against `target/debug/engram` during development.
 
 ## MCP tools
 
-**8 essential** for daily work — **86 registered** (82 `mcp_engram_*` + 4 linguistic; source: `tool_list()` in `mcp.rs`); full map: [docs/TOOL_DECISION_MAP.md](docs/TOOL_DECISION_MAP.md). Categorized reference: [docs/MCP_TOOLS_REFERENCE.md](docs/MCP_TOOLS_REFERENCE.md). Harness matrix: `tools/test-harness/python/mcp_tool_matrix.py`.
+**8 essential** for daily work — **87 registered** (83 `mcp_engram_*` + 4 linguistic; source: `tool_list()` in `mcp.rs`); full map: [docs/TOOL_DECISION_MAP.md](docs/TOOL_DECISION_MAP.md). Categorized reference: [docs/MCP_TOOLS_REFERENCE.md](docs/MCP_TOOLS_REFERENCE.md). Harness matrix: `tools/test-harness/python/mcp_tool_matrix.py`.
 
 Grok plugin slash commands: [grok-plugin-engram/commands/](grok-plugin-engram/commands/).
 

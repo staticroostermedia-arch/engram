@@ -150,10 +150,14 @@ pub fn build_turn_protocol() -> Value {
 }
 
 /// Parse metamemory JSON embedded in a session receipt or handoff provlog body.
+/// Tolerates trailing ProvLog richness stamps (`**recorded_at:**` / ub_provlog_richness)
+/// after the JSON object — `serde_json::from_str` rejects trailing bytes.
 pub fn parse_metamemory_from_provlog(body: &str) -> Option<Value> {
+    use serde::de::Deserialize;
     let json_start = body.find('{')?;
     let slice = &body[json_start..];
-    let value: Value = serde_json::from_str(slice).ok()?;
+    let mut de = serde_json::Deserializer::from_str(slice);
+    let value = Value::deserialize(&mut de).ok()?;
     value.get("metamemory").cloned()
 }
 
@@ -355,6 +359,23 @@ mod tests {
         let j = c.to_json();
         assert_eq!(j.get("mints").and_then(|v| v.as_u64()), Some(2));
         assert_eq!(j.get("updates").and_then(|v| v.as_u64()), Some(2));
+    }
+
+    /// CI regression: UB provlog richness footer after receipt JSON must not block parse.
+    #[test]
+    fn parse_metamemory_tolerates_trailing_richness_stamp() {
+        let body = r#"SESSION RECEIPT
+
+{"version":"session_receipt_v1","metamemory":{"mints":4,"updates":1,"plan_tools":2,"log_tools":1}}
+
+**recorded_at:** 2026-07-16T00:00:00Z
+**concept:** receipt:session_test
+**ub_provlog_richness:** v1
+"#;
+        let mm = parse_metamemory_from_provlog(body).expect("parse with trailing stamp");
+        assert_eq!(mm.get("mints").and_then(|v| v.as_u64()), Some(4));
+        assert_eq!(mm.get("updates").and_then(|v| v.as_u64()), Some(1));
+        assert_eq!(mm.get("plan_tools").and_then(|v| v.as_u64()), Some(2));
     }
 
     #[test]
