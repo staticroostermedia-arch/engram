@@ -2883,6 +2883,7 @@ impl StoreHandle {
                 "mq_write_hygiene_ungated_no_violation": true,
                 "mq_capacity_snapshot_lean": true,
                 "mq_tiles_capacity_in_boundary": true,
+                "mq_tiles_boundary_legacy_upgrade": true,
                 "mq_goal_children_prefer_active": true,
                 "mq_goal_child_pin_matches_rank": true,
                 "mq_write_hygiene_prior_any_activity": true,
@@ -6699,9 +6700,47 @@ impl StoreHandle {
         manifest
     }
 
+    /// Extract `next_vector` hint from MQ handoff summary lines.
+    /// Supports: `- next_vector: …`, `### next_vector` + following line, JSON key lines.
+    fn extract_next_vector_hint(summary_snippet: &str) -> String {
+        let lines: Vec<&str> = summary_snippet.lines().collect();
+        for (i, raw) in lines.iter().enumerate() {
+            let t = raw.trim().trim_start_matches(['-', ' ', '#']).trim();
+            if let Some(rest) = t.strip_prefix("next_vector:") {
+                let v = rest.trim().trim_matches('"');
+                if !v.is_empty() {
+                    return format!("next_vector: {v}");
+                }
+                if let Some(next) = lines
+                    .get(i + 1)
+                    .map(|s| s.trim())
+                    .filter(|s| !s.is_empty() && !s.starts_with('#'))
+                {
+                    return format!("next_vector: {next}");
+                }
+            }
+            // Markdown section header: ### next_vector
+            if t.eq_ignore_ascii_case("next_vector") {
+                if let Some(next) = lines
+                    .get(i + 1)
+                    .map(|s| s.trim())
+                    .filter(|s| !s.is_empty() && !s.starts_with('#'))
+                {
+                    return format!("next_vector: {next}");
+                }
+            }
+            if t.starts_with("\"next_vector\"") {
+                return raw.trim().to_string();
+            }
+        }
+        "(see helper:session_handoff_latest)".to_string()
+    }
+
     /// MQ Cycle 10 (`mq_tiles_boundaries`): mint one thought tile at session/compression
     /// boundary so the next mind rehydrates from a structured distillate, not only phase_ms.
     /// MQ Cycle 44: embed lean capacity_snapshot so scale risk survives compression.
+    /// MQ Cycle 45: upgrade legacy boundary tiles missing capacity via update (not early-return);
+    /// parse markdown `### next_vector` sections for next_vector_hint.
     pub fn mint_session_boundary_tile(
         &mut self,
         session_end_key: &str,
@@ -6710,20 +6749,19 @@ impl StoreHandle {
     ) -> Option<String> {
         let ts = session_end_key.strip_prefix("session_end_").unwrap_or("0");
         let tile_key = format!("tile:session_boundary_{ts}");
-        if self.fetch_block(&tile_key).is_some() {
-            let _ = self.promote_tile_to_high_priority(&tile_key);
-            return Some(tile_key);
+        let mut legacy_upgrade = false;
+        if let Some(existing) = self.fetch_block(&tile_key) {
+            let body = engram_core::storage::read_provlog(&existing);
+            // Fresh MQ44+ tile: keep idempotent promote-only path.
+            if body.contains("capacity_snapshot") && body.contains("mq_capacity_v1") {
+                let _ = self.promote_tile_to_high_priority(&tile_key);
+                return Some(tile_key);
+            }
+            // Pre-MQ44 (or partial) boundary: upgrade in place via update.
+            legacy_upgrade = true;
         }
 
-        // Extract next_vector from structured MQ handoff lines when present.
-        let next_vector = summary_snippet
-            .lines()
-            .find(|l| {
-                let t = l.trim_start_matches(['-', ' ']);
-                t.starts_with("next_vector:") || t.starts_with("\"next_vector\"")
-            })
-            .map(|l| l.trim().to_string())
-            .unwrap_or_else(|| "(see helper:session_handoff_latest)".to_string());
+        let next_vector = Self::extract_next_vector_hint(summary_snippet);
 
         // MQ44: ride capacity signals into the boundary distillate (O(1) snapshot).
         let capacity = Self::build_lean_capacity_snapshot(self);
@@ -6760,20 +6798,25 @@ impl StoreHandle {
             serde_json::to_string_pretty(&payload).unwrap_or_default()
         );
 
-        let mut tile_block = self.encode(&tile_payload);
-        tile_block.zedos_tag = engram_core::types::ZEDOS_OPERATIONAL;
-        tile_block.crs_score = 0.91;
-        self.store(&tile_key, tile_block).ok()?;
+        if legacy_upgrade {
+            // Prefer update (Lyapunov) over forget+remember for schema ride-along.
+            let _ = self.update(&tile_key, &tile_payload);
+        } else {
+            let mut tile_block = self.encode(&tile_payload);
+            tile_block.zedos_tag = engram_core::types::ZEDOS_OPERATIONAL;
+            tile_block.crs_score = 0.91;
+            self.store(&tile_key, tile_block).ok()?;
 
-        let _ = self.relate(&tile_key, session_end_key, "compresses_path");
-        if !primary_goal.is_empty() && primary_goal != "(none)" {
-            let _ = self.relate(&tile_key, primary_goal, "serves");
+            let _ = self.relate(&tile_key, session_end_key, "compresses_path");
+            if !primary_goal.is_empty() && primary_goal != "(none)" {
+                let _ = self.relate(&tile_key, primary_goal, "serves");
+            }
+            let _ = self.relate(
+                &tile_key,
+                "helper:session_handoff_latest",
+                "compresses_path",
+            );
         }
-        let _ = self.relate(
-            &tile_key,
-            "helper:session_handoff_latest",
-            "compresses_path",
-        );
         let _ = self.promote_tile_to_high_priority(&tile_key);
         Some(tile_key)
     }
@@ -12380,7 +12423,75 @@ mod ingest_ast_tests {
             Some(true),
             "readiness must advertise MQ44 boundary capacity embed: {r}"
         );
+        assert_eq!(
+            r.get("mq_tiles_boundary_legacy_upgrade")
+                .and_then(|v| v.as_bool()),
+            Some(true),
+            "readiness must advertise MQ45 legacy boundary upgrade: {r}"
+        );
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// MQ Cycle 45: legacy boundary without capacity_snapshot is upgraded via update.
+    #[test]
+    fn mq_tiles_boundary_legacy_upgrade_embeds_capacity() {
+        let dir = test_store_dir("mq45_boundary_legacy_upgrade");
+        let mut store = StoreHandle::new(&dir.to_string_lossy());
+        let tile_key = "tile:session_boundary_1784177605";
+        // Simulate pre-MQ44 boundary body (no capacity_snapshot).
+        let legacy = "THOUGHT TILE\n\n**tile_type:** session_boundary\n**title:** legacy\n\n**payload:** {\n  \"version\": \"mq_session_boundary_v1\",\n  \"session_end\": \"session_end_1784177605\",\n  \"next_vector_hint\": \"(see helper:session_handoff_latest)\"\n}\n";
+        store.remember(tile_key, legacy).unwrap();
+        let body_before = store
+            .fetch_block(tile_key)
+            .map(|b| engram_core::storage::read_provlog(&b))
+            .unwrap();
+        assert!(
+            !body_before.contains("capacity_snapshot"),
+            "precondition: legacy has no capacity"
+        );
+
+        let summary = "## handoff\n\n### next_vector\nMCP swap then rehydrate_graph residual\n\n### decisions\n- upgrade path\n";
+        let out = store
+            .mint_session_boundary_tile(
+                "session_end_1784177605",
+                summary,
+                "goal:engram_memory_quality_v1",
+            )
+            .expect("upgrade returns tile key");
+        assert_eq!(out, tile_key);
+        let body = store
+            .fetch_block(tile_key)
+            .map(|b| engram_core::storage::read_provlog(&b))
+            .expect("upgraded tile");
+        assert!(
+            body.contains("capacity_snapshot"),
+            "upgrade must embed capacity_snapshot: {body}"
+        );
+        assert!(
+            body.contains("mq_capacity_v1"),
+            "upgrade must include mq_capacity_v1: {body}"
+        );
+        assert!(
+            body.contains("rehydrate_graph") || body.contains("next_vector:"),
+            "markdown next_vector section must populate hint: {body}"
+        );
+        // Second call stays idempotent (no error path).
+        let again = store.mint_session_boundary_tile(
+            "session_end_1784177605",
+            summary,
+            "goal:engram_memory_quality_v1",
+        );
+        assert_eq!(again.as_deref(), Some(tile_key));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn extract_next_vector_hint_markdown_section() {
+        let s = "### next_vector\nship mq_rehydrate_graph residual\n### decisions\n- x\n";
+        let h = StoreHandle::extract_next_vector_hint(s);
+        assert!(h.contains("ship mq_rehydrate_graph residual"), "got {h}");
+        let line = "- next_vector: mq_spatial_locus\n";
+        assert!(StoreHandle::extract_next_vector_hint(line).contains("mq_spatial_locus"));
     }
 
     #[test]
