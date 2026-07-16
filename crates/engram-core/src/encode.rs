@@ -20,6 +20,10 @@ use crate::types::{
 use num_complex::Complex32;
 
 /// Encode free-form text into a `HolographicBlock` using Pure Logophysical Phase Accumulation.
+///
+/// Default **spiral** path: per-token `cos(θ_re)/sin(θ_im)` accumulation then normalize.
+/// Components have non-uniform `|q_i|` after normalize → approximate HRR (~0.85–0.89 unbind).
+/// For exact HRR role–filler recovery (>0.95), use [`from_text_unit_phase`].
 pub fn from_text(text: &str) -> Leg3Pointer {
     let mut block = Leg3Pointer::mint();
     block.magic = *b"LEG3";
@@ -79,6 +83,52 @@ pub fn from_text(text: &str) -> Leg3Pointer {
     let seed_hash = blake3::hash(text.as_bytes());
     block.footer.sig_0 = *seed_hash.as_bytes();
 
+    write_provlog(&mut block, text);
+    block
+}
+
+/// Deterministic **unit-phase** q vector from full text (HRR-exact geometry).
+///
+/// Each component is `e^{iθ}` (same θ for re/im) from BLAKE3 XOF of the whole
+/// string, then global normalize → `|q_i| ≈ 1/√N`. Unlike [`from_text`], does
+/// **not** use split token spiral `cos(θ_re)/sin(θ_im)` (non-uniform magnitudes).
+///
+/// Use for VSA OP_BIND/OP_UNBIND when recovery >0.95 is required. Default
+/// manifold encode remains [`from_text`] so existing stalks stay continuous.
+pub fn unit_phase_q(text: &str) -> [Complex32; DIMENSION] {
+    let seed_hash = blake3::hash(text.as_bytes());
+    let mut xof = blake3::Hasher::new();
+    xof.update(seed_hash.as_bytes());
+    let mut phase_bytes = vec![0u8; DIMENSION * 4];
+    xof.finalize_xof().fill(&mut phase_bytes);
+    let mut q = [Complex32::default(); DIMENSION];
+    for i in 0..DIMENSION {
+        let b0 = phase_bytes[i * 4] as f32;
+        let b1 = phase_bytes[i * 4 + 1] as f32;
+        let theta = (b0 * 256.0 + b1) / 65535.0 * std::f32::consts::TAU;
+        q[i] = Complex32::new(theta.cos(), theta.sin());
+    }
+    normalize(&q)
+}
+
+/// Encode free-form text with **pure unit-phase** geometry for exact HRR.
+///
+/// Same LEG3 shell / CRS / ProvLog as [`from_text`], but `q` from [`unit_phase_q`].
+/// Additive path — does not replace default spiral encode.
+pub fn from_text_unit_phase(text: &str) -> Leg3Pointer {
+    let mut block = Leg3Pointer::mint();
+    block.magic = *b"LEG3";
+    block.schema_ver = 1;
+    block.zedos_tag = ZEDOS_DECLARATIVE;
+    block.spin_state = 0x01;
+    block.allowed_transforms = crate::types::default_allowed_transforms_v1();
+    block.schema_ver = ((crate::types::BlockTier::Std as u32) << 24) | 1;
+    block.q = unit_phase_q(text);
+    block.crs_score = 0.74;
+    block.energetics.crs = 0.74;
+    block.energetics.heat_dissipated = 5.47e-4;
+    let seed_hash = blake3::hash(text.as_bytes());
+    block.footer.sig_0 = *seed_hash.as_bytes();
     write_provlog(&mut block, text);
     block
 }
@@ -454,5 +504,56 @@ mod tests {
         // re-verify ok
         let proof2 = generate_zk_proof(&b, op);
         assert!(verify_zk_proof(&b, op, &proof2));
+    }
+
+    /// UB Cycle 12: unit-phase encode is deterministic and on the hypersphere.
+    #[test]
+    fn ub_unit_phase_encode_deterministic_unit_hypersphere() {
+        let a = from_text_unit_phase("role:ub12_phase");
+        let b = from_text_unit_phase("role:ub12_phase");
+        assert!((cosine_similarity(&a.q, &b.q) - 1.0).abs() < 1e-5);
+        let mag: f32 = a
+            .q
+            .iter()
+            .map(|c| c.re * c.re + c.im * c.im)
+            .sum::<f32>()
+            .sqrt();
+        assert!((mag - 1.0).abs() < 1e-4, "mag={mag}");
+        // Per-component magnitudes nearly equal (pure phase before global normalize).
+        let inv_sqrt_n = 1.0 / (DIMENSION as f32).sqrt();
+        let mut max_dev = 0.0f32;
+        for c in &a.q {
+            let mi = (c.re * c.re + c.im * c.im).sqrt();
+            max_dev = max_dev.max((mi - inv_sqrt_n).abs());
+        }
+        assert!(
+            max_dev < 1e-4,
+            "unit-phase |q_i| must be ~1/√N, max_dev={max_dev}"
+        );
+    }
+
+    /// UB Cycle 12: pure unit-phase OP_BIND/OP_UNBIND recovers filler >0.95.
+    #[test]
+    fn ub_unit_phase_encode_holographic_unbind_gt_095() {
+        use crate::ops::{op_bind, op_unbind};
+        let role = from_text_unit_phase("role:ub12_color");
+        let filler = from_text_unit_phase("filler:ub12_red");
+        let bound = op_bind(&role.q, &filler.q);
+        let recovered = op_unbind(&bound, &role.q);
+        let sim = cosine_similarity(&recovered, &filler.q);
+        assert!(
+            sim > 0.95,
+            "unit-phase unbind recovery too low: {sim} (expect >0.95; spiral ~0.89)"
+        );
+        // Spiral default encode is a weaker floor — document residual gap.
+        let role_s = from_text("role:ub12_color");
+        let filler_s = from_text("filler:ub12_red");
+        let bound_s = op_bind(&role_s.q, &filler_s.q);
+        let rec_s = op_unbind(&bound_s, &role_s.q);
+        let sim_s = cosine_similarity(&rec_s, &filler_s.q);
+        assert!(
+            sim >= sim_s - 1e-3,
+            "unit-phase should not underperform spiral: unit={sim} spiral={sim_s}"
+        );
     }
 }
