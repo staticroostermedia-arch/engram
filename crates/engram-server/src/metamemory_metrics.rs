@@ -97,6 +97,12 @@ impl SessionMetamemoryCounters {
             "empty_recall_rate": self.empty_recall_rate(),
             "write_hygiene_hint": if self.mints > self.updates && self.mints > 0 {
                 "prefer update over remember when concept exists (match >0.85)"
+            } else if self.mints == 0
+                && self.updates == 0
+                && (self.plan_tools > 0 || self.log_tools > 0)
+            {
+                // MQ27: plan/log without write counters — often tile/scar path pre-classification
+                "session had plan/log activity with zero mint/update — prefer update; ensure tile/scar paths count as mints"
             } else {
                 "mint/update within nominal bounds"
             },
@@ -229,6 +235,7 @@ pub fn is_metamemory_write_tool(tool: &str) -> bool {
 }
 
 /// Mint-class writes (new concept creation) — prefer update when match exists.
+/// MQ Cycle 27: include thought_tile_create + scar (distillate / deflection mints).
 pub fn is_mint_write_tool(tool: &str) -> bool {
     matches!(
         tool,
@@ -236,6 +243,8 @@ pub fn is_mint_write_tool(tool: &str) -> bool {
             | "mcp_engram_remember_solution"
             | "mcp_engram_batch_remember"
             | "mcp_engram_import"
+            | "mcp_engram_thought_tile_create"
+            | "mcp_engram_scar"
     )
 }
 
@@ -348,6 +357,10 @@ mod tests {
         assert!(is_metamemory_write_tool("mcp_engram_batch_remember"));
         assert!(is_metamemory_write_tool("mcp_engram_import"));
         assert!(is_mint_write_tool("mcp_engram_import"));
+        // MQ Cycle 27: tile + scar distillates count as mints.
+        assert!(is_mint_write_tool("mcp_engram_thought_tile_create"));
+        assert!(is_mint_write_tool("mcp_engram_scar"));
+        assert!(is_metamemory_write_tool("mcp_engram_thought_tile_create"));
         assert!(is_update_write_tool("mcp_engram_update"));
     }
 

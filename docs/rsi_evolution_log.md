@@ -3865,3 +3865,33 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 1. MCP swap MQ26; wake write_hygiene_snapshot.source=receipt_prior_session when live zero.
 2. Optional #134 C86 if floor fails.
 3. Capacity only if landfill measured.
+
+## MQ Cycle 27 — mint tile/scar + prior seed on plan/log activity (2026-07-15)
+
+### VERIFY₀ baseline
+
+- master@`e85b3361` MQ26 #160.
+- MCP swapped: `mq_write_hygiene_prior_receipt_seed` LIVE; but snapshot still `source=session_metamemory` mints=0.
+- Live receipts have plan_tools/log_tools activity with mints=updates=0 — MQ26 seed required mint/update >0 so never activated.
+- CSF warm **0.941**; injection **1.0**; verify healthy; soft-stale total_ms=0.
+- Unit tests lean + MQ26 seed green.
+
+### SELECT
+
+**mq_write_hygiene** — (1) count thought_tile_create + scar as mints; (2) seed prior receipt on any metamemory activity.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Mint class | +`thought_tile_create`, +`scar` |
+| Seed | any of mints/updates/writes/recalls/plan/log > 0 |
+| Snapshot | surfaces plan_tools + log_tools |
+| Flags | `mq_write_hygiene_mint_tile_scar`, `mq_write_hygiene_prior_any_activity` |
+| Test | `mq_write_hygiene_seeds_from_plan_log_only_receipt` |
+
+### Next vectors
+
+1. MCP swap MQ27; wake source=receipt_prior_session with plan/log from prior receipt.
+2. Optional #134 C86 if floor fails.
+3. Capacity only if landfill measured.
