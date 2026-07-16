@@ -379,6 +379,21 @@ fn relation_resume_neighbor_score(concept: &str) -> u64 {
     type_boost.saturating_add(ts)
 }
 
+/// MQ Cycle 36: structural goal-graph labels (used for boost + reserved top-k slots).
+fn relation_resume_is_structure_label(label: &str) -> bool {
+    matches!(label, "decomposes_into" | "has_child")
+}
+
+/// MQ Cycle 36: mild boost so structure outranks tiles when scores are otherwise tied-ish.
+/// Traces remain higher via type_boost 2e12+ts; reserved slots guarantee structure visibility.
+fn relation_resume_label_boost(label: &str) -> u64 {
+    if relation_resume_is_structure_label(label) {
+        1_750_000_000_000
+    } else {
+        0
+    }
+}
+
 pub fn default_relation_volatility(label: &str) -> f32 {
     let l = label.to_ascii_lowercase();
     if l.contains("supersedes") || l.contains("replaces") || l.contains("invalid") {
@@ -2801,6 +2816,7 @@ impl StoreHandle {
                 "wake_relation_resume_lean": true,
                 "mq_relation_resume_recency": true,
                 "mq_relation_resume_full_incident": true,
+                "mq_relation_resume_structure_boost": true,
                 "wake_lawfulness_snapshot": true,
                 "wake_slim_mq_resume_hoist": true,
                 "mq_spatial_locus_aabb_test": true,
@@ -5940,7 +5956,13 @@ impl StoreHandle {
     /// MQ Cycle 5/19/20: lean wake relation neighborhood for non-flat resume.
     /// MQ19: rank by recency of neighbor concept (trace/tile unix prefix).
     /// MQ20: scan **all** seed-incident edges before rank (pre-truncation hid recent forks).
+    /// MQ Cycle 36: reserve ≥1 decomposes_into/has_child slot so goal-graph structure survives
+    /// serves-trace spam without outranking freshest traces (label boost alone loses to 2e12+ts).
     pub fn build_lean_relation_resume(store: &Self, seed: Option<&str>) -> serde_json::Value {
+        const TOP_K: usize = 8;
+        /// Guarantee structure visibility under high serves degree (goal children are stable/low ts).
+        const STRUCTURE_RESERVED: usize = 1;
+
         let seed = seed
             .filter(|s| !s.is_empty() && *s != "unset")
             .unwrap_or("goal:engram_mvp_v1");
@@ -5948,23 +5970,82 @@ impl StoreHandle {
         // Ranking after a fixed take(N) re-hides recent SELECT forks when degree > N.
         let mut candidates: Vec<(u64, String, String, &'static str, String)> = Vec::new();
         for (label, other) in store.search_relations(seed, None, "from") {
-            let score = relation_resume_neighbor_score(&other);
+            let score = relation_resume_neighbor_score(&other)
+                .saturating_add(relation_resume_label_boost(&label));
             candidates.push((score, label, other, "from", seed.to_string()));
         }
         for (label, other) in store.search_relations(seed, None, "to") {
-            let score = relation_resume_neighbor_score(&other);
+            let score = relation_resume_neighbor_score(&other)
+                .saturating_add(relation_resume_label_boost(&label));
             candidates.push((score, label, other, "to", seed.to_string()));
         }
         let candidates_scanned = candidates.len();
-        // Highest score first (recent traces/tiles outrank ancient anchors).
+        // Highest score first (recent traces outrank structure boost; structure outranks tiles).
         candidates.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.2.cmp(&b.2)));
-        // Dedupe by (direction, other, label)
+        // Dedupe by (direction, other, label) preserving score order.
         let mut seen = std::collections::HashSet::new();
-        let mut edges: Vec<serde_json::Value> = Vec::new();
-        for (score, label, other, direction, seed_s) in candidates {
-            let key = format!("{direction}|{label}|{other}");
-            if !seen.insert(key) {
+        let mut unique: Vec<(u64, String, String, &'static str, String)> = Vec::new();
+        for c in candidates {
+            let key = format!("{}|{}|{}", c.3, c.1, c.2);
+            if seen.insert(key) {
+                unique.push(c);
+            }
+        }
+        // Two-pass fill: reserve structure slots, then fill rest by score order.
+        let mut picked: Vec<(u64, String, String, &'static str, String)> = Vec::new();
+        let mut structure_picked = 0usize;
+        for c in &unique {
+            if relation_resume_is_structure_label(&c.1) && structure_picked < STRUCTURE_RESERVED {
+                picked.push(c.clone());
+                structure_picked += 1;
+            }
+        }
+        for c in &unique {
+            if picked.len() >= TOP_K {
+                break;
+            }
+            if relation_resume_is_structure_label(&c.1) && structure_picked > 0 {
+                // Already reserved best structure edge(s); skip extra structure until fill needs more.
+                if picked
+                    .iter()
+                    .any(|p| p.1 == c.1 && p.2 == c.2 && p.3 == c.3)
+                {
+                    continue;
+                }
+                // Only add more structure if we still have room after non-structure is scarce.
                 continue;
+            }
+            if picked
+                .iter()
+                .any(|p| p.1 == c.1 && p.2 == c.2 && p.3 == c.3)
+            {
+                continue;
+            }
+            picked.push(c.clone());
+        }
+        // If non-structure was scarce, backfill remaining slots from leftover unique (any label).
+        if picked.len() < TOP_K {
+            for c in &unique {
+                if picked.len() >= TOP_K {
+                    break;
+                }
+                if picked
+                    .iter()
+                    .any(|p| p.1 == c.1 && p.2 == c.2 && p.3 == c.3)
+                {
+                    continue;
+                }
+                picked.push(c.clone());
+            }
+        }
+        // Present by score (freshest serves first; reserved structure sits by its score).
+        picked.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.2.cmp(&b.2)));
+
+        let mut edges: Vec<serde_json::Value> = Vec::new();
+        let mut structure_edges = 0u32;
+        for (score, label, other, direction, seed_s) in picked {
+            if relation_resume_is_structure_label(&label) {
+                structure_edges = structure_edges.saturating_add(1);
             }
             let edge = if direction == "from" {
                 serde_json::json!({
@@ -5984,18 +6065,16 @@ impl StoreHandle {
                 })
             };
             edges.push(edge);
-            if edges.len() >= 8 {
-                break;
-            }
         }
         serde_json::json!({
             "version": "mq_relation_resume_v1",
             "seed": seed,
             "edge_count": edges.len(),
             "edges": edges,
-            "ranking": "recency_neighbor_v1",
+            "ranking": "recency_structure_v1",
+            "structure_edges_in_top": structure_edges,
             "candidates_scanned": candidates_scanned,
-            "hint": "lean graph rehydrate — search_by_relation for deeper walks",
+            "hint": "lean graph rehydrate — serves recency + reserved decomposes_into/has_child slot",
         })
     }
 
@@ -10864,7 +10943,7 @@ mod ingest_ast_tests {
             StoreHandle::build_lean_relation_resume(&store, Some("goal:engram_memory_quality_v1"));
         assert_eq!(
             rr.get("ranking").and_then(|v| v.as_str()),
-            Some("recency_neighbor_v1")
+            Some("recency_structure_v1")
         );
         let edges = rr.get("edges").and_then(|v| v.as_array()).expect("edges");
         assert!(!edges.is_empty());
@@ -10939,6 +11018,68 @@ mod ingest_ast_tests {
             store
                 .backend_readiness()
                 .get("mq_relation_resume_full_incident")
+                .and_then(|v| v.as_bool()),
+            Some(true)
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// MQ Cycle 36: decomposes_into survives serves-trace spam in relation_resume top-k.
+    #[test]
+    fn mq_relation_resume_surfaces_decomposes_into_under_serves_spam() {
+        let dir = test_store_dir("mq36_relation_structure");
+        let mut store = StoreHandle::new(&dir.to_string_lossy());
+        store
+            .remember(
+                "goal:engram_memory_quality_v1",
+                "GOAL\n\n**status:** active\n",
+            )
+            .unwrap();
+        // 12 serves edges would fill top-8 without structure boost.
+        for i in 0..12 {
+            let name = format!("trace:178410000{i}_mq36-serves-filler");
+            store
+                .remember(&name, "REASONING TRACE\n\n**decision_point:** filler\n")
+                .unwrap();
+            let _ = store.relate(&name, "goal:engram_memory_quality_v1", "serves");
+        }
+        store
+            .remember(
+                "goal:mq36_child",
+                "GOAL BLOCK (subgoal)\n\n**status:** active\n",
+            )
+            .unwrap();
+        let _ = store.relate(
+            "goal:engram_memory_quality_v1",
+            "goal:mq36_child",
+            "decomposes_into",
+        );
+        let rr =
+            StoreHandle::build_lean_relation_resume(&store, Some("goal:engram_memory_quality_v1"));
+        assert_eq!(
+            rr.get("ranking").and_then(|v| v.as_str()),
+            Some("recency_structure_v1")
+        );
+        let edges = rr.get("edges").and_then(|v| v.as_array()).expect("edges");
+        let has_child = edges.iter().any(|e| {
+            e.get("label").and_then(|v| v.as_str()) == Some("decomposes_into")
+                && (e.get("to").and_then(|v| v.as_str()) == Some("goal:mq36_child")
+                    || e.get("from").and_then(|v| v.as_str()) == Some("goal:mq36_child"))
+        });
+        assert!(
+            has_child,
+            "decomposes_into child must appear in top-8 despite serves spam; edges={edges:?}"
+        );
+        assert!(
+            rr.get("structure_edges_in_top")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0)
+                >= 1
+        );
+        assert_eq!(
+            store
+                .backend_readiness()
+                .get("mq_relation_resume_structure_boost")
                 .and_then(|v| v.as_bool()),
             Some(true)
         );
