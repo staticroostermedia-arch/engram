@@ -13,6 +13,9 @@ use engram_core::ops::{normalize, op_bind};
 use engram_core::types::ZEDOS_BODY;
 use serde_json::{json, Value};
 
+#[cfg(test)]
+use engram_core::ops::{cosine_similarity, op_unbind};
+
 /// Concept key for a lexicon word atom.
 pub fn lexicon_word_concept(word: &str) -> String {
     let slug: String = word
@@ -378,6 +381,87 @@ mod tests {
         let err = mint_lexicon_word(&mut store, "manifold", "Should fail", "etym", &["language"]);
         assert!(err.is_err(), "raw mint of existing must err");
 
+        let _ = std::fs::remove_dir_all(&dir);
+        std::env::remove_var("ENGRAM_DISABLE_SHEAF");
+        std::env::remove_var("ENGRAM_FORCE_CPU_BACKEND");
+    }
+
+    /// UB Cycle 6: store-encode OP_BIND + OP_UNBIND recovers filler (holographic property).
+    ///
+    /// Core `hash_vec` unit-phase vectors recover >0.95 (see engram-core). Store
+    /// `from_text` uses cos(θ_re)/sin(θ_im) spiral so |q_i| is non-uniform after
+    /// normalize — exact HRR invertibility degrades to ~0.89. Floor **0.85** is the
+    /// store-path property (still far above random / quasi-ortho noise).
+    #[test]
+    fn ub_holographic_bind_unbind_roundtrip_store_encode() {
+        let (dir, store) = open_iso_store();
+        let role = store.encode("role:ub6_test");
+        let filler = store.encode("filler:ub6_payload");
+        let bound = op_bind(&role.q, &filler.q);
+        // Bound should be quasi-orthogonal to inputs.
+        assert!(
+            cosine_similarity(&bound, &role.q).abs() < 0.5,
+            "bound too similar to role"
+        );
+        assert!(
+            cosine_similarity(&bound, &filler.q).abs() < 0.5,
+            "bound too similar to filler"
+        );
+        let recovered = op_unbind(&bound, &role.q);
+        let sim = cosine_similarity(&recovered, &filler.q);
+        assert!(
+            sim > 0.85,
+            "store-encode holographic unbind recovery too low: {sim} (expect ~0.89; core unit-phase >0.95)"
+        );
+        // Unit hypersphere after bind/unbind.
+        let mag: f32 = recovered
+            .iter()
+            .map(|c| c.re * c.re + c.im * c.im)
+            .sum::<f32>()
+            .sqrt();
+        assert!(
+            (mag - 1.0).abs() < 1e-3,
+            "recovered must stay on unit hypersphere, mag={mag}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+        std::env::remove_var("ENGRAM_DISABLE_SHEAF");
+        std::env::remove_var("ENGRAM_FORCE_CPU_BACKEND");
+    }
+
+    /// UB Cycle 6: lexicon word⋉definition unbind recovers definition under store encode.
+    #[test]
+    fn ub_lexicon_holographic_bind_recovers_definition_similarity() {
+        let (dir, mut store) = open_iso_store();
+        let word = "hologram";
+        let definition = "A geometric role-filler memory construct recoverable by unbind.";
+        let etymology = "Greek holos + gramma (test).";
+        let concept = mint_lexicon_word(
+            &mut store,
+            word,
+            definition,
+            etymology,
+            &["language"],
+        )
+        .expect("mint");
+        let word_q = store.encode(word).q;
+        let def_q = store.encode(definition).q;
+        // First bind step: word ⋉ definition (before etymology).
+        let bound_def = op_bind(&word_q, &def_q);
+        let rec = op_unbind(&bound_def, &word_q);
+        let sim = cosine_similarity(&rec, &def_q);
+        assert!(
+            sim > 0.85,
+            "lexicon word⋉def unbind recovery low: {sim} (store-encode floor 0.85)"
+        );
+        // Full mint q is unit-normalized.
+        let block = store.fetch_block(&concept).expect("block");
+        let mag: f32 = block
+            .q
+            .iter()
+            .map(|c| c.re * c.re + c.im * c.im)
+            .sum::<f32>()
+            .sqrt();
+        assert!((mag - 1.0).abs() < 1e-3, "mint q mag={mag}");
         let _ = std::fs::remove_dir_all(&dir);
         std::env::remove_var("ENGRAM_DISABLE_SHEAF");
         std::env::remove_var("ENGRAM_FORCE_CPU_BACKEND");

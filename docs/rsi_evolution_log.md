@@ -4568,3 +4568,31 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 
 1. MCP swap UB5; re-seed a known word → action=update.
 2. Next distill: ub_holographic_bind / ub_temporal_geometry / ub_sheaf_glue.
+
+## UB Cycle 6 — holographic bind/unbind roundtrip property (2026-07-16)
+
+### VERIFY₀ baseline
+
+- master@`7f9c1de7` UB5 #185.
+- MCP swapped: `ub_lexicon_update_path` LIVE; capacity demote + structure reserve green.
+- Residual: holographic bind property only unit-tested via engram-core hash_vec — not store-encode/lexicon path.
+- CSF **0.937**; verify healthy; dual-gate green.
+
+### SELECT
+
+**ub_holographic_bind** — property tests for OP_BIND/OP_UNBIND recovery on store encode + lexicon phases.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Tests | `ub_holographic_bind_unbind_roundtrip_store_encode`, `ub_lexicon_holographic_bind_recovers_definition_similarity` |
+| Flag | `ub_holographic_bind_roundtrip` |
+| Threshold | store-encode cosine recovery **> 0.85** (~0.89 observed); unit hypersphere |
+| Geometry note | Core unit-phase `hash_vec` recovers >0.95; `from_text` cos(θ_re)/sin(θ_im) → non-uniform \|q_i\| → approx HRR |
+
+### Next vectors
+
+1. MCP swap UB6; flag LIVE.
+2. Optional later: pure unit-phase store encode for exact HRR (would raise floor to 0.95) — separate vector.
+3. Next distill: ub_temporal_geometry / ub_sheaf_glue / ub_provlog_richness.
