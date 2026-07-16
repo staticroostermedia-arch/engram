@@ -4429,3 +4429,31 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 1. MCP swap MQ46; session_end → boundary next_vector_hint is real (not fallback).
 2. If risk elevated → capacity policy; else rehydrate_graph / write_hygiene / spatial.
 3. Optional #134 C86 if soft-stale warm floor fails.
+
+## UB Cycle 1 — handoff distillation completeness (ub_distillate_v1) (2026-07-15)
+
+### VERIFY₀ baseline
+
+- master@`ca25ca4e` MQ46 #180 merged mid-fire (continuity residual closed first).
+- CSF warm **0.936**; handoff complete (mq_handoff_v1); verify healthy 50/50; capacity risk=`large_manifold_nominal`.
+- Dual-gate green → first ultimate-backend distill vector.
+
+### SELECT
+
+**ub_handoff_distillate** — structured handoff carries `selected_child` + `property_test` + `distillation` completeness (`ub_distillate_v1`) so next UB fire continues the same mind without re-ask.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Parse | `handoff_parse_selected_child`, `handoff_parse_property_test` |
+| Completeness | `handoff_distillation_completeness` (schema ub_distillate_v1) |
+| Hoist | build_handoff_packet + structured_handoff on slim wake |
+| Flag | `ub_handoff_distillate` |
+| Test | `handoff_distillation_completeness_ub_requires_selected_child_and_test` |
+
+### Next vectors
+
+1. MCP swap UB1; session_end with selected_child+property_test → structured_handoff.distillation.complete=true.
+2. Create/set primary `goal:engram_ultimate_backend_v1` + decompose ub_* children if missing.
+3. Next distill: ub_relation_density / ub_lexicon_update_path (gates 1–5 still green).

@@ -169,9 +169,10 @@ fn handoff_presence_cache_set(store_key: &str, present: bool) {
 // Session handoff parse helpers — see `session_packet` module (latest-wins extract + decision parse).
 // Named session_packet (not *handoff*) so the source is not excluded by root .gitignore *handoff*.
 use crate::session_packet::{
-    extract_latest_handoff_section, handoff_extract_files_touched,
-    handoff_memory_quality_completeness, handoff_parse_decisions, handoff_parse_falsifiers,
-    handoff_parse_next_vector, handoff_parse_open_questions, HANDOFF_PACKET_MARKER,
+    extract_latest_handoff_section, handoff_distillation_completeness,
+    handoff_extract_files_touched, handoff_memory_quality_completeness, handoff_parse_decisions,
+    handoff_parse_falsifiers, handoff_parse_next_vector, handoff_parse_open_questions,
+    handoff_parse_property_test, handoff_parse_selected_child, HANDOFF_PACKET_MARKER,
 };
 
 // ── Sheaf Config ──────────────────────────────────────────────────────────────
@@ -2885,6 +2886,7 @@ impl StoreHandle {
                 "mq_tiles_capacity_in_boundary": true,
                 "mq_tiles_boundary_legacy_upgrade": true,
                 "mq_tiles_boundary_next_vector_upgrade": true,
+                "ub_handoff_distillate": true,
                 "mq_goal_children_prefer_active": true,
                 "mq_goal_child_pin_matches_rank": true,
                 "mq_write_hygiene_prior_any_activity": true,
@@ -4445,6 +4447,15 @@ impl StoreHandle {
             &open_questions,
             primary_goal.as_deref(),
         );
+        // UB Cycle 1: distillation completeness for ultimate-backend / selected_child fires.
+        let selected_child = handoff_parse_selected_child(summary);
+        let property_test = handoff_parse_property_test(summary);
+        let distillation = handoff_distillation_completeness(
+            selected_child.as_deref(),
+            next_vector.as_deref(),
+            property_test.as_deref(),
+            primary_goal.as_deref(),
+        );
 
         serde_json::json!({
             "session_end_key": session_end_key,
@@ -4455,6 +4466,9 @@ impl StoreHandle {
             "next_vector": next_vector,
             "falsifiers": falsifiers,
             "memory_quality": memory_quality,
+            "selected_child": selected_child,
+            "property_test": property_test,
+            "distillation": distillation,
             "files_touched": files_touched,
             "recent_traces": recent_traces,
             "trace_chain_head": trace_chain_head,
@@ -5413,6 +5427,22 @@ impl StoreHandle {
                         primary.as_deref(),
                     )
                 });
+                let selected_child = packet
+                    .get("selected_child")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
+                let property_test = packet
+                    .get("property_test")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
+                let distillation = packet.get("distillation").cloned().unwrap_or_else(|| {
+                    handoff_distillation_completeness(
+                        selected_child.as_deref(),
+                        next.as_deref(),
+                        property_test.as_deref(),
+                        primary.as_deref(),
+                    )
+                });
                 let preview = next
                     .clone()
                     .or_else(|| decisions_head.first().cloned())
@@ -5429,6 +5459,9 @@ impl StoreHandle {
                     "falsifiers": falsifiers,
                     "open_questions": open_q,
                     "memory_quality": mq,
+                    "selected_child": selected_child,
+                    "property_test": property_test,
+                    "distillation": distillation,
                     "wake_handoff_continuity_fields": true,
                 }))
             } else if wake_lean {
