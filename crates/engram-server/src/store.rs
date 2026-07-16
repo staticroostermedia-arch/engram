@@ -2882,6 +2882,7 @@ impl StoreHandle {
                 "mq_write_hygiene_trace_session_mint": true,
                 "mq_write_hygiene_ungated_no_violation": true,
                 "mq_capacity_snapshot_lean": true,
+                "mq_tiles_capacity_in_boundary": true,
                 "mq_goal_children_prefer_active": true,
                 "mq_goal_child_pin_matches_rank": true,
                 "mq_write_hygiene_prior_any_activity": true,
@@ -6700,6 +6701,7 @@ impl StoreHandle {
 
     /// MQ Cycle 10 (`mq_tiles_boundaries`): mint one thought tile at session/compression
     /// boundary so the next mind rehydrates from a structured distillate, not only phase_ms.
+    /// MQ Cycle 44: embed lean capacity_snapshot so scale risk survives compression.
     pub fn mint_session_boundary_tile(
         &mut self,
         session_end_key: &str,
@@ -6723,12 +6725,16 @@ impl StoreHandle {
             .map(|l| l.trim().to_string())
             .unwrap_or_else(|| "(see helper:session_handoff_latest)".to_string());
 
+        // MQ44: ride capacity signals into the boundary distillate (O(1) snapshot).
+        let capacity = Self::build_lean_capacity_snapshot(self);
+
         let payload = serde_json::json!({
             "version": "mq_session_boundary_v1",
             "session_end": session_end_key,
             "primary_goal": primary_goal,
             "summary_head": summary_snippet.chars().take(400).collect::<String>(),
             "next_vector_hint": next_vector,
+            "capacity_snapshot": capacity,
             "survival": "compression_boundary_tile — prefer over raw episodic noise at wake",
             "leg_display": {
                 "role": "boundary",
@@ -12339,6 +12345,19 @@ mod ingest_ast_tests {
         assert!(body.contains("session_boundary"), "body={body}");
         assert!(body.contains("mq_session_boundary_v1"), "body={body}");
         assert!(body.contains("next_vector"), "body={body}");
+        // MQ44: capacity_snapshot rides in boundary distillate for compression survival.
+        assert!(
+            body.contains("capacity_snapshot"),
+            "boundary tile must embed capacity_snapshot: {body}"
+        );
+        assert!(
+            body.contains("mq_capacity_v1"),
+            "capacity version must be mq_capacity_v1: {body}"
+        );
+        assert!(
+            body.contains("\"risk\""),
+            "capacity risk field required: {body}"
+        );
         // Idempotent re-mint returns same key.
         let again = store.mint_session_boundary_tile(
             "session_end_1784150999",
@@ -12346,6 +12365,21 @@ mod ingest_ast_tests {
             "goal:engram_memory_quality_v1",
         );
         assert_eq!(again.as_deref(), Some(tile));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// MQ Cycle 44: readiness exposes mq_tiles_capacity_in_boundary after boundary embed.
+    #[test]
+    fn mq_tiles_capacity_in_boundary_readiness_flag() {
+        let dir = test_store_dir("mq44_tiles_capacity_flag");
+        let store = StoreHandle::new(&dir.to_string_lossy());
+        let r = store.backend_readiness();
+        assert_eq!(
+            r.get("mq_tiles_capacity_in_boundary")
+                .and_then(|v| v.as_bool()),
+            Some(true),
+            "readiness must advertise MQ44 boundary capacity embed: {r}"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 

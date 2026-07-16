@@ -4345,3 +4345,31 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 1. MCP swap MQ43; confirm capacity_snapshot.risk + counts live on session_start.
 2. If risk elevated → SELECT capacity policy ship; else next residual (tiles).
 3. Optional #134 C86 if soft-stale warm floor fails.
+
+## MQ Cycle 44 — session_boundary embeds capacity_snapshot (2026-07-15)
+
+### VERIFY₀ baseline
+
+- master@`8f96cb32` MQ43 #177.
+- MCP swapped: `mq_capacity_snapshot_lean` LIVE; capacity risk=`large_manifold_nominal`, hot_set_len≈538, leg≈94k, edges≈26k.
+- Residual: scale signals live on slim wake only — compression boundary tiles lacked capacity_snapshot so next mind after distill could lose landfill vs nominal evidence.
+- CSF warm **0.941**; handoff complete; verify healthy 50/50; dual-gate green.
+- Warm assemble total_ms≈140 (full assemble; soft-stale floor not expected this fire).
+
+### SELECT
+
+**mq_tiles_boundaries** residual — embed lean `capacity_snapshot` in `mint_session_boundary_tile` payload.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Payload | `capacity_snapshot` (mq_capacity_v1) inside session_boundary tile |
+| Flag | `mq_tiles_capacity_in_boundary` |
+| Tests | `refresh_compression_handoff_mints_session_boundary_tile` asserts capacity fields; `mq_tiles_capacity_in_boundary_readiness_flag` |
+
+### Next vectors
+
+1. MCP swap MQ44; confirm latest boundary tile body contains capacity_snapshot + risk after session_end.
+2. If risk elevated → capacity policy ship; else next residual (rehydrate_graph / write hygiene under load / spatial).
+3. Optional #134 C86 if soft-stale warm floor fails.
