@@ -5126,3 +5126,30 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 
 1. MCP/daemon swap UB23 LIVE — soft_elevated → auto unmark ≤64/tick.
 2. Wake suggested_action optional post-dry_run apply (or prove daemon alone drains overshoot).
+
+## UB Cycle 24 — capacity compress execute path (startup trim + wake apply) (2026-07-16)
+
+### VERIFY₀ baseline
+
+- master@`a29a1013` UB23 #206.
+- CSF **0.937**; trust_ok **true**; lawfulness **healthy**; soft_elevated hot~1206 overshoot~206 persists.
+- Residual: daemon skip-first-tick + wake dry_run-only — overshoot not draining across fires.
+
+### SELECT
+
+**ub_capacity_compress_execute_path** — daemon startup trim + wake apply pin after dry_run.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Daemon | `maybe_capacity_hot_compress` once at arm (before interval skip) |
+| Wake | dry_run then apply (`dry_run=false`) when compress_path.suggested |
+| Pure | `capacity_compress_wake_apply_args` / shared action args |
+| Flag | `ub_capacity_compress_execute_path` |
+| Test | extended `ub_capacity_wake_compress_suggest_dry_run_args` |
+
+### Next vectors
+
+1. MCP swap UB24 LIVE — soft_elevated queue has apply pin; startup drains ≤64.
+2. If overshoot still sticky: lower CAPACITY interval or raise max when overshoot>200; else relation_density.

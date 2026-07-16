@@ -1968,6 +1968,19 @@ fn first_lean_goal_child_concept(store: &StoreHandle, parent: Option<&str>) -> O
 /// UB Cycle 22: pure — when `compress_path.suggested`, build dry_run wake action args.
 /// Caps max_unmark at min(overshoot, 64) so agents preview before apply.
 pub fn capacity_compress_wake_dry_run_args(compress_path: &Value) -> Option<Value> {
+    capacity_compress_wake_action_args(compress_path, true)
+}
+
+/// UB Cycle 24: pure — apply (dry_run=false) args when compress_path.suggested + overshoot>0.
+pub fn capacity_compress_wake_apply_args(compress_path: &Value) -> Option<Value> {
+    capacity_compress_wake_action_args(compress_path, false)
+}
+
+/// Shared pure args builder for capacity wake dry_run / apply pins.
+pub fn capacity_compress_wake_action_args(
+    compress_path: &Value,
+    dry_run: bool,
+) -> Option<Value> {
     let suggested = compress_path
         .get("suggested")
         .and_then(|v| v.as_bool())
@@ -1984,7 +1997,7 @@ pub fn capacity_compress_wake_dry_run_args(compress_path: &Value) -> Option<Valu
     }
     let max_unmark = overshoot.clamp(1, 64);
     Some(json!({
-        "dry_run": true,
+        "dry_run": dry_run,
         "max_unmark": max_unmark,
     }))
 }
@@ -2008,19 +2021,31 @@ fn build_suggested_actions_ultra_lean(
             rehydrate_reason,
         ));
     }
-    // Priority 0: capacity NREM compress dry_run when soft/hard elevated hot_set (UB22).
+    // Priority 0: capacity NREM compress dry_run then apply when soft/hard elevated (UB22/24).
     if let Some(cp) = capacity_compress_path {
+        let overshoot = cp
+            .get("overshoot")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
         if let Some(args) = capacity_compress_wake_dry_run_args(cp) {
-            let overshoot = cp
-                .get("overshoot")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(0);
             push_action(
                 &mut actions,
                 "mcp_engram_apply_capacity_hot_compress",
                 args,
                 &format!(
                     "capacity soft/hard elevated (overshoot={overshoot}) — dry_run hot compress before SELECT (ub_capacity_wake_compress_suggest)"
+                ),
+                0,
+            );
+        }
+        // UB24: execute path — apply after dry_run so queue drains residency without inventing apply.
+        if let Some(args) = capacity_compress_wake_apply_args(cp) {
+            push_action(
+                &mut actions,
+                "mcp_engram_apply_capacity_hot_compress",
+                args,
+                &format!(
+                    "capacity soft/hard elevated (overshoot={overshoot}) — apply capped hot compress (ub_capacity_compress_execute_path)"
                 ),
                 0,
             );
@@ -3269,6 +3294,7 @@ SESSION HANDOFF PACKET v1 (structured JSON for next-wake read_concept)
     }
 
     /// UB Cycle 22: pure dry_run args only when compress_path.suggested + overshoot>0.
+    /// UB Cycle 24: also pins apply (dry_run=false) execute path.
     #[test]
     fn ub_capacity_wake_compress_suggest_dry_run_args() {
         let idle = json!({
@@ -3277,6 +3303,7 @@ SESSION HANDOFF PACKET v1 (structured JSON for next-wake read_concept)
             "risk": "large_manifold_nominal",
         });
         assert!(capacity_compress_wake_dry_run_args(&idle).is_none());
+        assert!(capacity_compress_wake_apply_args(&idle).is_none());
         let soft = json!({
             "suggested": true,
             "overshoot": 219,
@@ -3286,10 +3313,13 @@ SESSION HANDOFF PACKET v1 (structured JSON for next-wake read_concept)
         let args = capacity_compress_wake_dry_run_args(&soft).expect("dry_run args");
         assert_eq!(args["dry_run"], true);
         assert_eq!(args["max_unmark"], 64); // clamped
+        let apply = capacity_compress_wake_apply_args(&soft).expect("apply args");
+        assert_eq!(apply["dry_run"], false);
+        assert_eq!(apply["max_unmark"], 64);
         let small = json!({ "suggested": true, "overshoot": 12 });
         let args2 = capacity_compress_wake_dry_run_args(&small).unwrap();
         assert_eq!(args2["max_unmark"], 12);
-        // Queue pin when path suggested.
+        // Queue pin when path suggested: dry_run then apply.
         let actions = build_suggested_actions_ultra_lean(
             None,
             Some("goal:engram_ultimate_backend_v1"),
@@ -3299,22 +3329,38 @@ SESSION HANDOFF PACKET v1 (structured JSON for next-wake read_concept)
             None,
             Some(&soft),
         );
-        let compress = actions.iter().find(|a| {
-            a.get("tool").and_then(|t| t.as_str())
-                == Some("mcp_engram_apply_capacity_hot_compress")
-        });
+        let compress_actions: Vec<_> = actions
+            .iter()
+            .filter(|a| {
+                a.get("tool").and_then(|t| t.as_str())
+                    == Some("mcp_engram_apply_capacity_hot_compress")
+            })
+            .collect();
         assert!(
-            compress.is_some(),
-            "expected capacity compress dry_run in ultra-lean queue: {actions:?}"
+            compress_actions.len() >= 2,
+            "expected dry_run + apply in ultra-lean queue: {actions:?}"
         );
         assert!(
-            compress
-                .unwrap()
-                .get("reason")
-                .and_then(|r| r.as_str())
-                .unwrap_or("")
-                .contains("ub_capacity_wake_compress_suggest"),
-            "reason should tag UB22 flag"
+            compress_actions.iter().any(|a| {
+                a.get("args")
+                    .and_then(|x| x.get("dry_run"))
+                    .and_then(|d| d.as_bool())
+                    == Some(true)
+            }),
+            "expected dry_run pin"
+        );
+        assert!(
+            compress_actions.iter().any(|a| {
+                a.get("args")
+                    .and_then(|x| x.get("dry_run"))
+                    .and_then(|d| d.as_bool())
+                    == Some(false)
+                    && a.get("reason")
+                        .and_then(|r| r.as_str())
+                        .unwrap_or("")
+                        .contains("ub_capacity_compress_execute_path")
+            }),
+            "expected apply execute pin: {actions:?}"
         );
         // Nominal path → no compress action.
         let bare = build_suggested_actions_ultra_lean(
@@ -3337,7 +3383,7 @@ SESSION HANDOFF PACKET v1 (structured JSON for next-wake read_concept)
         std::env::set_var("ENGRAM_FORCE_CPU_BACKEND", "1");
         std::env::set_var("ENGRAM_KI_DISABLE", "1");
         let dir = std::env::temp_dir().join(format!(
-            "ub22_wake_compress_flag_{}_{}",
+            "ub24_wake_compress_flag_{}_{}",
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -3350,6 +3396,13 @@ SESSION HANDOFF PACKET v1 (structured JSON for next-wake read_concept)
             store
                 .backend_readiness()
                 .get("ub_capacity_wake_compress_suggest")
+                .and_then(|v| v.as_bool()),
+            Some(true)
+        );
+        assert_eq!(
+            store
+                .backend_readiness()
+                .get("ub_capacity_compress_execute_path")
                 .and_then(|v| v.as_bool()),
             Some(true)
         );
