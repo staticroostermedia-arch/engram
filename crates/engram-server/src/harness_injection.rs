@@ -288,7 +288,7 @@ pub fn collect_open_scars(store: &mut StoreHandle, limit: usize) -> Vec<Value> {
 /// MQ Cycle 28: lean/ultra-lean scar surface via access_index (no BVH recall walk).
 /// Empty lean open_scars_wake hid scars on disk and blocked SELECT deflection.
 pub fn collect_open_scars_lean(store: &StoreHandle, limit: usize) -> Vec<Value> {
-    let limit = limit.max(1).min(5);
+    let limit = limit.clamp(1, 5);
     let mut out = Vec::new();
     let mut seen = HashSet::new();
     for (concept, _) in store.access_index.recent(96) {
