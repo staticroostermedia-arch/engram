@@ -4753,3 +4753,29 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 
 1. MCP swap; run heal on live stalk if VERIFY still samples legacy PRAXIS.
 2. Resume UB distill: ub_secure_context / pure unit-phase encode.
+
+## MQ Cycle 49 — heal prefers verified_sequence seeds (2026-07-16)
+
+### VERIFY₀ baseline
+
+- master@`f8b92464` MQ48 #192.
+- CSF **0.937**; continuity green.
+- Lawfulness **needs_review**: remaining `tile:verified_sequence_full-system-audit-autonomous-improvement-plan-v1` (overview sample miss after MQ48 heal).
+
+### SELECT
+
+**Lawfulness residual (MQ)** — improve heal probe order; no distill feature.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Heal order | hard seeds → `list_concepts_filtered(tile:verified_sequence)` → overview sample |
+| Seeds | full-system-audit + native-enram-mcp stress verified_sequence keys |
+| Test | `mq_praxis_heal_prefers_verified_sequence_seed` |
+| Flag | `mq_praxis_heal_prefer_verified_sequence` |
+
+### Next vectors
+
+1. MCP swap + live heal.
+2. Resume UB distill: ub_secure_context / pure unit-phase encode.

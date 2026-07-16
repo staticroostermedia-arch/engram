@@ -2914,6 +2914,7 @@ impl StoreHandle {
                 "ub_sheaf_glue_relations": true,
                 "mq_praxis_store_contract_seal": true,
                 "mq_praxis_legacy_contract_heal": true,
+                "mq_praxis_heal_prefer_verified_sequence": true,
                 "ub_provlog_richness_recorded_at": true,
                 "ub_geosphere_frame_hot_geo_context": true,
                 "mq_goal_children_prefer_active": true,
@@ -10126,26 +10127,45 @@ impl StoreHandle {
         })
     }
 
-    /// MQ Cycle 48: re-seal **legacy** PRAXIS blocks whose `allowed_transforms` lack
+    /// MQ Cycle 48/49: re-seal **legacy** PRAXIS blocks whose `allowed_transforms` lack
     /// `evidence_update` (minted via paths that skipped `assign_reflexive_contract`
-    /// before MQ47 store-path seal). Bounded sample/heal; idempotent.
+    /// before MQ47 store-path seal). Bounded; idempotent.
     ///
-    /// Returns count of concepts healed. Prefer calling after VERIFY₀ needs_review
-    /// on PRAXIS permissive-contract samples.
+    /// MQ49: probe order is **preferential** so overview sampling cannot miss known
+    /// `tile:verified_sequence_*` debt:
+    /// 1. hard-seeded legacy names (VERIFY₀ recurring offenders)
+    /// 2. `list_concepts_filtered("tile:verified_sequence")`
+    /// 3. overview sample / full list
     pub fn heal_praxis_store_contracts(&mut self, max_heal: usize) -> Result<u32> {
         let max_heal = max_heal.clamp(1, 500);
         let total = self.leg_block_count();
         let large = total > Self::LARGE_MANIFOLD_THRESHOLD;
         let probe_cap = (max_heal * 40).clamp(200, 5000);
-        let concepts: Vec<String> = if large {
-            self.sample_concepts_for_overview(probe_cap)
+
+        let mut concepts: Vec<String> = Vec::new();
+        // Known VERIFY₀ offenders (truncation-safe exact keys used in prior samples).
+        for seed in [
+            "tile:verified_sequence_full-system-audit-autonomous-improvement-plan-v1",
+            "tile:verified_sequence_native-enram-mcp-ritual-stress-test---seamless-p",
+        ] {
+            concepts.push(seed.to_string());
+        }
+        let (pref, _, _) = self.list_concepts_filtered(Some("tile:verified_sequence"), 200);
+        concepts.extend(pref);
+        if large {
+            concepts.extend(self.sample_concepts_for_overview(probe_cap));
         } else {
-            self.backend.list()
-        };
+            concepts.extend(self.backend.list());
+        }
+
+        let mut seen = std::collections::HashSet::new();
         let mut healed = 0u32;
         for concept in concepts {
             if healed as usize >= max_heal {
                 break;
+            }
+            if !seen.insert(concept.clone()) {
+                continue;
             }
             let Some(mut block) = self
                 .fetch_block(&concept)
@@ -14723,6 +14743,41 @@ mod mq_praxis_store_contract_tests {
             .expect("live heal");
         eprintln!("mq_praxis_heal_live: healed={n} store={path}");
         assert!(n < 200 || n == 200, "healed count {n}");
+    }
+
+    /// MQ49: hard-seeded verified_sequence name is healed even if not in overview sample.
+    #[test]
+    fn mq_praxis_heal_prefers_verified_sequence_seed() {
+        let dir = test_store_dir("prefer_vs");
+        let mut store = StoreHandle::new(&dir.to_string_lossy());
+        // Noise concepts so overview sample is unlikely to hit the target by chance alone.
+        for i in 0..40 {
+            store
+                .remember(&format!("noise:mq49_{i}"), &format!("noise body {i}"))
+                .ok();
+        }
+        let key = "tile:verified_sequence_full-system-audit-autonomous-improvement-plan-v1";
+        let mut block = store.encode(
+            "THOUGHT TILE\n\n**tile_type:** verified_sequence\n**title:** mq49 prefer seed\n",
+        );
+        block.zedos_tag = engram_core::types::ZEDOS_PRAXIS;
+        block.crs_score = 0.91;
+        block.allowed_transforms = engram_core::types::default_allowed_transforms_v1();
+        store.test_backend_store_raw(key, block).expect("plant");
+
+        let healed = store.heal_praxis_store_contracts(5).expect("heal");
+        assert!(healed >= 1, "seeded verified_sequence must be healed first");
+        let fixed = store.fetch_block(key).expect("fetch");
+        let c = std::str::from_utf8(&fixed.allowed_transforms).unwrap_or("");
+        assert!(
+            c.contains("evidence_update"),
+            "seeded key must seal: {c:?}"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+        std::env::remove_var("ENGRAM_DISABLE_SHEAF");
+        std::env::remove_var("ENGRAM_FORCE_CPU_BACKEND");
+        std::env::remove_var("ENGRAM_KI_DISABLE");
     }
 }
 
