@@ -10961,7 +10961,10 @@ mod ingest_ast_tests {
             Some("mq_goal_children_v1")
         );
         assert_eq!(gc.get("count").and_then(|v| v.as_u64()), Some(1));
-        let kids = gc.get("children").and_then(|v| v.as_array()).expect("children");
+        let kids = gc
+            .get("children")
+            .and_then(|v| v.as_array())
+            .expect("children");
         assert_eq!(
             kids[0].get("concept").and_then(|v| v.as_str()),
             Some("goal:mq_rehydrate_graph")
