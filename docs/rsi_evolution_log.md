@@ -3805,3 +3805,33 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 1. MCP swap MQ24; wake write_hygiene_snapshot present with version mq_write_hygiene_v1.
 2. Optional #134 C86 if floor fails.
 3. Capacity only if landfill measured.
+
+## MQ Cycle 25 — session_end_key pin for boundary tiles (2026-07-15)
+
+### VERIFY₀ baseline
+
+- master@`eb2d170c` MQ24 #158.
+- MCP swapped: `mq_write_hygiene_slim_wake` LIVE; `write_hygiene_snapshot.version=mq_write_hygiene_v1` ✓.
+- CSF warm **0.941**; injection **1.0**; handoff complete; verify healthy (metric:mq_verify_1784161556).
+- Soft-stale warm total_ms=**0** floor held.
+- Residual: `tile:session_boundary_1784161281` on disk (matches session_end_key) but trusted_tiles[0]=`1784160439` — access_index.recent(48) miss under churn.
+- Unit tests lean + MQ24 slim hygiene green.
+
+### SELECT
+
+**mq_tiles_boundaries** — pin `tile:session_boundary_{ts}` from rehydration `session_end_key` when access_index misses.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| API | `ensure_session_boundary_in_trusted_tiles_opts(..., session_end_key)` |
+| Wire | CSF path + ultra-lean wake pass session_end_key |
+| Flag | `mq_trusted_tiles_session_end_pin` |
+| Test | `ensure_session_boundary_pins_session_end_key_tile` |
+
+### Next vectors
+
+1. MCP swap MQ25; wake trusted_tiles[0] == tile:session_boundary_{session_end_ts}.
+2. Optional #134 C86 if floor fails.
+3. Capacity only if landfill measured.
