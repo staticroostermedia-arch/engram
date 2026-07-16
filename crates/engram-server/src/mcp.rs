@@ -2381,18 +2381,30 @@ fn tool_list() -> Value {
             },
             {
                 "name": "mcp_engram_scar",
-                "description": "TRIGGER: Call this immediately if you attempt a code fix and it fails, or if the user tells you an approach is a dead end. This creates a geometric repeller in the manifold so you do not hallucinate or attempt the same bad solution again in the future. For insufficient memory anchors (not general inference), pass uncertainty_status to mint an uncertainty:* receipt instead of guessing.",
+                "description": "TRIGGER: Call this immediately if you attempt a code fix and it fails, or if the user tells you an approach is a dead end. This creates a geometric repeller in the manifold so you do not hallucinate or attempt the same bad solution again in the future. For research dead-ends, pass ruled_out + why (optional preferred_alternative) to mint/update a structured scar:* via mint_research_scar (UB15). For insufficient memory anchors (not general inference), pass uncertainty_status to mint an uncertainty:* receipt instead of guessing. Default path demotes an existing concept via op_suspend.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
                         "concept": {
                             "type": "string",
-                            "description": "The concept name to scar (e.g. 'failed_approach_x') or uncertainty slug when minting uncertainty receipt"
+                            "description": "Concept to demote, scar: slug for research mint, or uncertainty slug when minting uncertainty receipt"
                         },
                         "magnitude": {
                             "type": "number",
-                            "description": "Scar magnitude [0.0, 1.0]. Higher = larger CRS penalty and stronger topological deflection. Defaults to 0.15 (M-NOL default for contradiction axis spikes).",
+                            "description": "Scar magnitude [0.0, 1.0]. Higher = larger CRS penalty and stronger topological deflection. Defaults to 0.15 (M-NOL default for contradiction axis spikes). Ignored for research/uncertainty mint paths.",
                             "default": 0.15
+                        },
+                        "ruled_out": {
+                            "type": "string",
+                            "description": "UB15 research scar: the dead-end approach being ruled out. When set with why, routes to mint_research_scar (structured scar:*). Prefer over free-form remember(\"scar:…\")."
+                        },
+                        "why": {
+                            "type": "string",
+                            "description": "UB15 research scar: why this approach is ruled out (required with ruled_out)."
+                        },
+                        "preferred_alternative": {
+                            "type": "string",
+                            "description": "UB15 research scar: preferred path instead of the ruled-out approach (optional)."
                         },
                         "uncertainty_status": {
                             "type": "string",
@@ -8863,6 +8875,24 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
                 .unwrap_or("")
                 .trim()
                 .to_string();
+            let ruled_out = args
+                .get("ruled_out")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            let why = args
+                .get("why")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            let preferred_alternative = args
+                .get("preferred_alternative")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
             let requested_anchors: Vec<String> = args
                 .get("requested_anchors")
                 .and_then(|v| v.as_array())
@@ -8909,6 +8939,44 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
                     }
                     Err(e) => json!({
                         "content": [{ "type": "text", "text": format!("Uncertainty receipt failed: {e}") }],
+                        "isError": true
+                    }),
+                }
+            } else if !ruled_out.is_empty() {
+                // UB Cycle 15: structured research scar path (mint_research_scar).
+                // Prefer over free-form remember("scar:…") landfill.
+                if why.is_empty() {
+                    return json!({
+                        "content": [{ "type": "text", "text": "Error: why is required with ruled_out for research scar mint (ub_research_scar_mcp)." }],
+                        "isError": true
+                    });
+                }
+                let slug = raw_concept
+                    .strip_prefix("scar:")
+                    .unwrap_or(&raw_concept)
+                    .to_string();
+                match lock.mint_research_scar(
+                    &slug,
+                    &ruled_out,
+                    &why,
+                    &preferred_alternative,
+                ) {
+                    Ok((minted, action)) => {
+                        relate_realized_by(&mut lock, &minted, &process_context);
+                        warn!(
+                            "[UB RESEARCH SCAR MCP] concept='{}' action={} ruled_out_len={}",
+                            minted,
+                            action,
+                            ruled_out.len()
+                        );
+                        json!({
+                            "content": [{ "type": "text", "text": format!(
+                                "✓ Research scar {action}: {minted} (ub_research_scar_mcp; ruled_out structured; lean open_scars hoist)"
+                            ) }]
+                        })
+                    }
+                    Err(e) => json!({
+                        "content": [{ "type": "text", "text": format!("Research scar mint failed: {e}") }],
                         "isError": true
                     }),
                 }
@@ -11099,6 +11167,74 @@ list = ["unit_hypersphere_unchanged"]
             assert!(
                 text.contains("Uncertainty receipt minted"),
                 "expected uncertainty mint: {text}"
+            );
+            let _ = std::fs::remove_dir_all(&tmp);
+        }
+
+        /// UB Cycle 15: mcp_engram_scar + ruled_out/why → mint_research_scar.
+        #[test]
+        fn ub_research_scar_mcp_wires_mint_research_scar() {
+            let tmp = unique_tmp("research-scar-mcp");
+            let store = prep_store(&tmp);
+            let resp = handle_tool_on_big_stack(
+                "mcp_engram_scar",
+                &json!({
+                    "concept": "nested_schedulers_in_ub_fire",
+                    "ruled_out": "Arming nested schedulers inside Ultimate-Backend RSI fire",
+                    "why": "Fire IS the loop body; nested arms cause doom loops",
+                    "preferred_alternative": "One distill vector per fire; next_vector handoff"
+                }),
+                &store,
+            );
+            let text = mcp_text(&resp);
+            assert!(
+                text.contains("Research scar mint") || text.contains("ub_research_scar_mcp"),
+                "expected research scar mint: {text}"
+            );
+            assert!(
+                text.contains("scar:nested_schedulers_in_ub_fire"),
+                "expected scar: concept: {text}"
+            );
+            // Block on disk with structure.
+            let lock = store.lock().unwrap();
+            let block = lock
+                .fetch_block("scar:nested_schedulers_in_ub_fire")
+                .expect("research scar block");
+            let body = engram_core::storage::read_provlog(&block);
+            assert!(body.contains("**ruled_out:**"), "{body}");
+            assert!(body.contains("**why:**"), "{body}");
+            assert!(block.crs_score >= 0.5, "crs={}", block.crs_score);
+            drop(lock);
+            // Update path on second call.
+            let resp2 = handle_tool_on_big_stack(
+                "mcp_engram_scar",
+                &json!({
+                    "concept": "scar:nested_schedulers_in_ub_fire",
+                    "ruled_out": "Arming nested schedulers inside Ultimate-Backend RSI fire",
+                    "why": "Updated why — still ruled out",
+                    "preferred_alternative": "Single fire body only"
+                }),
+                &store,
+            );
+            let text2 = mcp_text(&resp2);
+            assert!(
+                text2.contains("update") || text2.contains("Research scar"),
+                "expected update: {text2}"
+            );
+            // Fail-closed: ruled_out without why.
+            let resp_err = handle_tool_on_big_stack(
+                "mcp_engram_scar",
+                &json!({
+                    "concept": "x",
+                    "ruled_out": "something",
+                }),
+                &store,
+            );
+            assert!(
+                resp_err.get("isError").and_then(|v| v.as_bool()).unwrap_or(false)
+                    || mcp_text(&resp_err).contains("why is required"),
+                "expected why required error: {}",
+                mcp_text(&resp_err)
             );
             let _ = std::fs::remove_dir_all(&tmp);
         }

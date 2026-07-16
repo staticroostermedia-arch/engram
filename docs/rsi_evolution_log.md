@@ -4885,3 +4885,29 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 
 1. MCP swap UB14 LIVE.
 2. Next distill: lexicon optional unit-phase bind / MCP wire scar→mint_research_scar / trust_surface on session_end boundary.
+
+## UB Cycle 15 — MCP wire scar→mint_research_scar (2026-07-16)
+
+### VERIFY₀ baseline
+
+- master@`fc8bcfe7` UB14 #197.
+- CSF **0.937**; trust_surface.trust_ok **true**; lawfulness **healthy** 50/50; warm_ms 1.
+- Residual: store `mint_research_scar` existed but `mcp_engram_scar` only demoted existing / uncertainty — agents could not mint structured research scars via MCP.
+
+### SELECT
+
+**ub_research_scar_mcp** — wire `mcp_engram_scar` ruled_out+why → `mint_research_scar` (write hygiene).
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Schema | `ruled_out`, `why`, `preferred_alternative` on `mcp_engram_scar` |
+| Handler | research mint path before demote; fail-closed why required with ruled_out |
+| Test | `ub_research_scar_mcp_wires_mint_research_scar` |
+| Flag | `ub_research_scar_mcp` |
+
+### Next vectors
+
+1. MCP swap UB15 LIVE.
+2. Next distill: lexicon optional unit-phase bind / trust_surface on session_end boundary.

@@ -2920,6 +2920,7 @@ impl StoreHandle {
                 "ub_secure_context_redact_fail_closed": true,
                 "ub_unit_phase_encode": true,
                 "ub_research_scar": true,
+                "ub_research_scar_mcp": true,
                 "ub_trust_surface": true,
                 "mq_goal_children_prefer_active": true,
                 "mq_goal_child_pin_matches_rank": true,
