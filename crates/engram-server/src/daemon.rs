@@ -219,9 +219,11 @@ pub fn spawn(store: SharedStore) -> Arc<DaemonControl> {
             .max(60);
         let mut capacity_interval = tokio::time::interval(Duration::from_secs(capacity_secs));
         if !capacity_compress_disabled {
-            capacity_interval.tick().await; // skip immediate startup trim
+            // UB Cycle 24: apply once at arm if elevated — MCP restarts often skip full 900s ticks.
+            maybe_capacity_hot_compress(&store);
+            capacity_interval.tick().await; // align next periodic fire
             info!(
-                "[CAPACITY] daemon hot compress armed every {}s (max_unmark default {}; disable ENGRAM_CAPACITY_HOT_COMPRESS_DISABLE=1)",
+                "[CAPACITY] daemon hot compress armed (startup trim + every {}s; max_unmark default {}; disable ENGRAM_CAPACITY_HOT_COMPRESS_DISABLE=1)",
                 capacity_secs,
                 crate::store::StoreHandle::CAPACITY_DAEMON_HOT_COMPRESS_DEFAULT_MAX
             );
