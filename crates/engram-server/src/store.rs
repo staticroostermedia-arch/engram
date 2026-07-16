@@ -394,6 +394,17 @@ fn relation_resume_label_boost(label: &str) -> u64 {
     }
 }
 
+/// MQ Cycle 37: structure reserved slot prefers **active** goal neighbors (align goal_children).
+fn relation_resume_structure_neighbor_active(store: &StoreHandle, other: &str) -> bool {
+    if !other.starts_with("goal:") {
+        return false;
+    }
+    store
+        .fetch_block_high_priority(other)
+        .map(|b| goal_status_is_active(&goal_block_text(&b)))
+        .unwrap_or(false)
+}
+
 pub fn default_relation_volatility(label: &str) -> f32 {
     let l = label.to_ascii_lowercase();
     if l.contains("supersedes") || l.contains("replaces") || l.contains("invalid") {
@@ -2817,6 +2828,7 @@ impl StoreHandle {
                 "mq_relation_resume_recency": true,
                 "mq_relation_resume_full_incident": true,
                 "mq_relation_resume_structure_boost": true,
+                "mq_relation_resume_structure_active": true,
                 "wake_lawfulness_snapshot": true,
                 "wake_slim_mq_resume_hoist": true,
                 "mq_spatial_locus_aabb_test": true,
@@ -5958,6 +5970,7 @@ impl StoreHandle {
     /// MQ20: scan **all** seed-incident edges before rank (pre-truncation hid recent forks).
     /// MQ Cycle 36: reserve ≥1 decomposes_into/has_child slot so goal-graph structure survives
     /// serves-trace spam without outranking freshest traces (label boost alone loses to 2e12+ts).
+    /// MQ Cycle 37: structure reserved slot prefers **active** goal children (align goal_children).
     pub fn build_lean_relation_resume(store: &Self, seed: Option<&str>) -> serde_json::Value {
         const TOP_K: usize = 8;
         /// Guarantee structure visibility under high serves degree (goal children are stable/low ts).
@@ -5991,34 +6004,45 @@ impl StoreHandle {
                 unique.push(c);
             }
         }
-        // Two-pass fill: reserve structure slots, then fill rest by score order.
-        let mut picked: Vec<(u64, String, String, &'static str, String)> = Vec::new();
+        // Structure reserve: prefer active goal children, then any structure (MQ36+MQ37).
+        type EdgeCand = (u64, String, String, &'static str, String);
+        let mut picked: Vec<EdgeCand> = Vec::new();
         let mut structure_picked = 0usize;
+        let already = |picked: &[EdgeCand], c: &EdgeCand| -> bool {
+            picked
+                .iter()
+                .any(|p| p.1 == c.1 && p.2 == c.2 && p.3 == c.3)
+        };
         for c in &unique {
-            if relation_resume_is_structure_label(&c.1) && structure_picked < STRUCTURE_RESERVED {
+            if structure_picked >= STRUCTURE_RESERVED {
+                break;
+            }
+            if relation_resume_is_structure_label(&c.1)
+                && relation_resume_structure_neighbor_active(store, &c.2)
+            {
                 picked.push(c.clone());
                 structure_picked += 1;
             }
         }
         for c in &unique {
+            if structure_picked >= STRUCTURE_RESERVED {
+                break;
+            }
+            if relation_resume_is_structure_label(&c.1) && !already(&picked, c) {
+                picked.push(c.clone());
+                structure_picked += 1;
+            }
+        }
+        // Fill remaining with non-structure by score order.
+        for c in &unique {
             if picked.len() >= TOP_K {
                 break;
             }
-            if relation_resume_is_structure_label(&c.1) && structure_picked > 0 {
-                // Already reserved best structure edge(s); skip extra structure until fill needs more.
-                if picked
-                    .iter()
-                    .any(|p| p.1 == c.1 && p.2 == c.2 && p.3 == c.3)
-                {
-                    continue;
-                }
-                // Only add more structure if we still have room after non-structure is scarce.
+            if relation_resume_is_structure_label(&c.1) {
+                // Extra structure only via backfill if non-structure scarce.
                 continue;
             }
-            if picked
-                .iter()
-                .any(|p| p.1 == c.1 && p.2 == c.2 && p.3 == c.3)
-            {
+            if already(&picked, c) {
                 continue;
             }
             picked.push(c.clone());
@@ -6029,10 +6053,7 @@ impl StoreHandle {
                 if picked.len() >= TOP_K {
                     break;
                 }
-                if picked
-                    .iter()
-                    .any(|p| p.1 == c.1 && p.2 == c.2 && p.3 == c.3)
-                {
+                if already(&picked, c) {
                     continue;
                 }
                 picked.push(c.clone());
@@ -6071,10 +6092,10 @@ impl StoreHandle {
             "seed": seed,
             "edge_count": edges.len(),
             "edges": edges,
-            "ranking": "recency_structure_v1",
+            "ranking": "recency_structure_active_v1",
             "structure_edges_in_top": structure_edges,
             "candidates_scanned": candidates_scanned,
-            "hint": "lean graph rehydrate — serves recency + reserved decomposes_into/has_child slot",
+            "hint": "lean graph rehydrate — serves recency + reserved active decomposes_into/has_child",
         })
     }
 
@@ -10943,7 +10964,7 @@ mod ingest_ast_tests {
             StoreHandle::build_lean_relation_resume(&store, Some("goal:engram_memory_quality_v1"));
         assert_eq!(
             rr.get("ranking").and_then(|v| v.as_str()),
-            Some("recency_structure_v1")
+            Some("recency_structure_active_v1")
         );
         let edges = rr.get("edges").and_then(|v| v.as_array()).expect("edges");
         assert!(!edges.is_empty());
@@ -11058,7 +11079,7 @@ mod ingest_ast_tests {
             StoreHandle::build_lean_relation_resume(&store, Some("goal:engram_memory_quality_v1"));
         assert_eq!(
             rr.get("ranking").and_then(|v| v.as_str()),
-            Some("recency_structure_v1")
+            Some("recency_structure_active_v1")
         );
         let edges = rr.get("edges").and_then(|v| v.as_array()).expect("edges");
         let has_child = edges.iter().any(|e| {
@@ -11080,6 +11101,91 @@ mod ingest_ast_tests {
             store
                 .backend_readiness()
                 .get("mq_relation_resume_structure_boost")
+                .and_then(|v| v.as_bool()),
+            Some(true)
+        );
+        assert_eq!(
+            store
+                .backend_readiness()
+                .get("mq_relation_resume_structure_active")
+                .and_then(|v| v.as_bool()),
+            Some(true)
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// MQ Cycle 37: structure reserved slot prefers active goal over completed high-ts sibling.
+    #[test]
+    fn mq_relation_resume_structure_slot_prefers_active_goal() {
+        let dir = test_store_dir("mq37_relation_structure_active");
+        let mut store = StoreHandle::new(&dir.to_string_lossy());
+        store
+            .remember(
+                "goal:engram_memory_quality_v1",
+                "GOAL\n\n**status:** active\n",
+            )
+            .unwrap();
+        for i in 0..12 {
+            let name = format!("trace:178410100{i}_mq37-serves-filler");
+            store
+                .remember(&name, "REASONING TRACE\n\n**decision_point:** filler\n")
+                .unwrap();
+            let _ = store.relate(&name, "goal:engram_memory_quality_v1", "serves");
+        }
+        // High-ts completed child would win pure score order.
+        store
+            .remember(
+                "goal:1784999999_mq37-completed-high-ts",
+                "GOAL BLOCK (subgoal)\n\n**status:** completed\n",
+            )
+            .unwrap();
+        let _ = store.relate(
+            "goal:engram_memory_quality_v1",
+            "goal:1784999999_mq37-completed-high-ts",
+            "decomposes_into",
+        );
+        // Low-ts active child — must win structure reserved slot.
+        store
+            .remember(
+                "goal:1000_mq37-active-low-ts",
+                "GOAL BLOCK (subgoal)\n\n**status:** active\n",
+            )
+            .unwrap();
+        let _ = store.relate(
+            "goal:engram_memory_quality_v1",
+            "goal:1000_mq37-active-low-ts",
+            "decomposes_into",
+        );
+        let rr =
+            StoreHandle::build_lean_relation_resume(&store, Some("goal:engram_memory_quality_v1"));
+        assert_eq!(
+            rr.get("ranking").and_then(|v| v.as_str()),
+            Some("recency_structure_active_v1")
+        );
+        let edges = rr.get("edges").and_then(|v| v.as_array()).expect("edges");
+        let has_active = edges.iter().any(|e| {
+            e.get("label").and_then(|v| v.as_str()) == Some("decomposes_into")
+                && (e.get("to").and_then(|v| v.as_str()) == Some("goal:1000_mq37-active-low-ts")
+                    || e.get("from").and_then(|v| v.as_str())
+                        == Some("goal:1000_mq37-active-low-ts"))
+        });
+        let has_completed = edges.iter().any(|e| {
+            e.get("to").and_then(|v| v.as_str()) == Some("goal:1784999999_mq37-completed-high-ts")
+                || e.get("from").and_then(|v| v.as_str())
+                    == Some("goal:1784999999_mq37-completed-high-ts")
+        });
+        assert!(
+            has_active,
+            "active low-ts child must fill structure slot; edges={edges:?}"
+        );
+        assert!(
+            !has_completed,
+            "completed high-ts sibling must not steal sole structure slot; edges={edges:?}"
+        );
+        assert_eq!(
+            store
+                .backend_readiness()
+                .get("mq_relation_resume_structure_active")
                 .and_then(|v| v.as_bool()),
             Some(true)
         );
