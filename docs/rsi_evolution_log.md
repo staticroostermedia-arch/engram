@@ -4779,3 +4779,28 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 
 1. MCP swap + live heal.
 2. Resume UB distill: ub_secure_context / pure unit-phase encode.
+
+## UB Cycle 11 — secure_context path fail-closed + content bound (2026-07-16)
+
+### VERIFY₀ baseline
+
+- master@`f72790ce` MQ49 #193.
+- CSF **0.938**; lawfulness **healthy** 50/50; dual-gate green.
+- Residual: encrypt/provision tested; path fail-closed not pinned as UB distillate; readiness lacked `ub_secure_*` flag.
+
+### SELECT
+
+**ub_secure_context** — property-pin fail-closed redact for path queries + bounded content query.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Tests | `ub_secure_context_path_query_fail_closed`, `ub_secure_context_content_query_bounded` |
+| Flag | `ub_secure_context_redact_fail_closed` |
+| Invariants | path query no secret leak; points to provision ritual; content query not full dump |
+
+### Next vectors
+
+1. MCP swap UB11 LIVE.
+2. Next distill: pure unit-phase encode / ub_research_scar / ub_trust_surface.
