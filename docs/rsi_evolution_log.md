@@ -4963,3 +4963,29 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 
 1. MCP swap UB17 LIVE.
 2. Next distill: capacity residual / relation density harness wins.
+
+## UB Cycle 18 — relation_resume demotes capacity structure when nominal (2026-07-16)
+
+### VERIFY₀ baseline
+
+- master@`accd93be` UB17 #200.
+- CSF **0.937**; trust_ok **true**; lawfulness **healthy** 50/50; warm_ms 1; capacity **large_manifold_nominal** (hot_set 1243).
+- Residual: goal_children demotes capacity under nominal risk, but relation_resume structure reserve still filled capacity_policy first — hides continuity/handoff/relation-density for SELECT.
+
+### SELECT
+
+**ub_relation_resume_demote_capacity_nominal** — structure reserve skips capacity_policy neighbors when risk not elevated (last-resort fill only).
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Logic | demote capacity structure in reserve when `!risk.starts_with("elevated")` |
+| Fields | `capacity_risk`, `capacity_structure_demoted` on relation_resume |
+| Test | `ub_relation_resume_demote_capacity_structure_when_nominal` |
+| Flag | `ub_relation_resume_demote_capacity_nominal` |
+
+### Next vectors
+
+1. MCP swap UB18 LIVE.
+2. Next distill: capacity soft-elevated hot_set band / NREM compress when hot_set>1k.
