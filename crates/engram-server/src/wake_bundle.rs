@@ -243,6 +243,12 @@ pub fn slim_continuation_bundle(full: &Value) -> Value {
             "write_hygiene_snapshot",
             full.get("write_hygiene_snapshot").cloned(),
         );
+        // MQ Cycle 31: goal graph children (decomposes_into) on slim — not buried in serves traces.
+        crate::continuity_spikes::insert_optional(
+            obj,
+            "goal_children",
+            full.get("goal_children").cloned(),
+        );
         // MQ Cycle 29: scar pins (concept list) when non-empty — count alone is not actionable.
         if !open_scars_wake.is_empty() {
             obj.insert("open_scars_wake".into(), json!(open_scars_wake));
@@ -430,5 +436,37 @@ mod tests {
         // MQ Cycle 30: preview survives slim hoist.
         assert_eq!(scars[0]["preview"], "SCAR **ruled_out:** doom loop");
         assert_eq!(scars[1]["concept"], "scar:mq29_other");
+    }
+
+    /// MQ Cycle 31: slim must hoist goal_children when present on full assemble.
+    #[test]
+    fn slim_bundle_hoists_goal_children() {
+        let full = json!({
+            "primary_goal": "goal:engram_memory_quality_v1",
+            "harness_injection": {
+                "suggested_actions": [],
+                "trace_chain": { "head": "trace:mq31" },
+                "ego_snapshot": {}
+            },
+            "goal_children": {
+                "version": "mq_goal_children_v1",
+                "parent": "goal:engram_memory_quality_v1",
+                "count": 1,
+                "children": [{
+                    "concept": "goal:mq_rehydrate_graph",
+                    "label": "decomposes_into",
+                    "status": "active",
+                    "preview": "GOAL **status:** active"
+                }],
+                "hint": "lean goal graph — prefer active child SELECT over episodic noise"
+            }
+        });
+        let slim = slim_continuation_bundle(&full);
+        assert_eq!(slim["goal_children"]["version"], "mq_goal_children_v1");
+        assert_eq!(slim["goal_children"]["count"], 1);
+        assert_eq!(
+            slim["goal_children"]["children"][0]["concept"],
+            "goal:mq_rehydrate_graph"
+        );
     }
 }

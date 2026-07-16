@@ -2813,6 +2813,7 @@ impl StoreHandle {
                 "mq_lean_open_scars_access_index": true,
                 "mq_lean_open_scars_slim_hoist": true,
                 "mq_lean_open_scars_preview": true,
+                "mq_goal_children_lean": true,
                 "mq_tiles_boundaries_session": true,
                 "mq_csf_session_boundary_prefer": true,
                 "mq_trusted_tiles_boundary_recency": true,
@@ -5627,11 +5628,14 @@ impl StoreHandle {
             // MQ Cycle 5: non-flat lean rehydration — relation neighborhood of primary
             // + latest lawfulness series head (no extra agent tool round-trip).
             if wake_lean {
-                let seed = primary_goal_name.as_deref().or_else(|| {
+                // Own seed String so later obj.insert does not fight borrow of obj fields.
+                let seed_owned: Option<String> = primary_goal_name.clone().or_else(|| {
                     obj.get("rehydration_manifest")
                         .and_then(|m| m.get("primary_goal"))
                         .and_then(|v| v.as_str())
+                        .map(|s| s.to_string())
                 });
+                let seed = seed_owned.as_deref();
                 obj.insert(
                     "relation_resume".to_string(),
                     Self::build_lean_relation_resume(self, seed),
@@ -5645,6 +5649,11 @@ impl StoreHandle {
                 obj.insert(
                     "write_hygiene_snapshot".to_string(),
                     Self::build_lean_write_hygiene_snapshot(self),
+                );
+                // MQ Cycle 31: goal graph children on lean wake (not buried under serves traces).
+                obj.insert(
+                    "goal_children".to_string(),
+                    Self::build_lean_goal_children(self, seed),
                 );
             }
         }
@@ -5983,6 +5992,71 @@ impl StoreHandle {
             "ranking": "recency_neighbor_v1",
             "candidates_scanned": candidates_scanned,
             "hint": "lean graph rehydrate — search_by_relation for deeper walks",
+        })
+    }
+
+    /// MQ Cycle 31: lean goal children via `decomposes_into` / `has_child` (index walk, no list-all).
+    /// Complements relation_resume which ranks recent serves traces and buries stable backlog children.
+    pub fn build_lean_goal_children(store: &Self, seed: Option<&str>) -> serde_json::Value {
+        let seed = seed
+            .filter(|s| !s.is_empty() && *s != "unset")
+            .unwrap_or("goal:engram_mvp_v1");
+        let mut children: Vec<serde_json::Value> = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        for label in ["decomposes_into", "has_child"] {
+            for (edge_label, other) in store.search_relations(seed, Some(label), "from") {
+                // Goal graph children only (skip episodic/compression noise).
+                if !other.starts_with("goal:") {
+                    continue;
+                }
+                if !seen.insert(other.clone()) {
+                    continue;
+                }
+                let (status, preview) = if let Some(block) = store.fetch_block_high_priority(&other)
+                {
+                    let text = goal_block_text(&block);
+                    let status = text
+                        .lines()
+                        .find(|l| {
+                            let t = l.trim();
+                            t.starts_with("**status:**") || t.starts_with("status:")
+                        })
+                        .map(|l| {
+                            l.replace("**status:**", "")
+                                .replace("status:", "")
+                                .trim()
+                                .to_string()
+                        })
+                        .unwrap_or_default();
+                    let preview: String = text.chars().take(120).collect();
+                    (status, preview)
+                } else {
+                    (String::new(), String::new())
+                };
+                children.push(serde_json::json!({
+                    "concept": other,
+                    "label": edge_label,
+                    "status": status,
+                    "preview": preview,
+                }));
+                if children.len() >= 8 {
+                    break;
+                }
+            }
+            if children.len() >= 8 {
+                break;
+            }
+        }
+        serde_json::json!({
+            "version": "mq_goal_children_v1",
+            "parent": seed,
+            "count": children.len(),
+            "children": children,
+            "hint": if children.is_empty() {
+                "no decomposes_into/has_child under primary — goal_decompose backlog or relate children"
+            } else {
+                "lean goal graph — prefer active child SELECT over episodic noise"
+            },
         })
     }
 
@@ -10840,6 +10914,71 @@ mod ingest_ast_tests {
             store
                 .backend_readiness()
                 .get("mq_relation_resume_full_incident")
+                .and_then(|v| v.as_bool()),
+            Some(true)
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// MQ Cycle 31: lean goal_children surfaces decomposes_into under primary.
+    #[test]
+    fn mq_goal_children_lean_surfaces_decomposes_into() {
+        let dir = test_store_dir("mq31_goal_children");
+        let mut store = StoreHandle::new(&dir.to_string_lossy());
+        store
+            .remember(
+                "goal:engram_memory_quality_v1",
+                "GOAL\n\n**status:** active\n**statement:** parent mq31\n",
+            )
+            .unwrap();
+        store
+            .remember(
+                "goal:mq_rehydrate_graph",
+                "GOAL BLOCK (subgoal)\n\n**goal_statement:** rehydrate graph\n\n**status:** active\n**parent_goal:** goal:engram_memory_quality_v1\n",
+            )
+            .unwrap();
+        let _ = store.relate(
+            "goal:engram_memory_quality_v1",
+            "goal:mq_rehydrate_graph",
+            "decomposes_into",
+        );
+        // Noise: serves edge should not appear as a goal child.
+        store
+            .remember(
+                "trace:1784166500_noise",
+                "REASONING TRACE\n\n**decision_point:** noise\n",
+            )
+            .unwrap();
+        let _ = store.relate(
+            "trace:1784166500_noise",
+            "goal:engram_memory_quality_v1",
+            "serves",
+        );
+        let gc =
+            StoreHandle::build_lean_goal_children(&store, Some("goal:engram_memory_quality_v1"));
+        assert_eq!(
+            gc.get("version").and_then(|v| v.as_str()),
+            Some("mq_goal_children_v1")
+        );
+        assert_eq!(gc.get("count").and_then(|v| v.as_u64()), Some(1));
+        let kids = gc.get("children").and_then(|v| v.as_array()).expect("children");
+        assert_eq!(
+            kids[0].get("concept").and_then(|v| v.as_str()),
+            Some("goal:mq_rehydrate_graph")
+        );
+        assert_eq!(
+            kids[0].get("label").and_then(|v| v.as_str()),
+            Some("decomposes_into")
+        );
+        let status = kids[0].get("status").and_then(|v| v.as_str()).unwrap_or("");
+        assert!(
+            status.contains("active"),
+            "expected active status in child, got {status:?}"
+        );
+        assert_eq!(
+            store
+                .backend_readiness()
+                .get("mq_goal_children_lean")
                 .and_then(|v| v.as_bool()),
             Some(true)
         );
