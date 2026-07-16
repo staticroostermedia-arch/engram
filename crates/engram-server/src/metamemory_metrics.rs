@@ -237,6 +237,7 @@ pub fn is_metamemory_write_tool(tool: &str) -> bool {
 /// Mint-class writes (new concept creation) — prefer update when match exists.
 /// MQ Cycle 27: include thought_tile_create + scar (distillate / deflection mints).
 /// MQ Cycle 33: goal_create + goal_decompose mint goal-graph structure (was invisible to hygiene).
+/// MQ Cycle 40: quick_trace + session_end mint trace/boundary distillates (were log-only → false mints=0).
 pub fn is_mint_write_tool(tool: &str) -> bool {
     matches!(
         tool,
@@ -248,6 +249,18 @@ pub fn is_mint_write_tool(tool: &str) -> bool {
             | "mcp_engram_scar"
             | "mcp_engram_goal_create"
             | "mcp_engram_goal_decompose"
+            | "mcp_engram_quick_trace"
+            | "mcp_engram_session_end"
+            | "mcp_engram_safe_edit_and_verify"
+    )
+}
+
+/// Distillate log mints counted for hygiene but **not** consult-gated (fork/handoff must stay low-friction).
+/// MQ Cycle 40: quick_trace/session_end create concepts yet must not require hard recall-before-write.
+pub fn is_ungated_hygiene_mint_tool(tool: &str) -> bool {
+    matches!(
+        tool,
+        "mcp_engram_quick_trace" | "mcp_engram_session_end" | "mcp_engram_safe_edit_and_verify"
     )
 }
 
@@ -283,6 +296,7 @@ pub fn classify_mcp_tool(tool: &str) -> Option<&'static str> {
         | "mcp_engram_update_with_tensor_bond"
         | "mcp_engram_thought_tile_create"
         | "mcp_engram_session_end"
+        | "mcp_engram_safe_edit_and_verify"
         | "mcp_engram_scar"
         | "mcp_engram_remember_solution"
         | "mcp_engram_batch_remember"
@@ -383,11 +397,46 @@ mod tests {
         assert!(is_update_write_tool("mcp_engram_goal_update_status"));
         assert_eq!(classify_mcp_tool("mcp_engram_goal_decompose"), Some("log"));
         assert_eq!(classify_mcp_tool("mcp_engram_goal_list"), Some("plan"));
+        // MQ Cycle 40: distillate log tools count as hygiene mints.
+        assert!(is_mint_write_tool("mcp_engram_quick_trace"));
+        assert!(is_mint_write_tool("mcp_engram_session_end"));
+        assert!(is_mint_write_tool("mcp_engram_safe_edit_and_verify"));
+        assert!(is_ungated_hygiene_mint_tool("mcp_engram_quick_trace"));
+        assert!(is_ungated_hygiene_mint_tool("mcp_engram_session_end"));
+        assert!(!is_ungated_hygiene_mint_tool("mcp_engram_remember"));
+        assert_eq!(
+            classify_mcp_tool("mcp_engram_safe_edit_and_verify"),
+            Some("log")
+        );
         let mut c = SessionMetamemoryCounters::default();
         c.note_recall(1);
         c.note_write("mcp_engram_goal_decompose");
         assert_eq!(c.mints, 1);
         assert_eq!(c.updates, 0);
+        c.note_write("mcp_engram_quick_trace");
+        c.note_write("mcp_engram_session_end");
+        assert_eq!(c.mints, 3);
+    }
+
+    /// MQ Cycle 40: plan/log with only quick_trace mints must not show zero-mint false signal.
+    #[test]
+    fn mq_write_hygiene_quick_trace_counts_as_mint() {
+        let mut c = SessionMetamemoryCounters::default();
+        c.note_plan_tool();
+        c.note_log_tool();
+        // Pre-MQ40: only note_log → mints=0 false signal.
+        c.note_write("mcp_engram_quick_trace");
+        assert_eq!(c.mints, 1);
+        let j = c.to_json();
+        assert_eq!(j.get("mints").and_then(|v| v.as_u64()), Some(1));
+        let hint = j
+            .get("write_hygiene_hint")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        assert!(
+            !hint.contains("zero mint"),
+            "quick_trace mint must clear zero-mint false signal; hint={hint}"
+        );
     }
 
     #[test]
