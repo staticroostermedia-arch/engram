@@ -3982,3 +3982,32 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 1. MCP swap MQ30; confirm slim `open_scars_wake[0].preview` non-empty.
 2. Optional #134 C86 if soft-stale warm floor fails.
 3. Next quality child (goal has_child surface / relation harness / capacity if measured).
+
+## MQ Cycle 31 — lean goal_children on slim wake (2026-07-15)
+
+### VERIFY₀ baseline
+
+- master@`48e63fa6` MQ30 #164.
+- MCP swapped: `mq_lean_open_scars_preview` LIVE; `open_scars_wake[0].preview` non-empty ✓.
+- Residual: primary `goal:engram_memory_quality_v1` had **zero** decomposes_into children; relation_resume top-8 only serves traces → rehydrate cannot see backlog graph.
+- CSF warm **0.941**; injection **1.0**; handoff complete; verify healthy (sample 50).
+
+### SELECT
+
+**mq_rehydrate_graph** residual — first-class lean `goal_children` (decomposes_into/has_child index walk).
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Helper | `build_lean_goal_children` (status + preview ≤120) |
+| Wire | lean wake assemble + slim hoist |
+| Flag | `mq_goal_children_lean` |
+| Tests | `mq_goal_children_lean_surfaces_decomposes_into`, `slim_bundle_hoists_goal_children` |
+| Seed | goal_decompose backlog under primary (live) |
+
+### Next vectors
+
+1. MCP swap MQ31; confirm slim `goal_children.count>0` after decompose.
+2. Optional #134 C86 if soft-stale warm floor fails.
+3. Next quality child if dual-gate holds.
