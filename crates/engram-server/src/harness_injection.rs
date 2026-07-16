@@ -287,6 +287,7 @@ pub fn collect_open_scars(store: &mut StoreHandle, limit: usize) -> Vec<Value> {
 
 /// MQ Cycle 28: lean/ultra-lean scar surface via access_index (no BVH recall walk).
 /// Empty lean open_scars_wake hid scars on disk and blocked SELECT deflection.
+/// MQ Cycle 30: fill preview from provlog already fetched (≤140 chars) — match non-lean path.
 pub fn collect_open_scars_lean(store: &StoreHandle, limit: usize) -> Vec<Value> {
     let limit = limit.clamp(1, 5);
     let mut out = Vec::new();
@@ -301,10 +302,11 @@ pub fn collect_open_scars_lean(store: &StoreHandle, limit: usize) -> Vec<Value> 
         if block.crs_score < 0.5 {
             continue;
         }
+        let preview: String = storage::read_provlog(&block).chars().take(140).collect();
         out.push(json!({
             "concept": concept,
             "crs": block.crs_score,
-            "preview": "",
+            "preview": preview,
             "source": "access_index_recent",
             "reason": "lean scar pin — read before repeating dead approach",
         }));
@@ -324,10 +326,12 @@ pub fn collect_open_scars_lean(store: &StoreHandle, limit: usize) -> Vec<Value> 
             if block.crs_score < 0.5 {
                 continue;
             }
+            // MQ Cycle 30: same preview fill on prefix path.
+            let preview: String = storage::read_provlog(&block).chars().take(140).collect();
             out.push(json!({
                 "concept": concept,
                 "crs": block.crs_score,
-                "preview": "",
+                "preview": preview,
                 "source": "access_index_prefix",
                 "reason": "lean scar pin — read before repeating dead approach",
             }));
@@ -3174,6 +3178,15 @@ SESSION HANDOFF PACKET v1 (structured JSON for next-wake read_concept)
         assert_eq!(
             scars[0].get("source").and_then(|v| v.as_str()),
             Some("access_index_recent")
+        );
+        // MQ Cycle 30: preview from provlog (not empty).
+        let preview = scars[0]
+            .get("preview")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        assert!(
+            preview.contains("ruled_out") || preview.contains("SCAR"),
+            "expected non-empty scar preview from provlog, got {preview:?}"
         );
         let _ = std::fs::remove_dir_all(&dir);
     }

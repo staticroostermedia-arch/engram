@@ -165,6 +165,7 @@ pub fn slim_continuation_bundle(full: &Value) -> Value {
                     json!({
                         "concept": s.get("concept"),
                         "crs": s.get("crs"),
+                        "preview": s.get("preview"),
                         "reason": s.get("reason"),
                         "source": s.get("source"),
                     })
@@ -404,12 +405,14 @@ mod tests {
                     {
                         "concept": "scar:mq29_test",
                         "crs": 0.9,
+                        "preview": "SCAR **ruled_out:** doom loop",
                         "reason": "lean scar pin — read before repeating dead approach",
                         "source": "access_index_recent"
                     },
                     {
                         "concept": "scar:mq29_other",
                         "crs": 0.85,
+                        "preview": "SCAR **ruled_out:** other",
                         "reason": "lean scar pin — read before repeating dead approach",
                         "source": "access_index_prefix"
                     }
@@ -424,6 +427,8 @@ mod tests {
         assert_eq!(scars.len(), 2);
         assert_eq!(scars[0]["concept"], "scar:mq29_test");
         assert_eq!(scars[0]["source"], "access_index_recent");
+        // MQ Cycle 30: preview survives slim hoist.
+        assert_eq!(scars[0]["preview"], "SCAR **ruled_out:** doom loop");
         assert_eq!(scars[1]["concept"], "scar:mq29_other");
     }
 }

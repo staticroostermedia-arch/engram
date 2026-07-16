@@ -3953,3 +3953,32 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 1. MCP swap MQ29; confirm slim `open_scars_wake[0].concept` + scar action in suggested_actions.
 2. Optional #134 C86 if soft-stale warm floor fails.
 3. Next quality child if dual-gate holds (consult residual / relation harness / capacity if measured).
+
+## MQ Cycle 30 — lean open_scars preview from provlog (2026-07-15)
+
+### VERIFY₀ baseline
+
+- master@`d91eb567` MQ29 #163.
+- MCP swapped: `mq_lean_open_scars_slim_hoist` LIVE; `open_scars_wake` concepts + scar suggested_action ✓.
+- Residual: lean scar `preview` always `""` despite block already fetched — slim surface not self-describing for SELECT deflection.
+- CSF warm **0.936**; injection **1.0**; handoff complete; verify healthy (sample 50).
+- Cold/post-restart wake ~150–170ms; floor constraint only.
+
+### SELECT
+
+**mq_rehydrate_graph** residual — actionable scar previews on lean pin (match non-lean 140-char path).
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Collect | `collect_open_scars_lean` fills preview from `read_provlog` ≤140 |
+| Slim hoist | pass through `preview` field |
+| Flag | `mq_lean_open_scars_preview` |
+| Test | extended `collect_open_scars_lean_finds_access_index_scars` + slim preview assert |
+
+### Next vectors
+
+1. MCP swap MQ30; confirm slim `open_scars_wake[0].preview` non-empty.
+2. Optional #134 C86 if soft-stale warm floor fails.
+3. Next quality child (goal has_child surface / relation harness / capacity if measured).
