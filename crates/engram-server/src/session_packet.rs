@@ -419,6 +419,116 @@ pub(crate) fn handoff_memory_quality_completeness(
     })
 }
 
+/// Parse selected_child for UB/MQ fires: `- selected_child: ub_…` / `mq_…` or markdown section.
+pub(crate) fn handoff_parse_selected_child(summary: &str) -> Option<String> {
+    let lines: Vec<&str> = summary.lines().collect();
+    for (i, raw) in lines.iter().enumerate() {
+        let t = raw.trim().trim_start_matches(['-', ' ', '#']).trim();
+        if let Some(rest) = t.strip_prefix("selected_child:") {
+            let v = rest.trim().trim_matches('"');
+            if !v.is_empty() {
+                return Some(v.to_string());
+            }
+            if let Some(next) = lines
+                .get(i + 1)
+                .map(|s| s.trim())
+                .filter(|s| !s.is_empty() && !s.starts_with('#'))
+            {
+                return Some(next.trim_matches('"').to_string());
+            }
+        }
+        if t.eq_ignore_ascii_case("selected_child") {
+            if let Some(next) = lines
+                .get(i + 1)
+                .map(|s| s.trim())
+                .filter(|s| !s.is_empty() && !s.starts_with('#'))
+            {
+                return Some(next.trim_matches('"').to_string());
+            }
+        }
+        // JSON line: "selected_child": "ub_handoff_distillate"
+        if t.starts_with("\"selected_child\"") {
+            if let Some(idx) = t.find(':') {
+                let v = t[idx + 1..]
+                    .trim()
+                    .trim_matches(',')
+                    .trim()
+                    .trim_matches('"');
+                if !v.is_empty() {
+                    return Some(v.to_string());
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Parse optional property_test name for distillation ship evidence.
+pub(crate) fn handoff_parse_property_test(summary: &str) -> Option<String> {
+    for raw in summary.lines() {
+        let t = raw.trim().trim_start_matches(['-', ' ', '#']).trim();
+        if let Some(rest) = t.strip_prefix("property_test:") {
+            let v = rest.trim().trim_matches('"');
+            if !v.is_empty() && v != "null" {
+                return Some(v.to_string());
+            }
+        }
+        if t.starts_with("\"property_test\"") {
+            if let Some(idx) = t.find(':') {
+                let v = t[idx + 1..]
+                    .trim()
+                    .trim_matches(',')
+                    .trim()
+                    .trim_matches('"');
+                if !v.is_empty() && v != "null" {
+                    return Some(v.to_string());
+                }
+            }
+        }
+    }
+    None
+}
+
+/// UB Cycle 1: distillation completeness so next fire continues the same distill mind.
+/// Soft for MQ-only fires (no selected_child) — complete when MQ fields exist and no ub_* claim.
+pub(crate) fn handoff_distillation_completeness(
+    selected_child: Option<&str>,
+    next_vector: Option<&str>,
+    property_test: Option<&str>,
+    primary_goal: Option<&str>,
+) -> serde_json::Value {
+    let has_child = selected_child.map(|s| !s.is_empty()).unwrap_or(false);
+    let has_next = next_vector.map(|s| !s.is_empty()).unwrap_or(false);
+    let has_test = property_test.map(|s| !s.is_empty()).unwrap_or(false);
+    let primary = primary_goal.unwrap_or("");
+    let is_ub_primary = primary.contains("ultimate_backend") || primary.contains("ub_");
+    let child = selected_child.unwrap_or("");
+    let is_ub_child = child.starts_with("ub_") || child.starts_with("mq_");
+    let mut missing = Vec::new();
+    // Require selected_child when primary is ultimate-backend or child is ub_*/mq_* claim.
+    if (is_ub_primary || is_ub_child) && !has_child {
+        missing.push("selected_child");
+    }
+    if (is_ub_primary || has_child) && !has_next {
+        missing.push("next_vector");
+    }
+    // property_test recommended for ub_* ships but not hard for mq residual handoffs.
+    if has_child && child.starts_with("ub_") && !has_test {
+        missing.push("property_test");
+    }
+    serde_json::json!({
+        "schema_version": "ub_distillate_v1",
+        "selected_child": selected_child,
+        "property_test": property_test,
+        "has_selected_child": has_child,
+        "has_next_vector": has_next,
+        "has_property_test": has_test,
+        "complete": missing.is_empty(),
+        "missing_fields": missing,
+        "hint": "UB handoff — include selected_child + next_vector (+ property_test for ub_* ships)",
+    })
+}
+
 /// Extract file paths touched (from `code` or /home/ or crates/ tokens) for handoff packet.
 pub(crate) fn handoff_extract_files_touched(summary: &str) -> Vec<String> {
     let mut seen = HashSet::new();
@@ -608,6 +718,44 @@ MCP swap MQ16
             1,
             "dedupe: {f:?}"
         );
+    }
+
+    /// UB Cycle 1: distillation completeness requires selected_child + property_test for ub_*.
+    #[test]
+    fn handoff_distillation_completeness_ub_requires_selected_child_and_test() {
+        let summary = r#"
+- master_sha: abc
+- selected_child: ub_handoff_distillate
+- next_vector: ub_relation_density after handoff distillate
+- property_test: handoff_distillation_completeness_ub_requires_selected_child_and_test
+- falsifiers: distillation block missing on structured_handoff
+"#;
+        let child = handoff_parse_selected_child(summary);
+        assert_eq!(child.as_deref(), Some("ub_handoff_distillate"));
+        let pt = handoff_parse_property_test(summary);
+        assert!(pt.as_deref().unwrap().contains("handoff_distillation"));
+        let d = handoff_distillation_completeness(
+            child.as_deref(),
+            Some("ub_relation_density after handoff distillate"),
+            pt.as_deref(),
+            Some("goal:engram_ultimate_backend_v1"),
+        );
+        assert_eq!(d["schema_version"], "ub_distillate_v1");
+        assert_eq!(d["complete"], true);
+        assert!(d["missing_fields"].as_array().unwrap().is_empty());
+        // Missing property_test for ub_* is incomplete.
+        let d2 = handoff_distillation_completeness(
+            Some("ub_relation_density"),
+            Some("next"),
+            None,
+            Some("goal:engram_ultimate_backend_v1"),
+        );
+        assert_eq!(d2["complete"], false);
+        assert!(d2["missing_fields"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|x| x.as_str() == Some("property_test")));
     }
 
     /// MQ Cycle 18: ship/next_vector lines that *mention* falsifiers must not pollute the list.
