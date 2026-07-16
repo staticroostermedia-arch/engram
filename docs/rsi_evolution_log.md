@@ -4207,3 +4207,31 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 1. MCP swap MQ38; confirm live structure edge has neighbor_status=active.
 2. Optional #134 C86 if soft-stale warm floor fails.
 3. Next quality child (spatial_locus / write_hygiene residual / capacity if measured).
+
+## MQ Cycle 39 — scars_at_locus relation-first (no bag-of-stem noise) (2026-07-15)
+
+### VERIFY₀ baseline
+
+- master@`8c50e5ac` MQ38 #172.
+- MCP swapped: `mq_relation_resume_neighbor_status` LIVE; structure edge `neighbor_status=active` ✓.
+- Residual: `collect_scars_at_locus` always bag-of-stem `recall_scoped("scar {stem}")` — injects unrelated scars when spatial window already has relation-linked scars (traces already tiered line-precise; scars lagged).
+- CSF warm **0.941**; handoff complete; verify healthy 50/50; dual-gate green.
+
+### SELECT
+
+**mq_spatial_locus** — scars_at_locus prefer relation-linked; bag-of-stem only when spatial window empty.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Collect | relation-linked first; stem recall only if no spatial concepts |
+| Field | `source`: `relation_linked` \| `stem_recall` |
+| Flag | `mq_spatial_locus_scars_relation_first` |
+| Test | `mq_spatial_locus_scars_prefer_relation_linked_over_stem_recall` |
+
+### Next vectors
+
+1. MCP swap MQ39; confirm scars_at_locus on line-bounded edit has source=relation_linked when linked scars exist.
+2. Optional #134 C86 if soft-stale warm floor fails.
+3. Next quality child (write_hygiene residual / capacity if measured).

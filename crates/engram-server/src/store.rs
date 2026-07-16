@@ -2839,6 +2839,7 @@ impl StoreHandle {
                 "wake_lawfulness_snapshot": true,
                 "wake_slim_mq_resume_hoist": true,
                 "mq_spatial_locus_aabb_test": true,
+                "mq_spatial_locus_scars_relation_first": true,
                 "mq_consult_before_write_agent_hard": true,
                 "mq_write_hygiene_mint_update": true,
                 "mq_write_hygiene_slim_wake": true,
@@ -8696,7 +8697,9 @@ impl StoreHandle {
         }
     }
 
-    /// Scars mentioning this module or related to spatial concepts in the locus window.
+    /// Scars related to spatial concepts in the locus window.
+    /// MQ Cycle 39: prefer relation-linked scars; bag-of-stem recall only when the window has
+    /// no spatial concepts (avoids bag-of-similar noise burying locus-linked scars).
     pub(crate) fn collect_scars_at_locus(
         &mut self,
         stem: &str,
@@ -8704,33 +8707,42 @@ impl StoreHandle {
         limit: usize,
     ) -> Vec<serde_json::Value> {
         use std::collections::HashSet;
-        let mut candidates: Vec<String> = Vec::new();
+        let mut candidates: Vec<(String, &'static str)> = Vec::new();
 
         for c in spatial_concepts {
             for (_label, other) in self.search_relations(c, Some("ruled_out"), "both") {
                 if other.starts_with("scar:") {
-                    candidates.push(other);
+                    candidates.push((other, "relation_linked"));
                 }
             }
             for (_label, other) in self.search_relations(c, None, "both") {
                 if other.starts_with("scar:") {
-                    candidates.push(other);
+                    candidates.push((other, "relation_linked"));
                 }
             }
         }
 
-        let scar_hits = self
-            .recall_scoped(&format!("scar {stem}"), 10, Some("anchors"))
-            .0;
-        for m in scar_hits {
-            if m.concept.starts_with("scar:") {
-                candidates.push(m.concept);
+        // Bag-of-stem recall only when no spatial loci — otherwise it injects corpus scars.
+        if spatial_concepts.is_empty() {
+            let scar_hits = self
+                .recall_scoped(&format!("scar {stem}"), 10, Some("anchors"))
+                .0;
+            for m in scar_hits {
+                if m.concept.starts_with("scar:") {
+                    candidates.push((m.concept, "stem_recall"));
+                }
             }
         }
 
+        // relation_linked first, then stem_recall; stable within tier by concept name.
+        candidates.sort_by(|a, b| {
+            let tier = |s: &str| if s == "relation_linked" { 0 } else { 1 };
+            tier(a.1).cmp(&tier(b.1)).then_with(|| a.0.cmp(&b.0))
+        });
+
         let mut seen = HashSet::new();
         let mut out = Vec::new();
-        for concept in candidates {
+        for (concept, source) in candidates {
             if !seen.insert(concept.clone()) {
                 continue;
             }
@@ -8745,6 +8757,7 @@ impl StoreHandle {
                 "concept": concept,
                 "crs": block.crs_score,
                 "preview": text.chars().take(160).collect::<String>(),
+                "source": source,
             }));
             if out.len() >= limit {
                 break;
@@ -10179,6 +10192,67 @@ mod traces_at_locus_tests {
             "far line window must return zero spatial_items, got {empty_items:?}"
         );
 
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// MQ Cycle 39: scars_at_locus prefers relation-linked scars; no bag-of-stem noise.
+    #[test]
+    fn mq_spatial_locus_scars_prefer_relation_linked_over_stem_recall() {
+        let dir = test_store_dir("mq39_scars_at_locus");
+        let mut store = StoreHandle::new(&dir.to_string_lossy());
+
+        seed_aabb_locus(&mut store, "locus__fn__mid", 45, 55);
+
+        store
+            .remember(
+                "scar:locus_linked_ruled_out",
+                "Ruled-out: bad approach at mid locus\n",
+            )
+            .unwrap();
+        let _ = store.relate("scar:locus_linked_ruled_out", "locus__fn__mid", "ruled_out");
+
+        // Unrelated scar that bag-of-stem "scar locus" might surface.
+        store
+            .remember(
+                "scar:unrelated_corpus_noise_locus_word",
+                "Ruled-out: corpus noise mentioning locus but not related\n",
+            )
+            .unwrap();
+        let _ = store.promote_tile_to_high_priority("scar:unrelated_corpus_noise_locus_word");
+
+        let out = store.context_for_edit("/tmp/locus.rs", Some(40), Some(60), false);
+        let scars = out
+            .get("scars_at_locus")
+            .and_then(|v| v.as_array())
+            .expect("scars_at_locus");
+        let concepts: Vec<&str> = scars
+            .iter()
+            .filter_map(|v| v.get("concept").and_then(|c| c.as_str()))
+            .collect();
+        assert!(
+            concepts.contains(&"scar:locus_linked_ruled_out"),
+            "relation-linked scar must appear: {scars:?}"
+        );
+        assert!(
+            !concepts.contains(&"scar:unrelated_corpus_noise_locus_word"),
+            "bag-of-stem scar must not leak into window with spatial loci: {scars:?}"
+        );
+        let linked = scars.iter().find(|s| {
+            s.get("concept").and_then(|c| c.as_str()) == Some("scar:locus_linked_ruled_out")
+        });
+        assert_eq!(
+            linked
+                .and_then(|s| s.get("source"))
+                .and_then(|v| v.as_str()),
+            Some("relation_linked")
+        );
+        assert_eq!(
+            store
+                .backend_readiness()
+                .get("mq_spatial_locus_scars_relation_first")
+                .and_then(|v| v.as_bool()),
+            Some(true)
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
