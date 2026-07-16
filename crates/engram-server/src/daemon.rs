@@ -207,6 +207,28 @@ pub fn spawn(store: SharedStore) -> Arc<DaemonControl> {
             }
         }
 
+        // ── UB Cycle 23: capacity hot compress (soft/hard elevated hot_set) ─────
+        // Capped residency demote toward HOT_SET_SOFT — no block delete.
+        // Default 15m matches RSI fire cadence; disable with ENGRAM_CAPACITY_HOT_COMPRESS_DISABLE=1.
+        let capacity_compress_disabled =
+            std::env::var("ENGRAM_CAPACITY_HOT_COMPRESS_DISABLE").as_deref() == Ok("1");
+        let capacity_secs: u64 = std::env::var("ENGRAM_CAPACITY_HOT_COMPRESS_SECS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(crate::store::StoreHandle::CAPACITY_DAEMON_HOT_COMPRESS_DEFAULT_SECS)
+            .max(60);
+        let mut capacity_interval = tokio::time::interval(Duration::from_secs(capacity_secs));
+        if !capacity_compress_disabled {
+            capacity_interval.tick().await; // skip immediate startup trim
+            info!(
+                "[CAPACITY] daemon hot compress armed every {}s (max_unmark default {}; disable ENGRAM_CAPACITY_HOT_COMPRESS_DISABLE=1)",
+                capacity_secs,
+                crate::store::StoreHandle::CAPACITY_DAEMON_HOT_COMPRESS_DEFAULT_MAX
+            );
+        } else {
+            info!("[CAPACITY] ENGRAM_CAPACITY_HOT_COMPRESS_DISABLE=1 — daemon hot compress off.");
+        }
+
         // ── Integration Inbox Scanner (Phase 5) ──────────────────────────────
         // Poll ~/.engram/stalks/default/inbox/ every 5 seconds for
         // `integration_req_*.json` files written by the Cockpit when the operator
@@ -277,6 +299,12 @@ pub fn spawn(store: SharedStore) -> Arc<DaemonControl> {
 
                 _ = nrem_interval.tick(), if !nrem_disabled => {
                     run_nrem_consolidation(&store);
+                    // After NREM ego pass, also drain elevated hot residency if needed.
+                    maybe_capacity_hot_compress(&store);
+                }
+
+                _ = capacity_interval.tick(), if !capacity_compress_disabled => {
+                    maybe_capacity_hot_compress(&store);
                 }
 
                 _ = health_interval.tick() => {
@@ -507,6 +535,59 @@ const NREM_GOAL_BIASED_MASS_CAP: f32 = 0.40;
 /// ego.leg3 trajectories / persistent self-model as recursive LoRA medium. Coordinates 2.1 geo + 2.3 hot residency.
 /// Pure additive bias (no new mass cap). Value < goal factor to preserve goal primacy.
 const NREM_TRAINING_BIAS_FACTOR: f32 = 2.0;
+
+/// UB Cycle 23: when soft/hard elevated hot_set, capped unmark of non-protected hot residency.
+/// No-op when risk not elevated or ENGRAM_CAPACITY_HOT_COMPRESS_DISABLE=1 (caller gates disable).
+/// Does not delete blocks — only demotes from hot_set (NREM-style residency trim).
+fn maybe_capacity_hot_compress(store: &crate::store::SharedStore) {
+    let max_unmark = std::env::var("ENGRAM_CAPACITY_HOT_COMPRESS_MAX")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(crate::store::StoreHandle::CAPACITY_DAEMON_HOT_COMPRESS_DEFAULT_MAX)
+        .clamp(1, 500);
+    let report = {
+        let lock = match store.lock() {
+            Ok(l) => l,
+            Err(e) => {
+                tracing::warn!("[CAPACITY] hot compress skip — store lock: {e}");
+                return;
+            }
+        };
+        let hot_len = lock.hot_concepts().len();
+        let leg = lock.leg_block_count();
+        let large = leg > crate::store::StoreHandle::LARGE_MANIFOLD_THRESHOLD;
+        let edges = lock.relation_index.live_edge_count();
+        let risk = crate::store::StoreHandle::classify_capacity_risk(large, hot_len, edges);
+        if !crate::store::StoreHandle::capacity_daemon_hot_compress_should_run(risk) {
+            tracing::debug!(
+                "[CAPACITY] hot compress idle (risk={risk}, hot_set_len={hot_len})"
+            );
+            return;
+        }
+        lock.apply_capacity_hot_compress(max_unmark)
+    };
+    let applied = report
+        .get("applied")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let unmarked = report
+        .get("unmarked")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    if applied {
+        info!(
+            "[CAPACITY] daemon hot compress applied unmarked={unmarked} max_unmark={max_unmark} (ub_capacity_daemon_hot_compress)"
+        );
+    } else {
+        tracing::debug!(
+            "[CAPACITY] daemon hot compress no-op: {}",
+            report
+                .get("reason")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown")
+        );
+    }
+}
 
 fn run_nrem_consolidation(store: &crate::store::SharedStore) {
     info!("[NREM] Starting dream consolidation pass (CRS threshold = {}) — CodeLand-enhanced (ego-friction + Riemannian + Tier5 ZEDOS + Logenergetics)…", NREM_CRS_THRESHOLD);

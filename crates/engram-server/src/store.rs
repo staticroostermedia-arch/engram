@@ -2905,6 +2905,7 @@ impl StoreHandle {
                 "ub_capacity_nrem_hot_compress_path": true,
                 "ub_capacity_hot_compress_mcp": true,
                 "ub_capacity_wake_compress_suggest": true,
+                "ub_capacity_daemon_hot_compress": true,
                 "mq_tiles_capacity_in_boundary": true,
                 "mq_tiles_boundary_legacy_upgrade": true,
                 "mq_tiles_boundary_next_vector_upgrade": true,
@@ -6663,6 +6664,16 @@ impl StoreHandle {
     /// Gates NREM/hot compress path suggestion + apply.
     pub fn capacity_hot_compress_path_suggested(risk: &str) -> bool {
         risk.contains("hot_set") && Self::capacity_risk_is_elevated(risk)
+    }
+
+    /// UB Cycle 23: daemon auto-trim default max_unmark (clamped at apply 1..500).
+    pub const CAPACITY_DAEMON_HOT_COMPRESS_DEFAULT_MAX: usize = 64;
+    /// UB Cycle 23: default seconds between daemon capacity compress ticks (15m RSI cadence).
+    pub const CAPACITY_DAEMON_HOT_COMPRESS_DEFAULT_SECS: u64 = 900;
+
+    /// UB Cycle 23: pure gate — daemon may auto-apply when path suggested (soft/hard hot_set).
+    pub fn capacity_daemon_hot_compress_should_run(risk: &str) -> bool {
+        Self::capacity_hot_compress_path_suggested(risk)
     }
 
     /// Continuity-critical prefixes that must not be unmarked by capacity hot compress.
@@ -12098,6 +12109,53 @@ mod ingest_ast_tests {
                 .and_then(|v| v.as_bool()),
             Some(true)
         );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// UB Cycle 23: daemon auto-trim gate + readiness flag.
+    #[test]
+    fn ub_capacity_daemon_hot_compress_gate() {
+        assert!(StoreHandle::capacity_daemon_hot_compress_should_run(
+            "soft_elevated_hot_set"
+        ));
+        assert!(StoreHandle::capacity_daemon_hot_compress_should_run(
+            "elevated_hot_set"
+        ));
+        assert!(!StoreHandle::capacity_daemon_hot_compress_should_run(
+            "elevated_edge_scale"
+        ));
+        assert!(!StoreHandle::capacity_daemon_hot_compress_should_run(
+            "large_manifold_nominal"
+        ));
+        assert!(!StoreHandle::capacity_daemon_hot_compress_should_run("nominal"));
+        assert_eq!(
+            StoreHandle::CAPACITY_DAEMON_HOT_COMPRESS_DEFAULT_MAX,
+            64
+        );
+        assert_eq!(
+            StoreHandle::CAPACITY_DAEMON_HOT_COMPRESS_DEFAULT_SECS,
+            900
+        );
+        // Align with path suggested (agent + daemon same gate).
+        assert_eq!(
+            StoreHandle::capacity_daemon_hot_compress_should_run("soft_elevated_hot_set"),
+            StoreHandle::capacity_hot_compress_path_suggested("soft_elevated_hot_set")
+        );
+        let dir = test_store_dir("ub23_daemon_hot_compress");
+        let store = StoreHandle::new(&dir.to_string_lossy());
+        assert_eq!(
+            store
+                .backend_readiness()
+                .get("ub_capacity_daemon_hot_compress")
+                .and_then(|v| v.as_bool()),
+            Some(true)
+        );
+        // Nominal small store apply no-op (daemon would idle).
+        store.mark_hot("geo_context:daemon_noise");
+        let noop = store.apply_capacity_hot_compress(
+            StoreHandle::CAPACITY_DAEMON_HOT_COMPRESS_DEFAULT_MAX,
+        );
+        assert_eq!(noop["applied"], false);
         let _ = std::fs::remove_dir_all(&dir);
     }
 
