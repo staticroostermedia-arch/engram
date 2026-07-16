@@ -4457,3 +4457,32 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 1. MCP swap UB1; session_end with selected_child+property_test → structured_handoff.distillation.complete=true.
 2. Create/set primary `goal:engram_ultimate_backend_v1` + decompose ub_* children if missing.
 3. Next distill: ub_relation_density / ub_lexicon_update_path (gates 1–5 still green).
+
+## UB Cycle 2 — structured_handoff re-parse distillation fields from summary (2026-07-15)
+
+### VERIFY₀ baseline
+
+- master@`b66a5300` UB1 #181.
+- MCP swapped: `ub_handoff_distillate` LIVE.
+- Residual: structured_handoff.distillation.complete=false missing selected_child — pre-UB1 session_end packet lacked fields though summary text had `- selected_child:`.
+- goal_children empty under ultimate_backend (decompose deferred; operational next).
+- CSF **0.937**; verify healthy; dual-gate green.
+
+### SELECT
+
+**ub_handoff_distillate** residual — re-parse selected_child/property_test from summary/handoff text at wake; recompute distillation completeness.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Wake | structured_handoff re-parse from packet.summary + full handoff body |
+| Recompute | always rebuild ub_distillate_v1 from best fields |
+| Flag | `ub_handoff_distillate_summary_reparse` |
+| Test | `handoff_parse_selected_child_from_summary_lines_recovers_ub_child` |
+
+### Next vectors
+
+1. MCP swap UB2; confirm distillation.complete or has_selected_child on wake from prior handoff body.
+2. goal_decompose ub_* children under goal:engram_ultimate_backend_v1.
+3. Next distill: ub_relation_density / ub_lexicon_update_path.
