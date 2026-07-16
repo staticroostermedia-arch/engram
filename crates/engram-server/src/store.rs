@@ -2901,6 +2901,7 @@ impl StoreHandle {
                 "mq_write_hygiene_trace_session_mint": true,
                 "mq_write_hygiene_ungated_no_violation": true,
                 "mq_capacity_snapshot_lean": true,
+                "ub_capacity_soft_elevated_hot_set": true,
                 "mq_tiles_capacity_in_boundary": true,
                 "mq_tiles_boundary_legacy_upgrade": true,
                 "mq_tiles_boundary_next_vector_upgrade": true,
@@ -6247,7 +6248,8 @@ impl StoreHandle {
             .and_then(|v| v.as_str())
             .unwrap_or("nominal")
             .to_string();
-        let demote_capacity_structure = !capacity_risk.starts_with("elevated");
+        // UB19: soft_elevated_* also un-demotes (contains "elevated").
+        let demote_capacity_structure = !Self::capacity_risk_is_elevated(&capacity_risk);
         // Full incident set for seed (index query is O(degree); degree ≪ total edges).
         // Ranking after a fixed take(N) re-hides recent SELECT forks when degree > N.
         let mut candidates: Vec<(u64, String, String, &'static str, String)> = Vec::new();
@@ -6486,7 +6488,8 @@ impl StoreHandle {
             .and_then(|v| v.as_str())
             .unwrap_or("nominal")
             .to_string();
-        let risk_elevated = risk.starts_with("elevated");
+        // UB19: soft_elevated_hot_set un-demotes capacity (contains "elevated").
+        let risk_elevated = Self::capacity_risk_is_elevated(&risk);
         // MQ Cycle 34: active children first so SELECT pin + surface match.
         // UB Cycle 4: demote capacity_policy when risk not elevated (after active rank).
         children.sort_by(|a, b| {
@@ -6621,8 +6624,41 @@ impl StoreHandle {
         })
     }
 
+    /// Hot-set soft band: pre-elevated signal on large manifolds (UB Cycle 19).
+    /// Hard elevated remains > [`Self::HOT_SET_HARD_THRESHOLD`].
+    pub const HOT_SET_SOFT_THRESHOLD: usize = 1_000;
+    /// Hot-set hard elevated threshold (pre-UB19 behavior).
+    pub const HOT_SET_HARD_THRESHOLD: usize = 2_000;
+
+    /// True when capacity risk warrants capacity_policy SELECT / no demote.
+    /// Matches `elevated_*` and `soft_elevated_*` (contains "elevated").
+    pub fn capacity_risk_is_elevated(risk: &str) -> bool {
+        risk.contains("elevated")
+    }
+
+    /// Pure risk classifier (UB19 soft band + pre-UB hard bands). Tested without store.
+    pub fn classify_capacity_risk(
+        large_manifold: bool,
+        hot_set_len: usize,
+        relation_edge_count: usize,
+    ) -> &'static str {
+        if large_manifold && hot_set_len > Self::HOT_SET_HARD_THRESHOLD {
+            "elevated_hot_set"
+        } else if relation_edge_count > 100_000 {
+            "elevated_edge_scale"
+        } else if large_manifold && hot_set_len > Self::HOT_SET_SOFT_THRESHOLD {
+            // UB19: pre-hard band — SELECT NREM/hot compress before landfill.
+            "soft_elevated_hot_set"
+        } else if large_manifold {
+            "large_manifold_nominal"
+        } else {
+            "nominal"
+        }
+    }
+
     /// MQ Cycle 43: lean capacity signals for slim wake (measured scale SELECT).
     /// Cheap O(1) counts — enables evidence-based mq_capacity_policy without full stats dump.
+    /// UB Cycle 19: soft_elevated_hot_set when large_manifold && hot_set in (1k, 2k].
     pub fn build_lean_capacity_snapshot(store: &Self) -> serde_json::Value {
         let leg_block_count = store.leg_block_count_prefer_cached();
         let large_manifold = leg_block_count > Self::LARGE_MANIFOLD_THRESHOLD;
@@ -6636,14 +6672,14 @@ impl StoreHandle {
         } else {
             hot_set_len as f64 / leg_block_count as f64
         };
-        let risk = if large_manifold && hot_set_len > 2_000 {
-            "elevated_hot_set"
-        } else if relation_edge_count > 100_000 {
-            "elevated_edge_scale"
-        } else if large_manifold {
-            "large_manifold_nominal"
+        let risk = Self::classify_capacity_risk(large_manifold, hot_set_len, relation_edge_count);
+        let soft_elevated = risk == "soft_elevated_hot_set";
+        let hint = if soft_elevated {
+            "lean capacity — soft_elevated_hot_set (hot_set>1k): SELECT mq_capacity_policy / NREM compress before hard elevated (>2k)"
+        } else if Self::capacity_risk_is_elevated(risk) {
+            "lean capacity — SELECT mq_capacity_policy when risk elevated or hot/edge scale measured"
         } else {
-            "nominal"
+            "lean capacity — SELECT mq_capacity_policy when risk elevated or hot/edge scale measured"
         };
         serde_json::json!({
             "version": "mq_capacity_v1",
@@ -6651,12 +6687,16 @@ impl StoreHandle {
             "large_manifold": large_manifold,
             "large_manifold_threshold": Self::LARGE_MANIFOLD_THRESHOLD,
             "hot_set_len": hot_set_len,
+            "hot_set_soft_threshold": Self::HOT_SET_SOFT_THRESHOLD,
+            "hot_set_hard_threshold": Self::HOT_SET_HARD_THRESHOLD,
             "hot_ratio": hot_ratio,
             "relation_edge_count": relation_edge_count,
             "relation_nodes": relation_nodes,
             "relation_edge_tombstones": relation_tombstones,
             "risk": risk,
-            "hint": "lean capacity — SELECT mq_capacity_policy when risk elevated or hot/edge scale measured",
+            "soft_elevated": soft_elevated,
+            "ub_capacity_soft_elevated_hot_set": true,
+            "hint": hint,
         })
     }
 
@@ -11816,7 +11856,58 @@ mod ingest_ast_tests {
             .any(|m| m.as_str() == Some("primary_goal_missing")));
     }
 
-    /// MQ Cycle 43: lean capacity snapshot exposes measured scale for SELECT.
+    /// UB Cycle 19: soft_elevated_hot_set band between soft(1k) and hard(2k) thresholds.
+    #[test]
+    fn ub_capacity_soft_elevated_hot_set_band() {
+        assert_eq!(StoreHandle::HOT_SET_SOFT_THRESHOLD, 1_000);
+        assert_eq!(StoreHandle::HOT_SET_HARD_THRESHOLD, 2_000);
+        // Large manifold, hot in (1k, 2k] → soft elevated.
+        assert_eq!(
+            StoreHandle::classify_capacity_risk(true, 1_001, 0),
+            "soft_elevated_hot_set"
+        );
+        assert_eq!(
+            StoreHandle::classify_capacity_risk(true, 1_239, 27_000),
+            "soft_elevated_hot_set"
+        );
+        assert_eq!(
+            StoreHandle::classify_capacity_risk(true, 2_001, 0),
+            "elevated_hot_set"
+        );
+        // Exactly soft threshold is not soft (strict >).
+        assert_eq!(
+            StoreHandle::classify_capacity_risk(true, 1_000, 0),
+            "large_manifold_nominal"
+        );
+        assert_eq!(
+            StoreHandle::classify_capacity_risk(true, 500, 0),
+            "large_manifold_nominal"
+        );
+        assert_eq!(
+            StoreHandle::classify_capacity_risk(false, 5_000, 0),
+            "nominal"
+        );
+        assert_eq!(
+            StoreHandle::classify_capacity_risk(true, 0, 100_001),
+            "elevated_edge_scale"
+        );
+        // soft/hard elevated un-demote capacity SELECT.
+        assert!(StoreHandle::capacity_risk_is_elevated("soft_elevated_hot_set"));
+        assert!(StoreHandle::capacity_risk_is_elevated("elevated_hot_set"));
+        assert!(!StoreHandle::capacity_risk_is_elevated("large_manifold_nominal"));
+        assert!(!StoreHandle::capacity_risk_is_elevated("nominal"));
+        let dir = test_store_dir("ub19_soft_elevated_flag");
+        let store = StoreHandle::new(&dir.to_string_lossy());
+        assert_eq!(
+            store
+                .backend_readiness()
+                .get("ub_capacity_soft_elevated_hot_set")
+                .and_then(|v| v.as_bool()),
+            Some(true)
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn mq_capacity_snapshot_lean_surfaces_scale_signals() {
         let dir = test_store_dir("mq43_capacity_snapshot");
@@ -11863,6 +11954,16 @@ mod ingest_ast_tests {
             "hot promote; snap={snap:?}"
         );
         assert!(snap.get("risk").and_then(|v| v.as_str()).is_some());
+        assert_eq!(
+            snap.get("hot_set_soft_threshold")
+                .and_then(|v| v.as_u64()),
+            Some(StoreHandle::HOT_SET_SOFT_THRESHOLD as u64)
+        );
+        assert_eq!(
+            snap.get("hot_set_hard_threshold")
+                .and_then(|v| v.as_u64()),
+            Some(StoreHandle::HOT_SET_HARD_THRESHOLD as u64)
+        );
         assert_eq!(
             store
                 .backend_readiness()

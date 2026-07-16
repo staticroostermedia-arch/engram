@@ -4989,3 +4989,30 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 
 1. MCP swap UB18 LIVE.
 2. Next distill: capacity soft-elevated hot_set band / NREM compress when hot_set>1k.
+
+## UB Cycle 19 — capacity soft_elevated_hot_set band (hot_set>1k) (2026-07-16)
+
+### VERIFY₀ baseline
+
+- master@`e10deb6d` UB18 #201.
+- CSF **0.937**; trust_ok **true**; lawfulness **healthy**; warm_ms 1; capacity **large_manifold_nominal** with hot_set **1239**.
+- Residual: dead zone — hot_set in (1k, 2k] reported as nominal; no SELECT signal for NREM/compress before hard elevated (>2k).
+
+### SELECT
+
+**ub_capacity_soft_elevated_hot_set** — soft risk band + un-demote capacity when soft/hard elevated.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Classifier | `classify_capacity_risk` — soft_elevated_hot_set when large_manifold && hot_set ∈ (1k, 2k] |
+| Thresholds | HOT_SET_SOFT=1000, HOT_SET_HARD=2000 |
+| Demote | `capacity_risk_is_elevated` via contains("elevated") — soft un-demotes capacity SELECT |
+| Test | `ub_capacity_soft_elevated_hot_set_band` |
+| Flag | `ub_capacity_soft_elevated_hot_set` |
+
+### Next vectors
+
+1. MCP swap UB19 LIVE — expect live risk soft_elevated_hot_set when hot_set>1k.
+2. Next distill: NREM/hot compress path when soft_elevated / elevated.
