@@ -2893,6 +2893,7 @@ impl StoreHandle {
                 "ub_lexicon_update_path": true,
                 "ub_holographic_bind_roundtrip": true,
                 "ub_temporal_geometry_frame_lawful": true,
+                "ub_sheaf_glue_relations": true,
                 "mq_goal_children_prefer_active": true,
                 "mq_goal_child_pin_matches_rank": true,
                 "mq_write_hygiene_prior_any_activity": true,
