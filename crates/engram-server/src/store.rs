@@ -2914,6 +2914,7 @@ impl StoreHandle {
                 "ub_sheaf_glue_relations": true,
                 "mq_praxis_store_contract_seal": true,
                 "ub_provlog_richness_recorded_at": true,
+                "ub_geosphere_frame_hot_geo_context": true,
                 "mq_goal_children_prefer_active": true,
                 "mq_goal_child_pin_matches_rank": true,
                 "mq_write_hygiene_prior_any_activity": true,
@@ -7279,7 +7280,10 @@ impl StoreHandle {
             geo.advance_frame();
         }
         // Also expose as first-class block for recall/audit (high CRS)
-        let _ = self.remember(&format!("current_geosphere_frame::{}", origin), &desc);
+        let frame_concept = format!("current_geosphere_frame::{}", origin);
+        let _ = self.remember(&frame_concept, &desc);
+        // UB Cycle 10: promote frame block into hot_geo_context under live lens.
+        self.mark_hot(&frame_concept);
     }
 
     pub fn get_current_geosphere_frame(
@@ -7327,17 +7331,33 @@ impl StoreHandle {
     }
 
     /// Check residency of a geo snapshot or geo_context in the high_priority geo caches.
+    ///
+    /// UB Cycle 10: CPU / non-device backends fall back to runtime `hot_geo_context`
+    /// (frame_step + origin stamped at `mark_hot` / `promote_geo_snapshot`). Device
+    /// backends still prefer true high-priority geo cache residency.
     pub fn is_geo_hot(&self, name: &str) -> bool {
-        match &self.backend {
+        let device_hot = match &self.backend {
             #[cfg(engram_backend_cuda)]
             Backend::Gpu(b) => b.is_geo_hot(name),
             #[cfg(engram_backend_metal)]
             Backend::Metal(b) => b.is_geo_hot(name),
-            _ => {
-                let _ = name;
-                false
-            }
+            _ => false,
+        };
+        if device_hot {
+            return true;
         }
+        // Runtime geo-context carry (works on CPU force path + as audit fallback).
+        self.hot_geo_frame_for(name).is_some()
+    }
+
+    /// UB Cycle 10: read (frame_step, origin) stamped when concept was mark_hot'd
+    /// under a live Geosphere frame. Runtime-only; not persisted to .leg3.
+    pub fn hot_geo_frame_for(&self, concept: &str) -> Option<(u64, String)> {
+        let raw = stalk_raw_concept(concept);
+        self.hot_geo_context
+            .read()
+            .ok()
+            .and_then(|m| m.get(raw).cloned())
     }
 
     /// Fetch hot-resident full SymplecticState snapshot (for framed hot paths, audit, TRAINING).
@@ -14555,6 +14575,74 @@ mod mq_praxis_store_contract_tests {
         assert!(
             praxis_issues.is_empty(),
             "sealed PRAXIS must not fail verify: {praxis_issues:?}"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+        std::env::remove_var("ENGRAM_DISABLE_SHEAF");
+        std::env::remove_var("ENGRAM_FORCE_CPU_BACKEND");
+        std::env::remove_var("ENGRAM_KI_DISABLE");
+    }
+}
+
+/// UB Cycle 10: Geosphere hot geo-context residency (CPU-audit path).
+#[cfg(test)]
+mod ub_geosphere_frame_tests {
+    use super::*;
+
+    fn test_store_dir(suffix: &str) -> std::path::PathBuf {
+        std::env::set_var("ENGRAM_DISABLE_SHEAF", "1");
+        std::env::set_var("ENGRAM_FORCE_CPU_BACKEND", "1");
+        std::env::set_var("ENGRAM_KI_DISABLE", "1");
+        let dir = std::env::temp_dir().join(format!(
+            "ub_geo_{}_{}_{}",
+            suffix,
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).ok();
+        dir
+    }
+
+    #[test]
+    fn ub_geosphere_frame_hot_geo_context_carry() {
+        let dir = test_store_dir("hot_ctx");
+        let mut store = StoreHandle::new(&dir.to_string_lossy());
+
+        store.set_geosphere_frame("giza_sacred_cubit", "offset_ub10_t0");
+        let state = store.current_geosphere_state().expect("state");
+        assert_eq!(state.frame_origin.as_deref(), Some("giza_sacred_cubit"));
+        assert!(state.frame_step >= 1);
+        assert!(state.current_lens.is_some());
+
+        // set_geosphere_frame mark_hot's the frame concept under live origin.
+        let frame_key = "current_geosphere_frame::giza_sacred_cubit";
+        let carry = store
+            .hot_geo_frame_for(frame_key)
+            .expect("hot_geo_context carry for frame concept");
+        assert_eq!(carry.1, "giza_sacred_cubit");
+        assert!(carry.0 >= 1, "frame_step stamped: {}", carry.0);
+        assert!(
+            store.is_geo_hot(frame_key),
+            "CPU is_geo_hot must respect hot_geo_context"
+        );
+
+        // Explicit promote_geo_snapshot also stamps.
+        let snap = "geo_snapshot:ub10_probe";
+        store.promote_geo_snapshot(snap, state);
+        let snap_carry = store
+            .hot_geo_frame_for(snap)
+            .expect("snapshot hot_geo_context");
+        assert_eq!(snap_carry.1, "giza_sacred_cubit");
+        assert!(store.is_geo_hot(snap));
+
+        // Clear frame does not erase runtime hot_geo_context (audit trail of promotion epoch).
+        store.clear_geosphere_frame();
+        assert!(
+            store.hot_geo_frame_for(snap).is_some(),
+            "clear lens must not wipe promotion-time geo context"
         );
 
         let _ = std::fs::remove_dir_all(&dir);

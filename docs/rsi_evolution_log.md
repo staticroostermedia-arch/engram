@@ -4702,3 +4702,29 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 
 1. MCP swap UB9 LIVE.
 2. Next distill: ub_geosphere_frame / ub_secure_context / pure unit-phase encode / legacy PRAXIS heal pass.
+
+## UB Cycle 10 — Geosphere hot_geo_context residency (CPU audit) (2026-07-16)
+
+### VERIFY₀ baseline
+
+- master@`9174535f` UB9 #190.
+- CSF **0.937**; lawfulness healthy; UB9 LIVE.
+- Residual: frame unit/step pinned (UB7); hot geo residency only on GPU path — CPU `is_geo_hot` always false.
+
+### SELECT
+
+**ub_geosphere_frame** — `hot_geo_frame_for` + CPU `is_geo_hot` via `hot_geo_context`; `set_geosphere_frame` mark_hot of frame concept.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| API | `hot_geo_frame_for`, `is_geo_hot` runtime fallback |
+| Path | `set_geosphere_frame` → mark_hot frame concept |
+| Test | `ub_geosphere_frame_hot_geo_context_carry` |
+| Flag | `ub_geosphere_frame_hot_geo_context` |
+
+### Next vectors
+
+1. MCP swap UB10 LIVE.
+2. Next distill: ub_secure_context / pure unit-phase encode / legacy PRAXIS heal.
