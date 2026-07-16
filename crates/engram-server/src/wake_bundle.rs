@@ -154,11 +154,25 @@ pub fn slim_continuation_bundle(full: &Value) -> Value {
 
     let injection_completeness = full.get("injection_completeness").cloned();
     let nvme_context = full.get("nvme_context").cloned();
-    let open_scars_wake = harness
+    // MQ Cycle 29: hoist scar concepts (not only count) so lean SELECT can deflect.
+    let open_scars_wake: Vec<Value> = harness
         .get("open_scars_wake")
         .and_then(|v| v.as_array())
-        .map(|a| a.len())
-        .unwrap_or(0);
+        .map(|a| {
+            a.iter()
+                .take(3)
+                .map(|s| {
+                    json!({
+                        "concept": s.get("concept"),
+                        "crs": s.get("crs"),
+                        "reason": s.get("reason"),
+                        "source": s.get("source"),
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let open_scars_count = open_scars_wake.len();
 
     let task_type = harness
         .get("task_type")
@@ -200,7 +214,7 @@ pub fn slim_continuation_bundle(full: &Value) -> Value {
         "wake_queue_gate": harness.get("wake_queue_gate"),
         "injection_completeness": injection_completeness,
         "nvme_context": nvme_context,
-        "open_scars_count": open_scars_wake,
+        "open_scars_count": open_scars_count,
         "cold_start_fidelity": full.get("cold_start_fidelity"),
     });
     if let Some(obj) = slim.as_object_mut() {
@@ -228,6 +242,10 @@ pub fn slim_continuation_bundle(full: &Value) -> Value {
             "write_hygiene_snapshot",
             full.get("write_hygiene_snapshot").cloned(),
         );
+        // MQ Cycle 29: scar pins (concept list) when non-empty — count alone is not actionable.
+        if !open_scars_wake.is_empty() {
+            obj.insert("open_scars_wake".into(), json!(open_scars_wake));
+        }
     }
     slim
 }
@@ -364,5 +382,48 @@ mod tests {
             slim["write_hygiene_snapshot"]["write_hygiene_hint"],
             "mint/update within nominal bounds"
         );
+    }
+
+    /// MQ Cycle 29: slim must surface scar concepts, not only open_scars_count.
+    #[test]
+    fn slim_bundle_hoists_open_scars_wake_concepts() {
+        let full = json!({
+            "primary_goal": "goal:engram_memory_quality_v1",
+            "harness_injection": {
+                "suggested_actions": [
+                    {
+                        "tool": "mcp_engram_read_concept",
+                        "args": {"concept": "scar:mq29_test"},
+                        "priority": 0,
+                        "reason": "open scar — repulsion before repeating dead approach (lean pin)"
+                    }
+                ],
+                "trace_chain": { "head": "trace:mq29" },
+                "ego_snapshot": {},
+                "open_scars_wake": [
+                    {
+                        "concept": "scar:mq29_test",
+                        "crs": 0.9,
+                        "reason": "lean scar pin — read before repeating dead approach",
+                        "source": "access_index_recent"
+                    },
+                    {
+                        "concept": "scar:mq29_other",
+                        "crs": 0.85,
+                        "reason": "lean scar pin — read before repeating dead approach",
+                        "source": "access_index_prefix"
+                    }
+                ]
+            }
+        });
+        let slim = slim_continuation_bundle(&full);
+        assert_eq!(slim["open_scars_count"], 2);
+        let scars = slim["open_scars_wake"]
+            .as_array()
+            .expect("open_scars_wake hoisted on slim");
+        assert_eq!(scars.len(), 2);
+        assert_eq!(scars[0]["concept"], "scar:mq29_test");
+        assert_eq!(scars[0]["source"], "access_index_recent");
+        assert_eq!(scars[1]["concept"], "scar:mq29_other");
     }
 }

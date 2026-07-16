@@ -3924,3 +3924,32 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 1. MCP swap MQ28; wake open_scars_count > 0 when scars indexed.
 2. Optional #134 C86 if floor fails.
 3. Capacity only if landfill measured.
+
+## MQ Cycle 29 — slim open_scars concepts + ultra-lean scar action (2026-07-15)
+
+### VERIFY₀ baseline
+
+- master@`027640ae` MQ28 #162.
+- MCP swapped: `mq_lean_open_scars_access_index` LIVE; `open_scars_count=3` ✓.
+- Residual: slim hoist was **count-only**; ultra-lean suggested_actions never queued scar `read_concept` → agent cannot deflect without full bundle.
+- CSF warm **0.936**; injection **1.0**; handoff complete; verify healthy (sample 50).
+- Cold/post-restart wake ~150–190ms (verify invalidates soft-stale); floor constraint only — not selected.
+
+### SELECT
+
+**mq_rehydrate_graph** residual — actionable lean scar surface (concepts + queue), not only count.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Slim hoist | `open_scars_wake` array (concept/crs/reason/source, ≤3) when non-empty |
+| Ultra-lean queue | first scar pin → `mcp_engram_read_concept` priority 0 |
+| Flag | `mq_lean_open_scars_slim_hoist` |
+| Tests | `slim_bundle_hoists_open_scars_wake_concepts`, `ultra_lean_suggested_actions_include_first_open_scar` |
+
+### Next vectors
+
+1. MCP swap MQ29; confirm slim `open_scars_wake[0].concept` + scar action in suggested_actions.
+2. Optional #134 C86 if soft-stale warm floor fails.
+3. Next quality child if dual-gate holds (consult residual / relation harness / capacity if measured).
