@@ -2919,6 +2919,7 @@ impl StoreHandle {
                 "ub_geosphere_frame_hot_geo_context": true,
                 "ub_secure_context_redact_fail_closed": true,
                 "ub_unit_phase_encode": true,
+                "ub_research_scar": true,
                 "mq_goal_children_prefer_active": true,
                 "mq_goal_child_pin_matches_rank": true,
                 "mq_write_hygiene_prior_any_activity": true,
@@ -4947,6 +4948,97 @@ impl StoreHandle {
         }
         let _ = self.promote_tile_to_high_priority(&concept);
         Ok(concept)
+    }
+
+    /// Mint or update a structured **research scar** (`scar:*`) for a ruled-out approach.
+    ///
+    /// UB Cycle 13 (`ub_research_scar`): research dead-ends need a first-class geometric
+    /// repeller with **ruled_out / why / preferred_alternative** fields so lean wake
+    /// `collect_open_scars_lean` can hoist them (CRS ≥ 0.5 floor). Prefer this over free-form
+    /// `remember("scar:…")` landfill. Existing concept → **update** (Lyapunov), not re-mint spam.
+    ///
+    /// Returns `(concept, action)` where action is `"mint"` or `"update"`.
+    pub fn mint_research_scar(
+        &mut self,
+        slug: &str,
+        ruled_out: &str,
+        why: &str,
+        preferred_alternative: &str,
+    ) -> Result<(String, &'static str)> {
+        let ruled_out = ruled_out.trim();
+        let why = why.trim();
+        let preferred_alternative = preferred_alternative.trim();
+        if ruled_out.is_empty() {
+            return Err(anyhow::anyhow!("ruled_out is required"));
+        }
+        if why.is_empty() {
+            return Err(anyhow::anyhow!("why is required"));
+        }
+        let safe_slug: String = slug
+            .trim()
+            .trim_start_matches("scar:")
+            .chars()
+            .map(|c| {
+                if c.is_ascii_alphanumeric() || c == '_' || c == '-' {
+                    c.to_ascii_lowercase()
+                } else {
+                    '-'
+                }
+            })
+            .collect();
+        let safe_slug = safe_slug.trim_matches('-');
+        let safe_slug = if safe_slug.is_empty() {
+            "research_dead_end".to_string()
+        } else {
+            safe_slug.chars().take(80).collect()
+        };
+        let concept = format!("scar:{safe_slug}");
+        let alt_line = if preferred_alternative.is_empty() {
+            "(none recorded)".to_string()
+        } else {
+            preferred_alternative.to_string()
+        };
+        let body = format!(
+            "RESEARCH SCAR (ruled-out approach)\n\n\
+             **ruled_out:** {ruled_out}\n\
+             **why:** {why}\n\
+             **preferred_alternative:** {alt_line}\n\
+             **ub_research_scar:** true\n\
+             **note:** Read before repeating dead approach; lean wake open_scars pin.\n\
+             **ritual:** process:engram.ritual.scar-repulsion / agent write hygiene\n"
+        );
+        let crs = crate::crs_dynamical::dynamical_crs(&crate::crs_dynamical::CrsInputs {
+            role: Some(crate::crs_dynamical::CrsRole::ResearchScar),
+            ..Default::default()
+        });
+        let action = if self.fetch_block(&concept).is_some()
+            || self.fetch_block_high_priority(&concept).is_some()
+        {
+            let mut block = self
+                .fetch_block_high_priority(&concept)
+                .or_else(|| self.fetch_block(&concept))
+                .ok_or_else(|| anyhow::anyhow!("scar exists but unfetchable: {concept}"))?;
+            // Update body + CRS; keep lean open-scar floor (≥0.5). Prefer research CRS.
+            engram_core::storage::write_provlog(&mut block, &body);
+            block.crs_score = crs.max(0.5);
+            block.energetics.crs = block.crs_score;
+            block.zedos_tag = engram_core::types::ZEDOS_OPERATIONAL;
+            self.store(&concept, block)?;
+            "update"
+        } else {
+            let mut block = self.encode(&body);
+            block.zedos_tag = engram_core::types::ZEDOS_OPERATIONAL;
+            block.crs_score = crs;
+            block.energetics.crs = crs;
+            self.store(&concept, block)?;
+            "mint"
+        };
+        self.access_index.touch(&concept);
+        if let Some(primary) = crate::store::resolve_active_primary_goal(self) {
+            let _ = self.relate(&concept, &primary, "ruled_out");
+        }
+        let _ = self.promote_tile_to_high_priority(&concept);
+        Ok((concept, action))
     }
 
     /// Active continuity artifacts for agent wake-up: primary goal, last session_end,
@@ -12661,6 +12753,69 @@ mod ingest_ast_tests {
             "uncertainty receipt surfaces in wake collection"
         );
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// UB Cycle 13: structured research scar mint → lean open_scars surface.
+    #[test]
+    fn ub_research_scar_structured_mint_and_lean_open_scars() {
+        let dir = test_store_dir("ub_research_scar");
+        std::env::set_var("ENGRAM_DISABLE_SHEAF", "1");
+        std::env::set_var("ENGRAM_FORCE_CPU_BACKEND", "1");
+        let mut store = StoreHandle::new(&dir.to_string_lossy());
+        let (concept, action) = store
+            .mint_research_scar(
+                "nested_schedulers_in_ub_fire",
+                "Arming nested schedulers inside Ultimate-Backend RSI fire",
+                "Fire IS the loop body; nested arms cause doom loops and rate-limit bursts",
+                "Execute one distill vector per fire; leave next_vector for handoff",
+            )
+            .expect("mint research scar");
+        assert_eq!(concept, "scar:nested_schedulers_in_ub_fire");
+        assert_eq!(action, "mint");
+        let block = store.fetch_block(&concept).expect("block");
+        assert!(block.crs_score >= 0.5, "crs={}", block.crs_score);
+        let body = engram_core::storage::read_provlog(&block);
+        assert!(body.contains("**ruled_out:**"), "missing ruled_out: {body}");
+        assert!(body.contains("**why:**"), "missing why: {body}");
+        assert!(
+            body.contains("**preferred_alternative:**"),
+            "missing preferred_alternative: {body}"
+        );
+        assert!(body.contains("ub_research_scar"), "missing flag field: {body}");
+        assert!(body.contains("nested schedulers") || body.contains("Arming nested"));
+        // Lean open scars must hoist (access_index touch happens in mint).
+        let open = crate::harness_injection::collect_open_scars_lean(&store, 5);
+        assert!(
+            open.iter()
+                .any(|s| s.get("concept").and_then(|c| c.as_str()) == Some(concept.as_str())),
+            "lean open_scars must surface research scar: {open:?}"
+        );
+        // Update preferred over re-mint spam.
+        let (c2, action2) = store
+            .mint_research_scar(
+                "nested_schedulers_in_ub_fire",
+                "Arming nested schedulers inside Ultimate-Backend RSI fire",
+                "Updated why — still ruled out",
+                "Single fire body only",
+            )
+            .expect("update research scar");
+        assert_eq!(c2, concept);
+        assert_eq!(action2, "update");
+        let body2 = engram_core::storage::read_provlog(&store.fetch_block(&concept).unwrap());
+        assert!(
+            body2.contains("Updated why") || body2.contains("Single fire"),
+            "update must land: {body2}"
+        );
+        // Fail-closed on empty ruled_out / why.
+        assert!(store
+            .mint_research_scar("x", "", "why", "alt")
+            .is_err());
+        assert!(store
+            .mint_research_scar("x", "ruled", "", "alt")
+            .is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+        std::env::remove_var("ENGRAM_DISABLE_SHEAF");
+        std::env::remove_var("ENGRAM_FORCE_CPU_BACKEND");
     }
 
     #[test]

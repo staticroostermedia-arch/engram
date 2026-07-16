@@ -38,6 +38,8 @@ pub enum CrsRole {
     Praxis,
     /// Lexicon word atom (`lexicon:word:*`) — grounded dictionary seed
     Lexicon,
+    /// Structured research scar (`scar:*`) — wake repulsion pin (CRS ≥ lean open-scar floor 0.5)
+    ResearchScar,
 }
 
 impl CrsRole {
@@ -55,6 +57,8 @@ impl CrsRole {
             Self::EgoRemember => 0.74,
             Self::Praxis => 0.95,
             Self::Lexicon => 0.78,
+            // Above collect_open_scars_lean CRS floor (0.5); below pin tier.
+            Self::ResearchScar => 0.78,
         }
     }
 }
@@ -247,10 +251,18 @@ mod tests {
             CrsRole::Praxis,
             CrsRole::EgoRemember,
             CrsRole::Lexicon,
+            CrsRole::ResearchScar,
         ] {
             let s = dynamical_crs_for_role(role);
             assert!((KEPLER_GATE..=1.0).contains(&s), "role {role:?} score {s}");
         }
+    }
+
+    #[test]
+    fn research_scar_role_above_lean_open_scar_floor() {
+        let s = dynamical_crs_for_role(CrsRole::ResearchScar);
+        assert!(s >= 0.5, "lean open_scars floor is 0.5, got {s}");
+        assert!((s - 0.78).abs() < 1e-4 || s >= KEPLER_GATE);
     }
 
     #[test]
