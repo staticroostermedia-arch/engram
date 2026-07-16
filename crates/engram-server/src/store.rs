@@ -2846,6 +2846,7 @@ impl StoreHandle {
                 "mq_write_hygiene_prior_receipt_seed": true,
                 "mq_write_hygiene_mint_tile_scar": true,
                 "mq_write_hygiene_goal_mint": true,
+                "mq_write_hygiene_trace_session_mint": true,
                 "mq_goal_children_prefer_active": true,
                 "mq_goal_child_pin_matches_rank": true,
                 "mq_write_hygiene_prior_any_activity": true,

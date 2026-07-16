@@ -4235,3 +4235,31 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 1. MCP swap MQ39; confirm scars_at_locus on line-bounded edit has source=relation_linked when linked scars exist.
 2. Optional #134 C86 if soft-stale warm floor fails.
 3. Next quality child (write_hygiene residual / capacity if measured).
+
+## MQ Cycle 40 — write hygiene counts quick_trace/session_end as mints (2026-07-15)
+
+### VERIFY₀ baseline
+
+- master@`59fe56a5` MQ39 #173.
+- MCP swapped: `mq_spatial_locus_scars_relation_first` LIVE ✓.
+- Residual: write_hygiene receipts after MQ fires showed mints=0 with log_tools>0 — quick_trace + session_end mint traces/boundary tiles but classified log-only, producing false zero-mint signal and burying real mint/update discipline.
+- CSF warm **0.941**; handoff complete; verify healthy 50/50; dual-gate green.
+
+### SELECT
+
+**mq_write_hygiene** residual — count distillate log tools as hygiene mints without consult-gating forks/handoff.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Mint class | +`quick_trace`, +`session_end`, +`safe_edit_and_verify` |
+| Ungated | `is_ungated_hygiene_mint_tool` — consult gate excludes these |
+| Flag | `mq_write_hygiene_trace_session_mint` |
+| Tests | `mq_write_hygiene_quick_trace_counts_as_mint` (+ consult suite still green) |
+
+### Next vectors
+
+1. MCP swap MQ40; confirm live write_hygiene mints>0 after quick_trace-only activity.
+2. Optional #134 C86 if soft-stale warm floor fails.
+3. Next quality child (capacity if measured / consult residual / tiles).

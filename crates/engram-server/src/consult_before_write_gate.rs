@@ -43,8 +43,11 @@ pub struct GateCheck {
 }
 
 /// Write tools subject to consult-before-write discipline.
+/// MQ Cycle 40: exclude ungated hygiene mints (quick_trace/session_end) — count as mints
+/// but do not hard-block fork/handoff logging.
 pub fn is_gated_write_tool(tool: &str) -> bool {
     crate::metamemory_metrics::is_metamemory_write_tool(tool)
+        && !crate::metamemory_metrics::is_ungated_hygiene_mint_tool(tool)
 }
 
 pub fn gate_status_json(recall_gate_open: bool, recalls: u32, writes: u32) -> Value {
