@@ -3745,3 +3745,32 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 1. MCP swap MQ22; wake trusted_tiles[0] is newest live session_boundary (≥ hub newest).
 2. Optional #134 C86 cold assemble residual (floor held).
 3. Capacity only if landfill metrics measured.
+
+## MQ Cycle 23 — presentation hubs prefer trusted_tiles[0] boundary (2026-07-15)
+
+### VERIFY₀ baseline
+
+- master@`68db25b3` MQ22 #156.
+- MCP swapped: `mq_trusted_tiles_boundary_merge_fresh` LIVE; trusted_tiles[0]=`1784159744` newest ✓.
+- CSF warm **0.941**; injection_completeness **1.0**; handoff complete; verify healthy (metric:mq_verify_1784159967).
+- Residual: presentation_stratum still showed `tile:session_boundary_1784156060` from frozen hub_anchors order.
+- Unit tests lean + MQ22 merge green.
+
+### SELECT
+
+**mq_rehydrate_graph** — lean presentation hubs rewrite first session_boundary to trusted_tiles[0].
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Helper | `prefer_trusted_boundary_in_hub_anchors` |
+| Ultra-lean wake | ensure trusted_tiles then rewrite hubs before name-only presentation |
+| Flag | `mq_presentation_prefer_trusted_boundary` |
+| Test | `prefer_trusted_boundary_rewrites_stale_hub_first_tile` |
+
+### Next vectors
+
+1. MCP swap MQ23; wake presentation first tile boundary == trusted_tiles[0].
+2. Optional #134 C86 cold assemble residual (floor held).
+3. Capacity only if landfill metrics measured.
