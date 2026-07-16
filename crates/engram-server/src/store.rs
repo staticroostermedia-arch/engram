@@ -2888,6 +2888,7 @@ impl StoreHandle {
                 "mq_tiles_boundary_next_vector_upgrade": true,
                 "ub_handoff_distillate": true,
                 "ub_handoff_distillate_summary_reparse": true,
+                "ub_relation_resume_structure_reserve_3": true,
                 "mq_goal_children_prefer_active": true,
                 "mq_goal_child_pin_matches_rank": true,
                 "mq_write_hygiene_prior_any_activity": true,
@@ -6074,10 +6075,13 @@ impl StoreHandle {
     /// MQ Cycle 37: structure reserved slot prefers **active** goal children (align goal_children).
     /// MQ Cycle 38: structure edges annotate `neighbor_status` for self-sufficient SELECT.
     /// MQ Cycle 42: structure edges also annotate `neighbor_preview` (goal statement snippet).
+    /// UB Cycle 3: reserve up to 3 active structure edges so goal backlogs are multi-visible
+    /// (structure_edges_in_top=1 pinned only one capacity child under ultimate_backend).
     pub fn build_lean_relation_resume(store: &Self, seed: Option<&str>) -> serde_json::Value {
         const TOP_K: usize = 8;
         /// Guarantee structure visibility under high serves degree (goal children are stable/low ts).
-        const STRUCTURE_RESERVED: usize = 1;
+        /// UB3: raise 1→3 so SELECT can see multiple active decomposes_into children, not one pin.
+        const STRUCTURE_RESERVED: usize = 3;
 
         let seed = seed
             .filter(|s| !s.is_empty() && *s != "unset")
@@ -6214,10 +6218,11 @@ impl StoreHandle {
             "seed": seed,
             "edge_count": edges.len(),
             "edges": edges,
-            "ranking": "recency_structure_active_v1",
+            "ranking": "recency_structure_active_v2",
+            "structure_reserve": STRUCTURE_RESERVED,
             "structure_edges_in_top": structure_edges,
             "candidates_scanned": candidates_scanned,
-            "hint": "lean graph rehydrate — serves recency + reserved active structure + status/preview",
+            "hint": "lean graph rehydrate — serves recency + up to 3 reserved active structure + status/preview",
         })
     }
 
@@ -11311,7 +11316,7 @@ mod ingest_ast_tests {
             StoreHandle::build_lean_relation_resume(&store, Some("goal:engram_memory_quality_v1"));
         assert_eq!(
             rr.get("ranking").and_then(|v| v.as_str()),
-            Some("recency_structure_active_v1")
+            Some("recency_structure_active_v2")
         );
         let edges = rr.get("edges").and_then(|v| v.as_array()).expect("edges");
         assert!(!edges.is_empty());
@@ -11426,7 +11431,11 @@ mod ingest_ast_tests {
             StoreHandle::build_lean_relation_resume(&store, Some("goal:engram_memory_quality_v1"));
         assert_eq!(
             rr.get("ranking").and_then(|v| v.as_str()),
-            Some("recency_structure_active_v1")
+            Some("recency_structure_active_v2")
+        );
+        assert_eq!(
+            rr.get("structure_reserve").and_then(|v| v.as_u64()),
+            Some(3)
         );
         let edges = rr.get("edges").and_then(|v| v.as_array()).expect("edges");
         let has_child = edges.iter().any(|e| {
@@ -11457,6 +11466,74 @@ mod ingest_ast_tests {
                 .get("mq_relation_resume_structure_active")
                 .and_then(|v| v.as_bool()),
             Some(true)
+        );
+        assert_eq!(
+            store
+                .backend_readiness()
+                .get("ub_relation_resume_structure_reserve_3")
+                .and_then(|v| v.as_bool()),
+            Some(true)
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// UB Cycle 3: structure reserve ≥3 surfaces multiple active goal children under serves spam.
+    #[test]
+    fn ub_relation_resume_structure_reserve_three_active_children() {
+        let dir = test_store_dir("ub3_relation_structure_reserve3");
+        let mut store = StoreHandle::new(&dir.to_string_lossy());
+        store
+            .remember(
+                "goal:engram_ultimate_backend_v1",
+                "GOAL\n\n**status:** active\n",
+            )
+            .unwrap();
+        for i in 0..12 {
+            let name = format!("trace:178420000{i}_ub3-serves-filler");
+            store
+                .remember(&name, "REASONING TRACE\n\n**decision_point:** filler\n")
+                .unwrap();
+            let _ = store.relate(&name, "goal:engram_ultimate_backend_v1", "serves");
+        }
+        for (id, stmt) in [
+            ("goal:ub3_child_a", "ub_relation_density"),
+            ("goal:ub3_child_b", "ub_handoff_distillate"),
+            ("goal:ub3_child_c", "ub_lexicon_update_path"),
+        ] {
+            store
+                .remember(
+                    id,
+                    &format!(
+                        "GOAL BLOCK (subgoal)\n\n**goal_statement:** {stmt}\n**status:** active\n"
+                    ),
+                )
+                .unwrap();
+            let _ = store.relate("goal:engram_ultimate_backend_v1", id, "decomposes_into");
+        }
+        let rr = StoreHandle::build_lean_relation_resume(
+            &store,
+            Some("goal:engram_ultimate_backend_v1"),
+        );
+        assert_eq!(
+            rr.get("ranking").and_then(|v| v.as_str()),
+            Some("recency_structure_active_v2")
+        );
+        let n = rr
+            .get("structure_edges_in_top")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        assert!(
+            n >= 3,
+            "expect ≥3 structure edges reserved; got {n}; rr={rr}"
+        );
+        let edges = rr.get("edges").and_then(|v| v.as_array()).expect("edges");
+        let child_hits = edges
+            .iter()
+            .filter(|e| e.get("label").and_then(|v| v.as_str()) == Some("decomposes_into"))
+            .count();
+        assert!(
+            child_hits >= 3,
+            "expect ≥3 decomposes_into in top; edges={edges:?}"
         );
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -11507,7 +11584,7 @@ mod ingest_ast_tests {
             StoreHandle::build_lean_relation_resume(&store, Some("goal:engram_memory_quality_v1"));
         assert_eq!(
             rr.get("ranking").and_then(|v| v.as_str()),
-            Some("recency_structure_active_v1")
+            Some("recency_structure_active_v2")
         );
         let edges = rr.get("edges").and_then(|v| v.as_array()).expect("edges");
         let has_active = edges.iter().any(|e| {
@@ -11525,10 +11602,9 @@ mod ingest_ast_tests {
             has_active,
             "active low-ts child must fill structure slot; edges={edges:?}"
         );
-        assert!(
-            !has_completed,
-            "completed high-ts sibling must not steal sole structure slot; edges={edges:?}"
-        );
+        // UB3: structure_reserve=3 may also include completed siblings in remaining slots;
+        // active-first pass still guarantees the active child is present (not sole-slot exclusivity).
+        let _ = has_completed;
         assert_eq!(
             store
                 .backend_readiness()
