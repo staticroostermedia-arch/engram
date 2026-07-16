@@ -4596,3 +4596,30 @@ CRS (new atoms) 0.78 · sovereignty local-only · integrity: pre-existing PRAXIS
 1. MCP swap UB6; flag LIVE.
 2. Optional later: pure unit-phase store encode for exact HRR (would raise floor to 0.95) — separate vector.
 3. Next distill: ub_temporal_geometry / ub_sheaf_glue / ub_provlog_richness.
+
+## UB Cycle 7 — temporal geometry store-path (geosphere frame + phase) (2026-07-16)
+
+### VERIFY₀ baseline
+
+- master@`28bd78ab` UB6 #186.
+- CSF **0.937**; handoff complete; capacity nominal (demoted).
+- Lawfulness: sample needs_review — pre-existing PRAXIS permissive contract (not this residual).
+- Live readiness missing `ub_holographic_bind_roundtrip` until MCP swap (source has flag).
+- Residual: store `set_geosphere_frame` / `apply_temporal_phase` path unpinned vs core SymplecticState tests.
+
+### SELECT
+
+**ub_temporal_geometry** — property tests for store geosphere frame unit hypersphere + frame_step audit + diachronic phase unit preservation.
+
+### Delivered
+
+| Item | Detail |
+|------|--------|
+| Tests | `ub_temporal_geometry_geosphere_frame_unit_and_step`, `ub_temporal_geometry_apply_temporal_phase_unit` |
+| Flag | `ub_temporal_geometry_frame_lawful` |
+| Invariants | frame_step advances on set/clear; lens unit; framed query unit; same origin+offset repro >0.99; clear→identity; temporal phase preserves unit, moves from t0 |
+
+### Next vectors
+
+1. MCP swap UB6+UB7 flags LIVE.
+2. Next distill: ub_sheaf_glue / ub_provlog_richness / ub_geosphere_frame (hot geo residency) / pure unit-phase encode.

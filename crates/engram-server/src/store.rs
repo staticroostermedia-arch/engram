@@ -2892,6 +2892,7 @@ impl StoreHandle {
                 "ub_goal_children_demote_capacity_nominal": true,
                 "ub_lexicon_update_path": true,
                 "ub_holographic_bind_roundtrip": true,
+                "ub_temporal_geometry_frame_lawful": true,
                 "mq_goal_children_prefer_active": true,
                 "mq_goal_child_pin_matches_rank": true,
                 "mq_write_hygiene_prior_any_activity": true,
@@ -14381,5 +14382,127 @@ SESSION HANDOFF PACKET v1
         assert!(classic_tos.contains(&"s2") && classic_tos.contains(&"d2"));
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+/// UB Cycle 7: store-path temporal geometry — Geosphere frame + diachronic phase.
+#[cfg(test)]
+mod ub_temporal_geometry_tests {
+    use super::*;
+    use engram_core::ops::{apply_temporal_phase, cosine_similarity};
+
+    fn test_store_dir(suffix: &str) -> std::path::PathBuf {
+        std::env::set_var("ENGRAM_DISABLE_SHEAF", "1");
+        std::env::set_var("ENGRAM_FORCE_CPU_BACKEND", "1");
+        std::env::set_var("ENGRAM_KI_DISABLE", "1");
+        let dir = std::env::temp_dir().join(format!(
+            "ub_temporal_{}_{}_{}",
+            suffix,
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).ok();
+        dir
+    }
+
+    fn unit_mag(q: &[engram_core::Complex32; 8192]) -> f32 {
+        q.iter()
+            .map(|c| c.re * c.re + c.im * c.im)
+            .sum::<f32>()
+            .sqrt()
+    }
+
+    /// Store `set_geosphere_frame` advances frame_step, keeps unit hypersphere on
+    /// framed queries, and clear returns identity transform.
+    #[test]
+    fn ub_temporal_geometry_geosphere_frame_unit_and_step() {
+        let dir = test_store_dir("frame");
+        let mut store = StoreHandle::new(&dir.to_string_lossy());
+
+        let (origin0, step0, _) = store
+            .get_current_geosphere_frame()
+            .expect("native frame");
+        assert_eq!(origin0, "native");
+        assert_eq!(step0, 0);
+
+        store.set_geosphere_frame("giza_sacred_cubit", "offset_ub7_t0");
+        let state = store.current_geosphere_state().expect("state");
+        assert_eq!(state.frame_step, 1);
+        assert_eq!(state.frame_origin.as_deref(), Some("giza_sacred_cubit"));
+        assert!(state.current_lens.is_some(), "lens must install");
+        let lens = state.current_lens.as_ref().unwrap();
+        assert!(
+            (unit_mag(lens) - 1.0).abs() < 1e-3,
+            "lens mag={}",
+            unit_mag(lens)
+        );
+
+        let query = store.encode("query:ub7_temporal_probe").q;
+        let framed = state.apply_current_frame(&query);
+        assert!(
+            (unit_mag(&framed) - 1.0).abs() < 1e-3,
+            "framed mag={}",
+            unit_mag(&framed)
+        );
+
+        // Deterministic re-set: same origin+offset → same lens geometry, step advances.
+        store.set_geosphere_frame("giza_sacred_cubit", "offset_ub7_t0");
+        let state2 = store.current_geosphere_state().expect("state2");
+        assert_eq!(state2.frame_step, 2);
+        let framed2 = state2.apply_current_frame(&query);
+        let sim = cosine_similarity(&framed, &framed2);
+        assert!(
+            sim > 0.99,
+            "same origin+offset must reproduce framed geometry, sim={sim}"
+        );
+
+        store.clear_geosphere_frame();
+        let cleared = store.current_geosphere_state().expect("cleared");
+        assert_eq!(cleared.frame_step, 3);
+        assert!(cleared.current_lens.is_none());
+        assert_eq!(cleared.frame_origin.as_deref(), None);
+        let identity = cleared.apply_current_frame(&query);
+        let id_sim = cosine_similarity(&identity, &query);
+        assert!(
+            id_sim > 0.99,
+            "clear must restore identity frame, sim={id_sim}"
+        );
+        assert!((unit_mag(&identity) - 1.0).abs() < 1e-3);
+
+        let _ = std::fs::remove_dir_all(&dir);
+        std::env::remove_var("ENGRAM_DISABLE_SHEAF");
+        std::env::remove_var("ENGRAM_FORCE_CPU_BACKEND");
+        std::env::remove_var("ENGRAM_KI_DISABLE");
+    }
+
+    /// Store-encode + apply_temporal_phase stays on unit hypersphere (diachronic path).
+    #[test]
+    fn ub_temporal_geometry_apply_temporal_phase_unit() {
+        let dir = test_store_dir("phase");
+        let store = StoreHandle::new(&dir.to_string_lossy());
+        let mut q = store.encode("memory:ub7_diachronic").q;
+        let mag0 = unit_mag(&q);
+        assert!((mag0 - 1.0).abs() < 1e-3, "encode mag={mag0}");
+        apply_temporal_phase(&mut q, 30.0);
+        let mag1 = unit_mag(&q);
+        assert!(
+            (mag1 - 1.0).abs() < 1e-3,
+            "temporal phase must preserve unit hypersphere, mag={mag1}"
+        );
+        // Non-zero age should move phase (not exact identity).
+        let q0 = store.encode("memory:ub7_diachronic").q;
+        let sim = cosine_similarity(&q, &q0);
+        assert!(
+            sim < 0.999,
+            "30d temporal phase should rotate away from t0, sim={sim}"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+        std::env::remove_var("ENGRAM_DISABLE_SHEAF");
+        std::env::remove_var("ENGRAM_FORCE_CPU_BACKEND");
+        std::env::remove_var("ENGRAM_KI_DISABLE");
     }
 }
