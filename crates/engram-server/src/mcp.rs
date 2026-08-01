@@ -1072,7 +1072,7 @@ fn tool_list() -> Value {
             },
             {
                 "name": "mcp_engram_session_start",
-                "description": "MANDATORY first MCP call every session. Default ENGRAM_WAKE_BUNDLE=slim: primary_goal, top 5 suggested_actions, trace_chain head, slim ego_snapshot, presentation_stratum previews. Full harness via mcp_engram_get_continuation_bundle. Execute suggested_actions BEFORE edits; ack with mcp_engram_ack_wake_queue. Lean default — do NOT call watch_workspace at wake. See docs/HARNESS_INJECTION.md + docs/AGENT_MEMORY_CONTRACT.md.",
+                "description": "MANDATORY first MCP call every session. Default ENGRAM_WAKE_BUNDLE=slim: primary_goal, top 5 suggested_actions, trace_chain head, slim ego_snapshot, presentation_stratum previews, and trust_residual (last human–agent handoff contract + open scars with local CRS verify). Full harness via mcp_engram_get_continuation_bundle. Execute suggested_actions BEFORE edits; ack with mcp_engram_ack_wake_queue. Lean default — do NOT call watch_workspace at wake. See docs/HARNESS_INJECTION.md + docs/AGENT_MEMORY_CONTRACT.md.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -4685,6 +4685,8 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
                 .unwrap_or_else(
                     || serde_json::json!({ "score": 0.0, "version": "cold_start_fidelity_v1" }),
                 );
+            // Capture trust residual before tier may move full continuation.
+            let trust_residual_top = continuation.get("trust_residual").cloned();
             // RSI Cycle 43: fidelity metric store/relate off critical wake path (bg thread).
             // Replaces prior duplicate bg promote thread (subset of warm_wake_anchors).
             let store_for_fid = store.clone();
@@ -4735,6 +4737,15 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
                 "wake_phase_ms": serde_json::Value::Object(phase_ms),
                 "wake_ki_rebake": wake_ki_rebake,
             });
+            // Mutual morning: top-level trust_residual so agents see shared past first.
+            if let Some(residual) = trust_residual_top {
+                wake_packet["trust_residual"] = residual;
+            } else if let Some(residual) = wake_packet
+                .pointer("/continuation/trust_residual")
+                .cloned()
+            {
+                wake_packet["trust_residual"] = residual;
+            }
             if let Some(spatial_val) = spatial {
                 wake_packet["spatial"] = spatial_val;
             }
