@@ -2028,6 +2028,7 @@ fn intent_overlap_score(intent: &str, text: &str) -> f32 {
 }
 
 /// Compact agent-facing digest (read this before the rest of the wake firehose).
+#[allow(clippy::too_many_arguments)]
 pub fn build_wake_digest(
     primary_goal: Option<&str>,
     session_intent: Option<&str>,
@@ -2048,7 +2049,7 @@ pub fn build_wake_digest(
             || goal
                 .to_lowercase()
                 .split(':')
-                .last()
+                .next_back()
                 .map(|g| intent.to_lowercase().contains(g))
                 .unwrap_or(false)
     };
@@ -2105,6 +2106,7 @@ pub fn build_wake_digest(
 /// MQ Cycle 29: optional `first_open_scar` from access_index pin (no BVH walk).
 /// MQ Cycle 32: optional `first_goal_child` from decomposes_into pin.
 /// UB Cycle 22: optional `capacity_compress_path` → dry_run apply_capacity_hot_compress pin.
+#[allow(clippy::too_many_arguments)]
 fn build_suggested_actions_ultra_lean(
     manifest: Option<&Value>,
     primary_goal: Option<&str>,
