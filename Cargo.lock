@@ -695,7 +695,7 @@ checksum = "edd0f118536f44f5ccd48bcb8b111bdc3de888b58c74639dfb034a357d0f206d"
 
 [[package]]
 name = "engram-ast"
-version = "0.7.0-beta.11"
+version = "0.7.0-beta.12"
 dependencies = [
  "streaming-iterator",
  "tree-sitter",
@@ -711,7 +711,7 @@ dependencies = [
 
 [[package]]
 name = "engram-cli"
-version = "0.7.0-beta.11"
+version = "0.7.0-beta.12"
 dependencies = [
  "anyhow",
  "clap",
@@ -726,7 +726,7 @@ dependencies = [
 
 [[package]]
 name = "engram-core"
-version = "0.7.0-beta.11"
+version = "0.7.0-beta.12"
 dependencies = [
  "anyhow",
  "base64",
@@ -753,7 +753,7 @@ dependencies = [
 
 [[package]]
 name = "engram-gpu"
-version = "0.7.0-beta.11"
+version = "0.7.0-beta.12"
 dependencies = [
  "anyhow",
  "bytemuck",
@@ -772,7 +772,7 @@ dependencies = [
 
 [[package]]
 name = "engram-proof-harness"
-version = "0.7.0-beta.11"
+version = "0.7.0-beta.12"
 dependencies = [
  "engram-core",
  "serde_json",
@@ -781,7 +781,7 @@ dependencies = [
 
 [[package]]
 name = "engram-server"
-version = "0.7.0-beta.11"
+version = "0.7.0-beta.12"
 dependencies = [
  "anyhow",
  "axum",

@@ -68,6 +68,7 @@ mod tile_draft;
 mod tool_tier;
 mod turn_extract;
 mod wake_bundle;
+mod wake_digest;
 mod wake_queue_gate;
 pub mod watchdog;
 

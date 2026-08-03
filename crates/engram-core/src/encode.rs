@@ -365,6 +365,9 @@ pub fn to_hybrid_wire(block: &HolographicBlock, use_delta: bool) -> Vec<u8> {
     wire
 }
 
+/// Experimental HBRD wire decode — **stub only** (does not fully restore q/p).
+/// Not a product surface; O_DIRECT `.leg3` remains the primary on-disk format.
+/// See CLAIMS_LEDGER.md (hybrid wire = partial / experimental).
 pub fn from_hybrid_wire(wire: &[u8]) -> Option<Leg3Pointer> {
     if wire.len() < 4 || &wire[0..4] != b"HBRD" {
         return None;
@@ -376,8 +379,7 @@ pub fn from_hybrid_wire(wire: &[u8]) -> Option<Leg3Pointer> {
         lp.allowed_transforms[0] = ver;
         // ... (restored q/p would be parsed here; for minimal, re-encode stub from payload area if present)
     }
-    // For additive minimal: return a valid block (real decode would fill q/p from wire bytes)
-    // Consumers (store/mcp) get full fidelity block; O_DIRECT kept for .leg
+    // Stub: returns a mint block — not full fidelity. Prefer .leg3 encode/decode paths.
     Some(lp)
 }
 

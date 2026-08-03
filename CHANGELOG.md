@@ -5,36 +5,38 @@ All notable changes to Engram (geometric non-flat memory substrate).
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## [0.7.0-beta.12] - 2026-08-03
+
+### Added
+- **Whole-block integrity seal (`sig_5`)**: unkeyed BLAKE3 over canonical 256KB block (with `sig_5` zeroed) on encode/store; `BlockIntegrityStatus` for valid / legacy_unsealed / mismatch / structural / relation lineage (`engram_core::block_integrity`).
+- **Trust residual v1 (mutual morning):** Every `session_start` / continuation assemble surfaces `trust_residual` — last human–agent contract (`helper:session_handoff_latest` with local CRS verify), open scars with verify status, dual-gate summary, and mutual-accountability mandate. Capability flag `trust_residual_v1`.
+- **Wake digest + intent-shaped queue:** `session_start` emits `wake_digest_v1`; scars/goal-children demoted when session intent mismatches sticky primary_goal; handoff promoted.
+- **Primary-goal rebind (agent path):** `ENGRAM_PRIMARY_GOAL_REBIND=off|suggest|auto` (agent profile default `auto`) rewrites sticky `primary_goal` when handoff goal aligns better with session intent, or suggests `goal_set_primary`.
+- **Wake digest-only mode:** `ENGRAM_WAKE_DIGEST_ONLY=1` returns a minimal session_start packet (status, session_key, wake_digest, trust residual, readiness summary); full harness via `get_continuation_bundle`.
+- **Agent quality mode:** `ENGRAM_QUALITY_MODE=1` forces eager BVH (`ENGRAM_DEFER_BVH=0`) with readiness `quality_mode` flag — opt-in RAM for recall quality on large manifolds.
+- **Proof harness CI** (dogfood #213): lawfulness/seal regression path in CI.
+- **RSI Cycle 1 — surprise-aware sentinel:** Hub-anchor `l2_norm_residual` pressure tightens effective rehydrate turn budget (`continuity_spikes` + harness `rsi_cycle_metrics`).
+
+### Fixed
+- **PRAXIS hard contract:** `ENGRAM_PRAXIS_CONTRACT=hard` rejects updates lacking `evidence_update`; **agent profile now defaults hard** (override with soft for compat).
+- **Honest lawfulness verify:** `verify_block_lawfulness` reports whole-block `sig_5` integrity; manifold verify samples seals and can take `include_relation_integrity`.
+- **Readiness honesty:** `device_residency_mode` / note — unavailable/h2d ≠ production GDS.
+- **NREM empty-store serve crash:** `run_nrem_consolidation` on dedicated 32MB-stack thread (dogfood #209).
+- **REST `/api/recall` empty under lean agent profile:** REST uses `recall_scoped` default `scope=all` (MCP lean anchors unchanged).
+- **Docs honesty:** CLAIMS_LEDGER + encode comments — “ZK” is transform attestation; hybrid wire experimental stub (not a product surface).
+- **Release hygiene:** collapsed multi-Unreleased CHANGELOG blocks; Cargo/README/tag alignment at beta.12.
 
 ### Removed
 - **Autophagy as product concept:** no automatic GC daemon marketing; docs/MCP describe only explicit `mcp_engram_forget_old` (manual low-CRS eviction). Daemon remains watcher/NREM only.
 
-## Unreleased
-
-### Fixed
-- **PRAXIS hard contract:** `ENGRAM_PRAXIS_CONTRACT=hard` rejects updates lacking `evidence_update` (default soft).
-- **Wake digest + intent-shaped queue:** `session_start` emits `wake_digest_v1`; scars/goal-children demoted when session intent mismatches sticky primary_goal; handoff promoted.
-- **Readiness honesty:** `device_residency_mode` / note — unavailable/h2d ≠ production GDS.
-- **Honest lawfulness verify:** `verify_block_lawfulness` reports whole-block `sig_5` integrity (`valid` / `legacy_unsealed` / `mismatch` / `structural`); manifold verify samples seals and can take `include_relation_integrity`.
-- **Docs honesty:** CLAIMS_LEDGER + encode comments — “ZK” is transform attestation; hybrid wire experimental stub.
+### Changed
+- **Public messaging:** README What’s new rewritten for beta.12 honesty stack; hybrid wire demoted from hero lists.
+- **Module extract:** `wake_digest` builders live in `wake_digest.rs` (narrow extract from harness_injection).
 
 ## Unreleased
 
-### Added
-- **Whole-block integrity seal (`sig_5`)**: unkeyed BLAKE3 over canonical 256KB block (with `sig_5` zeroed) on encode/store; `BlockIntegrityStatus` for valid / legacy_unsealed / mismatch / structural / relation lineage (`engram_core::block_integrity`).
-
-## [Unreleased]
-
-### Fixed
-
-- **NREM empty-store serve crash:** `run_nrem_consolidation` now runs on a dedicated 32MB-stack thread. Riemannian NREM + multiple `[Complex32; 8192]` locals overflowed Tokio's default ~2MB worker stack (`thread 'tokio-rt-worker' has overflowed its stack`) during ego.leg3 genesis on `engram serve` (agent profile).
-- **REST `/api/recall` empty under lean agent profile:** REST called bare `StoreHandle::recall` which resolves to `scope=anchors` in lean mode — empty relation graph → `[]` even after successful `/api/remember`. REST now uses `recall_scoped` and **defaults `scope` to `all`** (optional `anchors` | `hot` | `all`). MCP lean path unchanged.
-
-### Added
-
-- **Trust residual v1 (mutual morning):** Every `session_start` / continuation assemble surfaces `trust_residual` — last human–agent contract (`helper:session_handoff_latest` with local CRS verify), open scars with verify status, dual-gate summary, and mutual-accountability mandate. Hoisted on slim wake **and** top-level wake packet so agents open the shared past without digging. Capability flag `trust_residual_v1`.
-- **RSI Cycle 1 — surprise-aware sentinel:** Hub-anchor `l2_norm_residual` pressure tightens effective rehydrate turn budget (`continuity_spikes` + harness `rsi_cycle_metrics`); builds on PR #53 leg3 gap closure.
+### Notes
+- Next unreleased work starts here after beta.12.
 
 ## [0.7.0-beta.6] - 2026-06-30
 

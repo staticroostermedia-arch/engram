@@ -4705,6 +4705,84 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
             let mcp_health =
                 crate::cold_start_fidelity::build_mcp_health(&readiness, &fidelity_report, true);
 
+            // Agent continuity: primary_goal rebind when session intent mismatches sticky marker.
+            let sticky_pg = continuation
+                .get("primary_goal")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            let handoff_pg = continuation
+                .pointer("/structured_handoff/primary_goal")
+                .and_then(|v| v.as_str())
+                .or_else(|| {
+                    continuation
+                        .pointer("/rehydration_manifest/primary_goal")
+                        .and_then(|v| v.as_str())
+                })
+                .map(|s| s.to_string());
+            let rebind_decision = crate::wake_digest::choose_primary_goal_rebind(
+                &intent,
+                sticky_pg.as_deref(),
+                handoff_pg.as_deref(),
+                crate::wake_digest::primary_goal_rebind_mode(),
+            );
+            let mut primary_goal_rebind_meta: Option<serde_json::Value> = None;
+            let mut continuation = continuation;
+            match &rebind_decision {
+                crate::wake_digest::RebindDecision::Auto { new_goal } => {
+                    let mut lock = match store.lock() {
+                        Ok(l) => l,
+                        Err(p) => {
+                            return json!({
+                                "content": [{ "type": "text", "text": format!("Error: store mutex poisoned: {}", p) }],
+                                "isError": true
+                            });
+                        }
+                    };
+                    let goal = crate::store::normalize_goal_concept(new_goal);
+                    let payload = format!(
+                        "PRIMARY GOAL\n\n**goal:** {}\n**set_at:** {}\n**rebind:** auto\n**session_intent:** {}\n",
+                        goal,
+                        chrono::Utc::now().to_rfc3339(),
+                        intent.chars().take(120).collect::<String>()
+                    );
+                    let mut marker = lock.encode(&payload);
+                    marker.zedos_tag = engram_core::types::ZEDOS_OPERATIONAL;
+                    marker.crs_score = 0.95;
+                    if lock.store("primary_goal", marker).is_ok() {
+                        lock.invalidate_continuation_bundle_cache();
+                        let _ = lock.relate("primary_goal", &goal, "serves");
+                        if let Some(obj) = continuation.as_object_mut() {
+                            obj.insert("primary_goal".into(), json!(goal.clone()));
+                        }
+                        primary_goal_rebind_meta = Some(json!({
+                            "mode": "auto",
+                            "from": sticky_pg,
+                            "to": goal,
+                            "reason": "handoff primary aligns better with session intent",
+                        }));
+                    }
+                }
+                crate::wake_digest::RebindDecision::Suggest { candidate } => {
+                    let action =
+                        crate::wake_digest::rebind_suggest_action(candidate.as_deref());
+                    if let Some(arr) = continuation
+                        .get_mut("suggested_actions")
+                        .and_then(|v| v.as_array_mut())
+                    {
+                        arr.insert(0, action);
+                    } else if let Some(obj) = continuation.as_object_mut() {
+                        obj.insert("suggested_actions".into(), json!([action]));
+                    }
+                    primary_goal_rebind_meta = Some(json!({
+                        "mode": "suggest",
+                        "from": sticky_pg,
+                        "candidate": candidate,
+                        "reason": "intent mismatch — suggested goal_set_primary / goal_create",
+                    }));
+                }
+                crate::wake_digest::RebindDecision::None => {}
+            }
+
             let continuation_out = match bundle_tier {
                 crate::wake_bundle::WakeBundleTier::Slim => {
                     crate::wake_bundle::slim_continuation_bundle(&continuation)
@@ -4737,8 +4815,11 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
                 "wake_phase_ms": serde_json::Value::Object(phase_ms),
                 "wake_ki_rebake": wake_ki_rebake,
             });
+            if let Some(rb) = primary_goal_rebind_meta.clone() {
+                wake_packet["primary_goal_rebind"] = rb;
+            }
             // Mutual morning: top-level trust_residual so agents see shared past first.
-            if let Some(residual) = trust_residual_top {
+            if let Some(residual) = trust_residual_top.clone() {
                 wake_packet["trust_residual"] = residual;
             } else if let Some(residual) =
                 wake_packet.pointer("/continuation/trust_residual").cloned()
@@ -4780,7 +4861,7 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
                     .and_then(|v| v.as_array())
                     .cloned()
                     .unwrap_or_default();
-                wake_packet["wake_digest"] = crate::harness_injection::build_wake_digest(
+                wake_packet["wake_digest"] = crate::wake_digest::build_wake_digest(
                     primary,
                     Some(intent.as_str()),
                     next_vector,
@@ -4789,6 +4870,22 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
                     &actions,
                     &scars,
                     large,
+                );
+            }
+            // Optional ultra-lean: drop fat continuation/readiness from response.
+            if crate::wake_digest::wake_digest_only_enabled() {
+                wake_packet = crate::wake_digest::build_digest_only_packet(
+                    &session_key,
+                    elapsed,
+                    wake_packet
+                        .get("wake_digest")
+                        .cloned()
+                        .unwrap_or(json!({})),
+                    wake_packet.get("trust_residual").cloned(),
+                    &readiness,
+                    &wake_gate,
+                    &edit_arc_gate,
+                    primary_goal_rebind_meta,
                 );
             }
             if let Some(spatial_val) = spatial {
