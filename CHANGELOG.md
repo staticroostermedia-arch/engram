@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Fixed
+- **Honest lawfulness verify:** `verify_block_lawfulness` reports whole-block `sig_5` integrity (`valid` / `legacy_unsealed` / `mismatch` / `structural`); manifold verify samples seals and can take `include_relation_integrity`.
+- **Docs honesty:** CLAIMS_LEDGER + encode comments — “ZK” is transform attestation; hybrid wire experimental stub.
+
+## Unreleased
+
 ### Added
 - **Whole-block integrity seal (`sig_5`)**: unkeyed BLAKE3 over canonical 256KB block (with `sig_5` zeroed) on encode/store; `BlockIntegrityStatus` for valid / legacy_unsealed / mismatch / structural / relation lineage (`engram_core::block_integrity`).
 

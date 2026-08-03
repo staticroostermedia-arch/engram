@@ -10785,6 +10785,15 @@ pub struct BlockLawfulnessSummary {
     pub allowed_transforms: String,
     pub sig_0: [u8; 32],
     pub merkle_sub_root: [u8; 32],
+    /// Whole-block seal status: valid | legacy_unsealed | mismatch | structural | relation_lineage_*
+    pub integrity_status: String,
+    /// True when structure is ok and seal is Valid or LegacyUnsealed (mismatch/structural fail).
+    pub integrity_ok: bool,
+    /// How many of sig_0..sig_5 are non-zero (honest chain *depth present*, not historical walk).
+    pub chain_slots_nonzero: u8,
+    /// Overall agent-facing lawfulness: integrity_ok && (PRAXIS contract note separate).
+    pub lawful: bool,
+    pub notes: Vec<String>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -10801,6 +10810,11 @@ pub struct ManifoldHealthReport {
     pub issues_found: u32,
     pub issues: Vec<String>,
     pub overall_health: String, // "healthy" | "needs_review" | "critical"
+    /// Seal sample breakdown (whole-block sig_5 integrity).
+    pub seal_valid: u32,
+    pub seal_legacy_unsealed: u32,
+    pub seal_mismatch: u32,
+    pub seal_structural: u32,
 }
 
 /// Minimal options for protocol invocation (vertical slice).
@@ -10828,6 +10842,60 @@ impl StoreHandle {
             .trim_matches('\0')
             .to_string();
 
+        let integ = engram_core::verify_block_integrity(&block);
+        let integrity_status = integ.as_str().to_string();
+        let integrity_ok = matches!(
+            &integ,
+            engram_core::BlockIntegrityStatus::Valid
+                | engram_core::BlockIntegrityStatus::LegacyUnsealed
+        );
+        let chain_slots_nonzero = [
+            footer.sig_0,
+            footer.sig_1,
+            footer.sig_2,
+            footer.sig_3,
+            footer.sig_4,
+            footer.sig_5,
+        ]
+        .iter()
+        .filter(|s| s.iter().any(|&b| b != 0))
+        .count() as u8;
+
+        let mut notes = Vec::new();
+        match &integ {
+            engram_core::BlockIntegrityStatus::LegacyUnsealed => {
+                notes.push(
+                    "legacy_unsealed: sig_5 all zeros (pre-seal block; still readable)".into(),
+                );
+            }
+            engram_core::BlockIntegrityStatus::Mismatch {
+                chain_ok,
+                whole_block_ok,
+            } => {
+                notes.push(format!(
+                    "mismatch: chain_ok={chain_ok} whole_block_ok={whole_block_ok}"
+                ));
+            }
+            engram_core::BlockIntegrityStatus::Structural(s) => {
+                notes.push(format!("structural: {s}"));
+            }
+            engram_core::BlockIntegrityStatus::RelationLineage { current, note } => {
+                notes.push(format!("relation_lineage current={current}: {note}"));
+            }
+            engram_core::BlockIntegrityStatus::Valid => {}
+        }
+        // Honest: nonzero slot count ≠ full historical reconstruction.
+        notes.push(format!(
+            "chain_slots_nonzero={chain_slots_nonzero}/6 (present depth only; not a full history walk)"
+        ));
+        if block.zedos_tag == engram_core::types::ZEDOS_PRAXIS
+            && !contract.contains("evidence_update")
+        {
+            notes.push("PRAXIS contract missing evidence_update (soft policy unless ENGRAM_PRAXIS_CONTRACT=hard)".into());
+        }
+
+        let lawful = integrity_ok;
+
         Some(BlockLawfulnessSummary {
             concept: concept.to_string(),
             crs: block.crs_score,
@@ -10838,6 +10906,11 @@ impl StoreHandle {
             allowed_transforms: contract,
             sig_0: footer.sig_0,
             merkle_sub_root: footer.merkle_sub_root,
+            integrity_status,
+            integrity_ok,
+            chain_slots_nonzero,
+            lawful,
+            notes,
         })
     }
 
@@ -10907,6 +10980,10 @@ impl StoreHandle {
 
         let mut issues = Vec::new();
         let mut high_value_blocks = 0u32;
+        let mut seal_valid = 0u32;
+        let mut seal_legacy_unsealed = 0u32;
+        let mut seal_mismatch = 0u32;
+        let mut seal_structural = 0u32;
 
         // Phase 3: load full blocks ONLY for the tiny final sample
         for concept in &sampled_names {
@@ -10917,6 +10994,29 @@ impl StoreHandle {
 
             if block.crs_score >= 0.74_f32 {
                 high_value_blocks += 1;
+            }
+            // Whole-block seal audit (sig_5) — honest integrity, not CRS-only.
+            match engram_core::verify_block_integrity(&block) {
+                engram_core::BlockIntegrityStatus::Valid => seal_valid += 1,
+                engram_core::BlockIntegrityStatus::LegacyUnsealed => seal_legacy_unsealed += 1,
+                engram_core::BlockIntegrityStatus::Mismatch { .. } => {
+                    seal_mismatch += 1;
+                    issues.push(format!(
+                        "seal mismatch on '{}' (chain or whole-block digests disagree)",
+                        concept
+                    ));
+                }
+                engram_core::BlockIntegrityStatus::Structural(ref s) => {
+                    seal_structural += 1;
+                    issues.push(format!("structural integrity on '{concept}': {s}"));
+                }
+                engram_core::BlockIntegrityStatus::RelationLineage {
+                    current: false,
+                    note,
+                } => {
+                    issues.push(format!("relation lineage stale on '{concept}': {note}"));
+                }
+                engram_core::BlockIntegrityStatus::RelationLineage { current: true, .. } => {}
             }
             let contract = std::str::from_utf8(&block.allowed_transforms).unwrap_or("");
             if block.zedos_tag == engram_core::types::ZEDOS_PRAXIS
@@ -10933,11 +11033,26 @@ impl StoreHandle {
                     concept, block.energetics.dv
                 ));
             }
+            // Optional relation lineage when flag set and block looks like a relation.
+            if options.include_relation_integrity
+                && block.zedos_tag == engram_core::types::ZEDOS_RELATION
+            {
+                // Relation blocks store merkle_sub_root of endpoint sigs; without endpoint
+                // fetch we only flag empty/nonempty. Full re-verify needs from/to concepts.
+                if block.footer.merkle_sub_root.iter().all(|&b| b == 0) {
+                    issues.push(format!(
+                        "relation '{}' has empty merkle_sub_root (legacy or incomplete relate)",
+                        concept
+                    ));
+                }
+            }
         }
 
         let issues_found = issues.len() as u32;
         let overall_health = if issues.is_empty() {
             "healthy"
+        } else if seal_mismatch > 0 || seal_structural > 0 {
+            "critical"
         } else {
             "needs_review"
         }
@@ -10949,6 +11064,10 @@ impl StoreHandle {
             issues_found,
             issues,
             overall_health,
+            seal_valid,
+            seal_legacy_unsealed,
+            seal_mismatch,
+            seal_structural,
         })
     }
 
@@ -13489,6 +13608,10 @@ mod ingest_ast_tests {
             issues_found: 0,
             issues: vec![],
             overall_health: "healthy".to_string(),
+            seal_valid: 0,
+            seal_legacy_unsealed: 0,
+            seal_mismatch: 0,
+            seal_structural: 0,
         };
         let metric = store
             .persist_mq_verify_metric(&vr, 0.74, Some(5))
@@ -14535,6 +14658,10 @@ mod ingest_ast_tests {
             issues_found: 0,
             issues: vec![],
             overall_health: "healthy".to_string(),
+            seal_valid: 0,
+            seal_legacy_unsealed: 0,
+            seal_mismatch: 0,
+            seal_structural: 0,
         };
         let vm = store
             .persist_mq_verify_metric(&vr, 0.74, Some(10))
@@ -16427,5 +16554,106 @@ mod ub_temporal_geometry_tests {
         std::env::remove_var("ENGRAM_DISABLE_SHEAF");
         std::env::remove_var("ENGRAM_FORCE_CPU_BACKEND");
         std::env::remove_var("ENGRAM_KI_DISABLE");
+    }
+}
+
+#[cfg(test)]
+mod honest_lawfulness_integrity_tests {
+    use super::*;
+    use engram_core::{seal_whole_block, verify_block_integrity, BlockIntegrityStatus};
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    fn test_dir(name: &str) -> std::path::PathBuf {
+        static N: AtomicU64 = AtomicU64::new(0);
+        let n = N.fetch_add(1, Ordering::SeqCst);
+        let dir = std::env::temp_dir().join(format!(
+            "engram-lawfulness-{}-{}-{}",
+            std::process::id(),
+            n,
+            name
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn lawfulness_summary_reports_valid_seal_on_remember() {
+        std::env::set_var("ENGRAM_FORCE_CPU_BACKEND", "1");
+        std::env::set_var("ENGRAM_DISABLE_SHEAF", "1");
+        std::env::set_var("ENGRAM_KI_DISABLE", "1");
+        let dir = test_dir("valid");
+        let mut store = StoreHandle::new(&dir.to_string_lossy());
+        store
+            .remember("law_probe_valid", "sealed lawful probe text")
+            .expect("remember");
+        let s = store
+            .get_block_lawfulness_summary("law_probe_valid")
+            .expect("summary");
+        assert_eq!(s.integrity_status, "valid", "{:?}", s.notes);
+        assert!(s.integrity_ok);
+        assert!(s.lawful);
+        assert!(s.chain_slots_nonzero >= 1);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn manifold_detects_seal_mismatch_after_corruption() {
+        std::env::set_var("ENGRAM_FORCE_CPU_BACKEND", "1");
+        std::env::set_var("ENGRAM_DISABLE_SHEAF", "1");
+        std::env::set_var("ENGRAM_KI_DISABLE", "1");
+        let dir = test_dir("corrupt");
+        let mut store = StoreHandle::new(&dir.to_string_lossy());
+        store
+            .remember("law_probe_corrupt", "will be corrupted on disk")
+            .expect("remember");
+        // Corrupt payload region of the .leg file
+        let path = dir.join("law_probe_corrupt.leg");
+        let mut bytes = std::fs::read(&path).expect("read leg");
+        let idx = 0x22000 + 40;
+        assert!(bytes.len() > idx);
+        bytes[idx] ^= 0xA5;
+        std::fs::write(&path, &bytes).expect("write");
+        // Confirm core sees mismatch
+        let block = store.fetch_block("law_probe_corrupt").expect("fetch");
+        match verify_block_integrity(&block) {
+            BlockIntegrityStatus::Mismatch {
+                whole_block_ok: false,
+                ..
+            } => {}
+            other => panic!("expected mismatch, got {other:?}"),
+        }
+        let report = store
+            .verify_manifold_integrity(ManifoldVerificationOptions {
+                min_crs: 0.0,
+                sample_size: Some(20),
+                include_relation_integrity: false,
+            })
+            .expect("verify");
+        assert!(
+            report.seal_mismatch >= 1 || report.issues_found >= 1,
+            "report={report:?}"
+        );
+        assert!(
+            report.issues.iter().any(|i| i.contains("seal mismatch")),
+            "issues={:?}",
+            report.issues
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn lawfulness_legacy_unsealed_still_integrity_ok() {
+        // Mint without going through store seal path: direct write of unsealed mint
+        let mut b = engram_core::types::Leg3Pointer::mint();
+        b.magic = *b"LEG3";
+        b.footer.sig_5 = [0u8; 32];
+        assert_eq!(
+            verify_block_integrity(&b),
+            BlockIntegrityStatus::LegacyUnsealed
+        );
+        // After seal, valid
+        seal_whole_block(&mut b);
+        assert_eq!(verify_block_integrity(&b), BlockIntegrityStatus::Valid);
     }
 }
