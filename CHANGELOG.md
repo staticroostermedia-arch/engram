@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Unreleased
 
 ### Fixed
+- **PRAXIS hard contract:** `ENGRAM_PRAXIS_CONTRACT=hard` rejects updates lacking `evidence_update` (default soft).
 - **Wake digest + intent-shaped queue:** `session_start` emits `wake_digest_v1`; scars/goal-children demoted when session intent mismatches sticky primary_goal; handoff promoted.
 - **Readiness honesty:** `device_residency_mode` / note — unavailable/h2d ≠ production GDS.
 - **Honest lawfulness verify:** `verify_block_lawfulness` reports whole-block `sig_5` integrity (`valid` / `legacy_unsealed` / `mismatch` / `structural`); manifold verify samples seals and can take `include_relation_integrity`.
