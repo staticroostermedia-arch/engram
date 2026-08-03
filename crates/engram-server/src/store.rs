@@ -2931,6 +2931,7 @@ impl StoreHandle {
                 "ub_research_scar_mcp": true,
                 "ub_trust_surface": true,
                 "ub_trust_surface_boundary": true,
+                "trust_residual_v1": true,
                 "mq_goal_children_prefer_active": true,
                 "mq_goal_child_pin_matches_rank": true,
                 "mq_write_hygiene_prior_any_activity": true,
@@ -6118,6 +6119,15 @@ impl StoreHandle {
                 mean_hub,
             );
             obj.insert("trust_surface".to_string(), trust);
+            // Mutual-accountability residual: last human–agent contract + scars with
+            // local verify status. Always present (even when empty) so every morning
+            // both parties open the same trust envelope — not dual-gate alone.
+            // Build from current object (as Value) before insert.
+            let residual = {
+                let as_val = serde_json::Value::Object(obj.clone());
+                self.build_trust_residual(&as_val)
+            };
+            obj.insert("trust_residual".to_string(), residual);
         }
         mark_cont(&mut cont_phase_ms, "fidelity_ms", t_fidelity);
         mark_cont(&mut cont_phase_ms, "total_ms", t_cont);
@@ -6624,6 +6634,237 @@ impl StoreHandle {
             "capacity_risk": capacity_risk,
             "missing": missing,
             "hint": "UB dual-gate trust — trust_ok = continuity+lawfulness+backend+primary; still run verify_manifold for live VERIFY₀ sample",
+        })
+    }
+
+    /// Local CRS gate used for residual verify stamps (Kepler / lawfulness floor).
+    fn residual_verify_status(crs: f32) -> (&'static str, bool) {
+        const KEPLER: f32 = 0.74;
+        if crs >= KEPLER {
+            ("lawful", true)
+        } else if crs >= 0.5 {
+            ("soft", false)
+        } else {
+            ("weak", false)
+        }
+    }
+
+    /// Build the **trust residual** for wake — the shared human–agent morning packet.
+    ///
+    /// Always returns a v1 object (even on cold empty store) so `session_start` can hoist
+    /// a stable shape:
+    /// - `last_contract` — latest `helper:session_handoff_latest` fields + local CRS verify
+    /// - `scars` — open scar pins with CRS verify status (not count-only)
+    /// - `trust_surface` — dual-gate summary reference
+    /// - `mutual_accountability` — relationship status + mandate
+    ///
+    /// This is the “I woke up trusting yesterday” envelope: not qualia, earned continuity.
+    pub fn build_trust_residual(&self, bundle: &serde_json::Value) -> serde_json::Value {
+        let trust_surface = bundle.get("trust_surface").cloned().unwrap_or_else(
+            || serde_json::json!({ "version": "ub_trust_surface_v1", "trust_ok": false }),
+        );
+
+        // ── Last human–agent contract (session handoff) ─────────────────────
+        let handoff = bundle.get("structured_handoff");
+        let handoff_block = self
+            .fetch_block_high_priority(SESSION_HANDOFF_LATEST)
+            .or_else(|| self.fetch_block(SESSION_HANDOFF_LATEST));
+        let handoff_crs = handoff_block.as_ref().map(|b| b.crs_score);
+        let last_contract = if let Some(h) = handoff {
+            let present = h
+                .get("concept")
+                .and_then(|v| v.as_str())
+                .map(|s| !s.is_empty())
+                .unwrap_or(false)
+                || handoff_block.is_some();
+            let (status, crs_ok) = match handoff_crs {
+                Some(c) => Self::residual_verify_status(c),
+                None if present => ("unverified", false),
+                None => ("missing", false),
+            };
+            let preview = h
+                .get("preview")
+                .and_then(|v| v.as_str())
+                .or_else(|| h.get("next_vector").and_then(|v| v.as_str()))
+                .unwrap_or("");
+            let preview: String = preview.chars().take(240).collect();
+            serde_json::json!({
+                "present": present,
+                "concept": h.get("concept").cloned().unwrap_or(serde_json::json!(SESSION_HANDOFF_LATEST)),
+                "primary_goal": h.get("primary_goal"),
+                "next_vector": h.get("next_vector"),
+                "decisions_head": h.get("decisions_head").cloned().unwrap_or(serde_json::json!([])),
+                "falsifiers": h.get("falsifiers").cloned().unwrap_or(serde_json::json!([])),
+                "open_questions": h.get("open_questions").cloned().unwrap_or(serde_json::json!([])),
+                "selected_child": h.get("selected_child"),
+                "property_test": h.get("property_test"),
+                "preview": preview,
+                "verify": {
+                    "block_present": handoff_block.is_some(),
+                    "crs": handoff_crs,
+                    "crs_ok": crs_ok,
+                    "status": status,
+                    "kepler_gate": 0.74,
+                    "method": "local_crs_read",
+                    "hint": "re-open helper:session_handoff_latest; no external registry required"
+                }
+            })
+        } else if handoff_block.is_some() {
+            let c = handoff_crs.unwrap_or(0.0);
+            let (status, crs_ok) = Self::residual_verify_status(c);
+            serde_json::json!({
+                "present": true,
+                "concept": SESSION_HANDOFF_LATEST,
+                "primary_goal": serde_json::Value::Null,
+                "next_vector": serde_json::Value::Null,
+                "decisions_head": [],
+                "falsifiers": [],
+                "open_questions": [],
+                "preview": "",
+                "verify": {
+                    "block_present": true,
+                    "crs": c,
+                    "crs_ok": crs_ok,
+                    "status": status,
+                    "kepler_gate": 0.74,
+                    "method": "local_crs_read",
+                    "hint": "handoff block present but structured fields not yet assembled — call get_continuation_bundle if needed"
+                }
+            })
+        } else {
+            serde_json::json!({
+                "present": false,
+                "concept": SESSION_HANDOFF_LATEST,
+                "primary_goal": serde_json::Value::Null,
+                "next_vector": serde_json::Value::Null,
+                "decisions_head": [],
+                "falsifiers": [],
+                "open_questions": [],
+                "preview": "",
+                "verify": {
+                    "block_present": false,
+                    "crs": serde_json::Value::Null,
+                    "crs_ok": false,
+                    "status": "missing",
+                    "kepler_gate": 0.74,
+                    "method": "local_crs_read",
+                    "hint": "no prior session_end handoff — first mutual morning; write a contract at session_end"
+                }
+            })
+        };
+
+        // ── Open scars with verify status ───────────────────────────────────
+        let scars_raw = bundle
+            .pointer("/harness_injection/open_scars_wake")
+            .or_else(|| bundle.get("open_scars_wake"))
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default();
+        let mut scars: Vec<serde_json::Value> = Vec::new();
+        let mut lawful_scars = 0u32;
+        for s in scars_raw.iter().take(5) {
+            let concept = s
+                .get("concept")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            if concept.is_empty() {
+                continue;
+            }
+            let crs = s
+                .get("crs")
+                .and_then(|v| v.as_f64())
+                .map(|f| f as f32)
+                .or_else(|| {
+                    self.fetch_block(&concept)
+                        .or_else(|| self.fetch_block_high_priority(&concept))
+                        .map(|b| b.crs_score)
+                })
+                .unwrap_or(0.0);
+            let (status, crs_ok) = Self::residual_verify_status(crs);
+            if crs_ok {
+                lawful_scars += 1;
+            }
+            let preview = s.get("preview").and_then(|v| v.as_str()).unwrap_or("");
+            let preview: String = preview.chars().take(160).collect();
+            scars.push(serde_json::json!({
+                "concept": concept,
+                "crs": crs,
+                "preview": preview,
+                "reason": s.get("reason"),
+                "source": s.get("source"),
+                "verify": {
+                    "crs_ok": crs_ok,
+                    "status": status,
+                    "kepler_gate": 0.74,
+                    "method": "local_crs_read"
+                }
+            }));
+        }
+        let scar_count = scars.len();
+        let all_scars_lawful = scar_count == 0 || lawful_scars as usize == scar_count;
+
+        // ── Mutual accountability relationship status ───────────────────────
+        let contract_present = last_contract
+            .get("present")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let contract_lawful = last_contract
+            .pointer("/verify/crs_ok")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let trust_ok = trust_surface
+            .get("trust_ok")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let shared_past = contract_present;
+        let status = if contract_present && contract_lawful && all_scars_lawful {
+            if trust_ok {
+                "mutual_morning_ready"
+            } else {
+                "contract_present_backend_or_csf_soft"
+            }
+        } else if contract_present {
+            "contract_present_needs_attention"
+        } else if scar_count > 0 {
+            "scars_without_handoff"
+        } else {
+            "bootstrap_no_shared_past"
+        };
+
+        serde_json::json!({
+            "version": "trust_residual_v1",
+            "last_contract": last_contract,
+            "scars": scars,
+            "scars_verify": {
+                "count": scar_count,
+                "lawful_count": lawful_scars,
+                "all_lawful": all_scars_lawful,
+            },
+            "trust_surface": {
+                "trust_ok": trust_ok,
+                "dual_gate": trust_surface.get("dual_gate"),
+                "cold_start_fidelity": trust_surface.get("cold_start_fidelity"),
+                "missing": trust_surface.get("missing"),
+            },
+            "mutual_accountability": {
+                "status": status,
+                "human_agent_shared_past": shared_past,
+                "contract_lawful": contract_lawful,
+                "scars_lawful": all_scars_lawful,
+                "mandate": "session_end writes the human–agent contract (handoff); session_start surfaces it with local CRS verify; both parties re-open the same residual — no external registry required",
+                "agent_do": [
+                    "read last_contract.next_vector and decisions_head before inventing new goals",
+                    "read scars before repeating ruled-out approaches",
+                    "call verify_manifold_integrity when dual_gate soft or missing sample",
+                    "session_end with honest summary so tomorrow's residual is trustworthy"
+                ],
+                "human_do": [
+                    "treat last_contract + scars as the shared past, not chat scroll",
+                    "dispute via block re-open + CRS, not vibes",
+                    "pin high-stakes commitments when they must survive soft decay"
+                ]
+            }
         })
     }
 
@@ -12038,6 +12279,79 @@ mod ingest_ast_tests {
             .unwrap()
             .iter()
             .any(|m| m.as_str() == Some("primary_goal_missing")));
+    }
+
+    /// Trust residual v1: last contract + scars with local verify on empty and handoff stores.
+    #[test]
+    fn trust_residual_v1_bootstrap_and_handoff() {
+        let dir = test_store_dir("trust_residual_v1");
+        std::env::set_var("ENGRAM_DISABLE_SHEAF", "1");
+        std::env::set_var("ENGRAM_FORCE_CPU_BACKEND", "1");
+        let mut store = StoreHandle::new(&dir.to_string_lossy());
+
+        // Cold empty store — residual still has stable shape.
+        let empty_bundle = serde_json::json!({
+            "trust_surface": {
+                "version": "ub_trust_surface_v1",
+                "trust_ok": false,
+                "dual_gate": { "continuity_ok": false, "lawfulness_ok": true, "csf_floor": 0.70 },
+                "cold_start_fidelity": 0.0,
+                "missing": ["csf_below_floor", "backend_not_ready", "primary_goal_missing"]
+            }
+        });
+        let boot = store.build_trust_residual(&empty_bundle);
+        assert_eq!(boot["version"], "trust_residual_v1");
+        assert_eq!(boot["last_contract"]["present"], false);
+        assert_eq!(boot["last_contract"]["verify"]["status"], "missing");
+        assert_eq!(boot["scars_verify"]["count"], 0);
+        assert_eq!(
+            boot["mutual_accountability"]["status"],
+            "bootstrap_no_shared_past"
+        );
+        assert_eq!(
+            boot["mutual_accountability"]["human_agent_shared_past"],
+            false
+        );
+
+        // Write handoff + research scar, then residual must surface contract + verify.
+        let _ = store.persist_session_handoff_latest(
+            "Trust residual dogfood — next_vector: ship mutual morning packet",
+            "session_end_trust_residual",
+        );
+        let _ = store
+            .mint_research_scar(
+                "trust_residual_ruled_out",
+                "DOOM LOOP: skip session_end",
+                "Always write handoff so residual has a contract",
+                "session_end with honest summary every close",
+            )
+            .expect("mint research scar");
+
+        let handoff_bundle = store.build_continuation_bundle_wake(Some("trust residual test"));
+        assert!(
+            handoff_bundle.get("trust_residual").is_some(),
+            "assemble must insert trust_residual: keys={:?}",
+            handoff_bundle
+                .as_object()
+                .map(|o| o.keys().collect::<Vec<_>>())
+        );
+        let residual = handoff_bundle.get("trust_residual").unwrap();
+        assert_eq!(residual["version"], "trust_residual_v1");
+        assert_eq!(residual["last_contract"]["present"], true);
+        assert_eq!(
+            residual["last_contract"]["concept"],
+            "helper:session_handoff_latest"
+        );
+        assert_eq!(residual["last_contract"]["verify"]["crs_ok"], true);
+        assert_eq!(residual["last_contract"]["verify"]["status"], "lawful");
+        assert_eq!(
+            residual["mutual_accountability"]["human_agent_shared_past"],
+            true
+        );
+        // Slim hoist
+        let slim = crate::wake_bundle::slim_continuation_bundle(&handoff_bundle);
+        assert_eq!(slim["trust_residual"]["version"], "trust_residual_v1");
+        assert_eq!(slim["trust_residual"]["last_contract"]["present"], true);
     }
 
     /// UB Cycle 19: soft_elevated_hot_set band between soft(1k) and hard(2k) thresholds.

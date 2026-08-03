@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Trust residual v1 (mutual morning):** Every `session_start` / continuation assemble surfaces `trust_residual` — last human–agent contract (`helper:session_handoff_latest` with local CRS verify), open scars with verify status, dual-gate summary, and mutual-accountability mandate. Hoisted on slim wake **and** top-level wake packet so agents open the shared past without digging. Capability flag `trust_residual_v1`.
 - **RSI Cycle 1 — surprise-aware sentinel:** Hub-anchor `l2_norm_residual` pressure tightens effective rehydrate turn budget (`continuity_spikes` + harness `rsi_cycle_metrics`); builds on PR #53 leg3 gap closure.
 
 ## [0.7.0-beta.6] - 2026-06-30

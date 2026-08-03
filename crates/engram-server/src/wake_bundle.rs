@@ -261,6 +261,13 @@ pub fn slim_continuation_bundle(full: &Value) -> Value {
             "trust_surface",
             full.get("trust_surface").cloned(),
         );
+        // Trust residual: last human–agent contract + scars with local verify.
+        // Always hoist when present (assemble always inserts trust_residual_v1).
+        crate::continuity_spikes::insert_optional(
+            obj,
+            "trust_residual",
+            full.get("trust_residual").cloned(),
+        );
         // MQ Cycle 29: scar pins (concept list) when non-empty — count alone is not actionable.
         if !open_scars_wake.is_empty() {
             obj.insert("open_scars_wake".into(), json!(open_scars_wake));
@@ -347,6 +354,27 @@ mod tests {
                 "trust_ok": true,
                 "dual_gate": { "continuity_ok": true, "lawfulness_ok": true, "csf_floor": 0.70 },
                 "cold_start_fidelity": 0.94
+            },
+            // Trust residual v1 must survive slim tier (mutual morning packet).
+            "trust_residual": {
+                "version": "trust_residual_v1",
+                "last_contract": {
+                    "present": true,
+                    "concept": "helper:session_handoff_latest",
+                    "next_vector": "ship trust residual on wake",
+                    "verify": { "status": "lawful", "crs_ok": true }
+                },
+                "scars": [
+                    {
+                        "concept": "scar:example",
+                        "crs": 0.78,
+                        "verify": { "status": "lawful", "crs_ok": true }
+                    }
+                ],
+                "mutual_accountability": {
+                    "status": "mutual_morning_ready",
+                    "human_agent_shared_past": true
+                }
             }
         });
 
@@ -382,6 +410,13 @@ mod tests {
         // UB Cycle 14
         assert_eq!(slim["trust_surface"]["version"], "ub_trust_surface_v1");
         assert_eq!(slim["trust_surface"]["trust_ok"], true);
+        // Trust residual v1
+        assert_eq!(slim["trust_residual"]["version"], "trust_residual_v1");
+        assert_eq!(slim["trust_residual"]["last_contract"]["present"], true);
+        assert_eq!(
+            slim["trust_residual"]["mutual_accountability"]["human_agent_shared_past"],
+            true
+        );
     }
 
     #[test]
