@@ -106,7 +106,7 @@ sig_1 ← sig_0
 sig_0 ← BLAKE3(q_bytes ∥ sig_1)
 ```
 
-This is not a Merkle *tree* (which proves set membership). It is a Merkle *chain* — it proves **temporal causation**. Given any two consecutive hashes, a third party can cryptographically verify not just that both states existed, but that one was *derived from* the other. This is **cognitive provenance**: the ability to prove that a system's current belief was produced by a specific sequence of prior states and operations.
+This is not a Merkle *tree* (which proves set membership). It is a Merkle *chain* of successive footer digests — it supports **temporal provenance** within the retained `sig_*` depth. In the reference implementation, updates typically shift `sig_0`/`sig_1` (and scars may use `sig_2`); see `CLAIMS_LEDGER.md` for exact coverage. Given consecutive retained hashes, a third party can verify that one footer state was produced after another under the documented hash rule.
 
 In condensed matter physics, a **time crystal** is a phase of matter that spontaneously breaks time-translation symmetry — it repeats in time the way a conventional crystal repeats in space. The BLAKE3 Merkle chain is an information-theoretic analog: it imposes a discrete temporal ordering on cognitive states, where each state is cryptographically bound to its predecessor by a fixed transformation. The chain cannot be reordered, forged, or abbreviated without detection.
 
