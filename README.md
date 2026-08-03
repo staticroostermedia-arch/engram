@@ -132,7 +132,7 @@ Fixed **256KB HolographicBlocks** (.leg3): 8192D phase (q), momentum (p), CRS la
 
 ### Solid-State Tensor — NVMe as context extension
 
-On fast NVMe (e.g. Samsung T700) with **cuFile/GPUDirect** and **`full_bvh_gpu`** recall, the cold manifold on disk acts as a **cryptographically verified extension of the agent context window** — not a separate vector DB you query occasionally.
+On fast NVMe (e.g. Samsung T700) with **cuFile/GPUDirect** and **`full_bvh_gpu`** recall, the cold manifold on disk acts as a **persistent, integrity-checked extension of the agent context window** (block footer + verify tools; see `CLAIMS_LEDGER.md`) — not a separate vector DB you query occasionally.
 
 Each concept is a persistent **tensor entry**: unit-hypersphere **q**, momentum **p**, dynamic **bonds** (relation blocks + Merkle lineage), CRS ≥ 0.74. The lean path surfaces only the relevant subgraph:
 

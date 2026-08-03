@@ -527,7 +527,7 @@ Engram exists partly to prevent context window explosion. Use it for that purpos
 
 4. **The CRS as a trust score.** Before relying on any recalled memory for a critical decision, check its CRS. A low-CRS result might be correct but hasn't been reinforced by evidence.
 
-5. **BLAKE3 Merkle chain.** Every update advances the block's cryptographic footer. The memory graph is auditable. `sig_0` must chain from `sig_1`.
+5. **BLAKE3 Merkle footer.** Updates advance the block footer (`sig_1 ← prior sig_0`, `sig_0 ← BLAKE3(q)`). Auditable within the retained chain depth; full six-slot history is not always populated — see `CLAIMS_LEDGER.md`.
 
 6. **The ki_hijacker bridge.** The context you wake up with was placed there by `ki_hijacker.rs`, not any explicit tool call. It runs unattended every 60 seconds inside the MCP server process. You are never starting from zero. After Phase 2, it now prominently surfaces your recent structured reasoning traces grouped under active rituals.
 

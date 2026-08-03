@@ -146,7 +146,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **.leg3 HolographicBlock optimizations (P0–P5):** tiered block sizes, hybrid wire serialization, SOA+arena layout, homotopy + zk transforms/proofs, versioning + DSL for `allowed_transforms[64]`.
+- **.leg3 HolographicBlock optimizations (P0–P5):** tiered block sizes, hybrid wire serialization (minimal HBRD stub; O_DIRECT `.leg` remains primary), SOA+arena layout, homotopy + BLAKE3 transform *attestations* (not zk-SNARKs), versioning + DSL for `allowed_transforms[64]`.
 - **Unified holographic primitive:** 256KB `.leg3` HolographicBlock combining binary payload and vector geometry (q/p tensors on unit hypersphere), safe transformations (`allowed_transforms` contract + CRS ≥ 0.74 gate), and Merkle/sheaf coherence checks.
 
 ### Changed
