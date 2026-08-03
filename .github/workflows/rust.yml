@@ -2,9 +2,9 @@ name: Rust Build, Test & Harness (MVP Prep Enhanced)
 
 on:
   push:
-    branches: [ "master", "feat/*", "docs/*" ]
+    branches: [ "master", "feat/*", "docs/*", "test/*", "fix/*" ]
   pull_request:
-    branches: [ "master", "feat/*", "docs/*" ]
+    branches: [ "master", "feat/*", "docs/*", "test/*", "fix/*" ]
 
 env:
   CARGO_TERM_COLOR: always
@@ -85,3 +85,28 @@ jobs:
       with:
         name: agent-memory-harness-results
         path: tools/test-harness/results/*agent-memory*.json
+
+  proof-harness:
+    name: Proof harness (CPU)
+    runs-on: ubuntu-latest
+    env:
+      ENGRAM_FORCE_BACKEND: cpu
+      ENGRAM_FORCE_CPU_BACKEND: "1"
+    steps:
+    - uses: actions/checkout@v4
+    - name: Install dependencies
+      run: sudo apt-get update && sudo apt-get install -y capnproto
+    - name: Build proof harness
+      run: cargo build -p engram-proof-harness
+    - name: Run proof harness
+      run: |
+        chmod +x scripts/run-proof-harness.sh
+        ./scripts/run-proof-harness.sh | tee proof-harness.log
+        grep -q 'PROOF_HARNESS_RESULT=PASS' proof-harness.log
+    - name: Upload proof harness log
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: proof-harness-log
+        path: proof-harness.log
+

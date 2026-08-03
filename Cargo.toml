@@ -6,6 +6,7 @@ members = [
     "crates/engram-gpu",
     "crates/engram-cli",
     "crates/engram-server",
+    "crates/engram-proof-harness",
 ]
 
 [workspace.package]

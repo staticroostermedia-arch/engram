@@ -1,0 +1,16 @@
+[package]
+name = "engram-proof-harness"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "CPU-only proof harness: Recall@K, restart continuity, seal corruption, latency/RSS"
+publish = false
+
+[[bin]]
+name = "engram-proof-harness"
+path = "src/main.rs"
+
+[dependencies]
+engram-core = { path = "../engram-core" }
+serde_json = { workspace = true }
+tempfile = "3"
