@@ -46,7 +46,7 @@ Same preference as [MCP_TOOLS_REFERENCE.md](MCP_TOOLS_REFERENCE.md) safe-composi
 
 ### Tool summaries
 
-**`session_start(intent, include_spatial?)`** — Mandatory first call. Mints `session_start_*` episodic block, loads process sheaf, and returns:
+**`session_start(intent, include_spatial?)`** — Mandatory first call. **Read `wake_digest` first** (next_vector, recall_mode, top actions/scars, intent alignment) before the rest of the wake firehose. Mints `session_start_*` episodic block, loads process sheaf, and returns:
 - **After wake:** execute `suggested_actions`, then **`mcp_engram_ack_wake_queue(executed=true)`** before `context_for_edit` when `ENGRAM_PROFILE=agent` (hard gate default). Empty queue auto-acks at wake.
 - **`continuation` (slim by default, `ENGRAM_WAKE_BUNDLE=slim`)** — `primary_goal` (non-null when marker exists), top 5 `suggested_actions` (composite `injection_rank`: CRS + hot + recency + momentum + scar/handoff), `trace_chain_head`, slim `ego_snapshot`, `presentation_stratum` node_count + 5 previews, **`injection_completeness`** (8-slot score + `missing` list), **`nvme_context`** (`recall_mode`, `bvh_ready`, `gpu_hot_resident`, `nvme_recall_ready`, `large_manifold`), **`cold_start_fidelity`** (score ∈ [0,1] from goal/manifest/trace/BVH/hub CRS)
 - **Injection ritual:** If `injection_completeness.score < 0.85` or `missing` contains `nvme_recall_path` / `gpu_hot_resident`, call `mcp_engram_get_continuation_bundle` and poll `mcp_engram_get_backend_readiness` (~25s on large stores for `full_bvh_gpu`). Do not broad-read until completeness is acceptable or you have escalated to full bundle.

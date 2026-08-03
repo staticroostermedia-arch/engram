@@ -1900,6 +1900,7 @@ fn build_harness_bundle_ultra_lean_wake(
     let suggested_actions = build_suggested_actions_ultra_lean(
         rehydration_manifest.as_ref(),
         primary_goal.as_deref(),
+        session_intent,
         rehydrate_suggested,
         rehydrate_reason,
         first_open_scar,
@@ -1999,13 +2000,117 @@ pub fn capacity_compress_wake_action_args(compress_path: &Value, dry_run: bool) 
     }))
 }
 
+/// Tokenize for cheap intent overlap (lowercase alnum runs, len≥3).
+fn intent_tokens(s: &str) -> std::collections::HashSet<String> {
+    s.to_lowercase()
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|w| w.len() >= 3)
+        .map(|w| w.to_string())
+        .collect()
+}
+
+fn intent_overlap_score(intent: &str, text: &str) -> f32 {
+    let a = intent_tokens(intent);
+    if a.is_empty() {
+        return 0.0;
+    }
+    let b = intent_tokens(text);
+    if b.is_empty() {
+        return 0.0;
+    }
+    let inter = a.intersection(&b).count() as f32;
+    let uni = a.union(&b).count() as f32;
+    if uni <= 0.0 {
+        0.0
+    } else {
+        inter / uni
+    }
+}
+
+/// Compact agent-facing digest (read this before the rest of the wake firehose).
+#[allow(clippy::too_many_arguments)]
+pub fn build_wake_digest(
+    primary_goal: Option<&str>,
+    session_intent: Option<&str>,
+    next_vector: Option<&str>,
+    recall_mode: Option<&str>,
+    trust_ok: Option<bool>,
+    suggested_actions: &[Value],
+    open_scars: &[Value],
+    large_manifold: bool,
+) -> Value {
+    let intent = session_intent.unwrap_or("");
+    let goal = primary_goal.unwrap_or("");
+    let goal_aligned = if intent.is_empty() || goal.is_empty() {
+        true
+    } else {
+        intent_overlap_score(intent, goal) >= 0.08
+            || intent.to_lowercase().contains(&goal.to_lowercase())
+            || goal
+                .to_lowercase()
+                .split(':')
+                .next_back()
+                .map(|g| intent.to_lowercase().contains(g))
+                .unwrap_or(false)
+    };
+    let mut warnings: Vec<String> = Vec::new();
+    if !goal_aligned {
+        warnings.push(
+            "intent may not match primary_goal — prefer handoff next_vector over sticky goal scars"
+                .into(),
+        );
+    }
+    let mode = recall_mode.unwrap_or("unknown");
+    if large_manifold && (mode.contains("sampled") || mode == "linear" || mode.contains("bounded"))
+    {
+        warnings.push(format!(
+            "recall_mode={mode} on large_manifold — BVH may still be warming; poll get_backend_readiness"
+        ));
+    }
+    let top_actions: Vec<Value> = suggested_actions.iter().take(3).cloned().collect();
+    // Intent-filter scars for digest (keep full list in open_scars_wake)
+    let mut scar_scored: Vec<(f32, Value)> = open_scars
+        .iter()
+        .map(|s| {
+            let text = format!(
+                "{} {}",
+                s.get("concept").and_then(|c| c.as_str()).unwrap_or(""),
+                s.get("preview").and_then(|c| c.as_str()).unwrap_or("")
+            );
+            let score = if intent.is_empty() {
+                1.0
+            } else {
+                intent_overlap_score(intent, &text)
+            };
+            (score, s.clone())
+        })
+        .collect();
+    scar_scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+    let top_scars: Vec<Value> = scar_scored.into_iter().take(2).map(|(_, v)| v).collect();
+    json!({
+        "version": "wake_digest_v1",
+        "primary_goal": primary_goal.unwrap_or(""),
+        "session_intent": intent,
+        "primary_goal_aligned": goal_aligned,
+        "next_vector": next_vector.unwrap_or(""),
+        "recall_mode": mode,
+        "trust_ok": trust_ok,
+        "top_actions": top_actions,
+        "top_scars": top_scars,
+        "warnings": warnings,
+        "hint": "Read wake_digest first; full readiness/continuation is power detail",
+    })
+}
+
 /// RSI Cycle 72: lean wake queue from pre-resolved manifest (zero extra store I/O).
 /// MQ Cycle 29: optional `first_open_scar` from access_index pin (no BVH walk).
 /// MQ Cycle 32: optional `first_goal_child` from decomposes_into pin.
 /// UB Cycle 22: optional `capacity_compress_path` → dry_run apply_capacity_hot_compress pin.
+#[allow(clippy::too_many_arguments)]
 fn build_suggested_actions_ultra_lean(
     manifest: Option<&Value>,
     primary_goal: Option<&str>,
+    session_intent: Option<&str>,
     rehydrate_suggested: bool,
     rehydrate_reason: &str,
     first_open_scar: Option<&str>,
@@ -2013,6 +2118,11 @@ fn build_suggested_actions_ultra_lean(
     capacity_compress_path: Option<&Value>,
 ) -> Vec<Value> {
     let mut actions = Vec::new();
+    let intent = session_intent.unwrap_or("");
+    // Intent mismatch with sticky primary → pin handoff first (operational switch).
+    let goal = primary_goal.unwrap_or("");
+    let intent_goal_aligned =
+        intent.is_empty() || goal.is_empty() || intent_overlap_score(intent, goal) >= 0.08;
     if rehydrate_suggested {
         actions.push(crate::continuity_spikes::rehydrate_nudge_action(
             rehydrate_reason,
@@ -2045,24 +2155,38 @@ fn build_suggested_actions_ultra_lean(
             );
         }
     }
-    // Priority 0: open scar pin — SELECT deflection without full continuation bundle.
+    // Open scar pin — demote when session intent does not overlap scar concept (avoid wrong-work bait).
     if let Some(scar) = first_open_scar.filter(|s| !s.is_empty()) {
+        let scar_pri = if intent.is_empty() || intent_overlap_score(intent, scar) >= 0.05 {
+            0
+        } else {
+            3 // below handoff when intent mismatches sticky research scars
+        };
         push_action(
             &mut actions,
             "mcp_engram_read_concept",
             json!({ "concept": scar }),
-            "open scar — repulsion before repeating dead approach (lean pin)",
-            0,
+            if scar_pri == 0 {
+                "open scar — repulsion before repeating dead approach (lean pin)"
+            } else {
+                "open scar (demoted — low intent overlap; handoff may be operational focus)"
+            },
+            scar_pri,
         );
     }
-    // Priority 0: first goal child — SELECT backlog without scanning goal_children only.
+    // Goal child — demote when intent mismatches parent sticky goal.
     if let Some(child) = first_goal_child.filter(|s| !s.is_empty()) {
+        let child_pri = if intent_goal_aligned { 0 } else { 3 };
         push_action(
             &mut actions,
             "mcp_engram_read_concept",
             json!({ "concept": child }),
-            "goal child — active decomposes_into pin for SELECT (lean)",
-            0,
+            if child_pri == 0 {
+                "goal child — active decomposes_into pin for SELECT (lean)"
+            } else {
+                "goal child (demoted — session intent ≠ primary_goal topic)"
+            },
+            child_pri,
         );
     }
     if let Some(m) = manifest {
@@ -2113,13 +2237,18 @@ fn build_suggested_actions_ultra_lean(
             0,
         );
     }
-    // Always surface handoff + local profile as low-priority (no existence probe on ultra-lean).
+    // Handoff: priority 0 when intent mismatches sticky primary (operational switch).
+    let handoff_pri = if intent_goal_aligned { 1 } else { 0 };
     push_action(
         &mut actions,
         "mcp_engram_read_concept",
         json!({ "concept": SESSION_HANDOFF_LATEST }),
-        "structured handoff from last session",
-        1,
+        if handoff_pri == 0 {
+            "structured handoff — intent mismatch with primary_goal; read next_vector first"
+        } else {
+            "structured handoff from last session"
+        },
+        handoff_pri,
     );
     push_action(
         &mut actions,
@@ -2128,7 +2257,12 @@ fn build_suggested_actions_ultra_lean(
         "local context stratum — sovereign host profile (previews in session_start.local_stratum)",
         2,
     );
-    // Cap lean queue (same as lean suggested_actions path).
+    // Cap lean queue (same as lean suggested_actions path); sort priority first.
+    actions.sort_by(|a, b| {
+        let pa = a.get("priority").and_then(|v| v.as_u64()).unwrap_or(99);
+        let pb = b.get("priority").and_then(|v| v.as_u64()).unwrap_or(99);
+        pa.cmp(&pb)
+    });
     actions.truncate(8);
     actions
 }
@@ -3317,6 +3451,7 @@ SESSION HANDOFF PACKET v1 (structured JSON for next-wake read_concept)
         let actions = build_suggested_actions_ultra_lean(
             None,
             Some("goal:engram_ultimate_backend_v1"),
+            None, // session_intent
             false,
             "",
             None,
@@ -3360,6 +3495,7 @@ SESSION HANDOFF PACKET v1 (structured JSON for next-wake read_concept)
         let bare = build_suggested_actions_ultra_lean(
             None,
             Some("goal:engram_ultimate_backend_v1"),
+            None, // session_intent
             false,
             "",
             None,
@@ -3409,6 +3545,7 @@ SESSION HANDOFF PACKET v1 (structured JSON for next-wake read_concept)
         let actions = build_suggested_actions_ultra_lean(
             None,
             Some("goal:engram_memory_quality_v1"),
+            None, // session_intent
             false,
             "",
             Some("scar:mq29_lean_pin"),
@@ -3436,6 +3573,7 @@ SESSION HANDOFF PACKET v1 (structured JSON for next-wake read_concept)
         let bare = build_suggested_actions_ultra_lean(
             None,
             Some("goal:engram_memory_quality_v1"),
+            None, // session_intent
             false,
             "",
             None,
@@ -3459,6 +3597,7 @@ SESSION HANDOFF PACKET v1 (structured JSON for next-wake read_concept)
         let actions = build_suggested_actions_ultra_lean(
             None,
             Some("goal:engram_memory_quality_v1"),
+            None, // session_intent
             false,
             "",
             None,
@@ -3935,5 +4074,109 @@ SESSION HANDOFF PACKET v1 (structured JSON for next-wake read_concept)
             "freshest boundary first after merge, got {frozen:?}"
         );
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn intent_mismatch_demotes_scar_and_boosts_handoff() {
+        let actions = build_suggested_actions_ultra_lean(
+            None,
+            Some("goal:rh_mf4_idea_gated_attack_v1"),
+            Some("land trust questionnaire title O&E mom property"),
+            false,
+            "",
+            Some("scar:rh_r1_square_sieve_linear_seals_star_q"),
+            Some("goal:rh_watchlist_arxiv_sub"),
+            None,
+        );
+        let scar = actions.iter().find(|a| {
+            a.get("args")
+                .and_then(|x| x.get("concept"))
+                .and_then(|c| c.as_str())
+                == Some("scar:rh_r1_square_sieve_linear_seals_star_q")
+        });
+        assert!(scar.is_some(), "{actions:?}");
+        let scar_pri = scar
+            .unwrap()
+            .get("priority")
+            .and_then(|p| p.as_u64())
+            .unwrap_or(99);
+        assert!(
+            scar_pri >= 3,
+            "scar should be demoted under land-trust intent, pri={scar_pri} actions={actions:?}"
+        );
+        let handoff = actions.iter().find(|a| {
+            a.get("args")
+                .and_then(|x| x.get("concept"))
+                .and_then(|c| c.as_str())
+                == Some(SESSION_HANDOFF_LATEST)
+        });
+        assert!(handoff.is_some());
+        let h_pri = handoff
+            .unwrap()
+            .get("priority")
+            .and_then(|p| p.as_u64())
+            .unwrap_or(99);
+        assert_eq!(h_pri, 0, "handoff should be priority 0 on intent mismatch");
+        // After sort, handoff should appear before demoted scar
+        let hi = actions
+            .iter()
+            .position(|a| {
+                a.get("args")
+                    .and_then(|x| x.get("concept"))
+                    .and_then(|c| c.as_str())
+                    == Some(SESSION_HANDOFF_LATEST)
+            })
+            .unwrap();
+        let si = actions
+            .iter()
+            .position(|a| {
+                a.get("args")
+                    .and_then(|x| x.get("concept"))
+                    .and_then(|c| c.as_str())
+                    == Some("scar:rh_r1_square_sieve_linear_seals_star_q")
+            })
+            .unwrap();
+        assert!(hi < si, "handoff before scar: hi={hi} si={si} {actions:?}");
+    }
+
+    #[test]
+    fn wake_digest_v1_shape_and_sampled_warning() {
+        let actions = vec![json!({
+            "tool": "mcp_engram_read_concept",
+            "args": { "concept": "helper:session_handoff_latest" },
+            "priority": 0,
+        })];
+        let scars = vec![json!({
+            "concept": "scar:rh_example",
+            "preview": "ruled out free seal",
+        })];
+        let d = build_wake_digest(
+            Some("goal:rh_mf4_idea_gated_attack_v1"),
+            Some("ariel land trust questionnaire"),
+            Some("Mom questionnaire then title O&E"),
+            Some("sampled_bounded"),
+            Some(true),
+            &actions,
+            &scars,
+            true,
+        );
+        assert_eq!(d["version"], "wake_digest_v1");
+        assert_eq!(d["primary_goal_aligned"], false);
+        assert_eq!(d["next_vector"], "Mom questionnaire then title O&E");
+        assert_eq!(d["recall_mode"], "sampled_bounded");
+        let warnings = d["warnings"].as_array().unwrap();
+        assert!(
+            warnings
+                .iter()
+                .any(|w| w.as_str().unwrap_or("").contains("intent")),
+            "{warnings:?}"
+        );
+        assert!(
+            warnings
+                .iter()
+                .any(|w| w.as_str().unwrap_or("").contains("sampled_bounded")),
+            "{warnings:?}"
+        );
+        assert_eq!(d["top_actions"].as_array().unwrap().len(), 1);
     }
 }
