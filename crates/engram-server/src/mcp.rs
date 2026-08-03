@@ -1803,7 +1803,7 @@ fn tool_list() -> Value {
             // --- end Thought Tile tools ---
             {
                 "name": "mcp_engram_pin",
-                "description": "Set a concept's CRS to 1.0 and lock it so the Autophagy Daemon never evicts it. \
+                "description": "Set a concept's CRS to 1.0 and lock it so manual forget_old never evicts it. \
                                 WHEN TO USE: For foundational knowledge that must survive forever — architecture decisions, \
                                 user constants, project rules, genesis axioms. Do NOT pin everything: \
                                 pin only what is genuinely load-bearing. Pinned blocks still support relate/update. \
@@ -2019,7 +2019,7 @@ fn tool_list() -> Value {
             },
             {
                 "name": "mcp_engram_stats",
-                "description": "BEHAVIOR: Calculates and returns a comprehensive health report of the geometric manifold. USAGE: Call this to understand the current scale, disk usage, active namespace, and thermodynamic health (CRS distribution) of the knowledge base. Useful before triggering autophagy. OUTPUT: A formatted text block detailing total memories, pinned count, CRS distributions, active namespace, and disk usage.",
+                "description": "BEHAVIOR: Calculates and returns a comprehensive health report of the geometric manifold. USAGE: Call this to understand the current scale, disk usage, active namespace, and thermodynamic health (CRS distribution) of the knowledge base. Useful before deciding on explicit bulk cleanup (forget_old). OUTPUT: A formatted text block detailing total memories, pinned count, CRS distributions, active namespace, and disk usage.",
                 "inputSchema": { "type": "object", "properties": {} }
             },
             {
@@ -2292,7 +2292,7 @@ fn tool_list() -> Value {
             },
             {
                 "name": "mcp_engram_forget_old",
-                "description": "Manually trigger autophagy: evict non-pinned memories below a CRS threshold. \
+                "description": "Explicitly evict non-pinned memories below a CRS threshold (manual only; no automatic GC). \
                                 WHEN TO USE: After a long project phase ends, after distill runs, or when the manifold \
                                 is growing too large. Start conservative (min_crs_threshold=0.3) and increase if needed. \
                                 Pinned blocks (CRS=1.0) are ALWAYS exempt and will never be evicted. \
@@ -4945,7 +4945,7 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
                     );
                     let mut gap_block = lock.encode(&gap_text);
                     gap_block.zedos_tag = engram_core::types::ZEDOS_PRAXIS;
-                    gap_block.crs_score = 0.75; // Visible but not immortal; autophagy can clean it
+                    gap_block.crs_score = 0.75; // Visible but not immortal
                     let gap_key = format!("protocol_gap_{}", timestamp_gap);
                     let _ = lock.store(&gap_key, gap_block);
                     warn!(
@@ -8768,7 +8768,7 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
                 evicted, total
             );
             json!({ "content": [{ "type": "text", "text": format!(
-                "\u{2713} Autophagy complete. Evicted {} memories (CRS < {:.2}{}{}{}).",
+                "\u{2713} Manual low-CRS eviction complete. Evicted {} memories (CRS < {:.2}{}{}{}).",
                 evicted, min_crs, age_label, cap_label, rank_label
             ) }] })
         }
@@ -11949,5 +11949,43 @@ list = ["unit_hypersphere_unchanged"]
             std::env::remove_var("ENGRAM_CONSULT_BEFORE_WRITE");
             let _ = std::fs::remove_dir_all(&tmp);
         }
+    }
+}
+
+#[cfg(test)]
+mod forget_old_wording_tests {
+    /// Product surface must not brand manual eviction as autophagy.
+    #[test]
+    fn forget_old_and_pin_tool_descriptions_avoid_autophagy_branding() {
+        let src = include_str!("mcp.rs");
+        // Only audit production tool surface (exclude this test module).
+        let prod = src
+            .split("mod forget_old_wording_tests")
+            .next()
+            .expect("prod portion");
+        let lower = prod.to_ascii_lowercase();
+        assert!(
+            !lower.contains("autophagy daemon"),
+            "pin/forget tools must not reference autophagy daemon"
+        );
+        assert!(
+            !lower.contains("trigger autophagy"),
+            "stats/description must not say trigger autophagy"
+        );
+        assert!(
+            !prod.contains("Autophagy complete"),
+            "forget_old success must not say Autophagy complete"
+        );
+        assert!(
+            prod.contains("mcp_engram_forget_old"),
+            "forget_old tool must still exist as explicit eviction"
+        );
+        assert!(
+            prod.contains("Explicitly evict")
+                || lower.contains("explicit")
+                || lower.contains("manual low-crs")
+                || lower.contains("manual only"),
+            "forget_old should be described as explicit/manual eviction"
+        );
     }
 }

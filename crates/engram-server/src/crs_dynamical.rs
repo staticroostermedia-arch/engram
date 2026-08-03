@@ -7,7 +7,7 @@
 
 use engram_core::genesis::KEPLER_GATE;
 
-/// Floor for scarred blocks (below autophagy-friendly band but geometry preserved).
+/// Floor for scarred blocks (low CRS band but geometry preserved).
 pub const SCAR_CRS_FLOOR: f32 = 0.40;
 
 /// Role bases for high-traffic operational mints and demotions.

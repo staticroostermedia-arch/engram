@@ -24,7 +24,7 @@
     },
     {
       "concept": "genesis_pin_discipline",
-      "text": "Pin only what must survive indefinitely: proven architectural decisions, crystallized solutions to hard problems, immutable foundational facts. Over-pinning degrades the autophagy system — a manifold where everything is immortal cannot distinguish signal from noise. Restraint in pinning is a form of epistemic hygiene. The Autophagy daemon exists for a reason: not all memories should survive equally. A system that forgets well learns better than one that forgets nothing."
+      "text": "Pin only what must survive indefinitely: proven architectural decisions, crystallized solutions to hard problems, immutable foundational facts. Over-pinning reduces the usefulness of CRS as a signal — a manifold where everything is immortal cannot distinguish load-bearing knowledge from noise. Restraint in pinning is a form of epistemic hygiene. Prefer explicit forget_old for bulk cleanup rather than relying on an automatic eviction daemon (none is running)."
     },
     {
       "concept": "genesis_recall_humility",

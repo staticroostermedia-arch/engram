@@ -11,7 +11,7 @@
 //!
 //! Solution: `AccessIndex` — an in-memory `HashMap<String, u64>` that maps concept name
 //! → last_accessed UNIX timestamp. It is updated instantly on every recall and flushed
-//! to `~/.engram/access_index.bin` every 60 seconds by the Autophagy daemon.
+//! to `~/.engram/access_index.bin` every 60 seconds by the background daemon.
 //!
 //! # Reflexive Contract
 //!
@@ -3547,7 +3547,7 @@ impl StoreHandle {
         // New block CRS is determined by its geometric resonance with the
         // living Ego state (ego.leg3). This implements the interpretive memory
         // model: content that resonates with who we ARE gets higher initial
-        // confidence. Orthogonal content starts near the autophagy floor.
+        // confidence. Orthogonal content starts near the low-CRS floor.
         //
         //   resonance  = (cosine(q_new, q_ego) + 1.0) / 2.0   ∈ [0, 1]
         //   CRS_init   = dynamical_crs_ego_remember(resonance)  (Kepler floor 0.74)
@@ -4116,7 +4116,7 @@ impl StoreHandle {
 
     /// Delete a concept from the manifold.
     ///
-    /// **Autophagy Protection**: A hard-coded set of foundational blocks can NEVER be
+    /// **Pin protection**: A hard-coded set of foundational blocks can NEVER be
     /// deleted — not by `forget`, not by `mcp_engram_forget_old`, not by any agent.
     /// These are load-bearing anchors whose removal would corrupt longitudinal continuity.
     ///
@@ -8325,7 +8325,7 @@ impl StoreHandle {
             x if x >= 0.85 => "🥈 Silver (highly grounded)",
             x if x >= 0.74 => "🥉 Bronze (grounded)",
             x if x >= 0.40 => "⚪ Grounding (below safety floor)",
-            _ => "💀 Weak (Autophagy target)",
+            _ => "💀 Weak (low CRS — candidate for manual forget_old only)",
         };
 
         let last = self
@@ -8624,14 +8624,14 @@ impl StoreHandle {
     /// Narrows `allowed_transforms` to `"evidence_update"` only, preventing future
     /// OP_BIND geometric rewrites. Records the scar magnitude as `energetics.dv`
     /// (Lyapunov drift velocity). Applies a CRS penalty: `crs -= magnitude * 0.1`
-    /// floored at 0.40 (below autophagy threshold but preserving the geometry).
+    /// floored at 0.40 (low CRS band but geometry preserved).
     ///
     /// Genesis blocks (CRS=1.0 pinned) are protected — scars bounce off them.
     ///
     /// Called by `mcp_engram_scar` (public MCP tool, security: stdio/localhost-bounded).
     /// Also callable by external integrations routing through the Engram MCP bridge.
     /// Pin a concept to immortal CRS 1.0 via [`crate::crs_dynamical::dynamical_crs_pinned`].
-    /// Autophagy will ignore pinned blocks. Prefer high-priority fetch when available.
+    /// Pinned blocks are exempt from manual forget_old. Prefer high-priority fetch when available.
     pub fn pin(&mut self, concept: &str) -> Result<String> {
         let mut block = self
             .fetch_block_high_priority(concept)
@@ -8642,7 +8642,7 @@ impl StoreHandle {
         block.energetics.crs = pin_crs;
         self.store(concept, block)?;
         Ok(format!(
-            "✓ Pinned concept to CRS {pin_crs} (dynamical_crs). Autophagy will ignore it.: {concept}"
+            "✓ Pinned concept to CRS {pin_crs} (dynamical_crs). Exempt from manual forget_old.: {concept}"
         ))
     }
 
@@ -9034,7 +9034,7 @@ impl StoreHandle {
     }
 
     /// Store a crystallized error→solution pair as a ZEDOS_PRAXIS block.
-    /// Auto-pinned to CRS 1.0 — solutions never autophagy.
+    /// Auto-pinned to CRS 1.0 — solutions exempt from manual forget_old.
     pub fn remember_solution(&mut self, error_pattern: &str, solution: &str) -> Result<String> {
         let payload = format!(
             "## Error Pattern\n{}\n\n## Solution\n{}",

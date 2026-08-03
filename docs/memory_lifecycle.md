@@ -1,6 +1,6 @@
 # Engram Memory Lifecycle & NREM Pipeline
 
-The geometric memory manifold within Engram does not behave like a standard CRUD database. It operates on a continuous, biologically-inspired lifecycle known as the **NREM (Non-Rapid Eye Movement) Pipeline**. This pipeline manages the ingestion, crystallization, stability evaluation, and eventual eviction (autophagy) of HolographicBlocks.
+The geometric memory manifold within Engram does not behave like a standard CRUD database. It operates on a continuous, biologically-inspired lifecycle known as the **NREM (Non-Rapid Eye Movement) Pipeline**. This pipeline manages the ingestion, crystallization, stability evaluation, and optional **explicit** low-CRS eviction of HolographicBlocks (no automatic GC daemon).
 
 ## 1. Waking Ingestion (The Senses)
 When an agent or the background daemon ingests code or text, it creates a new HolographicBlock.
@@ -30,11 +30,13 @@ Hypotheses that are empirically tested (`mcp_engram_verify_behavior`) inform the
 - **Confirmed:** CRS is elevated, and the block is promoted.
 - **Refuted:** The block's CRS is heavily penalized. If the failure is catastrophic, an `mcp_engram_scar` creates a geometric repeller, permanently bending the manifold space around the concept to prevent future agents from hallucinating the same approach.
 
-## 4. Autophagy (Garbage Collection)
-Unlike standard append-only logs, Engram prevents context-window bloat by periodically evicting low-quality or obsolete memories.
-- Triggered manually via `mcp_engram_forget_old`.
-- Blocks with a CRS below the defined threshold (e.g., 0.2) are permanently purged from the NVMe manifold.
-- **Exceptions:** Pinned blocks (CRS=1.0) and recent session memories are mathematically exempt from autophagy.
+## 4. Explicit low-CRS eviction (manual only)
+
+- **No automatic Autophagy GC.** The background daemon does not delete memories on a schedule.
+- **Manual tool:** `mcp_engram_forget_old` evicts **unpinned** blocks below a CRS threshold when an operator/agent intentionally requests cleanup.
+- **Exceptions:** Pinned blocks (CRS=1.0) and protected foundational concepts are never removed by forget_old.
+- Prefer pinning load-bearing knowledge over relying on bulk forget.
+
 
 ## Summary
 The NREM pipeline ensures the memory manifold remains a highly curated, geometrically stable foundation for autonomous agentic reasoning, automatically filtering out noise and preserving load-bearing architectural axioms.

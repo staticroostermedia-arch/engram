@@ -1651,7 +1651,7 @@ async fn bake_ki(store: &SharedStore, ki_dir: &PathBuf) -> anyhow::Result<()> {
 /// - All pinned (CRS=1.0) blocks (equal weight)
 /// - Top-16 recently-accessed blocks (linearly decaying recency weight)
 ///
-/// Stored as ZEDOS_OPERATIONAL, CRS=0.99 so autophagy can eventually clean stale state.
+/// Stored as ZEDOS_OPERATIONAL, CRS=0.99 so stale state is not immortal (not auto-deleted).
 /// The concept name `__system_state__` is always overwritten — not versioned.
 async fn mint_system_state_vector(store: &SharedStore) {
     use engram_core::ops::{normalize_in_place, op_add_arena};
@@ -1745,7 +1745,7 @@ async fn mint_system_state_vector(store: &SharedStore) {
     );
     let mut s = store.lock().unwrap();
     let mut sys_block = s.encode(&provlog_text);
-    sys_block.crs_score = 0.99; // Below 1.0 so autophagy can evict stale state
+    sys_block.crs_score = 0.99; // Below 1.0 so not immortal
     sys_block.zedos_tag = engram_core::types::ZEDOS_OPERATIONAL;
     // Overwrite the q-vector with our computed centroid
     sys_block.q = state_q;

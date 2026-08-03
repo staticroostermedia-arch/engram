@@ -420,4 +420,4 @@ The `crs` field returned by `/api/recall` tells you how reliable a memory is:
 | `0.50–0.74` | Working hypothesis — use with caution |
 | `< 0.50` | Uncertain — verify before acting |
 
-Low-CRS memories are automatically evicted by the Autophagy GC (run `engram forget-old` or call `/api/boot_agent` with the appropriate command).
+Low-CRS memories are **not** auto-evicted. Use explicit `mcp_engram_forget_old` / CLI forget-old when you intentionally want bulk low-CRS cleanup (pinned blocks exempt).

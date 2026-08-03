@@ -114,7 +114,7 @@ fn load_engramignore() -> Vec<String> {
 
 /// Starts the global agentic background daemon attached to the MCP / REST Server.
 ///
-/// Autophagy GC is DISABLED. Nothing is ever evicted automatically.
+/// No automatic memory eviction GC. Daemon is watcher/NREM only; use mcp_engram_forget_old for explicit cleanup.
 /// The daemon runs three autonomous loops:
 ///   1. File watcher  — inotify/fsevents → AST extraction → live project indexing
 ///   2. NREM cycle    — periodic ego narrative tensor consolidation (ego.leg3)
@@ -171,7 +171,7 @@ pub fn spawn(store: SharedStore) -> Arc<DaemonControl> {
         })
         .unwrap();
 
-        info!("Agentic Daemon (Phase 7) online. Autophagy GC DISABLED — watcher only.");
+        info!("Agentic Daemon (Phase 7) online. Watcher/NREM only — no automatic memory eviction.");
 
         // Flush hot access timestamps to disk every 60 seconds (Mac hardening)
         let mut flush_interval = tokio::time::interval(Duration::from_secs(60));

@@ -71,9 +71,9 @@ pub fn from_text(text: &str) -> Leg3Pointer {
     // The intent: only `mcp_engram_pin()` or the Ego-gated ingestion path in
     // store.rs::remember() should ever grant CRS=1.0. Blocks born at 1.0 made
     // every memory immortal by default, collapsing the thermodynamic gradient
-    // that autophagy depends on (Phase 70 / manifold repair, 2026-04-28).
+    // that low-CRS ranking / optional manual eviction depends on (Phase 70 / manifold repair, 2026-04-28).
     //
-    // 0.74 = the "grounded fact" floor — above the autophagy default threshold
+    // 0.74 = the "grounded fact" floor — above typical forget_old thresholds
     // (0.20) so new memories survive by default, but below the gold-tier (0.95)
     // that requires Ego resonance or explicit verify_behavior() promotion.
     block.crs_score = 0.74;
