@@ -771,6 +771,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "engram-proof-harness"
+version = "0.7.0-beta.11"
+dependencies = [
+ "engram-core",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
 name = "engram-server"
 version = "0.7.0-beta.11"
 dependencies = [
