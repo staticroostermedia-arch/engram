@@ -399,7 +399,9 @@ async fn recall(
     // Prefer explicit scope; empty string falls back to REST default "all".
     let scope = payload.scope.trim();
     let scope_arg = if scope.is_empty() { "all" } else { scope };
-    let results = lock_store(&store).recall_scoped(query, k, Some(scope_arg)).0;
+    let results = lock_store(&store)
+        .recall_scoped(query, k, Some(scope_arg))
+        .0;
 
     let res: Vec<MemoryRes> = results
         .into_iter()
