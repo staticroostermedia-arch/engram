@@ -44,6 +44,7 @@ When status is `implemented`, named tests should exist in-repo. Prefer **softeni
 | NREM / ego.leg3 long-horizon continuity | README; MANIFESTO | implemented | daemon NREM path; ego.leg3 | NREM stack / profile tests (see dogfood PR #209) | Large-stack NREM needs dedicated thread (PR #209) |
 | Trust residual / mutual morning packet | PR #210; wake path | implemented | `store.rs` `build_trust_residual`; `wake_bundle`; mcp wake hoist | `trust_residual_v1_bootstrap_and_handoff`; wake_bundle tests | Merges when PR #210 greens |
 | REST recall returns empty under lean | historical bug | fixed on PR #209 | `serve.rs` `recall_scoped` default `scope=all` | REST dogfood path; serve path | MCP lean anchors intentionally different |
+| PRAXIS hard contract | store update | implemented (opt-in) | `ENGRAM_PRAXIS_CONTRACT=hard` | `praxis_contract_hard_tests` | Default soft for compat |
 | Autophagy / CRS-driven eviction | MANIFESTO | partial | daemon forget / min CRS paths | GC-related tests | Thresholds and aggression are config-dependent |
 | Pinned CRS=1.0 immortal blocks | AGENT_INTEGRATION_GUIDE | implemented | pin / praxis promotion | pin/remember_solution paths | — |
 | No neural embeddings in recall path | AGENT_INTEGRATION_GUIDE | implemented | `encode.rs` BLAKE3 spiral / unit-phase | encode determinism tests | — |

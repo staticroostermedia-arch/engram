@@ -1438,6 +1438,13 @@ pub(crate) fn ensure_provlog_recorded_at(body: &str, concept: &str) -> Option<St
     Some(out)
 }
 
+/// ENGRAM_PRAXIS_CONTRACT=soft|hard (default soft). Hard rejects PRAXIS without evidence_update.
+pub(crate) fn praxis_contract_hard() -> bool {
+    std::env::var("ENGRAM_PRAXIS_CONTRACT")
+        .map(|v| v.eq_ignore_ascii_case("hard"))
+        .unwrap_or(false)
+}
+
 pub(crate) fn assign_reflexive_contract(block: &mut engram_core::types::Leg3Pointer) {
     use engram_core::types::{
         ZEDOS_DECLARATIVE, ZEDOS_EPISODIC, ZEDOS_PRAXIS, ZEDOS_RELATION, ZEDOS_TRAINING,
@@ -8417,16 +8424,29 @@ impl StoreHandle {
             });
         }
 
-        // ── Reflexive Contract (soft enforcement) ─────────────────────────────
-        // Check if 'evidence_update' is permitted. Log violation but never block.
+        // ── Reflexive Contract (soft by default; hard for PRAXIS when env set) ─
+        // Check if 'evidence_update' is permitted.
         let contract = std::str::from_utf8(&block.allowed_transforms).unwrap_or("");
         let transform_allowed = contract.contains("evidence_update")
             || contract.contains("0xFF")
             || contract.trim_matches('\0').is_empty(); // unset = permissive
         if !transform_allowed {
+            let is_praxis = block.zedos_tag == engram_core::types::ZEDOS_PRAXIS;
+            if is_praxis && praxis_contract_hard() {
+                tracing::error!(
+                    "[CONTRACT VIOLATION HARD] PRAXIS '{}' rejected — no evidence_update (ENGRAM_PRAXIS_CONTRACT=hard).",
+                    concept
+                );
+                return Ok(crate::coherence::UpdateResult {
+                    message: format!(
+                        "✗ '{}' update rejected — PRAXIS requires evidence_update (ENGRAM_PRAXIS_CONTRACT=hard). Block unchanged.",
+                        concept
+                    ),
+                    provlog_coherence: None,
+                });
+            }
             tracing::warn!(
-                "[CONTRACT VIOLATION] '{}' does not permit 'evidence_update'. \
-                 Contract: {:?}. Proceeding (soft mode).",
+                "[CONTRACT VIOLATION] '{}' does not permit 'evidence_update'.                  Contract: {:?}. Proceeding (soft mode).",
                 concept,
                 contract.trim_matches('\0')
             );
@@ -16674,5 +16694,59 @@ mod honest_lawfulness_integrity_tests {
         // After seal, valid
         seal_whole_block(&mut b);
         assert_eq!(verify_block_integrity(&b), BlockIntegrityStatus::Valid);
+    }
+}
+
+#[cfg(test)]
+mod praxis_contract_hard_tests {
+    use super::*;
+
+    #[test]
+    fn praxis_hard_rejects_missing_evidence_update() {
+        std::env::set_var("ENGRAM_FORCE_CPU_BACKEND", "1");
+        std::env::set_var("ENGRAM_DISABLE_SHEAF", "1");
+        std::env::set_var("ENGRAM_KI_DISABLE", "1");
+        std::env::set_var("ENGRAM_PRAXIS_CONTRACT", "hard");
+        let dir = std::env::temp_dir().join(format!(
+            "praxis_hard_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = std::fs::create_dir_all(&dir);
+        let mut store = StoreHandle::new(&dir.to_string_lossy());
+        // Mint PRAXIS without evidence_update DSL
+        let mut b = store.encode("praxis body without contract");
+        b.zedos_tag = engram_core::types::ZEDOS_PRAXIS;
+        b.allowed_transforms = [0u8; 64]; // empty = would be soft-permissive; set full without evidence
+        let full = b"full|read|bind|update";
+        b.allowed_transforms[..full.len()].copy_from_slice(full);
+        // store() auto-seals evidence_update for PRAXIS — write bad contract via encode path
+        // then overwrite transforms after store by re-store with seal skipped... use update_with
+        // after manually fixing block with write_block to disk.
+        store.store("praxis:hard_probe", b).expect("store");
+        let mut b2 = store.fetch_block("praxis:hard_probe").expect("fetch");
+        b2.allowed_transforms = [0u8; 64];
+        let bad = b"full|read|bind|update"; // no evidence_update
+        b2.allowed_transforms[..bad.len()].copy_from_slice(bad);
+        b2.zedos_tag = engram_core::types::ZEDOS_PRAXIS;
+        // Direct disk write (skip StoreHandle::store seal of PRAXIS contract)
+        let path = dir.join("praxis:hard_probe.leg");
+        engram_core::storage::write_block(&path, &b2).expect("write_block");
+
+        let res = store
+            .update_with_provlog_mode("praxis:hard_probe", "try update", None)
+            .expect("update returns Ok with message");
+        assert!(
+            res.message.contains("rejected")
+                || res.message.contains("HARD")
+                || res.message.contains("✗"),
+            "expected hard reject message, got {}",
+            res.message
+        );
+        std::env::remove_var("ENGRAM_PRAXIS_CONTRACT");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
