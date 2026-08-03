@@ -5,6 +5,11 @@ All notable changes to Engram (geometric non-flat memory substrate).
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Added
+- **Whole-block integrity seal (`sig_5`)**: unkeyed BLAKE3 over canonical 256KB block (with `sig_5` zeroed) on encode/store; `BlockIntegrityStatus` for valid / legacy_unsealed / mismatch / structural / relation lineage (`engram_core::block_integrity`).
+
 ## [Unreleased]
 
 ### Fixed

@@ -11,6 +11,7 @@
 //! 4. Normalize to the unit hypersphere |z| = 1.0
 //! 5. Pack into a `HolographicBlock` with the source text in the ProvLog
 
+use crate::block_integrity::seal_whole_block;
 use crate::ops::normalize;
 use crate::storage::write_provlog;
 use crate::types::{
@@ -84,6 +85,7 @@ pub fn from_text(text: &str) -> Leg3Pointer {
     block.footer.sig_0 = *seed_hash.as_bytes();
 
     write_provlog(&mut block, text);
+    seal_whole_block(&mut block);
     block
 }
 
@@ -130,7 +132,16 @@ pub fn from_text_unit_phase(text: &str) -> Leg3Pointer {
     let seed_hash = blake3::hash(text.as_bytes());
     block.footer.sig_0 = *seed_hash.as_bytes();
     write_provlog(&mut block, text);
+    seal_whole_block(&mut block);
     block
+}
+
+/// Apply whole-block `sig_5` seal (after all other footer fields are final).
+///
+/// Thin wrapper for callers that mutate a block after encode without going through
+/// [`from_text`]. See [`crate::block_integrity`].
+pub fn seal_encode_block(block: &mut HolographicBlock) {
+    seal_whole_block(block);
 }
 
 /// Encode a concept with a specific CRS score override.

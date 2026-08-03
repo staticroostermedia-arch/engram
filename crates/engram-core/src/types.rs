@@ -177,8 +177,14 @@ pub struct Logenergetics {
     pub _pad: [u8; 7],
 }
 
-/// Cryptographic footer — BLAKE3 Merkle chain for provenance verification.
+/// Cryptographic footer — BLAKE3 Merkle chain + whole-block seal.
 /// Occupies the last 256 bytes of the block (offset 0x3FF00).
+///
+/// - `sig_0`…`sig_4`: successive chain slots (update path: `sig_1 ← prior sig_0`,
+///   `sig_0 ← BLAKE3(q)`; scars may use deeper slots).
+/// - `sig_5`: **whole-block seal** = unkeyed `BLAKE3` over the full 256KB block
+///   with `sig_5` zeroed (see `block_integrity`). All-zero `sig_5` = legacy unsealed.
+/// - `merkle_sub_root`: relation fingerprint `BLAKE3(sig_0_a || sig_0_b)`.
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct LegFooter {
@@ -189,8 +195,9 @@ pub struct LegFooter {
     pub sig_2: [u8; 32],
     pub sig_3: [u8; 32],
     pub sig_4: [u8; 32],
+    /// Whole-block BLAKE3 seal (zeros = legacy unsealed).
     pub sig_5: [u8; 32],
-    /// BLAKE3 Merkle sub-root of parent block CIDs.
+    /// BLAKE3 Merkle sub-root of parent block CIDs / relation endpoint sigs.
     pub merkle_sub_root: [u8; 32],
 }
 

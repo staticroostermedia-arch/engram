@@ -8258,6 +8258,9 @@ impl StoreHandle {
             None
         };
 
+        // Whole-block BLAKE3 seal in footer.sig_5 (legacy zeros remain readable).
+        engram_core::seal_whole_block(&mut block);
+
         let r = self.backend.store(concept, block);
         if r.is_ok() {
             self.invalidate_leg_block_count();
