@@ -4745,6 +4745,52 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
             {
                 wake_packet["trust_residual"] = residual;
             }
+            // Honesty closure B: compact digest first for agents (full packet remains).
+            {
+                let cont = wake_packet.get("continuation");
+                let primary = cont
+                    .and_then(|c| c.get("primary_goal"))
+                    .and_then(|v| v.as_str());
+                let next_vector = cont
+                    .and_then(|c| c.pointer("/structured_handoff/next_vector"))
+                    .and_then(|v| v.as_str())
+                    .or_else(|| {
+                        cont.and_then(|c| c.get("structured_handoff"))
+                            .and_then(|h| h.get("preview"))
+                            .and_then(|v| v.as_str())
+                    });
+                let recall_mode = cont
+                    .and_then(|c| c.pointer("/nvme_context/recall_mode"))
+                    .and_then(|v| v.as_str())
+                    .or_else(|| readiness.get("recall_mode").and_then(|v| v.as_str()));
+                let trust_ok = cont
+                    .and_then(|c| c.pointer("/trust_surface/trust_ok"))
+                    .and_then(|v| v.as_bool());
+                let large = cont
+                    .and_then(|c| c.pointer("/nvme_context/large_manifold"))
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                let actions = cont
+                    .and_then(|c| c.get("suggested_actions"))
+                    .and_then(|v| v.as_array())
+                    .cloned()
+                    .unwrap_or_default();
+                let scars = cont
+                    .and_then(|c| c.get("open_scars_wake"))
+                    .and_then(|v| v.as_array())
+                    .cloned()
+                    .unwrap_or_default();
+                wake_packet["wake_digest"] = crate::harness_injection::build_wake_digest(
+                    primary,
+                    Some(intent.as_str()),
+                    next_vector,
+                    recall_mode,
+                    trust_ok,
+                    &actions,
+                    &scars,
+                    large,
+                );
+            }
             if let Some(spatial_val) = spatial {
                 wake_packet["spatial"] = spatial_val;
             }

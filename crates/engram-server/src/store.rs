@@ -3156,6 +3156,25 @@ impl StoreHandle {
             "cufile_transfer_path".into(),
             serde_json::json!(self.backend_cufile_transfer_path()),
         );
+        // Honesty: device_residency feature stages H2D/cuFile when active; otherwise "unavailable".
+        // Never implies full production GDS pipeline when path is h2d_memcpy or unavailable.
+        {
+            let path = self.backend_cufile_transfer_path();
+            let residency = if path == "cufile_dma" {
+                "active_cufile_dma"
+            } else if path == "h2d_memcpy" {
+                "h2d_memcpy_not_gds"
+            } else {
+                "unavailable"
+            };
+            obj.insert("device_residency_mode".into(), serde_json::json!(residency));
+            obj.insert(
+                "device_residency_honest_note".into(),
+                serde_json::json!(
+                    "device_residency is optional; unavailable/h2d_memcpy ≠ production GPUDirect Storage"
+                ),
+            );
+        }
         obj.insert(
             "relation_adj_nodes".into(),
             serde_json::json!(self.relation_index.adj_node_count()),
