@@ -64,23 +64,37 @@ pub fn is_legacy_unsealed(footer_sig_5: &[u8; 32]) -> bool {
     footer_sig_5.iter().all(|&b| b == 0)
 }
 
-/// Canonical digest bytes: full `HolographicBlock` with `sig_5` zeroed.
+/// Byte offset of `footer.sig_5` within a `HolographicBlock` (layout-stable).
+#[inline]
+fn sig5_byte_range() -> (usize, usize) {
+    // Avoid `*block` (256KB stack copy) — hash pre/post `sig_5` in place.
+    let footer_off = std::mem::offset_of!(HolographicBlock, footer);
+    let sig5_rel = std::mem::offset_of!(crate::types::LegFooter, sig_5);
+    let start = footer_off + sig5_rel;
+    (start, start + 32)
+}
+
+/// Canonical digest: full 256KB layout with `sig_5` treated as zero.
 ///
 /// Includes header, body (q/p/metadata/payload), and footer fields except `sig_5`.
+/// **No full-block stack copy** — hashes `bytes[..sig5] || 32×0 || bytes[after_sig5..]`.
 pub fn whole_block_digest(block: &HolographicBlock) -> [u8; 32] {
-    // HolographicBlock is not bytemuck::Pod (Complex32 arrays); use the same
-    // raw layout view as storage/mmap (repr(C, align(4096)), fixed BLOCK_SIZE).
-    let mut copy = *block;
-    copy.footer.sig_5 = [0u8; 32];
     let bytes: &[u8] = unsafe {
-        std::slice::from_raw_parts((&copy as *const HolographicBlock) as *const u8, BLOCK_SIZE)
+        std::slice::from_raw_parts((block as *const HolographicBlock) as *const u8, BLOCK_SIZE)
     };
+    debug_assert_eq!(bytes.len(), BLOCK_SIZE);
+    let (s, e) = sig5_byte_range();
+    debug_assert!(e <= BLOCK_SIZE);
     let mut hasher = Hasher::new();
-    hasher.update(bytes);
+    hasher.update(&bytes[..s]);
+    hasher.update(&[0u8; 32]);
+    hasher.update(&bytes[e..]);
     *hasher.finalize().as_bytes()
 }
 
 /// Write whole-block seal into `sig_5`. Call after all other footer mutations.
+///
+/// Does not allocate a second 256KB stack frame (see [`whole_block_digest`]).
 pub fn seal_whole_block(block: &mut HolographicBlock) {
     let digest = whole_block_digest(block);
     block.footer.sig_5 = digest;
@@ -272,5 +286,37 @@ mod tests {
         b.magic = *b"LEG3";
         seal_whole_block(&mut b);
         assert_eq!(verify_block_integrity(&b), BlockIntegrityStatus::Valid);
+    }
+
+    /// Regression: digest must match full-block hash with sig_5 zeroed, without
+    /// stack-copying the 256KB block (CI stack overflow in deep store paths).
+    #[test]
+    fn digest_matches_heap_zeroed_reference() {
+        let b = from_text("no stack copy seal probe");
+        // Reference: clone Leg3Pointer's heap Box, zero sig_5, full BLAKE3
+        // (clone is heap→heap; never `Box::new(*block)` which materializes on stack).
+        let mut heap = b.0.clone();
+        heap.footer.sig_5 = [0u8; 32];
+        let ref_bytes = unsafe {
+            std::slice::from_raw_parts((&*heap as *const HolographicBlock) as *const u8, BLOCK_SIZE)
+        };
+        let expected = *blake3::hash(ref_bytes).as_bytes();
+        let d = whole_block_digest(&b);
+        assert_eq!(
+            d, expected,
+            "in-place split digest must match zeroed full hash"
+        );
+        assert_eq!(verify_block_integrity(&b), BlockIntegrityStatus::Valid);
+    }
+
+    #[test]
+    fn from_text_with_crs_reseals() {
+        let b = crate::encode::from_text_with_crs("crs override seal", 0.99);
+        assert!((b.crs_score - 0.99).abs() < 1e-5);
+        assert_eq!(
+            verify_block_integrity(&b),
+            BlockIntegrityStatus::Valid,
+            "post-CRS mutation must reseal"
+        );
     }
 }

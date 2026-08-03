@@ -150,6 +150,8 @@ pub fn from_text_with_crs(text: &str, crs: f32) -> Leg3Pointer {
     let mut block = from_text(text);
     block.crs_score = crs.clamp(0.0, 1.0);
     block.energetics.crs = block.crs_score;
+    // from_text already sealed; reseal after CRS mutation so in-memory verify matches.
+    seal_whole_block(&mut block);
     block
 }
 
@@ -209,7 +211,8 @@ pub fn mint_external_pointer(
     block.aabb_max = [1.0, 0.5, 0.0]; // proxy for "external manifold region"
 
     // Footer already carries merkle_sub_root; descriptor embeds content_hash for external Merkle tie-in.
-    // (No mutation of footer layout.)
+    // Reseal after post-from_text mutations (zedos/crs/aabb) so sig_5 matches current bytes.
+    seal_whole_block(&mut block);
 
     block
 }
