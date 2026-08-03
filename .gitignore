@@ -44,6 +44,14 @@ sem_search.rs
 phase_c_*
 false_empire/
 
+# Personal / PII material under docs/ (titles, family, assessor captures, etc.)
+# Product docs like docs/PERSONAL_KNOWLEDGE_WIKI.md stay tracked.
+docs/property/
+docs/private/
+docs/**/*_assessor_captures*/
+docs/**/*Land_Trust*/
+docs/**/*_Questionnaire_for_Mom*
+
 # Worktrees for safe isolated execution (per superpowers + Engram ritual)
 .worktrees/
 
