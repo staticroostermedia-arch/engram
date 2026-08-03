@@ -11,9 +11,7 @@
 //! Exit 0 only if all required sections pass.
 
 use engram_core::backend::{CpuBackend, VsaBackend};
-use engram_core::{
-    seal_whole_block, verify_block_integrity, BlockIntegrityStatus, Leg3Pointer,
-};
+use engram_core::{seal_whole_block, verify_block_integrity, BlockIntegrityStatus, Leg3Pointer};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -95,8 +93,7 @@ fn section_exact_recall(store: &Path, report: &mut Report) {
     if top == "proof_exact_apple" {
         report.note(format!(
             "exact Recall@1 hit concept={} score={:.3}",
-            top,
-            hits[0].score
+            top, hits[0].score
         ));
         println!("  PASS exact@{k}: {top}", k = 1);
     } else {
@@ -336,7 +333,10 @@ fn mcp_session_roundtrip(bin: &Path, store: PathBuf) -> Result<String, String> {
         Ok("mcp initialize response received".into())
     } else {
         let stderr = String::from_utf8_lossy(&out.stderr);
-        Err(format!("empty mcp stdout; stderr={}", &stderr[..stderr.len().min(200)]))
+        Err(format!(
+            "empty mcp stdout; stderr={}",
+            &stderr[..stderr.len().min(200)]
+        ))
     }
 }
 
