@@ -9440,6 +9440,13 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
                         "Lawfulness audit for '{}'\nCRS: {:.3} | Tag: 0x{:02X} | Superpositions: {}\nAllowed: '{}'\n",
                         summary.concept, summary.crs, summary.zedos_tag, summary.superposition_count, summary.allowed_transforms
                     );
+                    msg.push_str(&format!(
+                        "integrity_status: {} | integrity_ok: {} | lawful: {} | chain_slots_nonzero: {}/6\n",
+                        summary.integrity_status,
+                        summary.integrity_ok,
+                        summary.lawful,
+                        summary.chain_slots_nonzero
+                    ));
                     if check_chain {
                         let sig_preview: String = summary.sig_0[..4]
                             .iter()
@@ -9454,8 +9461,25 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
                             sig_preview, merkle_preview
                         ));
                     }
-                    msg.push_str("(Full deep chain verification & historical reconstruction coming in follow-up work)");
-                    json!({ "content": [{ "type": "text", "text": msg }] })
+                    if !summary.notes.is_empty() {
+                        msg.push_str("notes:\n");
+                        for n in &summary.notes {
+                            msg.push_str(&format!("- {n}\n"));
+                        }
+                    }
+                    // Machine-readable sidecar for agents (also in text).
+                    let payload = serde_json::json!({
+                        "concept": summary.concept,
+                        "crs": summary.crs,
+                        "integrity_status": summary.integrity_status,
+                        "integrity_ok": summary.integrity_ok,
+                        "lawful": summary.lawful,
+                        "chain_slots_nonzero": summary.chain_slots_nonzero,
+                        "notes": summary.notes,
+                    });
+                    msg.push_str(&format!("\njson: {payload}\n"));
+                    let is_err = !summary.lawful;
+                    json!({ "content": [{ "type": "text", "text": msg }], "isError": is_err })
                 }
                 None => {
                     json!({ "content": [{ "type": "text", "text": format!("Block '{}' not found", concept) }], "isError": true })
@@ -9474,10 +9498,14 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
                 .and_then(|v| v.as_u64())
                 .map(|n| n as usize);
 
+            let include_rel = args
+                .get("include_relation_integrity")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
             let options = crate::store::ManifoldVerificationOptions {
                 min_crs,
                 sample_size: sample,
-                include_relation_integrity: false,
+                include_relation_integrity: include_rel,
             };
 
             // MQ Cycle 4: hold mut lock so verify samples persist to mq_verify series.
@@ -9486,11 +9514,15 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
                     Ok(report) => {
                         let metric_key = lock.persist_mq_verify_metric(&report, min_crs, sample);
                         let mut msg = format!(
-                            "Manifold Integrity Report\nSampled: {} | High-value (>=0.74): {}\nIssues found: {}\nOverall: {}\n",
+                            "Manifold Integrity Report\nSampled: {} | High-value (>=0.74): {}\nIssues found: {}\nOverall: {}\nSeal sample: valid={} legacy_unsealed={} mismatch={} structural={}\n",
                             report.total_blocks_sampled,
                             report.high_value_blocks,
                             report.issues_found,
-                            report.overall_health
+                            report.overall_health,
+                            report.seal_valid,
+                            report.seal_legacy_unsealed,
+                            report.seal_mismatch,
+                            report.seal_structural,
                         );
                         if !report.issues.is_empty() {
                             msg.push_str("\nIssues:\n");

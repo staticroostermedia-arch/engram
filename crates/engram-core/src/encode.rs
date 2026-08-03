@@ -381,10 +381,8 @@ pub fn from_hybrid_wire(wire: &[u8]) -> Option<Leg3Pointer> {
     Some(lp)
 }
 
-/// P2 homo + ZK (additive wrappers + pure-rust gen/verify using existing blake3/Merkle + allowed).
-/// No new deps (pure rust). Core unchanged. Expose in mcp/store for verify_block etc.
-/// Homo: wrap op so only if allowed_transforms permits (enforce soft).
-/// ZK: produce/verify attestation proof (hash of (allowed_dsl + crs + sig0 + op) as "proof" of lawful transform path).
+/// P2 homo + **transform attestation** (historically labeled ZK; not a zk-SNARK).
+/// Pure-rust BLAKE3 of (allowed_dsl + crs + sig0 + op). Soft homo: skip op if transform not allowed.
 pub fn apply_homo_op<F>(block: &mut HolographicBlock, op_name: &str, op: F)
 where
     F: FnOnce(&mut HolographicBlock),
@@ -397,8 +395,13 @@ where
     // post: could update residual or p-mom here (additive)
 }
 
+/// BLAKE3 **transform attestation** (API name kept for compatibility; not zero-knowledge).
+pub fn generate_transform_attestation(block: &HolographicBlock, op: &str) -> [u8; 32] {
+    generate_zk_proof(block, op)
+}
+
 pub fn generate_zk_proof(block: &HolographicBlock, op: &str) -> [u8; 32] {
-    // Pure-rust "ZK" attestation: blake3 of (dsl + crs + merkle sig + op) proves "underwent only allowed under CRS"
+    // Attestation cookie — not a SNARK/STARK
     let (ver, dsl) = parse_allowed_dsl(&block.allowed_transforms);
     let dsl_str = dsl.join("|");
     let mut hasher = blake3::Hasher::new();
