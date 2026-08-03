@@ -32,6 +32,7 @@
 //! ```
 
 pub mod backend;
+pub mod block_integrity;
 pub mod encode;
 pub mod genesis;
 pub mod index;
@@ -42,6 +43,10 @@ pub mod storage;
 pub mod types;
 
 pub use backend::{CpuBackend, SheafBackend, VsaBackend};
+pub use block_integrity::{
+    is_legacy_unsealed, seal_whole_block, verify_block_integrity, verify_relation_lineage,
+    whole_block_digest, BlockIntegrityStatus,
+};
 pub use genesis::{
     AGENT_GENESIS_TEXT, KEPLER_GATE, SACRED_FREQUENCY_HZ, SACRED_PHI, SACRED_PI, SACRED_VESICA,
     SACRED_ZETA_CRITICAL,

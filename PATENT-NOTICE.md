@@ -22,7 +22,7 @@ The patent covers a **triadic digital container format** — the `.LEG` file —
 | **Header** (100) | Public verification key | `concept_ref[32]` anchor |
 | **Body** (200) | Deterministic, type-tagged payload | `zedos_tag` + `payload[122,584]` |
 | **Body** (200) | Geometric phase vectors | `q[8192]`, `p[8192]` (VSA tensors) |
-| **Footer** (300) | Cryptographic hash / Merkle chain slots | `footer.sig_0`–`sig_5` (BLAKE3). Reference impl: update chain uses `sig_0`/`sig_1` (q hash); whole-block seal of canonical header+body is stored in `sig_5` when sealing is enabled (see `CLAIMS_LEDGER.md`) |
+| **Footer** (300) | Cryptographic hash of header+body (whole-block seal) + chain slots | `sig_0`–`sig_4` chain; **`sig_5` = BLAKE3(block with sig_5 zeroed)**; zeros = legacy |
 | **Footer** (300) | Link value to prior container | `footer.merkle_sub_root` |
 | **Footer** (300) | Error-detection counters | `footer.error_checks` |
 

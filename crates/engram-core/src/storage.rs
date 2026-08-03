@@ -11,6 +11,7 @@ pub mod provlog_capnp {
     include!(concat!(env!("OUT_DIR"), "/provlog_capnp.rs"));
 }
 
+use crate::block_integrity::seal_whole_block;
 use crate::types::{HolographicBlock, BLOCK_SIZE};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -103,6 +104,9 @@ pub fn write_block<P: AsRef<Path>>(path: P, block: &HolographicBlock) -> std::io
     // Toryx Periodic Boundary Condition: close the standing spiral
     boxed.q[8191] = boxed.q[0];
     boxed.p[8191] = boxed.p[0];
+
+    // Seal must cover the bytes actually written (after PBC).
+    seal_whole_block(&mut boxed);
 
     let ptr = boxed.as_ref() as *const HolographicBlock as *const u8;
     let slice = unsafe { std::slice::from_raw_parts(ptr, BLOCK_SIZE) };

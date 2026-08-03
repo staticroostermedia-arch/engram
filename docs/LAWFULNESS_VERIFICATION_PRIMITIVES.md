@@ -184,3 +184,10 @@ Episodic session markers, goal mint baselines, TUI projection CRS, scout default
 ### Agent trust rule
 
 > If a block claims CRS ≥ 0.95, prefer verifying it was written via pin/praxis/dynamical path (or genesis) rather than assuming all high CRS is computed.
+
+## Whole-block seal (`sig_5`) — runtime (2026-08)
+
+New/updated blocks set `footer.sig_5 = BLAKE3(canonical 256KB with sig_5 zeroed)` via `engram_core::seal_whole_block`.
+Verification statuses (`engram_core::BlockIntegrityStatus`): `valid`, `legacy_unsealed`, `mismatch`, `structural`, `relation_lineage_*`.
+Legacy blocks with zero `sig_5` remain readable. See `crates/engram-core/src/block_integrity.rs` and `CLAIMS_LEDGER.md`.
+
