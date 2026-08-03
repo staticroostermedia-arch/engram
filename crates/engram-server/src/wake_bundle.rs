@@ -412,10 +412,7 @@ mod tests {
         assert_eq!(slim["trust_surface"]["trust_ok"], true);
         // Trust residual v1
         assert_eq!(slim["trust_residual"]["version"], "trust_residual_v1");
-        assert_eq!(
-            slim["trust_residual"]["last_contract"]["present"],
-            true
-        );
+        assert_eq!(slim["trust_residual"]["last_contract"]["present"], true);
         assert_eq!(
             slim["trust_residual"]["mutual_accountability"]["human_agent_shared_past"],
             true

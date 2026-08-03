@@ -6660,10 +6660,9 @@ impl StoreHandle {
     ///
     /// This is the “I woke up trusting yesterday” envelope: not qualia, earned continuity.
     pub fn build_trust_residual(&self, bundle: &serde_json::Value) -> serde_json::Value {
-        let trust_surface = bundle
-            .get("trust_surface")
-            .cloned()
-            .unwrap_or_else(|| serde_json::json!({ "version": "ub_trust_surface_v1", "trust_ok": false }));
+        let trust_surface = bundle.get("trust_surface").cloned().unwrap_or_else(
+            || serde_json::json!({ "version": "ub_trust_surface_v1", "trust_ok": false }),
+        );
 
         // ── Last human–agent contract (session handoff) ─────────────────────
         let handoff = bundle.get("structured_handoff");
@@ -6786,10 +6785,7 @@ impl StoreHandle {
             if crs_ok {
                 lawful_scars += 1;
             }
-            let preview = s
-                .get("preview")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
+            let preview = s.get("preview").and_then(|v| v.as_str()).unwrap_or("");
             let preview: String = preview.chars().take(160).collect();
             scars.push(serde_json::json!({
                 "concept": concept,

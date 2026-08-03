@@ -4740,9 +4740,8 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
             // Mutual morning: top-level trust_residual so agents see shared past first.
             if let Some(residual) = trust_residual_top {
                 wake_packet["trust_residual"] = residual;
-            } else if let Some(residual) = wake_packet
-                .pointer("/continuation/trust_residual")
-                .cloned()
+            } else if let Some(residual) =
+                wake_packet.pointer("/continuation/trust_residual").cloned()
             {
                 wake_packet["trust_residual"] = residual;
             }
