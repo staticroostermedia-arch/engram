@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **NREM empty-store serve crash:** `run_nrem_consolidation` now runs on a dedicated 32MB-stack thread. Riemannian NREM + multiple `[Complex32; 8192]` locals overflowed Tokio's default ~2MB worker stack (`thread 'tokio-rt-worker' has overflowed its stack`) during ego.leg3 genesis on `engram serve` (agent profile).
+- **REST `/api/recall` empty under lean agent profile:** REST called bare `StoreHandle::recall` which resolves to `scope=anchors` in lean mode — empty relation graph → `[]` even after successful `/api/remember`. REST now uses `recall_scoped` and **defaults `scope` to `all`** (optional `anchors` | `hot` | `all`). MCP lean path unchanged.
+
 ### Added
 
 - **RSI Cycle 1 — surprise-aware sentinel:** Hub-anchor `l2_norm_residual` pressure tightens effective rehydrate turn budget (`continuity_spikes` + harness `rsi_cycle_metrics`); builds on PR #53 leg3 gap closure.

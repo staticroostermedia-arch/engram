@@ -587,6 +587,30 @@ fn maybe_capacity_hot_compress(store: &crate::store::SharedStore) {
 }
 
 fn run_nrem_consolidation(store: &crate::store::SharedStore) {
+    // Riemannian NREM + multiple [Complex32; 8192] locals (and nested RK4 steps) exceed
+    // Tokio's default ~2MB worker stack — observed as:
+    //   thread 'tokio-rt-worker' has overflowed its stack
+    // on empty-store ego.leg3 genesis during `engram serve` (agent profile).
+    // Always run on a dedicated large-stack thread so serve/MCP workers stay safe.
+    const NREM_STACK: usize = 32 * 1024 * 1024;
+    let store = Arc::clone(store);
+    match std::thread::Builder::new()
+        .name("engram-nrem".into())
+        .stack_size(NREM_STACK)
+        .spawn(move || run_nrem_consolidation_inner(&store))
+    {
+        Ok(handle) => {
+            if let Err(e) = handle.join() {
+                error!("[NREM] consolidation thread panicked: {e:?}");
+            }
+        }
+        Err(e) => {
+            error!("[NREM] failed to spawn large-stack thread ({e}); skipping pass");
+        }
+    }
+}
+
+fn run_nrem_consolidation_inner(store: &crate::store::SharedStore) {
     info!("[NREM] Starting dream consolidation pass (CRS threshold = {}) — CodeLand-enhanced (ego-friction + Riemannian + Tier5 ZEDOS + Logenergetics)…", NREM_CRS_THRESHOLD);
 
     // Bounded candidate pool on large stores — full list()+scan blocks MCP for minutes.

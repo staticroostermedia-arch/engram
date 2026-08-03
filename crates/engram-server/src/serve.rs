@@ -54,9 +54,17 @@ struct RecallReq {
     k: usize,
     #[serde(default)]
     explain: bool,
+    /// `anchors` | `hot` | `all`. REST defaults to **`all`** so demos, LEG Browser, and
+    /// curl dogfood work under the lean agent profile (MCP lean still resolves bare
+    /// recall → anchors via `StoreHandle::recall`).
+    #[serde(default = "default_rest_recall_scope")]
+    scope: String,
 }
 fn default_k() -> usize {
     5
+}
+fn default_rest_recall_scope() -> String {
+    "all".to_string()
 }
 
 #[derive(Deserialize)]
@@ -388,7 +396,12 @@ async fn recall(
     }
 
     let k = payload.k.clamp(1, 20);
-    let results = lock_store(&store).recall(query, k);
+    // Prefer explicit scope; empty string falls back to REST default "all".
+    let scope = payload.scope.trim();
+    let scope_arg = if scope.is_empty() { "all" } else { scope };
+    let results = lock_store(&store)
+        .recall_scoped(query, k, Some(scope_arg))
+        .0;
 
     let res: Vec<MemoryRes> = results
         .into_iter()

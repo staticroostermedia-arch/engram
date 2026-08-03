@@ -117,12 +117,20 @@ Semantic search. Returns the top-k memories most similar to the query.
 | `query` | string | ✅ | — | Natural language query |
 | `k` | int | ❌ | `5` | Number of results (1–20) |
 | `explain` | bool | ❌ | `false` | Include a human-readable explanation of the score |
+| `scope` | string | ❌ | `"all"` | Recall tier: `all` (full manifold / linear or BVH), `hot` (hot+recent), `anchors` (goal/trace/presentation graph only — same lean default as MCP bare recall). REST defaults to **`all`** so demos and LEG Browser work under the agent lean profile. |
 
 **curl:**
 ```bash
 curl -X POST http://localhost:3456/api/recall \
   -H "Content-Type: application/json" \
   -d '{"query": "authentication bugs", "k": 3}'
+```
+
+Lean-only (matches MCP `scope=anchors`):
+```bash
+curl -X POST http://localhost:3456/api/recall \
+  -H "Content-Type: application/json" \
+  -d '{"query": "primary goal handoff", "k": 5, "scope": "anchors"}'
 ```
 
 **Response:**
