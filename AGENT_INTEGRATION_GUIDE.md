@@ -197,7 +197,7 @@ mcp_engram_verify_behavior(concept, success=true/false)
     Failures accumulate into automatic scarring.
 
 mcp_engram_forget_old(min_crs_threshold=0.2)
-  → Manual autophagy. Evicts blocks below threshold. Pinned = always exempt.
+  → Explicit manual low-CRS eviction. Evicts unpinned blocks below threshold. Pinned = always exempt.
     Run this during cleanup phases, not during active work.
 ```
 
@@ -401,7 +401,7 @@ mcp_engram_pin(concept_name)
 ```
 Pin immediately after minting for: hardware specs, infrastructure topology,
 architectural decisions, active task states, user-stated intent, vision concepts.
-Pinned blocks survive autophagy at CRS=1.0.
+Pinned blocks (CRS=1.0) are exempt from manual bulk eviction via forget_old.
 
 ### Domain Prefix Legend
 

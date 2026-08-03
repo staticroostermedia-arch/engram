@@ -45,7 +45,7 @@ When status is `implemented`, named tests should exist in-repo. Prefer **softeni
 | Trust residual / mutual morning packet | PR #210; wake path | implemented | `store.rs` `build_trust_residual`; `wake_bundle`; mcp wake hoist | `trust_residual_v1_bootstrap_and_handoff`; wake_bundle tests | Merges when PR #210 greens |
 | REST recall returns empty under lean | historical bug | fixed on PR #209 | `serve.rs` `recall_scoped` default `scope=all` | REST dogfood path; serve path | MCP lean anchors intentionally different |
 | PRAXIS hard contract | store update | implemented (opt-in) | `ENGRAM_PRAXIS_CONTRACT=hard` | `praxis_contract_hard_tests` | Default soft for compat |
-| Autophagy / CRS-driven eviction | MANIFESTO | partial | daemon forget / min CRS paths | GC-related tests | Thresholds and aggression are config-dependent |
+| Automatic Autophagy GC daemon | MANIFESTO (historical) | **removed** | Daemon is watcher-only; no auto-evict | — | Use `mcp_engram_forget_old` for **explicit** low-CRS eviction only |
 | Pinned CRS=1.0 immortal blocks | AGENT_INTEGRATION_GUIDE | implemented | pin / praxis promotion | pin/remember_solution paths | — |
 | No neural embeddings in recall path | AGENT_INTEGRATION_GUIDE | implemented | `encode.rs` BLAKE3 spiral / unit-phase | encode determinism tests | — |
 | Benchmarks / large-store wake “seconds on 192k” | README L165 | partial | readiness + lean wake | harness timing (env-specific) | Hardware-dependent; not a CI guarantee |

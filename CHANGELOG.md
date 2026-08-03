@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Removed
+- **Autophagy as product concept:** no automatic GC daemon marketing; docs/MCP describe only explicit `mcp_engram_forget_old` (manual low-CRS eviction). Daemon remains watcher/NREM only.
+
+## Unreleased
+
 ### Fixed
 - **PRAXIS hard contract:** `ENGRAM_PRAXIS_CONTRACT=hard` rejects updates lacking `evidence_update` (default soft).
 - **Wake digest + intent-shaped queue:** `session_start` emits `wake_digest_v1`; scars/goal-children demoted when session intent mismatches sticky primary_goal; handoff promoted.

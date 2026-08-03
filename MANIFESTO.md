@@ -162,9 +162,7 @@ Every standard vector database suffers from this. They are, by design, append-on
 
 Engram refuses to be a passive store.
 
-The **Autophagy GC** runs as a background daemon. Every block has a CRS score. Blocks whose CRS falls below a configurable threshold — because they have been repeatedly updated in contradictory directions, or because they have not been accessed in weeks — are **permanently evicted from the NVMe manifold**. The geometric space they occupied is reclaimed.
-
-There are two exceptions. **Pinned blocks** (CRS = 1.0) are mathematically immortal — foundational axioms, crystallized solutions, load-bearing architectural decisions. They survive autophagy regardless of access frequency. **ZEDOS_PRAXIS blocks** — knowledge that has been empirically verified to work — are automatically promoted to pinned status when the verification rate is high enough. They are the only memories that can claim permanence, and they earn it through demonstrated reliability.
+**Pinned blocks** (CRS = 1.0) mark foundational axioms, crystallized solutions, and load-bearing decisions. **ZEDOS_PRAXIS** blocks are promoted when empirically verified. Engram does **not** run an automatic background eviction GC; operators who need bulk cleanup use the explicit MCP tool `mcp_engram_forget_old` (manual low-CRS eviction).
 
 The Lyapunov stability framework that drives the CRS is borrowed from **dynamical systems theory**. A Lyapunov function measures whether a system is converging toward a stable equilibrium or diverging into chaos. We apply it to memory: a concept that is consistently refined converges. A concept that is being hallucinated into incoherence diverges. Diverging concepts decay. Converging concepts crystallize.
 
@@ -196,7 +194,7 @@ The correct retrieval structure is not a flat array dot-product scan. It is a BV
 
 The correct confidence metric is not a human-assigned quality tag. It is a CRS derived from Lyapunov stability drift, because that is how dynamical systems distinguish convergence from divergence.
 
-The correct memory lifecycle is not an append-only log. It is an NREM pipeline with autophagy, crystallization, and Merkle-chained provenance, because that is how biological intelligence separates load-bearing memory from ephemeral noise.
+The correct memory lifecycle is not an append-only log. It is an NREM pipeline with crystallization, explicit manual eviction when requested, and Merkle-chained provenance — not an automatic forgetfulness daemon.
 
 None of these are opinions. They are engineering conclusions derived from first principles.
 
