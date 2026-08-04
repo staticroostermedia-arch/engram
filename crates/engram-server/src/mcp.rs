@@ -11697,6 +11697,8 @@ list = ["unit_hypersphere_unchanged"]
                 "NOTE session_start_1: pre-handoff fresh — no structured_handoff or rehydration_manifest keys\n",
             );
 
+            // Soft-hint path: force soft even if agent profile defaulted hard.
+            std::env::set_var("ENGRAM_TRIADIC_FORK", "soft");
             let sig_args = json!({
                 "decision": "significant fork without triad",
                 "why": "verify soft hint only",
@@ -11714,6 +11716,16 @@ list = ["unit_hypersphere_unchanged"]
                 sig_text.contains("significant_fork_soft_hint"),
                 "significant fork must soft-hint: {sig_text}"
             );
+            // Hard path: incomplete triad is an error under ENGRAM_TRIADIC_FORK=hard.
+            std::env::set_var("ENGRAM_TRIADIC_FORK", "hard");
+            let hard_fork = handle_tool_on_big_stack("mcp_engram_quick_trace", &sig_args, &store);
+            let hard_text = mcp_text(&hard_fork);
+            assert!(
+                hard_text.contains("significant_fork_hard")
+                    || hard_fork.get("isError").and_then(|v| v.as_bool()) == Some(true),
+                "hard triadic must reject incomplete fork: {hard_text}"
+            );
+            std::env::set_var("ENGRAM_TRIADIC_FORK", "soft");
 
             let routine_args = json!({
                 "decision": "routine trace",
