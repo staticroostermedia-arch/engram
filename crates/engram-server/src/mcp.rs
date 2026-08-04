@@ -4763,8 +4763,7 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
                     }
                 }
                 crate::wake_digest::RebindDecision::Suggest { candidate } => {
-                    let action =
-                        crate::wake_digest::rebind_suggest_action(candidate.as_deref());
+                    let action = crate::wake_digest::rebind_suggest_action(candidate.as_deref());
                     if let Some(arr) = continuation
                         .get_mut("suggested_actions")
                         .and_then(|v| v.as_array_mut())
@@ -4877,10 +4876,7 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
                 wake_packet = crate::wake_digest::build_digest_only_packet(
                     &session_key,
                     elapsed,
-                    wake_packet
-                        .get("wake_digest")
-                        .cloned()
-                        .unwrap_or(json!({})),
+                    wake_packet.get("wake_digest").cloned().unwrap_or(json!({})),
                     wake_packet.get("trust_residual").cloned(),
                     &readiness,
                     &wake_gate,

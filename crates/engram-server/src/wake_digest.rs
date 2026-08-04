@@ -143,9 +143,13 @@ pub fn wake_digest_only_enabled() -> bool {
 pub enum RebindDecision {
     None,
     /// Rewrite `primary_goal` marker to this goal concept.
-    Auto { new_goal: String },
+    Auto {
+        new_goal: String,
+    },
     /// Inject priority-0 `mcp_engram_goal_set_primary` action.
-    Suggest { candidate: Option<String> },
+    Suggest {
+        candidate: Option<String>,
+    },
 }
 
 /// Decide primary rebind given sticky marker, optional handoff primary, and intent.
