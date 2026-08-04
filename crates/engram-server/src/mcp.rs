@@ -2565,7 +2565,7 @@ fn tool_list() -> Value {
             },
             {
                 "name": "mcp_engram_invoke_protocol",
-                "description": "AGENTIC-FIRST: Safely invoke an executable Praxis Protocol block. Performs the full 7-point verification gate (tag, CRS, ProvLog, 'execute' contract token, enforce_contract, lawfulness summary) before dispatch. Critical for turning high-value crystallized knowledge into trustworthy, auditable behavior. Use only on blocks you have previously audited via the verify tools.",
+                "description": "EXPERIMENTAL vertical slice: run 7-point gate (tag, CRS, contract, lawfulness summary) then stub_dispatch — does NOT execute real protocol side effects yet. Prefer dry_run=true. Not a product automation surface; use verify tools for audits.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {

@@ -42,6 +42,7 @@ mod goal_hygiene;
 mod harness_injection;
 mod injection_priority;
 pub mod ki_hijacker;
+mod lawfulness;
 mod leg_corpus;
 mod lexicon;
 mod linguistic_reference_frame;

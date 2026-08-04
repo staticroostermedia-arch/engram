@@ -400,7 +400,9 @@ mcp_engram_session_end(summary="<decisions, files, next steps>")
 | `ENGRAM_PRIMARY_GOAL_REBIND` | `auto` | On intent≠sticky primary: rebind to better handoff goal, else suggest `goal_set_primary` (`off`/`suggest`/`auto`) |
 | `ENGRAM_WAKE_DIGEST_ONLY` | off | `1` → minimal `session_start` (digest + readiness_summary); full via `get_continuation_bundle` |
 | `ENGRAM_PRAXIS_CONTRACT` | `hard` | Reject PRAXIS updates without `evidence_update` |
-| `ENGRAM_QUALITY_MODE` | off | `1` → force `ENGRAM_DEFER_BVH=0` (recall quality; more RAM) |
+| `ENGRAM_QUALITY_MODE` | off | `1` → **force** `ENGRAM_DEFER_BVH=0` even after agent defer default (recall quality; more RAM on large CPU stores) |
+
+**BVH honesty:** Default CPU agent keeps `ENGRAM_DEFER_BVH=1` (no RAM bomb). Poll `get_backend_readiness` for `recall_mode` / `bvh_quality_path_hint`. GPU agent defaults eager BVH when NVIDIA is present. `mcp_engram_invoke_protocol` is **experimental stub_dispatch** only.
 
 **Dual memory:** Engram stalk = project continuity (goals/traces/handoff). Grok `MEMORY.md` = cross-project prefs only — do not split project truth across both.
 
