@@ -429,11 +429,11 @@ fn fill_complex_from_bytes(dst: &mut [num_complex::Complex32; 8192], bytes: &[u8
     if bytes.len() != 8192 * 8 {
         return false;
     }
-    for i in 0..8192 {
+    for (i, slot) in dst.iter_mut().enumerate() {
         let base = i * 8;
         let re = f32::from_le_bytes(bytes[base..base + 4].try_into().unwrap());
         let im = f32::from_le_bytes(bytes[base + 4..base + 8].try_into().unwrap());
-        dst[i] = num_complex::Complex32::new(re, im);
+        *slot = num_complex::Complex32::new(re, im);
     }
     true
 }
