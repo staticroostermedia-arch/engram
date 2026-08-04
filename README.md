@@ -69,7 +69,7 @@ Full comparison vs mem0/Letta/chroma: see [docs/GROK_BUILD_MEMORY.md](docs/GROK_
 git clone https://github.com/staticroostermedia-arch/engram.git
 cd engram
 cargo build -p engram-server
-target/debug/engram --version   # 0.7.0-beta.5
+target/debug/engram --version   # 0.7.0-beta.12
 ```
 
 **MCP config** (Grok Build / Cursor — use `scripts/engram-grok`):
@@ -155,16 +155,15 @@ flowchart LR
   H --> W
 ```
 
-## What's new (v0.7.0-beta.5+)
+## What's new (v0.7.0-beta.12)
 
-- **Theory-informed continuity spikes:** Portable `rehydration_manifest` at wake (no broad recall); soft sentinel nudge at ~30 turns / ~120 min; `uncertainty:*` receipts for thin memory claims; fork-scoped A/D/R hints; immutable `receipt:session_*` audit sidecar. See [HARNESS_INJECTION.md](docs/HARNESS_INJECTION.md).
-- **Tensor–thought-tile unification:** Dual-write `tile:*` → `tensor:tile__*` mirrors with bonds; `update_with_tensor_bond` + plain `update` sync; `propose_improvement` tile type; `session_end` p-drift consolidation; harness suite `tensor-thought-unification` (2× consecutive runs + SCRATCH evidence). Rituals: `thought_tile_to_tensor`, `verified-update-with-consolidation`.
-- **Solid-State Tensor MVP:** NVMe-backed geometric memory as context extension — `tensor_upsert` / `tensor_recall`, bond subgraph delivery, momentum consolidation ritual, hermetic verification harness.
-- **Goal hygiene:** 72h stale autopause + `session_end` audit (active goal stack stays bounded).
-- **Code atlas continuity v2:** situated edit memory at the locus — atlas v2.1, `evolution_at_locus`, hard wake gate, `post_edit_palette`, update coherence. [CODE_ATLAS_CONTINUITY.md](docs/CODE_ATLAS_CONTINUITY.md)
-- **Large-store perf:** relational lean v2, cuFile DMA readiness, bounded NREM + relation batching — wake on ~192k blocks in seconds when BVH is warm.
-- **87 MCP tools** registered (`tool_list()` in `mcp.rs` — 83 `mcp_engram_*` + 4 linguistic); lean default remains **8 essential**.
-- **LEG evolution panel:** `./scripts/leg --live` + `GET /api/code-atlas?evolution=1`.
+- **Honesty stack:** whole-block `sig_5` seal + seal-aware lawfulness; `wake_digest_v1` + intent-shaped queue; trust residual at wake; Autophagy product GC removed (`forget_old` = explicit only). See [CLAIMS_LEDGER.md](CLAIMS_LEDGER.md).
+- **Agent continuity:** sticky `primary_goal` rebind on intent mismatch (`ENGRAM_PRIMARY_GOAL_REBIND=auto` under agent profile); optional `ENGRAM_WAKE_DIGEST_ONLY=1` minimal wake packet.
+- **Agent integrity defaults:** hard wake-queue gate, hard consult-before-write, **hard PRAXIS contract** (`ENGRAM_PRAXIS_CONTRACT=hard`) when profile is `agent` (override with soft).
+- **Recall quality path:** GPU agent profile eager BVH when NVIDIA present; opt-in `ENGRAM_QUALITY_MODE=1` forces eager BVH + readiness flag (CPU stays deferred by default).
+- **Proof harness CI** + NREM dedicated stack / REST `scope=all` dogfood fixes (#209–#213).
+- **87 MCP tools** registered (`tool_list()` — 83 `mcp_engram_*` + 4 linguistic); lean default remains **8 essential**.
+- **Continuity spikes / tensor–tile / LEG Browser** remain available; hybrid wire is experimental stub only (not a product surface).
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

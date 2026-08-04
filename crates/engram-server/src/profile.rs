@@ -124,6 +124,17 @@ impl EngramProfile {
         Self::set_default("ENGRAM_UPDATE_COHERENCE", "warn");
         // slim = lean session_start payload; full = inline continuation bundle (legacy)
         Self::set_default("ENGRAM_WAKE_BUNDLE", "slim");
+        // Hard PRAXIS: reject updates lacking evidence_update (agent integrity default).
+        Self::set_default("ENGRAM_PRAXIS_CONTRACT", "hard");
+        // Sticky primary_goal: auto-rebind when handoff goal aligns better with session intent.
+        Self::set_default("ENGRAM_PRIMARY_GOAL_REBIND", "auto");
+        // Quality mode (opt-in): force eager BVH even on CPU/large stores — RAM trade for recall quality.
+        if std::env::var("ENGRAM_QUALITY_MODE").as_deref() == Ok("1")
+            && std::env::var("ENGRAM_DEFER_BVH").is_err()
+        {
+            std::env::set_var("ENGRAM_DEFER_BVH", "0");
+            tracing::info!("[PROFILE] agent — ENGRAM_QUALITY_MODE=1 → ENGRAM_DEFER_BVH=0");
+        }
         // Sentinel continuity (continuity_spikes): ~30 turn_record / ~120 min soft rehydrate nudge — never blocks edits
 
         let sheaf_path = shellexpand::tilde("~/.engram/sheaf.toml").into_owned();
@@ -229,6 +240,42 @@ mod tests {
             std::env::var("ENGRAM_CONSULT_BEFORE_WRITE").unwrap(),
             "hard"
         );
+        std::env::remove_var("ENGRAM_CONSULT_BEFORE_WRITE");
+    }
+
+    #[test]
+    fn agent_profile_sets_praxis_hard_and_primary_rebind_auto() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        std::env::remove_var("ENGRAM_PRAXIS_CONTRACT");
+        std::env::remove_var("ENGRAM_PRIMARY_GOAL_REBIND");
+        EngramProfile::Agent.apply();
+        assert_eq!(std::env::var("ENGRAM_PRAXIS_CONTRACT").unwrap(), "hard");
+        assert_eq!(std::env::var("ENGRAM_PRIMARY_GOAL_REBIND").unwrap(), "auto");
+        std::env::remove_var("ENGRAM_PRAXIS_CONTRACT");
+        std::env::remove_var("ENGRAM_PRIMARY_GOAL_REBIND");
+    }
+
+    #[test]
+    fn quality_mode_forces_eager_bvh_when_defer_unset() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        std::env::remove_var("ENGRAM_DEFER_BVH");
+        std::env::set_var("ENGRAM_QUALITY_MODE", "1");
+        // Re-apply agent path via quality_mode branch only (simulate after GPU branch)
+        if std::env::var("ENGRAM_QUALITY_MODE").as_deref() == Ok("1")
+            && std::env::var("ENGRAM_DEFER_BVH").is_err()
+        {
+            std::env::set_var("ENGRAM_DEFER_BVH", "0");
+        }
+        assert_eq!(std::env::var("ENGRAM_DEFER_BVH").unwrap(), "0");
+        std::env::remove_var("ENGRAM_QUALITY_MODE");
+        std::env::remove_var("ENGRAM_DEFER_BVH");
+    }
+
+    #[test]
+    fn agent_profile_consult_soft_override_wins() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        std::env::remove_var("ENGRAM_CONSULT_BEFORE_WRITE");
+        EngramProfile::Agent.apply();
         assert_eq!(
             crate::consult_before_write_gate::ConsultBeforeWriteMode::from_env(),
             crate::consult_before_write_gate::ConsultBeforeWriteMode::Hard

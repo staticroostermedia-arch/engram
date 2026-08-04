@@ -1438,7 +1438,8 @@ pub(crate) fn ensure_provlog_recorded_at(body: &str, concept: &str) -> Option<St
     Some(out)
 }
 
-/// ENGRAM_PRAXIS_CONTRACT=soft|hard (default soft). Hard rejects PRAXIS without evidence_update.
+/// ENGRAM_PRAXIS_CONTRACT=soft|hard. Hard rejects PRAXIS without evidence_update.
+/// Agent profile defaults hard via `ENGRAM_PROFILE=agent` (`profile.rs`); unset → soft.
 pub(crate) fn praxis_contract_hard() -> bool {
     std::env::var("ENGRAM_PRAXIS_CONTRACT")
         .map(|v| v.eq_ignore_ascii_case("hard"))
@@ -3023,6 +3024,20 @@ impl StoreHandle {
     fn readiness_env_gated_fields() -> serde_json::Map<String, serde_json::Value> {
         let j = serde_json::json!({
             "defer_bvh": std::env::var("ENGRAM_DEFER_BVH").as_deref() == Ok("1"),
+            "quality_mode": std::env::var("ENGRAM_QUALITY_MODE").as_deref() == Ok("1"),
+            "primary_goal_rebind": std::env::var("ENGRAM_PRIMARY_GOAL_REBIND")
+                .unwrap_or_else(|_| "off".into()),
+            "praxis_contract": if std::env::var("ENGRAM_PRAXIS_CONTRACT")
+                .map(|v| v.eq_ignore_ascii_case("hard"))
+                .unwrap_or(false)
+            {
+                "hard"
+            } else {
+                "soft"
+            },
+            "wake_digest_only": std::env::var("ENGRAM_WAKE_DIGEST_ONLY")
+                .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+                .unwrap_or(false),
             "defer_watch_ingest": std::env::var("ENGRAM_DEFER_WATCH_INGEST").as_deref() == Ok("1"),
             "cuda_lean": std::env::var("ENGRAM_CUDA_LEAN").as_deref() != Ok("0"),
             "sheaf_lean": std::env::var("ENGRAM_SHEAF_LEAN").as_deref() == Ok("1"),

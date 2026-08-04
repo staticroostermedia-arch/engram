@@ -393,6 +393,19 @@ mcp_engram_session_end(summary="<decisions, files, next steps>")
 
 ---
 
+## Agent continuity env (beta.12+)
+
+| Env | Default (agent profile) | Effect |
+|-----|-------------------------|--------|
+| `ENGRAM_PRIMARY_GOAL_REBIND` | `auto` | On intent≠sticky primary: rebind to better handoff goal, else suggest `goal_set_primary` (`off`/`suggest`/`auto`) |
+| `ENGRAM_WAKE_DIGEST_ONLY` | off | `1` → minimal `session_start` (digest + readiness_summary); full via `get_continuation_bundle` |
+| `ENGRAM_PRAXIS_CONTRACT` | `hard` | Reject PRAXIS updates without `evidence_update` |
+| `ENGRAM_QUALITY_MODE` | off | `1` → force `ENGRAM_DEFER_BVH=0` (recall quality; more RAM) |
+
+**Dual memory:** Engram stalk = project continuity (goals/traces/handoff). Grok `MEMORY.md` = cross-project prefs only — do not split project truth across both.
+
+---
+
 ## Related Docs
 
 - [SKILLS.md](../SKILLS.md) — ritual index (links here first)
