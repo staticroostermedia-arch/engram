@@ -207,7 +207,9 @@ pub fn is_significant_fork(
     path_seps >= 2 || spatial_context.contains(':')
 }
 
-/// Soft compliance — returns warning text, never hard-fails lean profile.
+/// Soft compliance — returns warning text.
+/// Under `ENGRAM_PROFILE=agent` + `ENGRAM_TRIADIC_FORK=hard` (agent default via profile),
+/// message uses hard_hint wording so callers can reject; default remains soft warn.
 pub fn triadic_compliance_warning(
     significant: bool,
     affirm: &str,
@@ -222,10 +224,27 @@ pub fn triadic_compliance_warning(
     if triad || has_uncertainty {
         return None;
     }
-    Some(
-        "significant_fork_soft_hint: provide affirm+deny+reconcile or mint uncertainty:* receipt for memory claims"
-            .to_string(),
-    )
+    let hard = std::env::var("ENGRAM_TRIADIC_FORK")
+        .map(|v| v.eq_ignore_ascii_case("hard"))
+        .unwrap_or(false);
+    if hard {
+        Some(
+            "significant_fork_hard: require affirm+deny+reconcile or uncertainty:* receipt (ENGRAM_TRIADIC_FORK=hard)"
+                .to_string(),
+        )
+    } else {
+        Some(
+            "significant_fork_soft_hint: provide affirm+deny+reconcile or mint uncertainty:* receipt for memory claims"
+                .to_string(),
+        )
+    }
+}
+
+/// True when agent profile should hard-reject incomplete triadic forks.
+pub fn triadic_fork_hard_enabled() -> bool {
+    std::env::var("ENGRAM_TRIADIC_FORK")
+        .map(|v| v.eq_ignore_ascii_case("hard"))
+        .unwrap_or(false)
 }
 
 pub fn hash_receipt_payload(payload: &str) -> String {

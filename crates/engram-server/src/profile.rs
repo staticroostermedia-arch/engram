@@ -128,6 +128,8 @@ impl EngramProfile {
         Self::set_default("ENGRAM_PRAXIS_CONTRACT", "hard");
         // Sticky primary_goal: auto-rebind when handoff goal aligns better with session intent.
         Self::set_default("ENGRAM_PRIMARY_GOAL_REBIND", "auto");
+        // Significant forks require A/D/R or uncertainty receipt under agent.
+        Self::set_default("ENGRAM_TRIADIC_FORK", "hard");
         // Quality mode (opt-in): always force eager BVH (overrides agent defer default).
         // RAM may spike on large CPU manifolds — intentional quality trade.
         if std::env::var("ENGRAM_QUALITY_MODE").as_deref() == Ok("1") {

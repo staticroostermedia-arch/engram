@@ -79,8 +79,10 @@ pub const ZEDOS_POINTER: u8 = 0x2F;
 pub const ZEDOS_LINGUISTIC: u8 = 0x4C;
 /// Linguistic polynomial/functorial (operadic/morphism metadata).
 pub const ZEDOS_LINGUISTIC_POLY: u8 = 0x4D;
-/// Fibered/sheaf category extension (0x4E per NREM_CENTROID value alias ok for extension; fibered linguistic bundles).
-pub const ZEDOS_FIBERED: u8 = 0x4E;
+/// Fibered/sheaf category extension — **unique** tag (was incorrectly aliased to
+/// `ZEDOS_NREM_CENTROID` 0x4E). Live blocks minted under the old alias remain
+/// readable as NREM centroid; new fibered linguistic mint uses 0x5E.
+pub const ZEDOS_FIBERED: u8 = 0x5E;
 
 /// Payload JSON schema (v1) for ZEDOS_LINGUISTIC / LINGUISTIC_POLY / FIBERED blocks:
 /// {
@@ -132,12 +134,18 @@ mod phase1_linguistic_tests {
         assert!(pstr.contains("operadic"), "functor_metadata not in payload");
         // q phase embed check (coeffs in leading q)
         assert!((lp.q[0].re - 0.1).abs() < 1e-6);
-        // roundtrip via extract (payload data preserved)
+        // roundtrip via extract — real parse of linguistic/v1 payload
         let rt = lp
             .extract_linguistic_bundle()
             .expect("roundtrip extract failed");
-        assert_eq!(rt.bundle_id, "roundtrip"); // sentinel confirms tag+crs+schema path
-                                               // full data roundtrip demonstrated by payload contains + tag/crs/q
+        assert_eq!(rt.bundle_id, "phase1-discourse");
+        assert_eq!(rt.words.len(), 1);
+        assert_eq!(rt.words[0].text, "engram");
+        assert!((rt.words[0].coeff[0] - 0.1).abs() < 1e-5);
+        assert_eq!(rt.patches.len(), 1);
+        assert_eq!(rt.patches[0].patch_id, 42);
+        assert!(rt.functor_metadata.contains("operadic"));
+        // full data roundtrip demonstrated by payload contains + tag/crs/q
     }
 }
 
@@ -433,24 +441,87 @@ impl Leg3Pointer {
         lp
     }
 
-    /// Roundtrip helper: extract/validate linguistic from payload (preserves for test).
+    /// Extract linguistic/v1 JSON from payload (real parse — not a sentinel).
+    /// Preserves words, coeffs, patches, functor_metadata. Leading q reals should
+    /// match first word coeffs after [`mint_linguistic`].
     pub fn extract_linguistic_bundle(&self) -> Option<LinguisticDiscourseBundle> {
-        if self.zedos_tag != ZEDOS_LINGUISTIC && self.zedos_tag != ZEDOS_LINGUISTIC_POLY {
+        if self.zedos_tag != ZEDOS_LINGUISTIC
+            && self.zedos_tag != ZEDOS_LINGUISTIC_POLY
+            && self.zedos_tag != ZEDOS_FIBERED
+        {
             return None;
         }
-        let pstr = std::str::from_utf8(&self.payload).unwrap_or("");
+        // Null-padded payload → trim at first 0
+        let end = self
+            .payload
+            .iter()
+            .position(|&b| b == 0)
+            .unwrap_or(self.payload.len());
+        let pstr = std::str::from_utf8(&self.payload[..end]).ok()?;
         if !pstr.contains("linguistic/v1") {
             return None;
         }
-        // sentinel for minimal roundtrip (full data in payload bytes preserved; test asserts contains)
+        let v: serde_json::Value = serde_json::from_str(pstr).ok()?;
+        if v.get("schema").and_then(|s| s.as_str()) != Some("linguistic/v1") {
+            // tolerate schema in raw string without strict field when older mints
+            if !pstr.contains("\"schema\":\"linguistic/v1\"") {
+                return None;
+            }
+        }
+        let bundle_id = v
+            .get("bundle_id")
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
+            .to_string();
+        let functor_metadata = v
+            .get("functor_metadata")
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
+            .to_string();
+        let mut words = Vec::new();
+        if let Some(arr) = v.get("words").and_then(|w| w.as_array()) {
+            for w in arr {
+                let text = w
+                    .get("text")
+                    .and_then(|t| t.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let mut coeff = [0.0f32; 8];
+                if let Some(c) = w.get("coeff").and_then(|c| c.as_array()) {
+                    for (i, val) in c.iter().enumerate().take(8) {
+                        coeff[i] = val.as_f64().unwrap_or(0.0) as f32;
+                    }
+                }
+                words.push(LinguisticWord { text, coeff });
+            }
+        }
+        let mut patches = Vec::new();
+        if let Some(arr) = v.get("patches").and_then(|p| p.as_array()) {
+            for p in arr {
+                let patch_id = p.get("patch_id").and_then(|x| x.as_u64()).unwrap_or(0) as u32;
+                let morphism = p
+                    .get("morphism")
+                    .and_then(|m| m.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let mut coeff_delta = [0.0f32; 4];
+                if let Some(c) = p.get("coeff_delta").and_then(|c| c.as_array()) {
+                    for (i, val) in c.iter().enumerate().take(4) {
+                        coeff_delta[i] = val.as_f64().unwrap_or(0.0) as f32;
+                    }
+                }
+                patches.push(LinguisticContextPatch {
+                    patch_id,
+                    morphism,
+                    coeff_delta,
+                });
+            }
+        }
         Some(LinguisticDiscourseBundle {
-            bundle_id: "roundtrip".into(),
-            words: vec![LinguisticWord {
-                text: "roundtrip".into(),
-                coeff: [0.0; 8],
-            }],
-            patches: vec![],
-            functor_metadata: "roundtrip".into(),
+            bundle_id,
+            words,
+            patches,
+            functor_metadata,
         })
     }
 
@@ -828,6 +899,41 @@ mod tests {
     #[test]
     fn leg3_pointer_is_pointer_sized() {
         assert_eq!(size_of::<Leg3Pointer>(), size_of::<usize>());
+    }
+
+    /// Freeze ZEDOS tag registry uniqueness (catches accidental aliasing).
+    #[test]
+    fn zedos_tag_constants_are_unique() {
+        let tags: &[(&str, u8)] = &[
+            ("ZEDOS_DECLARATIVE", ZEDOS_DECLARATIVE),
+            ("ZEDOS_EPISODIC", ZEDOS_EPISODIC),
+            ("ZEDOS_OPERATIONAL", ZEDOS_OPERATIONAL),
+            ("ZEDOS_BODY", ZEDOS_BODY),
+            ("ZEDOS_VERBATIM", ZEDOS_VERBATIM),
+            ("ZEDOS_PRAXIS", ZEDOS_PRAXIS),
+            ("ZEDOS_HYPOTHESIS", ZEDOS_HYPOTHESIS),
+            ("ZEDOS_RELATION", ZEDOS_RELATION),
+            ("ZEDOS_USER_MODEL", ZEDOS_USER_MODEL),
+            ("ZEDOS_NREM_CENTROID", ZEDOS_NREM_CENTROID),
+            ("ZEDOS_SYNTHESIS", ZEDOS_SYNTHESIS),
+            ("ZEDOS_TRAINING", ZEDOS_TRAINING),
+            ("ZEDOS_POINTER", ZEDOS_POINTER),
+            ("ZEDOS_LINGUISTIC", ZEDOS_LINGUISTIC),
+            ("ZEDOS_LINGUISTIC_POLY", ZEDOS_LINGUISTIC_POLY),
+            ("ZEDOS_FIBERED", ZEDOS_FIBERED),
+            ("ZEDOS_GEOSPHERE", ZEDOS_GEOSPHERE),
+            ("ZEDOS_OPERATOR", ZEDOS_OPERATOR),
+        ];
+        let mut seen = std::collections::HashMap::<u8, &str>::new();
+        for (name, val) in tags {
+            if let Some(prev) = seen.insert(*val, name) {
+                panic!("ZEDOS tag collision: {name}=0x{val:02X} also used by {prev}");
+            }
+        }
+        assert_ne!(
+            ZEDOS_NREM_CENTROID, ZEDOS_FIBERED,
+            "NREM centroid and FIBERED must remain distinct"
+        );
     }
 
     // ═══════════════════════════════════════════════════════════════════════════

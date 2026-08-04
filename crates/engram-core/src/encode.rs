@@ -331,18 +331,29 @@ pub fn mint_tiered(text: &str, tier: BlockTier) -> Leg3Pointer {
     block
 }
 
-/// P2 hybrid wire (additive fns; separate from on-disk .leg full O_DIRECT).
-/// Example: "hybrid" = marker + versioned header + (full or delta p/q compressed + external ref).
-/// For wire transport (mcp/store); decode reconstructs Leg3Pointer (full block materialized).
-/// Preserves p-momentum/CRS on roundtrip for default.
+/// Hybrid wire HBRDv2 for transport (separate from on-disk O_DIRECT `.leg3`).
+///
+/// Layout (little-endian):
+/// ```text
+/// magic[5] = b"HBRD2"
+/// schema_ver: u32
+/// crs_score: f32
+/// zedos_tag: u8
+/// allowed_transforms: [u8; 64]
+/// q_len: u32 + q bytes (re,im f32 pairs × 8192)
+/// p_len: u32 + p bytes
+/// payload_len: u32 + payload bytes (≤122_584)
+/// footer: 6×sig [u8;32] + merkle_sub_root [u8;32]
+/// optional: b"DELTA" trailer when use_delta
+/// ```
+/// Roundtrip restores q/p/CRS/schema_ver/zedos/allowed_transforms/payload/footer.
 pub fn to_hybrid_wire(block: &HolographicBlock, use_delta: bool) -> Vec<u8> {
-    let mut wire = Vec::new();
-    wire.extend_from_slice(b"HBRD1"); // hybrid wire marker v1
-    wire.push(block.version());
+    let mut wire = Vec::with_capacity(200_000);
+    wire.extend_from_slice(b"HBRD2");
     wire.extend_from_slice(&block.schema_ver.to_le_bytes());
     wire.extend_from_slice(&block.crs_score.to_le_bytes());
-    // simple full for now (additive; future delta on p or external); always include q/p for fidelity
-    // (store can choose O_DIRECT full vs this wire for net)
+    wire.push(block.zedos_tag);
+    wire.extend_from_slice(&block.allowed_transforms);
     let q_bytes: Vec<u8> = block
         .q
         .iter()
@@ -357,29 +368,149 @@ pub fn to_hybrid_wire(block: &HolographicBlock, use_delta: bool) -> Vec<u8> {
         .collect();
     wire.extend_from_slice(&(p_bytes.len() as u32).to_le_bytes());
     wire.extend_from_slice(&p_bytes);
-    // payload stub + footer sig for merkle tie
-    wire.extend_from_slice(&block.footer.sig_0[..8]);
+    // payload: stop at first null run for wire size, but store exact used length
+    let payload_end = block
+        .payload
+        .iter()
+        .rposition(|&b| b != 0)
+        .map(|i| i + 1)
+        .unwrap_or(0);
+    wire.extend_from_slice(&(payload_end as u32).to_le_bytes());
+    wire.extend_from_slice(&block.payload[..payload_end]);
+    // full footer chain + sub_root
+    for sig in [
+        &block.footer.sig_0,
+        &block.footer.sig_1,
+        &block.footer.sig_2,
+        &block.footer.sig_3,
+        &block.footer.sig_4,
+        &block.footer.sig_5,
+    ] {
+        wire.extend_from_slice(sig);
+    }
+    wire.extend_from_slice(&block.footer.merkle_sub_root);
     if use_delta {
         wire.extend_from_slice(b"DELTA");
     }
     wire
 }
 
-/// Experimental HBRD wire decode — **stub only** (does not fully restore q/p).
-/// Not a product surface; O_DIRECT `.leg3` remains the primary on-disk format.
-/// See CLAIMS_LEDGER.md (hybrid wire = partial / experimental).
+fn read_u32_le(wire: &[u8], off: &mut usize) -> Option<u32> {
+    let end = (*off).checked_add(4)?;
+    if end > wire.len() {
+        return None;
+    }
+    let v = u32::from_le_bytes(wire[*off..end].try_into().ok()?);
+    *off = end;
+    Some(v)
+}
+
+fn read_f32_le(wire: &[u8], off: &mut usize) -> Option<f32> {
+    let end = (*off).checked_add(4)?;
+    if end > wire.len() {
+        return None;
+    }
+    let v = f32::from_le_bytes(wire[*off..end].try_into().ok()?);
+    *off = end;
+    Some(v)
+}
+
+fn read_bytes<'a>(wire: &'a [u8], off: &mut usize, n: usize) -> Option<&'a [u8]> {
+    let end = (*off).checked_add(n)?;
+    if end > wire.len() {
+        return None;
+    }
+    let s = &wire[*off..end];
+    *off = end;
+    Some(s)
+}
+
+fn fill_complex_from_bytes(dst: &mut [num_complex::Complex32; 8192], bytes: &[u8]) -> bool {
+    if bytes.len() != 8192 * 8 {
+        return false;
+    }
+    for i in 0..8192 {
+        let base = i * 8;
+        let re = f32::from_le_bytes(bytes[base..base + 4].try_into().unwrap());
+        let im = f32::from_le_bytes(bytes[base + 4..base + 8].try_into().unwrap());
+        dst[i] = num_complex::Complex32::new(re, im);
+    }
+    true
+}
+
+/// Full HBRD decode restoring q, p, CRS, schema_ver, allowed_transforms, payload, footer.
+/// Accepts HBRD2 (full fidelity) and legacy HBRD1 (q/p/crs/schema only).
 pub fn from_hybrid_wire(wire: &[u8]) -> Option<Leg3Pointer> {
-    if wire.len() < 4 || &wire[0..4] != b"HBRD" {
+    if wire.len() < 5 || &wire[0..4] != b"HBRD" {
         return None;
     }
     let mut lp = Leg3Pointer::mint();
-    // simplistic parse (demo; full impl would validate lens)
-    if wire.len() > 20 {
-        let ver = wire[4];
-        lp.allowed_transforms[0] = ver;
-        // ... (restored q/p would be parsed here; for minimal, re-encode stub from payload area if present)
+    if wire.starts_with(b"HBRD2") {
+        let mut off = 5;
+        lp.schema_ver = read_u32_le(wire, &mut off)?;
+        lp.crs_score = read_f32_le(wire, &mut off)?;
+        lp.energetics.crs = lp.crs_score;
+        lp.zedos_tag = *read_bytes(wire, &mut off, 1)?.first()?;
+        let at = read_bytes(wire, &mut off, 64)?;
+        lp.allowed_transforms.copy_from_slice(at);
+        let q_len = read_u32_le(wire, &mut off)? as usize;
+        let q_bytes = read_bytes(wire, &mut off, q_len)?;
+        if !fill_complex_from_bytes(&mut lp.q, q_bytes) {
+            return None;
+        }
+        let p_len = read_u32_le(wire, &mut off)? as usize;
+        let p_bytes = read_bytes(wire, &mut off, p_len)?;
+        if !fill_complex_from_bytes(&mut lp.p, p_bytes) {
+            return None;
+        }
+        let payload_len = read_u32_le(wire, &mut off)? as usize;
+        let payload = read_bytes(wire, &mut off, payload_len)?;
+        let n = payload_len.min(lp.payload.len());
+        lp.payload[..n].copy_from_slice(&payload[..n]);
+        lp.footer
+            .sig_0
+            .copy_from_slice(read_bytes(wire, &mut off, 32)?);
+        lp.footer
+            .sig_1
+            .copy_from_slice(read_bytes(wire, &mut off, 32)?);
+        lp.footer
+            .sig_2
+            .copy_from_slice(read_bytes(wire, &mut off, 32)?);
+        lp.footer
+            .sig_3
+            .copy_from_slice(read_bytes(wire, &mut off, 32)?);
+        lp.footer
+            .sig_4
+            .copy_from_slice(read_bytes(wire, &mut off, 32)?);
+        lp.footer
+            .sig_5
+            .copy_from_slice(read_bytes(wire, &mut off, 32)?);
+        let sub = read_bytes(wire, &mut off, 32)?;
+        lp.footer.merkle_sub_root.copy_from_slice(sub);
+        return Some(lp);
     }
-    // Stub: returns a mint block — not full fidelity. Prefer .leg3 encode/decode paths.
+    // Legacy HBRD1: magic(5) + version byte + schema_ver + crs + q + p + sig0[:8]
+    if !wire.starts_with(b"HBRD1") {
+        return None;
+    }
+    let mut off = 5;
+    let _ver = *read_bytes(wire, &mut off, 1)?.first()?;
+    lp.schema_ver = read_u32_le(wire, &mut off)?;
+    lp.crs_score = read_f32_le(wire, &mut off)?;
+    lp.energetics.crs = lp.crs_score;
+    let q_len = read_u32_le(wire, &mut off)? as usize;
+    let q_bytes = read_bytes(wire, &mut off, q_len)?;
+    if !fill_complex_from_bytes(&mut lp.q, q_bytes) {
+        return None;
+    }
+    let p_len = read_u32_le(wire, &mut off)? as usize;
+    let p_bytes = read_bytes(wire, &mut off, p_len)?;
+    if !fill_complex_from_bytes(&mut lp.p, p_bytes) {
+        return None;
+    }
+    if let Some(sig0p) = read_bytes(wire, &mut off, 8) {
+        lp.footer.sig_0[..8].copy_from_slice(sig0p);
+    }
     Some(lp)
 }
 
@@ -397,13 +528,8 @@ where
     // post: could update residual or p-mom here (additive)
 }
 
-/// BLAKE3 **transform attestation** (API name kept for compatibility; not zero-knowledge).
+/// BLAKE3 **transform attestation** (public name — not a zk-SNARK).
 pub fn generate_transform_attestation(block: &HolographicBlock, op: &str) -> [u8; 32] {
-    generate_zk_proof(block, op)
-}
-
-pub fn generate_zk_proof(block: &HolographicBlock, op: &str) -> [u8; 32] {
-    // Attestation cookie — not a SNARK/STARK
     let (ver, dsl) = parse_allowed_dsl(&block.allowed_transforms);
     let dsl_str = dsl.join("|");
     let mut hasher = blake3::Hasher::new();
@@ -416,9 +542,21 @@ pub fn generate_zk_proof(block: &HolographicBlock, op: &str) -> [u8; 32] {
     *hasher.finalize().as_bytes()
 }
 
-pub fn verify_zk_proof(block: &HolographicBlock, op: &str, proof: &[u8; 32]) -> bool {
-    let expected = generate_zk_proof(block, op);
+/// Deprecated alias for [`generate_transform_attestation`] (not a SNARK).
+#[deprecated(note = "use generate_transform_attestation — not a zk-SNARK")]
+pub fn generate_zk_proof(block: &HolographicBlock, op: &str) -> [u8; 32] {
+    generate_transform_attestation(block, op)
+}
+
+pub fn verify_transform_attestation(block: &HolographicBlock, op: &str, proof: &[u8; 32]) -> bool {
+    let expected = generate_transform_attestation(block, op);
     expected == *proof && validate_allowed_transforms(&block.allowed_transforms)
+}
+
+/// Deprecated alias for [`verify_transform_attestation`].
+#[deprecated(note = "use verify_transform_attestation")]
+pub fn verify_zk_proof(block: &HolographicBlock, op: &str, proof: &[u8; 32]) -> bool {
+    verify_transform_attestation(block, op, proof)
 }
 
 /// Arena batch encode helper (SOA synergy for GPU).
@@ -501,28 +639,69 @@ mod tests {
     }
 
     #[test]
-    fn p2_hybrid_wire_roundtrip_stub() {
-        let b = from_text("hybrid wire test");
+    fn hybrid_wire_full_roundtrip_fidelity() {
+        let mut b = from_text("hybrid wire fidelity probe αβγ");
+        b.zedos_tag = crate::types::ZEDOS_EPISODIC;
+        b.footer.sig_0 = [0x11; 32];
+        b.footer.sig_1 = [0x22; 32];
+        b.footer.sig_2 = [0x33; 32];
+        b.footer.merkle_sub_root = [0xAB; 32];
+        // seed first p components away from identity for identity check
+        b.p[0] = num_complex::Complex32::new(0.7, 0.1);
+        b.p[1] = num_complex::Complex32::new(0.2, -0.3);
+        let crs_in = b.crs_score;
+        let schema_in = b.schema_ver;
         let w = to_hybrid_wire(&b, false);
-        assert!(w.starts_with(b"HBRD1"));
-        let dec = from_hybrid_wire(&w);
-        assert!(dec.is_some());
+        assert!(w.starts_with(b"HBRD2"), "expected HBRD2 magic");
+        let dec = from_hybrid_wire(&w).expect("decode");
+        let sim = cosine_similarity(&b.q, &dec.q);
+        assert!(
+            sim > 0.999,
+            "hybrid q cosine {sim} ≤ 0.999 — decode must restore q"
+        );
+        assert!((dec.p[0].re - 0.7).abs() < 1e-6);
+        assert!((dec.p[0].im - 0.1).abs() < 1e-6);
+        assert!((dec.p[1].re - 0.2).abs() < 1e-6);
+        assert!((dec.crs_score - crs_in).abs() < 1e-6, "CRS must equal");
+        assert_eq!(dec.schema_ver, schema_in);
+        assert_eq!(dec.zedos_tag, crate::types::ZEDOS_EPISODIC);
+        assert_eq!(dec.footer.sig_0, [0x11; 32]);
+        assert_eq!(dec.footer.sig_1, [0x22; 32]);
+        assert_eq!(dec.footer.sig_2, [0x33; 32]);
+        assert_eq!(dec.footer.merkle_sub_root, [0xAB; 32]);
+        // payload (provlog text) preserved
+        let recovered = crate::storage::read_provlog(&dec);
+        assert!(recovered.contains("hybrid wire fidelity"));
     }
 
     #[test]
-    fn p2_homo_zk_proof_verify() {
-        let mut b = from_text("homo zk test");
+    fn unit_phase_unbind_recovery_above_0_95() {
+        use crate::ops::{op_bind, op_unbind};
+        let role = from_text_unit_phase("role:color_channel");
+        let filler = from_text_unit_phase("filler:crimson_red_v1");
+        let bound = op_bind(&role.q, &filler.q);
+        let recovered = op_unbind(&bound, &role.q);
+        let sim = cosine_similarity(&recovered, &filler.q);
+        assert!(
+            sim > 0.95,
+            "unit-phase unbind recovery {sim} ≤ 0.95 (spiral path is weaker)"
+        );
+    }
+
+    #[test]
+    fn p2_homo_attestation_proof_verify() {
+        let mut b = from_text("homo attestation test");
         let op = "bind";
-        let proof = generate_zk_proof(&b, op);
-        assert!(verify_zk_proof(&b, op, &proof));
+        let proof = generate_transform_attestation(&b, op);
+        assert!(verify_transform_attestation(&b, op, &proof));
         // after homo apply (enforce)
         apply_homo_op(&mut b, "bind", |bb| {
             // dummy homo: touch p momentum lightly (preserves unit)
             bb.p[0] = crate::ops::normalize(&bb.p)[0];
         });
         // re-verify ok
-        let proof2 = generate_zk_proof(&b, op);
-        assert!(verify_zk_proof(&b, op, &proof2));
+        let proof2 = generate_transform_attestation(&b, op);
+        assert!(verify_transform_attestation(&b, op, &proof2));
     }
 
     /// UB Cycle 12: unit-phase encode is deterministic and on the hypersphere.
