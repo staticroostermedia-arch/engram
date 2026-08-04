@@ -2,9 +2,9 @@
 
 **Date:** 2026-08-03  
 **Master tip analyzed:** `4e26b6be` (post #218 Autophagy surface removal)  
-**Workspace version:** `0.7.0-beta.11` (`Cargo.toml` / `engram --version`)  
-**Latest git tag:** `v0.7.0-beta.5`  
-**Kind:** analysis only (no feature implementation in this document)
+**Workspace version at analysis:** `0.7.0-beta.11`  
+**Status update 2026-08-04:** Closed via **#219** (`v0.7.0-beta.12` tag on `48c5bb4b`) + residuals PR (lawfulness extract, BVH quality path force, protocol-invoke demotion). See disposition table below.  
+**Kind:** analysis + post-hoc disposition (original body is historical snapshot)
 
 ---
 
@@ -12,18 +12,18 @@
 
 Engram’s **agent memory loop is real and recently more honest** (seal-aware verify, `wake_digest`, intent demotion of scars, no Autophagy product myth). The largest remaining risks are not “missing cosmology” but **release hygiene**, **stale public messaging**, and **agent-path friction** that still burns tokens and mis-prioritizes work.
 
-| Rank | Theme | Why next |
+| Rank | Theme | Disposition (2026-08-04) |
 |------|--------|----------|
-| 1 | **Release / version alignment** | Cargo is beta.11; last tag and README still beta.5; CHANGELOG has **four** Unreleased blocks |
-| 2 | **CLAIMS_LEDGER hygiene** | Several rows still describe pre-merge state (seal “separately”, trust residual “when PR greens”) |
-| 3 | **Tool-count claim drift** | README “87 tools” vs ~**83** `mcp_engram_*` names in `mcp.rs` |
-| 4 | **Wake still heavy** | `wake_digest` helps but slim continuation remains multi‑10k tokens |
-| 5 | **Soft contracts by default** | PRAXIS hard is opt-in; general contracts still soft-proceed |
-| 6 | **Merkle depth honesty** | Whole-block seal real; 6-deep chain story still partial |
-| 7 | **Hybrid wire + ZK API names** | Stub decode + `generate_zk_proof` names invite security misread |
-| 8 | **BVH / NVMe-as-context** | Partial until always-warm BVH; sampled/linear common under agent profile |
-| 9 | **God objects** | `store.rs` ~16.7k LOC, `mcp.rs` ~12k — every fix has high blast radius |
-| 10 | **Agent process** | Dual memory (Grok MEMORY vs Engram); `search_tool` tax; dogfood without goal switch |
+| 1 | **Release / version alignment** | **Closed** — #219 + tag `v0.7.0-beta.12` |
+| 2 | **CLAIMS_LEDGER hygiene** | **Closed** — refreshed on #219 + residuals |
+| 3 | **Tool-count claim drift** | **Closed** — 87 enforced by unit test + docs |
+| 4 | **Wake still heavy** | **Closed (opt-in)** — `ENGRAM_WAKE_DIGEST_ONLY=1` (not default) |
+| 5 | **Soft contracts by default** | **Closed** — agent `ENGRAM_PRAXIS_CONTRACT=hard` |
+| 6 | **Merkle depth honesty** | **Deferred honest** — seal done; 6-deep walk still partial (CLAIMS) |
+| 7 | **Hybrid wire + ZK API names** | **Closed (demote)** — experimental stub / attestation wording |
+| 8 | **BVH / NVMe-as-context** | **Closed (policy)** — GPU eager; QUALITY_MODE forces BVH; hint on readiness |
+| 9 | **God objects** | **Partial** — `wake_digest.rs` + `lawfulness.rs` extracts; no full rewrite |
+| 10 | **Agent process** | **Closed (docs)** — dual-memory + env table in AGENT_MEMORY_CONTRACT |
 
 ---
 

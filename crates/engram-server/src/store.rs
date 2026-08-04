@@ -3145,6 +3145,14 @@ impl StoreHandle {
         obj.insert("bvh_nodes".into(), serde_json::json!(bvh_nodes));
         obj.insert("recall_mode".into(), serde_json::json!(recall_mode));
         obj.insert(
+            "bvh_quality_path_hint".into(),
+            serde_json::json!(crate::lawfulness::bvh_quality_path_hint(
+                recall_mode,
+                std::env::var("ENGRAM_QUALITY_MODE").as_deref() == Ok("1"),
+                std::env::var("ENGRAM_DEFER_BVH").as_deref() == Ok("1"),
+            )),
+        );
+        obj.insert(
             "nvme_recall_ready".into(),
             serde_json::json!(crate::injection_priority::nvme_recall_path_ready(
                 recall_mode
@@ -10821,55 +10829,10 @@ pub fn open_store_placeholder_for_mcp(path: &str) -> SharedStore {
     Arc::new(Mutex::new(StoreHandle::new_placeholder_for_mcp(path)))
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Lawfulness Verification Support (Agentic-First, Long-Sleep Ready)
-// These types and helpers support the new mcp_engram_verify_* tools.
-// They will be expanded significantly in follow-up work (full historical chain
-// reconstruction, stricter contract enforcement, Praxis-specific audits, etc.).
-// ─────────────────────────────────────────────────────────────────────────────
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct BlockLawfulnessSummary {
-    pub concept: String,
-    pub crs: f32,
-    pub zedos_tag: u8,
-    pub last_accessed: u64,
-    pub superposition_count: u32,
-    pub drift_velocity: f32,
-    pub allowed_transforms: String,
-    pub sig_0: [u8; 32],
-    pub merkle_sub_root: [u8; 32],
-    /// Whole-block seal status: valid | legacy_unsealed | mismatch | structural | relation_lineage_*
-    pub integrity_status: String,
-    /// True when structure is ok and seal is Valid or LegacyUnsealed (mismatch/structural fail).
-    pub integrity_ok: bool,
-    /// How many of sig_0..sig_5 are non-zero (honest chain *depth present*, not historical walk).
-    pub chain_slots_nonzero: u8,
-    /// Overall agent-facing lawfulness: integrity_ok && (PRAXIS contract note separate).
-    pub lawful: bool,
-    pub notes: Vec<String>,
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct ManifoldVerificationOptions {
-    pub min_crs: f32,
-    pub sample_size: Option<usize>,
-    pub include_relation_integrity: bool,
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct ManifoldHealthReport {
-    pub total_blocks_sampled: u32,
-    pub high_value_blocks: u32,
-    pub issues_found: u32,
-    pub issues: Vec<String>,
-    pub overall_health: String, // "healthy" | "needs_review" | "critical"
-    /// Seal sample breakdown (whole-block sig_5 integrity).
-    pub seal_valid: u32,
-    pub seal_legacy_unsealed: u32,
-    pub seal_mismatch: u32,
-    pub seal_structural: u32,
-}
+// Lawfulness types + pure helpers live in `lawfulness.rs` (narrow extract).
+pub use crate::lawfulness::{
+    BlockLawfulnessSummary, ManifoldHealthReport, ManifoldVerificationOptions,
+};
 
 /// Minimal options for protocol invocation (vertical slice).
 #[derive(Debug, Clone, Default)]
@@ -10890,82 +10853,9 @@ impl StoreHandle {
     /// Designed to be cheap to call over MCP for audits.
     pub fn get_block_lawfulness_summary(&self, concept: &str) -> Option<BlockLawfulnessSummary> {
         let block = self.backend.fetch_block(concept)?;
-        let footer = block.footer;
-        let contract = std::str::from_utf8(&block.allowed_transforms)
-            .unwrap_or("")
-            .trim_matches('\0')
-            .to_string();
-
-        let integ = engram_core::verify_block_integrity(&block);
-        let integrity_status = integ.as_str().to_string();
-        let integrity_ok = matches!(
-            &integ,
-            engram_core::BlockIntegrityStatus::Valid
-                | engram_core::BlockIntegrityStatus::LegacyUnsealed
-        );
-        let chain_slots_nonzero = [
-            footer.sig_0,
-            footer.sig_1,
-            footer.sig_2,
-            footer.sig_3,
-            footer.sig_4,
-            footer.sig_5,
-        ]
-        .iter()
-        .filter(|s| s.iter().any(|&b| b != 0))
-        .count() as u8;
-
-        let mut notes = Vec::new();
-        match &integ {
-            engram_core::BlockIntegrityStatus::LegacyUnsealed => {
-                notes.push(
-                    "legacy_unsealed: sig_5 all zeros (pre-seal block; still readable)".into(),
-                );
-            }
-            engram_core::BlockIntegrityStatus::Mismatch {
-                chain_ok,
-                whole_block_ok,
-            } => {
-                notes.push(format!(
-                    "mismatch: chain_ok={chain_ok} whole_block_ok={whole_block_ok}"
-                ));
-            }
-            engram_core::BlockIntegrityStatus::Structural(s) => {
-                notes.push(format!("structural: {s}"));
-            }
-            engram_core::BlockIntegrityStatus::RelationLineage { current, note } => {
-                notes.push(format!("relation_lineage current={current}: {note}"));
-            }
-            engram_core::BlockIntegrityStatus::Valid => {}
-        }
-        // Honest: nonzero slot count ≠ full historical reconstruction.
-        notes.push(format!(
-            "chain_slots_nonzero={chain_slots_nonzero}/6 (present depth only; not a full history walk)"
-        ));
-        if block.zedos_tag == engram_core::types::ZEDOS_PRAXIS
-            && !contract.contains("evidence_update")
-        {
-            notes.push("PRAXIS contract missing evidence_update (soft policy unless ENGRAM_PRAXIS_CONTRACT=hard)".into());
-        }
-
-        let lawful = integrity_ok;
-
-        Some(BlockLawfulnessSummary {
-            concept: concept.to_string(),
-            crs: block.crs_score,
-            zedos_tag: block.zedos_tag,
-            last_accessed: block.last_accessed_timestamp,
-            superposition_count: block.superposition_count,
-            drift_velocity: block.energetics.dv,
-            allowed_transforms: contract,
-            sig_0: footer.sig_0,
-            merkle_sub_root: footer.merkle_sub_root,
-            integrity_status,
-            integrity_ok,
-            chain_slots_nonzero,
-            lawful,
-            notes,
-        })
+        Some(crate::lawfulness::summarize_block_lawfulness(
+            concept, &block,
+        ))
     }
 
     /// Sampling-based integrity check for the active manifold.
@@ -11034,10 +10924,7 @@ impl StoreHandle {
 
         let mut issues = Vec::new();
         let mut high_value_blocks = 0u32;
-        let mut seal_valid = 0u32;
-        let mut seal_legacy_unsealed = 0u32;
-        let mut seal_mismatch = 0u32;
-        let mut seal_structural = 0u32;
+        let mut seal_tally = crate::lawfulness::SealSampleTally::default();
 
         // Phase 3: load full blocks ONLY for the tiny final sample
         for concept in &sampled_names {
@@ -11050,28 +10937,13 @@ impl StoreHandle {
                 high_value_blocks += 1;
             }
             // Whole-block seal audit (sig_5) — honest integrity, not CRS-only.
-            match engram_core::verify_block_integrity(&block) {
-                engram_core::BlockIntegrityStatus::Valid => seal_valid += 1,
-                engram_core::BlockIntegrityStatus::LegacyUnsealed => seal_legacy_unsealed += 1,
-                engram_core::BlockIntegrityStatus::Mismatch { .. } => {
-                    seal_mismatch += 1;
-                    issues.push(format!(
-                        "seal mismatch on '{}' (chain or whole-block digests disagree)",
-                        concept
-                    ));
-                }
-                engram_core::BlockIntegrityStatus::Structural(ref s) => {
-                    seal_structural += 1;
-                    issues.push(format!("structural integrity on '{concept}': {s}"));
-                }
-                engram_core::BlockIntegrityStatus::RelationLineage {
-                    current: false,
-                    note,
-                } => {
-                    issues.push(format!("relation lineage stale on '{concept}': {note}"));
-                }
-                engram_core::BlockIntegrityStatus::RelationLineage { current: true, .. } => {}
-            }
+            let integ = engram_core::verify_block_integrity(&block);
+            crate::lawfulness::accumulate_seal_sample(
+                concept,
+                &integ,
+                &mut seal_tally,
+                &mut issues,
+            );
             let contract = std::str::from_utf8(&block.allowed_transforms).unwrap_or("");
             if block.zedos_tag == engram_core::types::ZEDOS_PRAXIS
                 && !contract.contains("evidence_update")
@@ -11103,14 +10975,8 @@ impl StoreHandle {
         }
 
         let issues_found = issues.len() as u32;
-        let overall_health = if issues.is_empty() {
-            "healthy"
-        } else if seal_mismatch > 0 || seal_structural > 0 {
-            "critical"
-        } else {
-            "needs_review"
-        }
-        .to_string();
+        let overall_health =
+            crate::lawfulness::overall_health_label(issues.is_empty(), &seal_tally).to_string();
 
         Ok(ManifoldHealthReport {
             total_blocks_sampled: sampled_len,
@@ -11118,10 +10984,10 @@ impl StoreHandle {
             issues_found,
             issues,
             overall_health,
-            seal_valid,
-            seal_legacy_unsealed,
-            seal_mismatch,
-            seal_structural,
+            seal_valid: seal_tally.seal_valid,
+            seal_legacy_unsealed: seal_tally.seal_legacy_unsealed,
+            seal_mismatch: seal_tally.seal_mismatch,
+            seal_structural: seal_tally.seal_structural,
         })
     }
 
@@ -11194,8 +11060,9 @@ impl StoreHandle {
         Ok(())
     }
 
-    /// Invoke an executable Praxis Protocol (Item 3 vertical slice).
-    /// Performs the full 7-point verification gate before dispatch.
+    /// Invoke an executable Praxis Protocol (Item 3 **experimental** vertical slice).
+    /// Performs the full 7-point verification gate, then returns `stub_dispatch`
+    /// (no real protocol side effects). Not a product automation surface.
     pub fn invoke_protocol(
         &mut self,
         key: &str,
@@ -11264,7 +11131,7 @@ impl StoreHandle {
         // Real dispatch will route on the ProtocolHeader inside the payload.
         Ok(serde_json::json!({
             "status": "stub_dispatch",
-            "note": "Vertical slice implementation - replace with real handler",
+            "note": "Experimental only — no protocol side effects; not a product automation surface",
             "args": args,
             "crs": block.crs_score,
         }))

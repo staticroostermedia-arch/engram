@@ -1,7 +1,7 @@
 # CLAIMS_LEDGER — Public claim → code → test map
 
 **Status:** living  
-**Last truth pass:** 2026-08-03 (next-improvements-closure v1 / beta.12)  
+**Last truth pass:** 2026-08-04 (next-improvements residuals: lawfulness extract + BVH quality path)  
 **Purpose:** Every notable public claim maps to implementation status so agents and reviewers do not treat aspirational text as shipped fact.
 
 **Status values:** `implemented` | `partial` | `aspirational` | `removed`
@@ -43,7 +43,7 @@ When status is `implemented`, named tests should exist in-repo. Prefer **softeni
 | Hybrid wire serialization (HBRD) | historical CHANGELOG | partial (experimental stub) | `encode.rs` `to_hybrid_wire` / `from_hybrid_wire` | hybrid encode tests if present | **Not a product surface.** `from_hybrid_wire` does not fully restore q/p; O_DIRECT .leg remains primary. Do not list in README hero |
 | Homomorphic + transform attestation (historically misnamed ZK) | CHANGELOG; encode.rs | partial | `apply_homo_op`, `generate_zk_proof` (attestation), `generate_transform_attestation` alias, `verify_zk_proof` | encode tests | **Not** zk-SNARK. BLAKE3 cookie of dsl+crs+sig0+op. Prefer “attestation” in public API docs |
 | Protocol execution / process subvisor H¹ | AGENTS.md; processes/monitor | partial | subvisor / process load | process/harness tests | Governance exists; full OP_INVERT/H¹ agent-graph theory is deeper than runtime enforcement |
-| Lawfulness: `verify_manifold_integrity` / `verify_block_lawfulness` | AGENT_INTEGRATION; lawfulness | implemented (seal-aware sample) / partial (full history) | `get_block_lawfulness_summary` + `verify_block_integrity`; manifold seal counts | `honest_lawfulness_integrity_tests` | Full historical Merkle walk still not present; chain_slots_nonzero is depth-present only |
+| Lawfulness: `verify_manifold_integrity` / `verify_block_lawfulness` | AGENT_INTEGRATION; lawfulness | implemented (seal-aware sample) / partial (full history) | `lawfulness.rs` pure summary + store wrappers; manifold seal sample | `lawfulness::tests`; `honest_lawfulness_integrity_tests` | Full historical Merkle walk still not present; chain_slots_nonzero is depth-present only |
 | NREM / ego.leg3 long-horizon continuity | README; MANIFESTO | implemented | daemon NREM path; ego.leg3 | NREM stack / profile tests (see dogfood PR #209) | Large-stack NREM needs dedicated thread (PR #209) |
 | Trust residual / mutual morning packet | PR #210; wake path | implemented | `store.rs` `build_trust_residual`; `wake_bundle`; mcp wake hoist | `trust_residual_v1_bootstrap_and_handoff`; wake_bundle tests | Merged on master |
 | REST recall returns empty under lean | historical bug | fixed (PR #209) | `serve.rs` `recall_scoped` default `scope=all` | REST dogfood path; serve path | MCP lean anchors intentionally different |
@@ -54,6 +54,10 @@ When status is `implemented`, named tests should exist in-repo. Prefer **softeni
 | Benchmarks / large-store wake “seconds on 192k” | README L165 | partial | readiness + lean wake | harness timing (env-specific) | Hardware-dependent; not a CI guarantee |
 
 ---
+
+| Lawfulness module extract (`lawfulness.rs`) | store/mcp narrow extract | implemented | `crates/engram-server/src/lawfulness.rs` (`summarize_block_lawfulness`, seal tally helpers); store wrappers | `lawfulness::tests`; `honest_lawfulness_integrity_tests` | Narrow extract only — not a full store/mcp split |
+| BVH quality path hint + QUALITY_MODE force | readiness / profile | implemented | `profile.rs` QUALITY_MODE forces DEFER_BVH=0; readiness `bvh_quality_path_hint` | profile quality_mode test; lawfulness bvh_quality_hint test | CPU agent still defers by default; no RAM bomb unless quality mode |
+| Protocol invoke MCP | mcp tool list | partial (experimental stub) | `invoke_protocol` → `stub_dispatch` | — | **Not product automation.** Description demoted to experimental |
 
 ## Source index (files scanned this pass)
 

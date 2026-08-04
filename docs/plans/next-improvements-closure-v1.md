@@ -3,6 +3,7 @@
 **Date:** 2026-08-03  
 **Origin:** `docs/plans/next-improvements-audit-v1.md` (master `4e26b6be`)  
 **Goal id:** `goal:next_improvements_closure_v1`  
+**Shipped:** PR **#219** merged; tag **`v0.7.0-beta.12`** @ `48c5bb4b`. Residuals (lawfulness extract, QUALITY_MODE force, protocol demote) follow-up PR.  
 **Kind:** multi-wave code + docs + release hygiene (close all top-10 audit items)
 
 ---

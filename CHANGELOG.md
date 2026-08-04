@@ -35,8 +35,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
-### Notes
-- Next unreleased work starts here after beta.12.
+### Added
+- **Lawfulness module extract:** pure `summarize_block_lawfulness` / seal-sample helpers in `lawfulness.rs` (store keeps thin MCP wrappers).
+- **BVH quality path honesty:** readiness `bvh_quality_path_hint`; `ENGRAM_QUALITY_MODE=1` **forces** `ENGRAM_DEFER_BVH=0` even after agent defer default.
+
+### Changed
+- **Protocol invoke MCP:** description demoted to experimental `stub_dispatch` (no product side effects).
+- **Docs:** next-improvements audit top-10 marked closed/residual; CLAIMS truth pass post-#219.
 
 ## [0.7.0-beta.6] - 2026-06-30
 

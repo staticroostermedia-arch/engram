@@ -128,12 +128,11 @@ impl EngramProfile {
         Self::set_default("ENGRAM_PRAXIS_CONTRACT", "hard");
         // Sticky primary_goal: auto-rebind when handoff goal aligns better with session intent.
         Self::set_default("ENGRAM_PRIMARY_GOAL_REBIND", "auto");
-        // Quality mode (opt-in): force eager BVH even on CPU/large stores — RAM trade for recall quality.
-        if std::env::var("ENGRAM_QUALITY_MODE").as_deref() == Ok("1")
-            && std::env::var("ENGRAM_DEFER_BVH").is_err()
-        {
+        // Quality mode (opt-in): always force eager BVH (overrides agent defer default).
+        // RAM may spike on large CPU manifolds — intentional quality trade.
+        if std::env::var("ENGRAM_QUALITY_MODE").as_deref() == Ok("1") {
             std::env::set_var("ENGRAM_DEFER_BVH", "0");
-            tracing::info!("[PROFILE] agent — ENGRAM_QUALITY_MODE=1 → ENGRAM_DEFER_BVH=0");
+            tracing::info!("[PROFILE] agent — ENGRAM_QUALITY_MODE=1 → ENGRAM_DEFER_BVH=0 (forced)");
         }
         // Sentinel continuity (continuity_spikes): ~30 turn_record / ~120 min soft rehydrate nudge — never blocks edits
 
@@ -256,17 +255,25 @@ mod tests {
     }
 
     #[test]
-    fn quality_mode_forces_eager_bvh_when_defer_unset() {
+    fn quality_mode_forces_eager_bvh_over_agent_defer() {
         let _guard = TEST_LOCK.lock().unwrap();
-        std::env::remove_var("ENGRAM_DEFER_BVH");
+        // Pre-set defer as CPU agent would, then apply quality mode via full agent apply path.
+        std::env::set_var("ENGRAM_DEFER_BVH", "1");
         std::env::set_var("ENGRAM_QUALITY_MODE", "1");
-        // Re-apply agent path via quality_mode branch only (simulate after GPU branch)
-        if std::env::var("ENGRAM_QUALITY_MODE").as_deref() == Ok("1")
-            && std::env::var("ENGRAM_DEFER_BVH").is_err()
-        {
+        // quality_mode branch runs after defer defaults — must force 0 even when already set.
+        if std::env::var("ENGRAM_QUALITY_MODE").as_deref() == Ok("1") {
             std::env::set_var("ENGRAM_DEFER_BVH", "0");
         }
         assert_eq!(std::env::var("ENGRAM_DEFER_BVH").unwrap(), "0");
+        // Full apply_agent path (uses set_default for other keys; quality forces DEFER).
+        std::env::set_var("ENGRAM_DEFER_BVH", "1");
+        std::env::set_var("ENGRAM_QUALITY_MODE", "1");
+        EngramProfile::Agent.apply();
+        assert_eq!(
+            std::env::var("ENGRAM_DEFER_BVH").unwrap(),
+            "0",
+            "QUALITY_MODE must override agent DEFER_BVH default"
+        );
         std::env::remove_var("ENGRAM_QUALITY_MODE");
         std::env::remove_var("ENGRAM_DEFER_BVH");
     }
