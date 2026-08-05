@@ -71,6 +71,11 @@ When status is `implemented`, named tests should exist in-repo. Prefer **softeni
 | Hierarchy OS dual-GPU + hit rates | readiness | partial (labels + counters) | hierarchy_gpu0/1_role, hierarchy_hit_rates | `hierarchy_hit_rate_increments` | Policy documented; promote/demote still capacity-path driven |
 | Local large-payload IPC (mmap/UDS) | local_ipc.rs | implemented | path-token + LegView mmap; UDS one-shot token | `mmap_leg_preview_returns_token_not_full_body`; `uds_path_token_roundtrip` | Prefer tokens over multi-MB JSON on-box |
 | Agent suggested_actions cognitive bias | harness_injection ultra-lean | implemented | soft_elevated: dry_run p0, apply p2; agent pins recall/context_for_edit/quick_trace | `a3_agent_cognitive_bias_pins_in_ultra_lean_queue` | Hard elevated_hot_set still dry_run+apply at p0 |
+| Hierarchy hit rates on recall path | hierarchy_metrics + score_recall_candidates | implemented | hot/warm/cold on recall satisfaction; promote/demote counters | `hierarchy_hit_rates_on_recall_sequence` | Not recorded on pure is_hot probes |
+| Critical-path latency hooks (A1) | wake_digest + context_for_edit tests | implemented | build_wake_digest + context_for_edit timed hooks | `build_wake_digest_latency_hook`; `context_for_edit_hot_path_latency_hook` | Audit in docs/evidence/critical-path-audit-2026-08-05.md |
+| H2D empty-path measure (C2-b) | cuda_dispatch measure_h2d_q_stage_ms | implemented | real upload_hot_q_to_device timing | `measure_h2d_q_stage_reports_ms` | Requires device_residency + CUDA |
+| Experience pack export non-empty | scripts/export_experience_pack_v1.py | implemented | --bodies-json quality gates; refuses empty | docs/evidence/reference-pack-v1 (concept_count≥1) | Unfiltered stalk dump forbidden |
+| Independence ladder Stage 0–3 | docs/evidence/independence-ladder-v1.md | implemented (schema+baseline) | counters + Stage-1 a-monad baseline | independence-baseline-2026-08-05.txt | Stage-2 local-only % reserved |
 | OptiX RT-core product path on CI | engram-gpu OptiX | partial / aspirational on CI | local OptiX builds only | feature-gated local tests | Standard CI has no OptiX; capability-gated claim |
 
 ## Source index (files scanned this pass)

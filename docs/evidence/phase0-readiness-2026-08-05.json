@@ -1,19 +1,58 @@
 {
   "backend_kind": "cuda",
-  "recall_mode": "full_bvh_gpu",
-  "bvh_ready": true,
-  "bvh_nodes": 101257,
-  "leg_block_count": 101257,
+  "recall_mode": "cpu_linear",
+  "cufile_path_reason": "hot_not_requested",
+  "cufile_transfer_path": "off",
+  "cufile_dma_success": false,
+  "cufile_dma_attempted": false,
+  "hierarchy_gpu0_role": "hot_agent_resident",
+  "hierarchy_gpu1_role": "compute_bvh_batch_nrem",
+  "hierarchy_hit_rates": {
+    "demote_events": 0,
+    "frac_cold": 0.0,
+    "frac_hot": 0.0,
+    "frac_warm": 0.0,
+    "hits_cold": 0,
+    "hits_hot": 0,
+    "hits_warm": 0,
+    "policy": {
+      "cold": "T700 .leg3 O_DIRECT / storage::read_block",
+      "demote_triggers": [
+        "capacity_hot_compress",
+        "soft_elevated_hot_set",
+        "nrem_unmark"
+      ],
+      "hot": "GPU0 + explicit hot_set / high_priority cache",
+      "promote_triggers": [
+        "mark_hot",
+        "promote_tile_to_high_priority",
+        "wake_anchor",
+        "edit_path"
+      ],
+      "warm": "backend cache or RAM CSR without hot_set"
+    },
+    "promote_events": 0,
+    "total": 0,
+    "version": "hierarchy_hit_rate_v1"
+  },
+  "local_ipc_v1": true,
+  "local_ipc_transports": [
+    "mmap_leg_view",
+    "uds_path_token"
+  ],
   "gpu_hot_device": "0",
   "gpu_compute_device": "1",
-  "gpu_hot_resident": true,
-  "cufile_driver_detected": true,
-  "cufile_hot_ready": true,
-  "cufile_hot_requested": true,
-  "cufile_transfer_path": "unavailable",
   "nvme_direct_io": true,
-  "nvme_recall_ready": true,
-  "profile": "agent",
-  "memory_mode": "lean",
-  "ts": 1785947339
+  "nvme_recall_ready": false,
+  "leg_block_count": 0,
+  "bvh_ready": false,
+  "evidence_note": "native StoreHandle dump (fresh empty store may report cpu_linear BVH); live MCP on a-monad: backend_kind=cuda recall_mode=full_bvh_gpu cufile_hot_requested=true; path_reason field from this binary taxonomy",
+  "live_mcp_observed": {
+    "backend_kind": "cuda",
+    "recall_mode": "full_bvh_gpu",
+    "cufile_transfer_path": "unavailable",
+    "cufile_driver_detected": true,
+    "cufile_hot_requested": true,
+    "note": "live MCP process may lag release binary; code path exposes cufile_path_reason"
+  }
 }

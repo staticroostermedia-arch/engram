@@ -314,6 +314,62 @@ mod tests {
         assert_eq!(d["top_actions"].as_array().unwrap().len(), 1);
     }
 
+    /// Wave A1: build_wake_digest is pure + low-alloc hot path (bench hook).
+    #[test]
+    fn build_wake_digest_latency_hook() {
+        let actions: Vec<Value> = (0..8)
+            .map(|i| {
+                json!({
+                    "tool": "mcp_engram_recall",
+                    "args": { "query": format!("goal:{i}"), "scope": "anchors" },
+                    "priority": i % 3,
+                })
+            })
+            .collect();
+        let scars: Vec<Value> = (0..5)
+            .map(|i| {
+                json!({
+                    "concept": format!("scar:test_{i}"),
+                    "preview": "ruled out approach for bench",
+                })
+            })
+            .collect();
+        let t0 = std::time::Instant::now();
+        let mut last = Value::Null;
+        for _ in 0..200 {
+            last = build_wake_digest(
+                Some("goal:engram_local_primary_critical_path_v1"),
+                Some("local primary critical path"),
+                Some("measure empty path"),
+                Some("full_bvh_gpu"),
+                Some(true),
+                &actions,
+                &scars,
+                true,
+            );
+        }
+        let total_ms = t0.elapsed().as_secs_f64() * 1000.0;
+        let per_ms = total_ms / 200.0;
+        assert_eq!(last["version"], "wake_digest_v1");
+        // Pure JSON build must stay sub-ms average on a-monad-class hardware.
+        assert!(
+            per_ms < 5.0,
+            "build_wake_digest avg {per_ms:.3}ms — regression on critical path"
+        );
+        let line = format!("build_wake_digest_avg_ms={per_ms:.4} total_ms={total_ms:.2}\n");
+        eprint!("{line}");
+        if let Ok(path) = std::env::var("ENGRAM_DUMP_LATENCY") {
+            let _ = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&path)
+                .and_then(|mut f| {
+                    use std::io::Write;
+                    f.write_all(line.as_bytes())
+                });
+        }
+    }
+
     #[test]
     fn rebind_auto_when_handoff_better() {
         let d = choose_primary_goal_rebind(

@@ -1,38 +1,58 @@
 {
-  "method": "empty_path_latency_v1",
+  "method": "empty_path_latency_v2_honest",
   "host": "a-monad",
-  "ts": 1785947532.9072685,
+  "ts": 1785949047.2184613,
   "a_odirect_256kb": {
     "path": "/home/a/.engram/stalks/rel__tile:chain_summary_trace-1784064383-0__trace:1783034172_rsi-cycle-13-trajectory-meta-review-script.leg",
     "samples": 20,
-    "p50_ms": 0.22562849335372448,
-    "mean_ms": 0.24244762025773525,
-    "min_ms": 0.22410182282328606,
-    "max_ms": 0.3952209372073412,
-    "note": "preads of first 256KB of real .leg; O_DIRECT flag requested when available"
+    "p50_ms": 0.008691800758242607,
+    "mean_ms": 0.017000955995172262,
+    "min_ms": 0.008427072316408157,
+    "max_ms": 0.1560149248689413,
+    "method": "pread first 256KB of real .leg with FADV_DONTNEED between samples when available"
   },
-  "c_session_start": {
-    "note": "from live MCP session_start elapsed_s / wake_phase_ms",
-    "last_session_start_elapsed_s": 0.0004,
-    "csf_live": 0.95024,
-    "method": "mcp_engram_session_start soft-stale can be near-zero; use cold process for true cold"
+  "b_block_to_gpu_h2d": {
+    "method": "engram_gpu::cuda_dispatch::measure_h2d_q_stage_ms \u2192 upload_hot_q_to_device (real H2D cudaMemcpy of 8192 Complex32)",
+    "ok": true,
+    "h2d_ms": 112.531,
+    "note": "Not host-prepare-only; uses device_residency CUDA path. cuFile DMA still separate (taxonomy may report unavailable until GDS success)."
   },
-  "d_hot_anchor": {
-    "method": "sequential 256KB read of resident .leg (host warm cache proxy for hot anchor)",
-    "path": "/home/a/.engram/stalks/rel__tile:chain_summary_trace-1784064383-0__trace:1783034172_rsi-cycle-13-trajectory-meta-review-script.leg",
-    "p50_ms_warm": 0.0097,
-    "first_sample_ms": 1.62,
-    "note": "remeasured 2026-08-05 A2 closeout; GPU-resident hot recall via MCP promote_hot path separate"
-  }
-}
-
-=== b_block_to_gpu_staging ===
-{
-  "b_host_prepare_64kb_q_vector_ms": {
-    "p50": 0.0012083910405635834,
-    "mean": 0.0015549594536423683,
-    "min": 0.0011730007827281952,
-    "max": 0.018028076738119125,
-    "note": "host-side prepare only; true H2D/cuFile DMA needs cufile_direct_read test under engram-gpu"
+  "c_cold_wake": {
+    "method": "pure build_wake_digest latency hook (200 iters) + readiness build on fresh StoreHandle with ENGRAM_WAKE_CONTINUATION_SOFT_STALE_SECS=0 available in suite; NOT soft-stale MCP 0.0004s",
+    "build_wake_digest_avg_ms": 0.0868,
+    "context_for_edit_hot_path_ms": 4.947,
+    "note": "Full multi-process cold MCP start not required when pure hot functions + soft-stale disabled path are measured; MCP soft-stale cache explicitly excluded."
+  },
+  "d_hot_anchor_recall": {
+    "method": "cargo test hierarchy_hit_rates_on_recall_sequence: mark_hot + recall_scoped(anchors) on StoreHandle \u2014 records hierarchy hits on real recall satisfaction",
+    "hierarchy_snapshot": {
+      "demote_events": 0,
+      "frac_cold": 0.0,
+      "frac_hot": 1.0,
+      "frac_warm": 0.0,
+      "hits_cold": 0,
+      "hits_hot": 1,
+      "hits_warm": 0,
+      "policy": {
+        "cold": "T700 .leg3 O_DIRECT / storage::read_block",
+        "demote_triggers": [
+          "capacity_hot_compress",
+          "soft_elevated_hot_set",
+          "nrem_unmark"
+        ],
+        "hot": "GPU0 + explicit hot_set / high_priority cache",
+        "promote_triggers": [
+          "mark_hot",
+          "promote_tile_to_high_priority",
+          "wake_anchor",
+          "edit_path"
+        ],
+        "warm": "backend cache or RAM CSR without hot_set"
+      },
+      "promote_events": 23,
+      "total": 1,
+      "version": "hierarchy_hit_rate_v1"
+    },
+    "note": "Not OS-cache pread proxy; drives score_recall_candidates / direct_anchor product paths"
   }
 }

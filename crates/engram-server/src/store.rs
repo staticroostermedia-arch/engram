@@ -3913,9 +3913,11 @@ impl StoreHandle {
         if !PREFIXES.iter().any(|p| token.starts_with(p)) {
             return None;
         }
+        let tier = self.classify_recall_tier(token);
         let block = self
             .fetch_block_high_priority(token)
             .or_else(|| self.fetch_block(token))?;
+        crate::hierarchy_metrics::record_tier(tier);
         let ego = self.ego_q.as_deref();
         let encoded = self.encode(token);
         let effective_q = if let Ok(geo) = self.geosphere.read() {
@@ -4001,9 +4003,12 @@ impl StoreHandle {
             .iter()
             .filter_map(|name| {
                 let raw = name.split_once("::").map_or(name.as_str(), |(_, r)| r);
+                // Classify tier *before* fetch so cold vs warm is honest (post-fetch may warm cache).
+                let tier = self.classify_recall_tier(name);
                 let block = self
                     .fetch_block_high_priority(name)
                     .or_else(|| self.backend.fetch_block(raw))?;
+                crate::hierarchy_metrics::record_tier(tier);
                 let mut mem =
                     engram_core::backend::score_memory(name.clone(), effective_q, &block, ego);
                 // RSI Cycle 27–28: CRS×α joint — goal α preferred, else incident-edge label α
@@ -7220,6 +7225,9 @@ impl StoreHandle {
         for c in &to_unmark {
             self.unmark_hot(c);
         }
+        if !to_unmark.is_empty() {
+            crate::hierarchy_metrics::record_demote(to_unmark.len() as u64);
+        }
         let after = self.hot_concepts().len();
         serde_json::json!({
             "version": "ub_capacity_compress_v1",
@@ -8099,21 +8107,34 @@ impl StoreHandle {
     }
 
     /// Is this concept currently in the high-priority hot set?
+    /// Pure probe — does **not** record hierarchy hit rates (use [`Self::record_recall_tier`]
+    /// on actual recall satisfaction paths only).
     pub fn is_hot(&self, concept: &str) -> bool {
+        matches!(
+            self.classify_recall_tier(concept),
+            crate::hierarchy_metrics::RecallTier::Hot | crate::hierarchy_metrics::RecallTier::Warm
+        )
+    }
+
+    /// Classify where a block would be satisfied without mutating hit counters.
+    /// Hot = explicit hot_set; Warm = backend high-priority cache; Cold = disk/other.
+    pub fn classify_recall_tier(&self, concept: &str) -> crate::hierarchy_metrics::RecallTier {
         let raw = stalk_raw_concept(concept);
-        // Check both the explicit hot set and the backend cache
         if let Ok(set) = self.hot_set.read() {
             if set.contains(raw) {
-                crate::hierarchy_metrics::record_hot();
-                return true;
+                return crate::hierarchy_metrics::RecallTier::Hot;
             }
         }
         if self.backend.is_hot(raw) {
-            crate::hierarchy_metrics::record_warm();
-            true
+            crate::hierarchy_metrics::RecallTier::Warm
         } else {
-            false
+            crate::hierarchy_metrics::RecallTier::Cold
         }
+    }
+
+    /// Record hierarchy hit for one recall satisfaction (scored candidate delivered).
+    pub fn record_recall_tier(&self, concept: &str) {
+        crate::hierarchy_metrics::record_tier(self.classify_recall_tier(concept));
     }
 
     /// Explicitly mark a concept as "hot" so it prefers the high-priority fast path
@@ -8123,6 +8144,7 @@ impl StoreHandle {
         if let Ok(mut set) = self.hot_set.write() {
             set.insert(raw.to_string());
         }
+        crate::hierarchy_metrics::record_promote();
         // Phase 2.1 geo carry: snapshot current SymplecticState frame at promotion time
         // so NREM contributor logs and hot paths respect the live geosphere under which
         // the artifact (esp. TRAINING/tile/trace) was elevated. Stored in runtime only.
@@ -17249,6 +17271,151 @@ mod praxis_contract_hard_tests {
             res.message
         );
         std::env::remove_var("ENGRAM_PRAXIS_CONTRACT");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+/// Local-primary critical path: hierarchy hits, readiness honesty, A1 latency hooks.
+#[cfg(test)]
+mod local_primary_critical_path_tests {
+    use super::*;
+
+    fn tmp_dir(suffix: &str) -> String {
+        std::env::set_var("ENGRAM_DISABLE_SHEAF", "1");
+        std::env::set_var("ENGRAM_FORCE_CPU_BACKEND", "1");
+        std::env::set_var("ENGRAM_KI_DISABLE", "1");
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let d = format!("/tmp/engram-lp-{}-{}-{}", std::process::id(), nanos, suffix);
+        std::fs::create_dir_all(&d).ok();
+        d
+    }
+
+    /// Wave B: real recall sequence records hot/warm/cold hierarchy hits (not is_hot probes).
+    #[test]
+    fn hierarchy_hit_rates_on_recall_sequence() {
+        let dir = tmp_dir("hierarchy_recall_seq");
+        let mut store = StoreHandle::new(&dir);
+        store
+            .remember(
+                "goal:hierarchy_test_v1",
+                "GOAL BLOCK\n\n**goal_statement:** hierarchy hit test\n**status:** active\n",
+            )
+            .unwrap();
+        store
+            .remember(
+                "trace:hierarchy_test_coldish",
+                "REASONING TRACE\n\n**decision_point:** cold path probe\n",
+            )
+            .unwrap();
+        store.mark_hot("goal:hierarchy_test_v1");
+        let before = crate::hierarchy_metrics::snapshot();
+        let b_total = before["total"].as_u64().unwrap_or(0);
+        let (hits, _) = store.recall_scoped("goal:hierarchy_test_v1", 4, Some("anchors"));
+        assert!(!hits.is_empty(), "expected recall hits");
+        let after = crate::hierarchy_metrics::snapshot();
+        let a_total = after["total"].as_u64().unwrap_or(0);
+        assert!(
+            a_total > b_total,
+            "recall sequence must increment hierarchy hits: before={before} after={after}"
+        );
+        assert!(after["frac_hot"].is_number() || after["frac_warm"].is_number());
+        assert!(after["promote_events"].as_u64().unwrap_or(0) >= 1);
+        if let Ok(path) = std::env::var("ENGRAM_DUMP_HIT_RATES") {
+            let _ = std::fs::write(
+                &path,
+                serde_json::to_string_pretty(&after).unwrap_or_default(),
+            );
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Wave C3: readiness includes path-reason taxonomy + hierarchy + local_ipc fields.
+    #[test]
+    fn readiness_includes_local_primary_fields() {
+        let dir = tmp_dir("readiness_local_primary");
+        let store = StoreHandle::new(&dir);
+        let r = store.backend_readiness();
+        assert!(
+            r.get("cufile_path_reason").is_some(),
+            "cufile_path_reason required for C3 honesty: {r}"
+        );
+        assert_ne!(
+            r.get("cufile_path_reason").and_then(|v| v.as_str()),
+            Some("unavailable"),
+            "path_reason must be structured enum, not vague unavailable alone"
+        );
+        assert!(r.get("hierarchy_hit_rates").is_some());
+        assert_eq!(
+            r.get("hierarchy_gpu0_role").and_then(|v| v.as_str()),
+            Some("hot_agent_resident")
+        );
+        assert_eq!(
+            r.get("hierarchy_gpu1_role").and_then(|v| v.as_str()),
+            Some("compute_bvh_batch_nrem")
+        );
+        assert_eq!(r.get("local_ipc_v1").and_then(|v| v.as_bool()), Some(true));
+        if let Ok(path) = std::env::var("ENGRAM_DUMP_READINESS") {
+            let _ = std::fs::write(&path, serde_json::to_string_pretty(&r).unwrap_or_default());
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Dump readiness from default backend (no FORCE_CPU) for a-monad evidence capture.
+    #[test]
+    fn readiness_dump_native_backend_for_evidence() {
+        if std::env::var("ENGRAM_DUMP_READINESS_NATIVE").is_err() {
+            return;
+        }
+        // Do not force CPU — capture real cuda/cufile labels on a-monad.
+        std::env::remove_var("ENGRAM_FORCE_CPU_BACKEND");
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = format!("/tmp/engram-lp-native-{}-{}", std::process::id(), nanos);
+        std::fs::create_dir_all(&dir).ok();
+        let store = StoreHandle::new(&dir);
+        let r = store.backend_readiness();
+        let path = std::env::var("ENGRAM_DUMP_READINESS_NATIVE").unwrap();
+        std::fs::write(&path, serde_json::to_string_pretty(&r).unwrap_or_default())
+            .expect("write readiness dump");
+        assert!(r.get("cufile_path_reason").is_some());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Wave A1: context_for_edit hot path is timed and returns without unbounded work on empty file.
+    #[test]
+    fn context_for_edit_hot_path_latency_hook() {
+        let dir = tmp_dir("ctx_edit_latency");
+        let mut store = StoreHandle::new(&dir);
+        let path = std::path::Path::new(&dir).join("sample.rs");
+        std::fs::write(&path, "fn main() {}\n").unwrap();
+        let t0 = std::time::Instant::now();
+        let v = store.context_for_edit(path.to_str().unwrap(), None, None, false);
+        let ms = t0.elapsed().as_secs_f64() * 1000.0;
+        assert!(
+            v.is_object() || v.is_array() || !v.is_null(),
+            "context_for_edit must return JSON"
+        );
+        assert!(
+            ms < 30_000.0,
+            "context_for_edit empty path took {ms:.1}ms — suspected unbounded work"
+        );
+        let line = format!("context_for_edit_hot_path_ms={ms:.3}\n");
+        eprint!("{line}");
+        if let Ok(path) = std::env::var("ENGRAM_DUMP_LATENCY") {
+            let _ = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&path)
+                .and_then(|mut f| {
+                    use std::io::Write;
+                    f.write_all(line.as_bytes())
+                });
+        }
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
