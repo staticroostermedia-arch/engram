@@ -19,18 +19,26 @@ def main() -> None:
         raise SystemExit(f"missing pack manifest: {manifest_path}")
     manifest = json.loads(manifest_path.read_text())
     pack_hash = manifest.get("pack_hash", "unknown")
-    # Dry-run metrics: structural checks only
-    ok = manifest.get("schema_version") == "experience_pack_v1"
+    concept_count = int(manifest.get("concept_count") or 0)
+    # Dry-run metrics: structural checks only — non-empty curated pack required
+    ok = (
+        manifest.get("schema_version") == "experience_pack_v1"
+        and bool(pack_hash)
+        and pack_hash != "unknown"
+        and concept_count >= 1
+    )
     receipt = {
         "schema": "lora_improvement_receipt_v1",
         "pack_hash": pack_hash,
+        "pack_path": str(args.pack.resolve()),
+        "concept_count": concept_count,
         "adapter_id": "dry_run",
         "before": {"csf_median": 0.94, "harness_pass": True},
         "after": {"csf_median": 0.94, "harness_pass": ok},
         "decision": "scar" if not ok else "hold_for_human",
         "reason": "dry_run only — no weight update; pipeline structural pass"
         if ok
-        else "pack schema invalid",
+        else "pack schema invalid or empty (concept_count < 1)",
         "created_at": int(time.time()),
         "eval_harness": [
             "agent-memory",
