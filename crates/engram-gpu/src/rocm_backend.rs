@@ -10,9 +10,9 @@
 //! `CpuBackend` for O_DIRECT NVMe I/O.
 
 use crate::bvh::BvhManifold;
+use anyhow::Result;
 use engram_core::backend::{CpuBackend, Memory, VsaBackend};
 use engram_core::types::Leg3Pointer;
-use anyhow::Result;
 use std::path::{Path, PathBuf};
 use std::sync::RwLock;
 
@@ -25,9 +25,8 @@ pub struct RocmBackend {
 
 impl RocmBackend {
     pub fn new(path: impl AsRef<Path>) -> Self {
-        let path_str = shellexpand::tilde(
-            path.as_ref().to_str().unwrap_or("~/.engram/manifold")
-        ).into_owned();
+        let path_str =
+            shellexpand::tilde(path.as_ref().to_str().unwrap_or("~/.engram/manifold")).into_owned();
         std::fs::create_dir_all(&path_str).ok();
 
         let gpu_available = Self::probe_rocm();
@@ -57,11 +56,11 @@ impl RocmBackend {
                         lib_name.as_ptr() as *const libc::c_char,
                         libc::RTLD_NOW | libc::RTLD_LOCAL,
                     );
-                    if lib.is_null() { continue; }
-                    let sym = libc::dlsym(
-                        lib,
-                        b"hipGetDeviceCount\0".as_ptr() as *const libc::c_char,
-                    );
+                    if lib.is_null() {
+                        continue;
+                    }
+                    let sym =
+                        libc::dlsym(lib, b"hipGetDeviceCount\0".as_ptr() as *const libc::c_char);
                     if sym.is_null() {
                         libc::dlclose(lib);
                         continue;
@@ -70,13 +69,17 @@ impl RocmBackend {
                     let mut count: i32 = 0;
                     let rc = get_count(&mut count);
                     libc::dlclose(lib);
-                    if rc == 0 && count > 0 { return true; }
+                    if rc == 0 && count > 0 {
+                        return true;
+                    }
                 }
             }
             false
         }
         #[cfg(not(target_os = "linux"))]
-        { false }
+        {
+            false
+        }
     }
 
     pub fn rebuild_bvh(&self) {
@@ -88,12 +91,49 @@ impl RocmBackend {
 
     fn ensure_bvh(&self) {
         if let Ok(guard) = self.bvh.read() {
-            if guard.is_some() { return; }
+            if guard.is_some() {
+                return;
+            }
         }
         self.rebuild_bvh();
     }
 
-    pub fn gpu_available(&self) -> bool { self.gpu_available }
+    pub fn gpu_available(&self) -> bool {
+        self.gpu_available
+    }
+
+    /// Whether HIP kernel FFI dispatch for query is shipped (Phase 10).
+    ///
+    /// Today: always `false` — query uses CPU BVH even when `gpu_available`.
+    /// Residual: `goal:residual_rocm_hip_dispatch` until HIP→Rust FFI lands.
+    pub fn hip_query_dispatch_shipped() -> bool {
+        false
+    }
+}
+
+#[cfg(test)]
+mod residual_tests {
+    use super::RocmBackend;
+
+    /// Honest baseline: HIP FFI not claimed shipped.
+    #[test]
+    fn rocm_hip_dispatch_honest_baseline() {
+        assert!(
+            !RocmBackend::hip_query_dispatch_shipped(),
+            "do not claim HIP dispatch shipped until Phase 10 FFI lands"
+        );
+    }
+
+    /// Residual failer (ignored in default CI). Un-ignore under
+    /// `goal:residual_rocm_hip_dispatch` — fails until HIP query dispatch ships.
+    #[test]
+    #[ignore = "residual goal:residual_rocm_hip_dispatch — un-ignore to fail until HIP FFI query dispatch ships"]
+    fn residual_rocm_hip_query_dispatch_shipped() {
+        assert!(
+            RocmBackend::hip_query_dispatch_shipped(),
+            "residual: ROCm HIP query dispatch (Phase 10) not shipped"
+        );
+    }
 }
 
 impl VsaBackend for RocmBackend {
@@ -110,7 +150,9 @@ impl VsaBackend for RocmBackend {
     }
 
     fn query(&self, q: &[engram_core::Complex32; 8192], k: usize) -> Vec<Memory> {
-        if self.gpu_available { self.ensure_bvh(); }
+        if self.gpu_available {
+            self.ensure_bvh();
+        }
 
         // BVH O(log N) path — backend-agnostic, runs on CPU tree
         if let Ok(guard) = self.bvh.read() {

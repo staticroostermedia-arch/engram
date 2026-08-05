@@ -11191,8 +11191,9 @@ impl StoreHandle {
     }
 
     /// Invoke an executable Praxis Protocol (Item 3 **experimental** vertical slice).
-    /// Performs the full 7-point verification gate, then returns `stub_dispatch`
-    /// (no real protocol side effects). Not a product automation surface.
+    /// Performs the full 7-point verification gate, then `execute_protocol_dispatch`
+    /// (load `processes/*.toml`, bind tools, emit receipt). Not a full product
+    /// automation surface (tools are bound/declared, not live-executed as MCP graph).
     pub fn invoke_protocol(
         &mut self,
         key: &str,

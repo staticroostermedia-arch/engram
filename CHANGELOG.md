@@ -36,6 +36,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Unreleased
 
 ### Added
+- **CSF residual closeout:** 10-wake live cold-start fidelity series (median 0.951923 ≥ 0.90); evidence under `docs/evidence/csf-median-proof-2026-08-04.txt`; plan `docs/plans/cognitive-csf-residual-closeout-v1.md`.
+- **BlockTier honesty API:** `physical_byte_size` / `has_shipped_physical_layout` (Std only shipped); residual `#[ignore]` failer for Small/Large physical layouts.
+- **ROCm honesty API:** `RocmBackend::hip_query_dispatch_shipped()` (false until Phase 10); residual `#[ignore]` failer.
 - **Hybrid wire HBRD2 full fidelity** decode/encode (q/p/CRS/schema/footer/payload roundtrip).
 - **Linguistic real extract** (`extract_linguistic_bundle` parses linguistic/v1 JSON).
 - **Multi-slot Merkle chain advance** on update/scar (`advance_merkle_chain_slots`); relation re-seal after endpoint update.

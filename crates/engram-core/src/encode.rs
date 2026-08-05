@@ -327,7 +327,7 @@ pub fn mint_tiered(text: &str, tier: BlockTier) -> Leg3Pointer {
     let mut block = from_text(text); // gets v1 defaults + std
     let base_ver = block.schema_ver & 0x00FFFFFF;
     block.schema_ver = ((tier as u32) << 24) | base_ver;
-    // storage/encode consumers can dispatch on block.tier() for size hints (logical; physical still 256k default)
+    // Logical tier tag only — see BlockTier::has_shipped_physical_layout / residual_block_tier_physical
     block
 }
 
