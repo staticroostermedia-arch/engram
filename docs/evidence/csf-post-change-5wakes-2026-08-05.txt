@@ -1,10 +1,10 @@
 wake,score,ts_unix,source
-1,0.9502403736114502,1785947400,live_mcp_cold_start_fidelity_or_session_start
-2,0.9558653235435486,1785947803,live_mcp_cold_start_fidelity_or_session_start
-3,0.9480769038200378,1785947841,live_mcp_cold_start_fidelity_or_session_start
-4,0.9539903998374939,1785947850,live_mcp_cold_start_fidelity_or_session_start
-5,0.945192277431488,1785947855,live_mcp_cold_start_fidelity_or_session_start
-median=0.9502403736114502
+1,0.9558653235435486,1785947803,live_mcp_cold_start_fidelity
+2,0.9480769038200378,1785947841,live_mcp_cold_start_fidelity
+3,0.9539903998374939,1785947850,live_mcp_cold_start_fidelity
+4,0.945192277431488,1785947855,live_mcp_cold_start_fidelity
+5,0.945168673992157,1785948348,live_mcp_cold_start_fidelity
+median=0.9480769038200378
 unique_scores=5
 unique_ts=5
 PASS_MEDIAN_GE_0.90=True

@@ -2029,9 +2029,14 @@ fn build_suggested_actions_ultra_lean(
             rehydrate_reason,
         ));
     }
-    // Priority 0: capacity NREM compress dry_run then apply when soft/hard elevated (UB22/24).
+    // Capacity NREM compress when soft/hard elevated (UB22/24).
+    // Wave A3 (agent cognitive bias): soft_elevated pins dry_run only at p0 and demotes
+    // apply to p2 so recall/quick_trace/context_for_edit fit the top of the queue;
+    // hard elevated_hot_set keeps dry_run+apply at p0 (real capacity risk).
     if let Some(cp) = capacity_compress_path {
         let overshoot = cp.get("overshoot").and_then(|v| v.as_u64()).unwrap_or(0);
+        let risk = cp.get("risk").and_then(|v| v.as_str()).unwrap_or("");
+        let hard_capacity = risk == "elevated_hot_set";
         if let Some(args) = capacity_compress_wake_dry_run_args(cp) {
             push_action(
                 &mut actions,
@@ -2043,16 +2048,61 @@ fn build_suggested_actions_ultra_lean(
                 0,
             );
         }
-        // UB24: execute path — apply after dry_run so queue drains residency without inventing apply.
         if let Some(args) = capacity_compress_wake_apply_args(cp) {
+            let apply_pri = if hard_capacity { 0 } else { 2 };
             push_action(
                 &mut actions,
                 "mcp_engram_apply_capacity_hot_compress",
                 args,
                 &format!(
-                    "capacity soft/hard elevated (overshoot={overshoot}) — apply capped hot compress (ub_capacity_compress_execute_path)"
+                    "capacity soft/hard elevated (overshoot={overshoot}) — apply capped hot compress (ub_capacity_compress_execute_path){}",
+                    if hard_capacity {
+                        ""
+                    } else {
+                        "; soft-elevated demoted so cognitive tools stay top-of-queue (a3_cognitive_bias)"
+                    }
                 ),
+                apply_pri,
+            );
+        }
+    }
+    // Wave A3: agent-profile cognitive pins — prefer anchors / fork discipline over
+    // capacity churn and generic read_concept when capacity risk is not hard.
+    {
+        let agent = crate::profile::current_profile_name() == "agent"
+            || std::env::var("ENGRAM_PROFILE")
+                .map(|p| p.eq_ignore_ascii_case("agent"))
+                .unwrap_or(false);
+        if agent {
+            let q = primary_goal
+                .filter(|g| !g.is_empty())
+                .or(session_intent.filter(|s| !s.is_empty()))
+                .unwrap_or("ritual: OR goal: OR trace:");
+            push_action(
+                &mut actions,
+                "mcp_engram_recall",
+                json!({ "query": q, "scope": "anchors", "k": 8 }),
+                "agent cognitive bias — anchor recall before capacity churn / broad episodic (a3_cognitive_bias)",
                 0,
+            );
+            // JIT constructs: path / decision filled from current edit context.
+            push_jit_action(
+                &mut actions,
+                "mcp_engram_context_for_edit",
+                json!({ "path": "<absolute path under edit>" }),
+                "agent cognitive bias — pre-edit atlas before substrate edits (a3_cognitive_bias)",
+                1,
+                true,
+                Some("when editing crates/, processes/, docs/"),
+            );
+            push_jit_action(
+                &mut actions,
+                "mcp_engram_quick_trace",
+                json!({ "decision": "<fork>", "why": "<justify>" }),
+                "agent cognitive bias — quick_trace at design forks (a3_cognitive_bias)",
+                1,
+                true,
+                Some("at significant design/edit forks"),
             );
         }
     }
@@ -3348,7 +3398,7 @@ SESSION HANDOFF PACKET v1 (structured JSON for next-wake read_concept)
         let small = json!({ "suggested": true, "overshoot": 12 });
         let args2 = capacity_compress_wake_dry_run_args(&small).unwrap();
         assert_eq!(args2["max_unmark"], 12);
-        // Queue pin when path suggested: dry_run then apply.
+        // Soft elevated: dry_run at p0 + apply demoted (A3 cognitive bias).
         let actions = build_suggested_actions_ultra_lean(
             None,
             Some("goal:engram_ultimate_backend_v1"),
@@ -3376,8 +3426,9 @@ SESSION HANDOFF PACKET v1 (structured JSON for next-wake read_concept)
                     .and_then(|x| x.get("dry_run"))
                     .and_then(|d| d.as_bool())
                     == Some(true)
+                    && a.get("priority").and_then(|p| p.as_u64()) == Some(0)
             }),
-            "expected dry_run pin"
+            "expected dry_run pin at priority 0"
         );
         assert!(
             compress_actions.iter().any(|a| {
@@ -3389,8 +3440,37 @@ SESSION HANDOFF PACKET v1 (structured JSON for next-wake read_concept)
                         .and_then(|r| r.as_str())
                         .unwrap_or("")
                         .contains("ub_capacity_compress_execute_path")
+                    && a.get("priority").and_then(|p| p.as_u64()) == Some(2)
             }),
-            "expected apply execute pin: {actions:?}"
+            "soft elevated: apply demoted to p2 (a3_cognitive_bias): {actions:?}"
+        );
+        // Hard elevated: apply stays p0.
+        let hard = json!({
+            "suggested": true,
+            "overshoot": 300,
+            "risk": "elevated_hot_set",
+        });
+        let hard_actions = build_suggested_actions_ultra_lean(
+            None,
+            Some("goal:engram_ultimate_backend_v1"),
+            None,
+            false,
+            "",
+            None,
+            None,
+            Some(&hard),
+        );
+        assert!(
+            hard_actions.iter().any(|a| {
+                a.get("tool").and_then(|t| t.as_str())
+                    == Some("mcp_engram_apply_capacity_hot_compress")
+                    && a.get("args")
+                        .and_then(|x| x.get("dry_run"))
+                        .and_then(|d| d.as_bool())
+                        == Some(false)
+                    && a.get("priority").and_then(|p| p.as_u64()) == Some(0)
+            }),
+            "hard elevated: apply at p0: {hard_actions:?}"
         );
         // Nominal path → no compress action.
         let bare = build_suggested_actions_ultra_lean(
@@ -3438,6 +3518,65 @@ SESSION HANDOFF PACKET v1 (structured JSON for next-wake read_concept)
             Some(true)
         );
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Wave A3: agent profile pins recall + context_for_edit + quick_trace over capacity churn.
+    #[test]
+    fn a3_agent_cognitive_bias_pins_in_ultra_lean_queue() {
+        std::env::set_var("ENGRAM_PROFILE", "agent");
+        let soft = json!({
+            "suggested": true,
+            "overshoot": 100,
+            "risk": "soft_elevated_hot_set",
+        });
+        let actions = build_suggested_actions_ultra_lean(
+            None,
+            Some("goal:engram_local_primary_critical_path_v1"),
+            Some("finish critical path"),
+            false,
+            "",
+            None,
+            None,
+            Some(&soft),
+        );
+        let tools: Vec<&str> = actions
+            .iter()
+            .filter_map(|a| a.get("tool").and_then(|t| t.as_str()))
+            .collect();
+        assert!(
+            tools.iter().any(|t| *t == "mcp_engram_recall"),
+            "expected anchor recall pin: {tools:?}"
+        );
+        assert!(
+            tools
+                .iter()
+                .any(|t| *t == "mcp_engram_context_for_edit" || *t == "mcp_engram_quick_trace"),
+            "expected cognitive edit/trace pin: {tools:?}"
+        );
+        // Top priority (0) tools should include recall and dry_run compress, not only apply.
+        let p0: Vec<&str> = actions
+            .iter()
+            .filter(|a| a.get("priority").and_then(|p| p.as_u64()) == Some(0))
+            .filter_map(|a| a.get("tool").and_then(|t| t.as_str()))
+            .collect();
+        assert!(
+            p0.contains(&"mcp_engram_recall"),
+            "recall should be priority 0 under agent soft elevated: {p0:?}"
+        );
+        // Apply must not monopolize p0 under soft elevated.
+        let apply_at_p0 = actions.iter().any(|a| {
+            a.get("tool").and_then(|t| t.as_str()) == Some("mcp_engram_apply_capacity_hot_compress")
+                && a.get("args")
+                    .and_then(|x| x.get("dry_run"))
+                    .and_then(|d| d.as_bool())
+                    == Some(false)
+                && a.get("priority").and_then(|p| p.as_u64()) == Some(0)
+        });
+        assert!(
+            !apply_at_p0,
+            "soft elevated apply must not sit at p0: {actions:?}"
+        );
+        std::env::remove_var("ENGRAM_PROFILE");
     }
 
     /// MQ Cycle 29: ultra-lean queue includes first lean scar pin (no BVH).

@@ -47,6 +47,7 @@ mod lawfulness;
 mod leg_corpus;
 mod lexicon;
 mod linguistic_reference_frame;
+mod local_ipc;
 mod local_stratum;
 mod mcp;
 mod mcp_lock;

@@ -69,6 +69,8 @@ When status is `implemented`, named tests should exist in-repo. Prefer **softeni
 | ROCm HIP query dispatch (Phase 10) | engram-gpu rocm_backend | partial / parked (no AMD on a-monad) | probe + CPU BVH; `hip_query_dispatch_shipped()==false` | `rocm_hip_dispatch_honest_baseline` | AMD-only when hardware present; not exercised on a-monad |
 | cuFile transfer path taxonomy | engram-gpu cufile | implemented (reason enum) | `cufile_path_reason` + readiness fields; DMA only if success | `cufile_path_reason_hot_not_requested`; transfer_path labels | Vague `unavailable` alone replaced by structured reason |
 | Hierarchy OS dual-GPU + hit rates | readiness | partial (labels + counters) | hierarchy_gpu0/1_role, hierarchy_hit_rates | `hierarchy_hit_rate_increments` | Policy documented; promote/demote still capacity-path driven |
+| Local large-payload IPC (mmap/UDS) | local_ipc.rs | implemented | path-token + LegView mmap; UDS one-shot token | `mmap_leg_preview_returns_token_not_full_body`; `uds_path_token_roundtrip` | Prefer tokens over multi-MB JSON on-box |
+| Agent suggested_actions cognitive bias | harness_injection ultra-lean | implemented | soft_elevated: dry_run p0, apply p2; agent pins recall/context_for_edit/quick_trace | `a3_agent_cognitive_bias_pins_in_ultra_lean_queue` | Hard elevated_hot_set still dry_run+apply at p0 |
 | OptiX RT-core product path on CI | engram-gpu OptiX | partial / aspirational on CI | local OptiX builds only | feature-gated local tests | Standard CI has no OptiX; capability-gated claim |
 
 ## Source index (files scanned this pass)

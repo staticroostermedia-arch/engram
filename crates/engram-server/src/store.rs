@@ -3213,6 +3213,12 @@ impl StoreHandle {
             "hierarchy_hit_rates".into(),
             crate::hierarchy_metrics::snapshot(),
         );
+        // Wave A2: local large-payload IPC (mmap + UDS path tokens).
+        if let Some(map) = crate::local_ipc::readiness_fields().as_object() {
+            for (k, v) in map {
+                obj.insert(k.clone(), v.clone());
+            }
+        }
         obj.insert(
             "cufile_hot_ready".into(),
             serde_json::json!(self.backend_cufile_hot_ready()),

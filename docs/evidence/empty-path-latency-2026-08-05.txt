@@ -18,7 +18,11 @@
     "method": "mcp_engram_session_start soft-stale can be near-zero; use cold process for true cold"
   },
   "d_hot_anchor": {
-    "note": "hot recall measured via MCP in post-change series; placeholder for suite structure"
+    "method": "sequential 256KB read of resident .leg (host warm cache proxy for hot anchor)",
+    "path": "/home/a/.engram/stalks/rel__tile:chain_summary_trace-1784064383-0__trace:1783034172_rsi-cycle-13-trajectory-meta-review-script.leg",
+    "p50_ms_warm": 0.0097,
+    "first_sample_ms": 1.62,
+    "note": "remeasured 2026-08-05 A2 closeout; GPU-resident hot recall via MCP promote_hot path separate"
   }
 }
 
