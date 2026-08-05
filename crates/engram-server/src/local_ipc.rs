@@ -31,6 +31,8 @@ pub fn path_token(path: impl AsRef<Path>, offset: u64, len: u64) -> Value {
 
 /// Open a 256KB `.leg` via mmap and return (token, first_n_bytes_preview).
 /// Preview is capped so callers never serialize full blocks as JSON.
+/// Public transport API (unit tests + future MCP large-payload tool).
+#[allow(dead_code)] // readiness uses path_token; full mmap path exercised in tests
 pub fn mmap_leg_preview(
     path: impl AsRef<Path>,
     preview_len: usize,
@@ -46,6 +48,8 @@ pub fn mmap_leg_preview(
 
 /// Serve one path-token response over a Unix domain socket, then exit.
 /// Client connects, reads one JSON line, disconnects.
+/// Public transport API (unit tests + future MCP large-payload tool).
+#[allow(dead_code)]
 pub fn serve_path_token_once(
     sock_path: impl AsRef<Path>,
     token: &Value,
@@ -70,6 +74,8 @@ pub fn serve_path_token_once(
 }
 
 /// Client: connect to UDS, read one JSON line path token.
+/// Public transport API (unit tests + future MCP large-payload tool).
+#[allow(dead_code)]
 pub fn fetch_path_token(sock_path: impl AsRef<Path>) -> std::io::Result<Value> {
     let mut stream = UnixStream::connect(sock_path.as_ref())?;
     stream.set_read_timeout(Some(Duration::from_secs(2)))?;
@@ -86,14 +92,19 @@ pub fn fetch_path_token(sock_path: impl AsRef<Path>) -> std::io::Result<Value> {
 
 /// Readiness / docs snippet: large-payload transport is available.
 pub fn readiness_fields() -> Value {
+    // Keep path_token + LOCAL_IPC_V1 live on the non-test binary path (clippy -D dead-code).
+    let schema_example = path_token(Path::new("<path.leg>"), 0, 262_144);
     json!({
         "local_ipc_v1": true,
+        "local_ipc_version": LOCAL_IPC_V1,
         "local_ipc_transports": ["mmap_leg_view", "uds_path_token"],
+        "local_ipc_path_token_schema": schema_example,
         "local_ipc_note": "prefer path tokens + LegView mmap over multi-MB JSON for on-box geometric payloads",
     })
 }
 
 /// Temp sock path helper for tests / one-shot servers.
+#[allow(dead_code)]
 pub fn temp_sock_path(label: &str) -> PathBuf {
     std::env::temp_dir().join(format!(
         "engram_local_ipc_{label}_{}_{}.sock",
