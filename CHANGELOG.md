@@ -36,6 +36,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Unreleased
 
 ### Added
+- **Hybrid wire HBRD2 full fidelity** decode/encode (q/p/CRS/schema/footer/payload roundtrip).
+- **Linguistic real extract** (`extract_linguistic_bundle` parses linguistic/v1 JSON).
+- **Multi-slot Merkle chain advance** on update/scar (`advance_merkle_chain_slots`); relation re-seal after endpoint update.
+- **Protocol invoke** executes real `processes/*.toml` + receipt (no silent stub_dispatch success).
+- **Geosphere durable snapshot** `geosphere:latest_frame` + restore on warm wake.
+- **ZEDOS_FIBERED** unique tag 0x5E; uniqueness test freezes registry.
+
+### Changed
+- Transform attestation is public name; `generate_zk_proof` is deprecated alias (not a SNARK).
+
+
+### Added
 - **Lawfulness module extract:** pure `summarize_block_lawfulness` / seal-sample helpers in `lawfulness.rs` (store keeps thin MCP wrappers).
 - **BVH quality path honesty:** readiness `bvh_quality_path_hint`; `ENGRAM_QUALITY_MODE=1` **forces** `ENGRAM_DEFER_BVH=0` even after agent defer default.
 

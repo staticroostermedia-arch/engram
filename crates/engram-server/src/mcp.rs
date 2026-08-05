@@ -2668,7 +2668,8 @@ fn spatial_warning_suffix(warning: Option<String>) -> String {
     warning.map(|w| format!(" | ⚠ {w}")).unwrap_or_default()
 }
 
-/// Soft fork-scoping hint for significant traces (lean/agent — never blocks).
+/// Fork-scoping for significant traces. Soft: warn suffix. Hard (agent default): empty suffix
+/// but callers use [`triadic_fork_blocks`] to reject the tool call.
 fn triadic_fork_suffix(
     goal_ctx: &str,
     spatial_ctx: &str,
@@ -2691,9 +2692,38 @@ fn triadic_fork_suffix(
         reconcile,
         false,
     ) {
+        Some(_) if crate::continuity_spikes::triadic_fork_hard_enabled() => String::new(),
         Some(w) => format!(" | ⚠ {w}"),
         None => String::new(),
     }
+}
+
+/// When agent `ENGRAM_TRIADIC_FORK=hard`, significant forks without A/D/R are errors.
+fn triadic_fork_blocks(
+    goal_ctx: &str,
+    spatial_ctx: &str,
+    process_ctx: &str,
+    alternatives: &str,
+    affirm: &str,
+    deny: &str,
+    reconcile: &str,
+) -> Option<String> {
+    if !crate::continuity_spikes::triadic_fork_hard_enabled() {
+        return None;
+    }
+    let significant = crate::continuity_spikes::is_significant_fork(
+        goal_ctx,
+        spatial_ctx,
+        process_ctx,
+        alternatives,
+    );
+    crate::continuity_spikes::triadic_compliance_warning(
+        significant,
+        affirm,
+        deny,
+        reconcile,
+        false,
+    )
 }
 
 fn sentinel_turn_suffix(
@@ -5562,6 +5592,20 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
 
             let (goal_ctx, auto_linked_to_primary, auto_linked_from_recent) =
                 resolve_goal_context_and_link(&mut lock, goal_ctx);
+            if let Some(err) = triadic_fork_blocks(
+                &goal_ctx_input,
+                &spatial_ctx,
+                &ritual_ctx,
+                &alternatives,
+                &affirm,
+                &deny,
+                &reconcile,
+            ) {
+                return json!({
+                    "content": [{ "type": "text", "text": format!("Error: {err}") }],
+                    "isError": true
+                });
+            }
             let fork_hint = triadic_fork_suffix(
                 &goal_ctx_input,
                 &spatial_ctx,
@@ -5844,6 +5888,20 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
 
             let (goal_ctx, auto_linked_to_primary, auto_linked_from_recent) =
                 resolve_goal_context_and_link(&mut lock, goal_ctx);
+            if let Some(err) = triadic_fork_blocks(
+                &goal_ctx_input,
+                &spatial_ctx,
+                &process_context,
+                &alternatives,
+                &affirm,
+                &deny,
+                &reconcile,
+            ) {
+                return json!({
+                    "content": [{ "type": "text", "text": format!("Error: {err}") }],
+                    "isError": true
+                });
+            }
             let fork_hint = triadic_fork_suffix(
                 &goal_ctx_input,
                 &spatial_ctx,
@@ -11639,6 +11697,8 @@ list = ["unit_hypersphere_unchanged"]
                 "NOTE session_start_1: pre-handoff fresh — no structured_handoff or rehydration_manifest keys\n",
             );
 
+            // Soft-hint path: force soft even if agent profile defaulted hard.
+            std::env::set_var("ENGRAM_TRIADIC_FORK", "soft");
             let sig_args = json!({
                 "decision": "significant fork without triad",
                 "why": "verify soft hint only",
@@ -11656,6 +11716,16 @@ list = ["unit_hypersphere_unchanged"]
                 sig_text.contains("significant_fork_soft_hint"),
                 "significant fork must soft-hint: {sig_text}"
             );
+            // Hard path: incomplete triad is an error under ENGRAM_TRIADIC_FORK=hard.
+            std::env::set_var("ENGRAM_TRIADIC_FORK", "hard");
+            let hard_fork = handle_tool_on_big_stack("mcp_engram_quick_trace", &sig_args, &store);
+            let hard_text = mcp_text(&hard_fork);
+            assert!(
+                hard_text.contains("significant_fork_hard")
+                    || hard_fork.get("isError").and_then(|v| v.as_bool()) == Some(true),
+                "hard triadic must reject incomplete fork: {hard_text}"
+            );
+            std::env::set_var("ENGRAM_TRIADIC_FORK", "soft");
 
             let routine_args = json!({
                 "decision": "routine trace",

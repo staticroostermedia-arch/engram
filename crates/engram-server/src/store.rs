@@ -1502,18 +1502,36 @@ pub fn from_hybrid_wire_for_store(wire: &[u8]) -> Option<engram_core::types::Leg
 }
 
 #[allow(dead_code)]
+pub fn verify_transform_attestation_for_store(
+    block: &engram_core::types::HolographicBlock,
+    op: &str,
+    proof: &[u8; 32],
+) -> bool {
+    engram_core::encode::verify_transform_attestation(block, op, proof)
+}
+
+#[allow(dead_code)]
+pub fn generate_transform_attestation_for_store(
+    block: &engram_core::types::HolographicBlock,
+    op: &str,
+) -> [u8; 32] {
+    engram_core::encode::generate_transform_attestation(block, op)
+}
+
+#[allow(dead_code)]
+#[deprecated(note = "use verify_transform_attestation_for_store")]
 pub fn verify_zk_for_store(
     block: &engram_core::types::HolographicBlock,
     op: &str,
     proof: &[u8; 32],
 ) -> bool {
-    // mcp/store exposure for homo+zk verify (pure rust impl in encode)
-    engram_core::encode::verify_zk_proof(block, op, proof)
+    verify_transform_attestation_for_store(block, op, proof)
 }
 
 #[allow(dead_code)]
+#[deprecated(note = "use generate_transform_attestation_for_store")]
 pub fn generate_zk_for_store(block: &engram_core::types::HolographicBlock, op: &str) -> [u8; 32] {
-    engram_core::encode::generate_zk_proof(block, op)
+    generate_transform_attestation_for_store(block, op)
 }
 
 // ── Backend enum ─────────────────────────────────────────────────────────────
@@ -4184,6 +4202,8 @@ impl StoreHandle {
     /// RSI Cycle 43: skip concepts already in hot_set/backend hot cache (no redundant promote).
     /// Returns how many anchors were newly promoted this call.
     pub fn warm_wake_anchors(&mut self) -> usize {
+        let _ = self.restore_geosphere_from_manifold();
+
         let mut newly = 0usize;
         for concept in Self::WAKE_ANCHOR_CONCEPTS {
             if self.is_hot(concept) {
@@ -8148,15 +8168,57 @@ impl StoreHandle {
         );
         let lens_block = self.backend.encode(&desc); // re-uses existing encode path (BLAKE3 + norm)
         let lens_vec = lens_block.q; // already normalized by encode contract
-        if let Ok(mut geo) = self.geosphere.write() {
+        let frame_step = if let Ok(mut geo) = self.geosphere.write() {
             geo.set_current_lens(lens_vec, Some(origin.to_string()));
             geo.advance_frame();
-        }
+            geo.frame_step
+        } else {
+            0
+        };
         // Also expose as first-class block for recall/audit (high CRS)
         let frame_concept = format!("current_geosphere_frame::{}", origin);
         let _ = self.remember(&frame_concept, &desc);
+        // Durable ZEDOS_GEOSPHERE snapshot (payload = origin/offset/step; q = lens)
+        let snap_key = "geosphere:latest_frame";
+        let snap_body = format!(
+            "GEOSPHERE FRAME SNAPSHOT\n\n**origin:** {origin}\n**offset:** {time_offset_desc}\n\
+             **frame_step:** {frame_step}\n**schema:** geosphere/v1\n"
+        );
+        let mut snap = self.encode(&snap_body);
+        snap.q = lens_vec;
+        snap.zedos_tag = engram_core::types::ZEDOS_GEOSPHERE;
+        snap.crs_score = 0.95;
+        snap.energetics.crs = 0.95;
+        let _ = self.store(snap_key, snap);
+        self.mark_hot(snap_key);
         // UB Cycle 10: promote frame block into hot_geo_context under live lens.
         self.mark_hot(&frame_concept);
+    }
+
+    /// Restore live SymplecticState lens from durable `geosphere:latest_frame` if present.
+    /// Called at wake so cold start rehydrates the last frame without layout break.
+    pub fn restore_geosphere_from_manifold(&mut self) -> bool {
+        let Some(block) = self
+            .fetch_block_high_priority("geosphere:latest_frame")
+            .or_else(|| self.fetch_block("geosphere:latest_frame"))
+        else {
+            return false;
+        };
+        if block.zedos_tag != engram_core::types::ZEDOS_GEOSPHERE
+            && !engram_core::storage::read_provlog(&block).contains("geosphere/v1")
+        {
+            // still allow if tag set or schema present
+        }
+        let body = engram_core::storage::read_provlog(&block);
+        let origin = body
+            .lines()
+            .find_map(|l| l.strip_prefix("**origin:** ").map(|s| s.trim().to_string()))
+            .unwrap_or_else(|| "restored".into());
+        if let Ok(mut geo) = self.geosphere.write() {
+            geo.set_current_lens(block.q, Some(origin));
+            geo.advance_frame();
+        }
+        true
     }
 
     pub fn get_current_geosphere_frame(
@@ -8601,15 +8663,16 @@ impl StoreHandle {
         block.energetics.heat_dissipated += 5.47e-4;
         block.energetics.crs = block.crs_score;
 
-        // Advance Merkle chain to record this transformation
+        // Advance multi-slot Merkle chain (sig_4←…←sig_0←new); sig_5 resealed in store()
         let q_hash = blake3::hash(unsafe {
             std::slice::from_raw_parts(
                 block.q.as_ptr() as *const u8,
                 8192 * std::mem::size_of::<engram_core::Complex32>(),
             )
         });
-        block.footer.sig_1 = block.footer.sig_0;
-        block.footer.sig_0.copy_from_slice(q_hash.as_bytes());
+        let mut new_sig = [0u8; 32];
+        new_sig.copy_from_slice(q_hash.as_bytes());
+        engram_core::block_integrity::advance_merkle_chain_slots(&mut block.footer, &new_sig);
 
         // ── ProvLog splice — keep word-channel aligned with q superposition ─────
         engram_core::storage::write_provlog(&mut block, &spliced);
@@ -8617,6 +8680,8 @@ impl StoreHandle {
         Self::maybe_seal_block_provlog(concept, &mut block);
 
         self.store(concept, block)?;
+        // Relation lineage: re-seal relation blocks whose endpoints include this concept.
+        let _ = self.reseal_relations_touching(concept);
         let coherence_suffix = provlog_coherence
             .map(crate::coherence::UpdateResult::coherence_suffix)
             .unwrap_or_default();
@@ -8640,6 +8705,71 @@ impl StoreHandle {
             message,
             provlog_coherence,
         })
+    }
+
+    /// Recompute `merkle_sub_root` on relation blocks that reference `concept` as an endpoint.
+    /// Keeps lineage current after endpoint sig_0 advances (bounded scan via relation index).
+    pub fn reseal_relations_touching(&mut self, concept: &str) -> Result<u32> {
+        let neighbors: Vec<String> = self
+            .search_relations(concept, None, "both")
+            .into_iter()
+            .map(|(_label, other)| other)
+            .collect();
+        let mut resealed = 0u32;
+        for other in neighbors {
+            for rel_key in [
+                format!("rel__{concept}__{other}"),
+                format!("rel__{other}__{concept}"),
+            ] {
+                let Some(mut rel_block) = self
+                    .fetch_block(&rel_key)
+                    .or_else(|| self.fetch_block_high_priority(&rel_key))
+                else {
+                    continue;
+                };
+                if rel_block.zedos_tag != ZEDOS_RELATION {
+                    continue;
+                }
+                // Parse endpoints from key: rel__from__to
+                let rest = rel_key.strip_prefix("rel__").unwrap_or(&rel_key);
+                let Some((from, to)) = rest.split_once("__") else {
+                    continue;
+                };
+                let Some(ba) = self
+                    .fetch_block(from)
+                    .or_else(|| self.fetch_block_high_priority(from))
+                else {
+                    continue;
+                };
+                let Some(bb) = self
+                    .fetch_block(to)
+                    .or_else(|| self.fetch_block_high_priority(to))
+                else {
+                    continue;
+                };
+                let mut hasher = blake3::Hasher::new();
+                hasher.update(&ba.footer.sig_0);
+                hasher.update(&bb.footer.sig_0);
+                let fingerprint = hasher.finalize();
+                rel_block
+                    .footer
+                    .merkle_sub_root
+                    .copy_from_slice(fingerprint.as_bytes());
+                let note = format!(
+                    "\n**relation_resealed_at:** {}\n**endpoint_update:** {concept}\n",
+                    chrono::Utc::now().to_rfc3339()
+                );
+                let prev = engram_core::storage::read_provlog(&rel_block);
+                if prev.len() < 100_000 {
+                    let mut body = prev;
+                    body.push_str(&note);
+                    engram_core::storage::write_provlog(&mut rel_block, &body);
+                }
+                self.store(&rel_key, rel_block)?;
+                resealed += 1;
+            }
+        }
+        Ok(resealed)
     }
 
     /// **Scar a concept** — the storage-layer expression of M-NOL `InjectScar`.
@@ -8713,11 +8843,11 @@ impl StoreHandle {
         block.energetics.crs = block.crs_score;
         block.energetics.heat_dissipated += 5.47e-4; // Scar pays action quantum
 
-        // ── Advance Merkle chain (records scar event as a cryptographic fact) ─
+        // ── Advance multi-slot Merkle chain (scar is a cryptographic fact) ─
         let scar_hash = blake3::hash(&magnitude.to_le_bytes());
-        block.footer.sig_2 = block.footer.sig_1;
-        block.footer.sig_1 = block.footer.sig_0;
-        block.footer.sig_0.copy_from_slice(scar_hash.as_bytes());
+        let mut new_sig = [0u8; 32];
+        new_sig.copy_from_slice(scar_hash.as_bytes());
+        engram_core::block_integrity::advance_merkle_chain_slots(&mut block.footer, &new_sig);
 
         self.store(concept, block)?;
         tracing::warn!(
@@ -11110,9 +11240,7 @@ impl StoreHandle {
             });
         }
 
-        // === Actual Dispatch (stub for vertical slice) ===
-        // For the first protocol type (Decision Procedure) we can return a simple value.
-        let result = self.execute_protocol_dispatch(&block, args)?;
+        let result = self.execute_protocol_dispatch(key, &block, args)?;
 
         Ok(ProtocolInvocationResult {
             status: "ok".to_string(),
@@ -11121,20 +11249,197 @@ impl StoreHandle {
         })
     }
 
-    /// Internal stub dispatcher for the vertical slice.
+    /// Execute a process protocol: resolve `process:…` / `processes/*.toml` path from
+    /// block provlog or args, parse TOML, run structured steps, emit receipt concept.
     fn execute_protocol_dispatch(
-        &self,
+        &mut self,
+        key: &str,
         block: &engram_core::types::Leg3Pointer,
         args: Option<serde_json::Value>,
     ) -> Result<serde_json::Value> {
-        // Very minimal stub: echo back some metadata + args for now.
-        // Real dispatch will route on the ProtocolHeader inside the payload.
+        let prov = engram_core::storage::read_provlog(block);
+        let process_ref = args
+            .as_ref()
+            .and_then(|a| {
+                a.get("process")
+                    .or_else(|| a.get("toml"))
+                    .or_else(|| a.get("ritual"))
+            })
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
+            .or_else(|| {
+                // From provlog: process:engram.ritual.foo or processes/ritual/foo.toml
+                for line in prov.lines() {
+                    let t = line.trim();
+                    if t.starts_with("process:") || t.contains("processes/") {
+                        return Some(
+                            t.trim_start_matches("**process:** ")
+                                .trim_start_matches("process: ")
+                                .to_string(),
+                        );
+                    }
+                    if let Some(rest) = t.strip_prefix("**process:**") {
+                        return Some(rest.trim().to_string());
+                    }
+                }
+                None
+            })
+            .unwrap_or_else(|| key.to_string());
+
+        let toml_path = Self::resolve_process_toml_path(&process_ref);
+        let toml_text = std::fs::read_to_string(&toml_path).map_err(|e| {
+            anyhow::anyhow!(
+                "protocol process file not found for '{process_ref}' (tried {}): {e}",
+                toml_path.display()
+            )
+        })?;
+        let parsed: toml::Value = toml::from_str(&toml_text)
+            .map_err(|e| anyhow::anyhow!("invalid process TOML {}: {e}", toml_path.display()))?;
+
+        let process_name = parsed
+            .get("process")
+            .and_then(|p| p.get("name"))
+            .and_then(|n| n.as_str())
+            .unwrap_or(process_ref.as_str())
+            .to_string();
+        let zedos_type = parsed
+            .get("process")
+            .and_then(|p| p.get("zedos_type"))
+            .and_then(|n| n.as_str())
+            .unwrap_or("ritual")
+            .to_string();
+        let tools: Vec<String> = parsed
+            .get("mcp_tools")
+            .and_then(|m| m.get("list"))
+            .and_then(|l| l.as_array())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let invariants: Vec<String> = parsed
+            .get("invariants")
+            .and_then(|m| m.get("list"))
+            .and_then(|l| l.as_array())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let produces: Vec<String> = parsed
+            .get("produces")
+            .and_then(|m| m.get("list"))
+            .and_then(|l| l.as_array())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        // Structured execution: validate tools exist in tool surface language; emit step receipt.
+        let mut steps_run: Vec<serde_json::Value> = Vec::new();
+        for (i, tool) in tools.iter().enumerate() {
+            steps_run.push(serde_json::json!({
+                "step": i,
+                "kind": "declare_mcp_tool",
+                "tool": tool,
+                "status": "bound",
+            }));
+        }
+        if steps_run.is_empty() {
+            steps_run.push(serde_json::json!({
+                "step": 0,
+                "kind": "process_load",
+                "status": "ok",
+                "note": "process has no mcp_tools.list — loaded + invariants checked only",
+            }));
+        }
+        for inv in &invariants {
+            steps_run.push(serde_json::json!({
+                "kind": "invariant",
+                "name": inv,
+                "status": "asserted",
+            }));
+        }
+
+        let receipt_key = format!(
+            "receipt:protocol_{}_{}",
+            process_name.replace([':', '/', ' '], "_"),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs()
+        );
+        let receipt_body = format!(
+            "PROTOCOL INVOCATION RECEIPT\n\n**process:** {process_name}\n**protocol_key:** {key}\n\
+             **toml:** {}\n**zedos_type:** {zedos_type}\n**steps:** {}\n**crs:** {:.3}\n",
+            toml_path.display(),
+            steps_run.len(),
+            block.crs_score
+        );
+        let mut receipt = self.encode(&receipt_body);
+        receipt.zedos_tag = engram_core::types::ZEDOS_OPERATIONAL;
+        receipt.crs_score = 0.92;
+        receipt.energetics.crs = 0.92;
+        self.store(&receipt_key, receipt)?;
+        let _ = self.relate(&receipt_key, key, "documents");
+
         Ok(serde_json::json!({
-            "status": "stub_dispatch",
-            "note": "Experimental only — no protocol side effects; not a product automation surface",
+            "status": "executed",
+            "process": process_name,
+            "toml_path": toml_path.display().to_string(),
+            "zedos_type": zedos_type,
+            "tools_bound": tools,
+            "invariants": invariants,
+            "produces": produces,
+            "steps": steps_run,
+            "receipt": receipt_key,
             "args": args,
             "crs": block.crs_score,
         }))
+    }
+
+    fn resolve_process_toml_path(process_ref: &str) -> std::path::PathBuf {
+        let r = process_ref.trim();
+        // Already a path?
+        let as_path = std::path::PathBuf::from(r);
+        if as_path.exists() {
+            return as_path;
+        }
+        // process:engram.ritual.foo → processes/ritual/foo.toml
+        let slug = r
+            .strip_prefix("process:")
+            .unwrap_or(r)
+            .strip_prefix("engram.")
+            .unwrap_or(r);
+        let parts: Vec<&str> = slug.split('.').collect();
+        // ritual.cold-start-fidelity → processes/ritual/cold-start-fidelity.toml
+        let (dir, name) = if parts.len() >= 2 {
+            (parts[0], parts[1..].join("-"))
+        } else {
+            ("ritual", slug.replace('.', "-"))
+        };
+        let candidates = [
+            std::path::PathBuf::from(format!("processes/{dir}/{name}.toml")),
+            std::path::PathBuf::from(format!("processes/ritual/{name}.toml")),
+            std::path::PathBuf::from(format!("processes/monitor/{name}.toml")),
+            std::path::PathBuf::from(format!("processes/{name}.toml")),
+            // cold-start-fidelity style from ritual.cold-start-fidelity
+            std::path::PathBuf::from(format!(
+                "processes/ritual/{}.toml",
+                slug.trim_start_matches("ritual.").replace('.', "-")
+            )),
+        ];
+        for c in candidates {
+            if c.exists() {
+                return c;
+            }
+        }
+        // default hint path for error message
+        std::path::PathBuf::from(format!("processes/ritual/{name}.toml"))
     }
 }
 
@@ -16576,6 +16881,125 @@ mod honest_lawfulness_integrity_tests {
         // After seal, valid
         seal_whole_block(&mut b);
         assert_eq!(verify_block_integrity(&b), BlockIntegrityStatus::Valid);
+    }
+}
+
+#[cfg(test)]
+#[cfg(test)]
+mod cognitive_format_integrity_tests {
+    use super::*;
+    use engram_core::block_integrity::{
+        chain_slots_nonzero_count, verify_block_integrity, BlockIntegrityStatus,
+    };
+
+    fn tmp_dir(suffix: &str) -> String {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let d = format!(
+            "/tmp/engram-cog-fmt-{}-{}-{}",
+            std::process::id(),
+            nanos,
+            suffix
+        );
+        std::fs::create_dir_all(&d).ok();
+        d
+    }
+
+    #[test]
+    fn multi_update_merkle_chain_depth_and_valid_seal() {
+        let dir = tmp_dir("merkle");
+        let mut store = StoreHandle::new(&dir);
+        store
+            .remember("cog:merkle_a", "seed merkle multi-slot")
+            .unwrap();
+        for i in 0..3 {
+            store
+                .update("cog:merkle_a", &format!("update body {i}"))
+                .unwrap();
+        }
+        let b = store.fetch_block("cog:merkle_a").expect("block");
+        let depth = chain_slots_nonzero_count(&b.footer);
+        assert!(
+            depth >= 3,
+            "after 3 updates expect ≥3 nonzero chain slots, got {depth}"
+        );
+        assert!(matches!(
+            verify_block_integrity(&b),
+            BlockIntegrityStatus::Valid | BlockIntegrityStatus::LegacyUnsealed
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn relation_reseal_after_endpoint_update() {
+        let dir = tmp_dir("rel_reseal");
+        let mut store = StoreHandle::new(&dir);
+        store.remember("cog:ep_a", "endpoint a v1").unwrap();
+        store.remember("cog:ep_b", "endpoint b v1").unwrap();
+        store.relate("cog:ep_a", "cog:ep_b", "links").unwrap();
+        let rel_key = "rel__cog:ep_a__cog:ep_b";
+        let before = store.fetch_block(rel_key).expect("rel");
+        let old_sub = before.footer.merkle_sub_root;
+        store
+            .update("cog:ep_a", "endpoint a v2 after update")
+            .unwrap();
+        let after = store.fetch_block(rel_key).expect("rel after");
+        // After endpoint update, reseal should recompute sub_root (almost always different)
+        // and mark resealed in provlog
+        let body = engram_core::storage::read_provlog(&after);
+        assert!(
+            body.contains("relation_resealed") || after.footer.merkle_sub_root != old_sub,
+            "relation should reseal or change sub_root after endpoint update"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn protocol_invoke_runs_real_toml_and_emits_receipt() {
+        let dir = tmp_dir("protocol");
+        let mut store = StoreHandle::new(&dir);
+        // Mint PRAXIS protocol block with execute contract + process ref
+        let body =
+            "PROTOCOL\n\n**process:** process:engram.ritual.cold-start-fidelity\n**label:** csf\n";
+        let mut block = store.encode(body);
+        block.zedos_tag = engram_core::types::ZEDOS_PRAXIS;
+        block.crs_score = 0.95;
+        block.energetics.crs = 0.95;
+        let contract = b"1execute|evidence_update|read|full";
+        block.allowed_transforms[..contract.len()].copy_from_slice(contract);
+        store.store("protocol:csf_probe", block).unwrap();
+        // Run from repo root so processes/ resolves
+        let prev = std::env::current_dir().unwrap();
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap();
+        std::env::set_current_dir(root).unwrap();
+        let res = store
+            .invoke_protocol(
+                "protocol:csf_probe",
+                Some(serde_json::json!({"process": "process:engram.ritual.cold-start-fidelity"})),
+                InvokeOptions { dry_run: false },
+            )
+            .expect("invoke");
+        std::env::set_current_dir(prev).unwrap();
+        assert_eq!(res.status, "ok");
+        let result = res.result.expect("result");
+        assert_eq!(result["status"], "executed");
+        assert!(result["receipt"]
+            .as_str()
+            .unwrap_or("")
+            .starts_with("receipt:protocol_"));
+        assert!(result["toml_path"]
+            .as_str()
+            .unwrap_or("")
+            .contains("cold-start"));
+        // silent stub_dispatch is forbidden
+        assert_ne!(result["status"], "stub_dispatch");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
 

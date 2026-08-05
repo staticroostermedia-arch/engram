@@ -1,7 +1,7 @@
 # CLAIMS_LEDGER — Public claim → code → test map
 
 **Status:** living  
-**Last truth pass:** 2026-08-04 (next-improvements residuals: lawfulness extract + BVH quality path)  
+**Last truth pass:** 2026-08-04 (cognitive substrate completion — format integrity + protocol)  
 **Purpose:** Every notable public claim maps to implementation status so agents and reviewers do not treat aspirational text as shipped fact.
 
 **Status values:** `implemented` | `partial` | `aspirational` | `removed`
@@ -25,7 +25,7 @@ When status is `implemented`, named tests should exist in-repo. Prefer **softeni
 | Persistent geometric memory for AI agents via MCP | README.md L10–18 | implemented | `crates/engram-server/src/mcp.rs` (`tool_list`, `session_start`); `scripts/engram-grok` | harness `--suite agent-memory`; MCP agent-memory CI job | — |
 | Fixed-size 256KB HolographicBlocks (.leg3) with 8192D q/p | README.md L131; MANIFESTO.md; types.rs layout | implemented | `crates/engram-core/src/types.rs` (`HolographicBlock`, `DIMENSION=8192`); `storage.rs` | `engram-core` layout / encode unit tests | Layout is real; not all product paths use O_DIRECT always |
 | CRS lawfulness gate (grounded ≈ 0.74) | README.md L57; encode.rs CRS init | implemented | `encode.rs` (default 0.74); `store.rs` update Lyapunov path; `verify_manifold_integrity` | manifold integrity tests in `store.rs`; encode CRS defaults | CRS is a **local thermodynamic score**, not external truth or crypto attestation of correctness |
-| BLAKE3 Merkle footer `sig_0`…`sig_5` | README.md L131; PATENT-NOTICE.md L25; MANIFESTO.md ~105–109 | partial | `types.rs` `LegFooter`; `store.rs` update advances `sig_1←sig_0`, `sig_0←BLAKE3(q)`; `encode.rs` sets `sig_0` from text hash; **`sig_5` whole-block seal shipped** (`block_integrity`) | update/relate provenance tests; `block_integrity` tests | Chain depth is **shallow in practice** (mostly `sig_0`/`sig_1`). Whole-block seal via `sig_5` is **implemented**; full 6-deep temporal crystal history walk is not |
+| BLAKE3 Merkle footer `sig_0`…`sig_5` | store update + block_integrity | implemented (chain depth) / partial (full history walk) | `advance_merkle_chain_slots` on update/scar; `sig_5` independent seal | `multi_slot_chain_after_three_advances`; `multi_update_merkle_chain_depth_and_valid_seal` | Multi-slot shift on update; not full historical reconstruction API |
 | Footer = cryptographic hash of header+body | PATENT-NOTICE.md L25 | implemented | `engram_core::seal_whole_block` / `sig_5`; `write_block` reseals after Toryx PBC | `block_integrity` tests; `honest_lawfulness_integrity_tests` | Chain slots still shallow (`sig_0`/`sig_1`); seal is whole-block |
 | `merkle_sub_root` links relation provenance | PATENT-NOTICE.md L26; store relate | implemented | `store.rs` relate: `merkle_sub_root = BLAKE3(sig_0_a \|\| sig_0_b)` | relation store tests | Stale if endpoint `sig_0` later advances without relation re-seal — verification must report lineage |
 | Self-contained verification without external registry | PATENT-NOTICE.md L29–31 | partial | local block fetch + verify tools | `verify_block_lawfulness` / manifold integrity MCP | Lineage reconstruction across historical states is limited without extra logs |
@@ -40,8 +40,8 @@ When status is `implemented`, named tests should exist in-repo. Prefer **softeni
 | Code atlas / `context_for_edit` | README L58, L164 | implemented | `store.rs` / mcp `context_for_edit` | edit fidelity / agent-tool-fidelity harness | — |
 | Sheaf / `processes/*.toml` rituals | README L131; processes/ | implemented | process sheaf load at wake; `processes/` | sheaf-related server tests | “Sheaf H¹” for agent graphs is specialized; not every TOML is cohomology |
 | Categorical linguistic calculus (diff/integrate/operadic) | README L171–195; CHANGELOG | partial | `engram-core/src/ops.rs` linguistic ops; MCP linguistic tools | `test_linguistic_full_p1_p5_pipeline_*` | Real ops exist; marketing “synthetic calculus” exceeds everyday agent usage |
-| Hybrid wire serialization (HBRD) | historical CHANGELOG | partial (experimental stub) | `encode.rs` `to_hybrid_wire` / `from_hybrid_wire` | hybrid encode tests if present | **Not a product surface.** `from_hybrid_wire` does not fully restore q/p; O_DIRECT .leg remains primary. Do not list in README hero |
-| Homomorphic + transform attestation (historically misnamed ZK) | CHANGELOG; encode.rs | partial | `apply_homo_op`, `generate_zk_proof` (attestation), `generate_transform_attestation` alias, `verify_zk_proof` | encode tests | **Not** zk-SNARK. BLAKE3 cookie of dsl+crs+sig0+op. Prefer “attestation” in public API docs |
+| Hybrid wire serialization (HBRD) | encode.rs HBRD2 | implemented | `to_hybrid_wire` / `from_hybrid_wire` (HBRD2 full fidelity; HBRD1 legacy) | `hybrid_wire_full_roundtrip_fidelity` | cosine(q)>0.999, CRS equal, footer/payload restored; O_DIRECT .leg remains primary on-disk |
+| Homomorphic + transform attestation | encode.rs | implemented | `generate_transform_attestation` / `verify_transform_attestation`; `generate_zk_proof` deprecated alias | `p2_homo_attestation_proof_verify` | **Not** zk-SNARK. Public name is attestation |
 | Protocol execution / process subvisor H¹ | AGENTS.md; processes/monitor | partial | subvisor / process load | process/harness tests | Governance exists; full OP_INVERT/H¹ agent-graph theory is deeper than runtime enforcement |
 | Lawfulness: `verify_manifold_integrity` / `verify_block_lawfulness` | AGENT_INTEGRATION; lawfulness | implemented (seal-aware sample) / partial (full history) | `lawfulness.rs` pure summary + store wrappers; manifold seal sample | `lawfulness::tests`; `honest_lawfulness_integrity_tests` | Full historical Merkle walk still not present; chain_slots_nonzero is depth-present only |
 | NREM / ego.leg3 long-horizon continuity | README; MANIFESTO | implemented | daemon NREM path; ego.leg3 | NREM stack / profile tests (see dogfood PR #209) | Large-stack NREM needs dedicated thread (PR #209) |
@@ -58,6 +58,14 @@ When status is `implemented`, named tests should exist in-repo. Prefer **softeni
 | Lawfulness module extract (`lawfulness.rs`) | store/mcp narrow extract | implemented | `crates/engram-server/src/lawfulness.rs` (`summarize_block_lawfulness`, seal tally helpers); store wrappers | `lawfulness::tests`; `honest_lawfulness_integrity_tests` | Narrow extract only — not a full store/mcp split |
 | BVH quality path hint + QUALITY_MODE force | readiness / profile | implemented | `profile.rs` QUALITY_MODE forces DEFER_BVH=0; readiness `bvh_quality_path_hint` | profile quality_mode test; lawfulness bvh_quality_hint test | CPU agent still defers by default; no RAM bomb unless quality mode |
 | Protocol invoke MCP | mcp tool list | partial (experimental stub) | `invoke_protocol` → `stub_dispatch` | — | **Not product automation.** Description demoted to experimental |
+
+
+| Linguistic extract real parse | types.rs mint_linguistic | implemented | `Leg3Pointer::extract_linguistic_bundle` serde_json linguistic/v1 | `test_linguistic_block_mint_roundtrip_crs_preserve` | Preserves words/coeffs/patches/functor_metadata; q leading reals match coeffs |
+| ZEDOS tag uniqueness | types.rs registry | implemented | unique `ZEDOS_*` constants; FIBERED=0x5E | `zedos_tag_constants_are_unique` | NREM_CENTROID remains 0x4E |
+| Unit-phase unbind path | encode from_text_unit_phase | implemented | `from_text_unit_phase` + op_bind/unbind | `unit_phase_unbind_recovery_above_0_95` | Recovery >0.95; spiral free-text remains default remember |
+| Relation re-seal on endpoint update | store.rs | implemented | `reseal_relations_touching` after update | `relation_reseal_after_endpoint_update` | Recomputes merkle_sub_root for rel__a__b |
+| Protocol invoke real TOML | store invoke_protocol | implemented | loads `processes/*.toml`, binds tools, emits receipt | `protocol_invoke_runs_real_toml_and_emits_receipt` | Never returns success-only stub_dispatch |
+| Geosphere frame persistence | store set/restore | implemented | `geosphere:latest_frame` ZEDOS_GEOSPHERE; restore on warm_wake | geosphere frame tests + restore hook | Runtime SymplecticState + durable snapshot |
 
 ## Source index (files scanned this pass)
 

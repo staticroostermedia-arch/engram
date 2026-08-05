@@ -201,6 +201,31 @@ fn constant_time_eq(a: &[u8; 32], b: &[u8; 32]) -> bool {
     v == 0
 }
 
+/// Advance temporal chain slots on update: `sig_4←sig_3←…←sig_0←new_sig`.
+/// Does **not** touch `sig_5` (whole-block seal — reseal separately via [`seal_whole_block`]).
+pub fn advance_merkle_chain_slots(footer: &mut crate::types::LegFooter, new_sig_0: &[u8; 32]) {
+    footer.sig_4 = footer.sig_3;
+    footer.sig_3 = footer.sig_2;
+    footer.sig_2 = footer.sig_1;
+    footer.sig_1 = footer.sig_0;
+    footer.sig_0 = *new_sig_0;
+}
+
+/// Count how many of sig_0..sig_5 are non-zero (depth present).
+pub fn chain_slots_nonzero_count(footer: &crate::types::LegFooter) -> u8 {
+    [
+        footer.sig_0,
+        footer.sig_1,
+        footer.sig_2,
+        footer.sig_3,
+        footer.sig_4,
+        footer.sig_5,
+    ]
+    .iter()
+    .filter(|s| s.iter().any(|&b| b != 0))
+    .count() as u8
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -318,5 +343,40 @@ mod tests {
             BlockIntegrityStatus::Valid,
             "post-CRS mutation must reseal"
         );
+    }
+
+    #[test]
+    fn multi_slot_chain_after_three_advances_and_independent_seal() {
+        use crate::block_integrity::{
+            advance_merkle_chain_slots, chain_slots_nonzero_count, seal_whole_block,
+            verify_block_integrity,
+        };
+        use crate::encode::from_text;
+        let mut b = from_text("merkle multi-slot probe");
+        // seed sig_0 so first advance has something to shift
+        b.footer.sig_0 = [1u8; 32];
+        seal_whole_block(&mut b);
+        let seal_before = b.footer.sig_5;
+        for i in 0..3u8 {
+            let mut newsig = [0u8; 32];
+            newsig[0] = 10 + i;
+            newsig[1] = 20 + i;
+            advance_merkle_chain_slots(&mut b.footer, &newsig);
+            // seal must not be clobbered by chain advance
+            assert_eq!(
+                b.footer.sig_5, seal_before,
+                "sig_5 must stay independent of chain advance"
+            );
+        }
+        // After 3 advances + original sig_0 shifted, at least 3 chain slots nonzero
+        // (sig_0..sig_2 at minimum from advances; sig_5 also if sealed)
+        let depth = chain_slots_nonzero_count(&b.footer);
+        assert!(depth >= 3, "expected ≥3 nonzero chain slots, got {depth}");
+        // reseal after chain work
+        seal_whole_block(&mut b);
+        assert!(matches!(
+            verify_block_integrity(&b),
+            crate::block_integrity::BlockIntegrityStatus::Valid
+        ));
     }
 }
