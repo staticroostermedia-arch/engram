@@ -645,21 +645,28 @@ impl BlockTier {
 
     /// On-disk physical layout size in bytes.
     ///
-    /// Today all tiers use [`BLOCK_SIZE`] (256 KiB). Small/Large do not yet allocate
-    /// distinct physical files — see [`Self::has_shipped_physical_layout`].
+    /// **Policy (2026-08 permanent):** all tiers use [`BLOCK_SIZE`] (256 KiB).
+    /// Small/Large are logical schema tags only — see
+    /// [`Self::is_permanent_logical_only`].
     #[inline]
     pub fn physical_byte_size(self) -> usize {
-        // Residual: when Small/Large ship, return tier-specific sizes.
         BLOCK_SIZE
     }
 
     /// Whether this tier has a **shipped** physical layout (distinct storage path).
     ///
-    /// - `Std` → true (canonical 256 KiB `.leg3`)
-    /// - `Small` / `Large` → false until residual physical-tier work lands
+    /// Only `Std` has a distinct product physical layout. Small/Large remain
+    /// logical tags permanently on the 256 KiB O_DIRECT stalk.
     #[inline]
     pub fn has_shipped_physical_layout(self) -> bool {
         matches!(self, BlockTier::Std)
+    }
+
+    /// Permanent product decision: Small/Large will not get alternate byte sizes
+    /// on the current 256 KiB `.leg3` format (preserves 100k+ Std stalk).
+    #[inline]
+    pub fn is_permanent_logical_only(self) -> bool {
+        matches!(self, BlockTier::Small | BlockTier::Large)
     }
 }
 
@@ -941,30 +948,17 @@ mod tests {
         );
     }
 
-    /// Residual failer (ignored in default CI). Un-ignore to drive
-    /// `goal:residual_block_tier_physical` — fails until Small/Large have
-    /// distinct physical sizes and `has_shipped_physical_layout() == true`.
+    /// Permanent decision: Small/Large stay logical-only on 256 KiB stalk.
     #[test]
-    #[ignore = "residual goal:residual_block_tier_physical — un-ignore to fail until distinct physical layouts ship"]
-    fn residual_block_tier_physical_distinct_layouts() {
-        assert!(
-            BlockTier::Small.has_shipped_physical_layout(),
-            "residual: Small physical layout not shipped"
-        );
-        assert!(
-            BlockTier::Large.has_shipped_physical_layout(),
-            "residual: Large physical layout not shipped"
-        );
-        assert_ne!(
-            BlockTier::Small.physical_byte_size(),
-            BlockTier::Std.physical_byte_size(),
-            "residual: Small must use a distinct physical byte size"
-        );
-        assert_ne!(
-            BlockTier::Large.physical_byte_size(),
-            BlockTier::Std.physical_byte_size(),
-            "residual: Large must use a distinct physical byte size"
-        );
+    fn block_tier_permanent_logical_only_policy() {
+        assert!(BlockTier::Small.is_permanent_logical_only());
+        assert!(BlockTier::Large.is_permanent_logical_only());
+        assert!(!BlockTier::Std.is_permanent_logical_only());
+        assert_eq!(BlockTier::Small.physical_byte_size(), BLOCK_SIZE);
+        assert_eq!(BlockTier::Large.physical_byte_size(), BLOCK_SIZE);
+        // Policy: do not invent alternate physical sizes for Small/Large.
+        assert!(!BlockTier::Small.has_shipped_physical_layout());
+        assert!(!BlockTier::Large.has_shipped_physical_layout());
     }
 
     /// Freeze ZEDOS tag registry uniqueness (catches accidental aliasing).

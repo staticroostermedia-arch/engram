@@ -1,0 +1,19 @@
+{
+  "backend_kind": "cuda",
+  "recall_mode": "full_bvh_gpu",
+  "bvh_ready": true,
+  "bvh_nodes": 101257,
+  "leg_block_count": 101257,
+  "gpu_hot_device": "0",
+  "gpu_compute_device": "1",
+  "gpu_hot_resident": true,
+  "cufile_driver_detected": true,
+  "cufile_hot_ready": true,
+  "cufile_hot_requested": true,
+  "cufile_transfer_path": "unavailable",
+  "nvme_direct_io": true,
+  "nvme_recall_ready": true,
+  "profile": "agent",
+  "memory_mode": "lean",
+  "ts": 1785947339
+}

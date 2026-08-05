@@ -40,6 +40,7 @@ mod evolution_at_locus;
 mod fidelity_few_shots;
 mod goal_hygiene;
 mod harness_injection;
+mod hierarchy_metrics;
 mod injection_priority;
 pub mod ki_hijacker;
 mod lawfulness;

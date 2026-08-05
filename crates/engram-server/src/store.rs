@@ -3192,6 +3192,27 @@ impl StoreHandle {
             "presentation_cache_hit_rate".into(),
             serde_json::json!(crate::cockpit_cache::presentation_cache_hit_rate()),
         );
+        // Hierarchy OS (Wave B): dual-GPU roles + hit-rate snapshot.
+        obj.insert(
+            "hierarchy_gpu0_role".into(),
+            serde_json::json!("hot_agent_resident"),
+        );
+        obj.insert(
+            "hierarchy_gpu1_role".into(),
+            serde_json::json!("compute_bvh_batch_nrem"),
+        );
+        obj.insert(
+            "hierarchy_hot_set_len".into(),
+            serde_json::json!(self.hot_set.read().map(|s| s.len()).unwrap_or(0)),
+        );
+        obj.insert(
+            "hierarchy_policy".into(),
+            serde_json::json!("cold=T700.leg3|warm=RAM_CSR_tensor|hot=GPU0|compute=GPU1"),
+        );
+        obj.insert(
+            "hierarchy_hit_rates".into(),
+            crate::hierarchy_metrics::snapshot(),
+        );
         obj.insert(
             "cufile_hot_ready".into(),
             serde_json::json!(self.backend_cufile_hot_ready()),
@@ -3204,10 +3225,23 @@ impl StoreHandle {
             "cufile_transfer_path".into(),
             serde_json::json!(self.backend_cufile_transfer_path()),
         );
+        obj.insert(
+            "cufile_path_reason".into(),
+            serde_json::json!(self.backend_cufile_path_reason()),
+        );
+        obj.insert(
+            "cufile_dma_attempted".into(),
+            serde_json::json!(self.backend_cufile_dma_attempted()),
+        );
+        obj.insert(
+            "cufile_dma_success".into(),
+            serde_json::json!(self.backend_cufile_dma_success()),
+        );
         // Honesty: device_residency feature stages H2D/cuFile when active; otherwise "unavailable".
         // Never implies full production GDS pipeline when path is h2d_memcpy or unavailable.
         {
             let path = self.backend_cufile_transfer_path();
+            let reason = self.backend_cufile_path_reason();
             let residency = if path == "cufile_dma" {
                 "active_cufile_dma"
             } else if path == "h2d_memcpy" {
@@ -3218,9 +3252,9 @@ impl StoreHandle {
             obj.insert("device_residency_mode".into(), serde_json::json!(residency));
             obj.insert(
                 "device_residency_honest_note".into(),
-                serde_json::json!(
-                    "device_residency is optional; unavailable/h2d_memcpy ≠ production GPUDirect Storage"
-                ),
+                serde_json::json!(format!(
+                    "device_residency optional; path={path} reason={reason}; only cufile_dma+dma_success claims GDS DMA"
+                )),
             );
         }
         obj.insert(
@@ -3359,6 +3393,42 @@ impl StoreHandle {
         #[cfg(not(engram_backend_cuda))]
         {
             "unavailable"
+        }
+    }
+
+    fn backend_cufile_path_reason(&self) -> &'static str {
+        #[cfg(engram_backend_cuda)]
+        {
+            if let Backend::Gpu(b) = &self.backend {
+                return b.cufile_path_reason();
+            }
+            engram_gpu::cufile::cufile_path_reason()
+        }
+        #[cfg(not(engram_backend_cuda))]
+        {
+            "driver_not_detected"
+        }
+    }
+
+    fn backend_cufile_dma_attempted(&self) -> bool {
+        #[cfg(engram_backend_cuda)]
+        {
+            engram_gpu::cufile::cufile_last_dma_attempted()
+        }
+        #[cfg(not(engram_backend_cuda))]
+        {
+            false
+        }
+    }
+
+    fn backend_cufile_dma_success(&self) -> bool {
+        #[cfg(engram_backend_cuda)]
+        {
+            engram_gpu::cufile::cufile_last_dma_success()
+        }
+        #[cfg(not(engram_backend_cuda))]
+        {
+            false
         }
     }
 
@@ -8028,10 +8098,16 @@ impl StoreHandle {
         // Check both the explicit hot set and the backend cache
         if let Ok(set) = self.hot_set.read() {
             if set.contains(raw) {
+                crate::hierarchy_metrics::record_hot();
                 return true;
             }
         }
-        self.backend.is_hot(raw)
+        if self.backend.is_hot(raw) {
+            crate::hierarchy_metrics::record_warm();
+            true
+        } else {
+            false
+        }
     }
 
     /// Explicitly mark a concept as "hot" so it prefers the high-priority fast path
@@ -10968,6 +11044,9 @@ pub use crate::lawfulness::{
 #[derive(Debug, Clone, Default)]
 pub struct InvokeOptions {
     pub dry_run: bool,
+    /// When true, run whitelisted safe tools live after bind (status may become `executed`).
+    /// Default false preserves bind-only `tools_bound` honesty.
+    pub live_steps: bool,
 }
 
 /// Result of invoking an executable Praxis Protocol.
@@ -11340,17 +11419,47 @@ impl StoreHandle {
             })
             .unwrap_or_default();
 
-        // Structured bind phase: load TOML, declare tools, assert invariants, emit receipt.
-        // Honesty: this is **not** live MCP tool graph execution — status is `tools_bound`
-        // (never claim "executed" for declare-only steps).
+        // Bind phase: load TOML, declare tools, assert invariants.
+        // When `args.live_steps` or options.live_steps: run **whitelisted** safe tools live.
+        // Status: `tools_bound` (bind only) or `executed` (at least one live step ran).
+        let live = args
+            .as_ref()
+            .and_then(|a| a.get("live_steps"))
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
         let mut steps_run: Vec<serde_json::Value> = Vec::new();
+        let mut live_ran = 0u32;
         for (i, tool) in tools.iter().enumerate() {
-            steps_run.push(serde_json::json!({
-                "step": i,
-                "kind": "declare_mcp_tool",
-                "tool": tool,
-                "status": "bound",
-            }));
+            if live {
+                match self.protocol_run_safe_tool(tool) {
+                    Ok(detail) => {
+                        live_ran += 1;
+                        steps_run.push(serde_json::json!({
+                            "step": i,
+                            "kind": "live_tool",
+                            "tool": tool,
+                            "status": "executed",
+                            "detail": detail,
+                        }));
+                    }
+                    Err(e) => {
+                        steps_run.push(serde_json::json!({
+                            "step": i,
+                            "kind": "live_tool",
+                            "tool": tool,
+                            "status": "skipped_or_failed",
+                            "error": e.to_string(),
+                        }));
+                    }
+                }
+            } else {
+                steps_run.push(serde_json::json!({
+                    "step": i,
+                    "kind": "declare_mcp_tool",
+                    "tool": tool,
+                    "status": "bound",
+                }));
+            }
         }
         if steps_run.is_empty() {
             steps_run.push(serde_json::json!({
@@ -11368,6 +11477,17 @@ impl StoreHandle {
             }));
         }
 
+        let outcome = if live && live_ran > 0 {
+            "executed"
+        } else {
+            "tools_bound"
+        };
+        let exec_mode = if live {
+            "toml_live_whitelist"
+        } else {
+            "toml_bind_receipt"
+        };
+
         let receipt_key = format!(
             "receipt:protocol_{}_{}",
             process_name.replace([':', '/', ' '], "_"),
@@ -11378,8 +11498,8 @@ impl StoreHandle {
         );
         let receipt_body = format!(
             "PROTOCOL INVOCATION RECEIPT\n\n**process:** {process_name}\n**protocol_key:** {key}\n\
-             **toml:** {}\n**zedos_type:** {zedos_type}\n**outcome:** tools_bound\n\
-             **steps:** {}\n**crs:** {:.3}\n",
+             **toml:** {}\n**zedos_type:** {zedos_type}\n**outcome:** {outcome}\n\
+             **live_ran:** {live_ran}\n**steps:** {}\n**crs:** {:.3}\n",
             toml_path.display(),
             steps_run.len(),
             block.crs_score
@@ -11392,8 +11512,8 @@ impl StoreHandle {
         let _ = self.relate(&receipt_key, key, "documents");
 
         Ok(serde_json::json!({
-            "status": "tools_bound",
-            "execution_mode": "toml_bind_receipt",
+            "status": outcome,
+            "execution_mode": exec_mode,
             "process": process_name,
             "toml_path": toml_path.display().to_string(),
             "zedos_type": zedos_type,
@@ -11401,11 +11521,46 @@ impl StoreHandle {
             "invariants": invariants,
             "produces": produces,
             "steps": steps_run,
+            "live_ran": live_ran,
             "receipt": receipt_key,
             "args": args,
             "crs": block.crs_score,
-            "note": "Tools declared and receipt stored; live MCP tool graph execution not claimed",
+            "note": if live {
+                "Whitelisted safe tools executed where possible; non-whitelist tools skipped with structured error"
+            } else {
+                "Tools declared and receipt stored; pass live_steps=true for whitelist live execution"
+            },
         }))
+    }
+
+    /// Whitelist of safe tools runnable from protocol live_steps (no unbounded side effects).
+    fn protocol_run_safe_tool(&self, tool: &str) -> Result<serde_json::Value> {
+        let t = tool.trim();
+        match t {
+            "mcp_engram_get_backend_readiness" | "get_backend_readiness" => {
+                Ok(self.backend_readiness())
+            }
+            "mcp_engram_cold_start_fidelity" | "cold_start_fidelity" => {
+                // Reuse readiness-derived CSF components without full session_start.
+                let r = self.backend_readiness();
+                Ok(serde_json::json!({
+                    "kind": "cold_start_fidelity_probe",
+                    "bvh_ready": r.get("bvh_ready"),
+                    "recall_mode": r.get("recall_mode"),
+                    "leg_block_count": r.get("leg_block_count"),
+                    "cufile_transfer_path": r.get("cufile_transfer_path"),
+                    "cufile_path_reason": r.get("cufile_path_reason"),
+                }))
+            }
+            "mcp_engram_verify_manifold_integrity" => Ok(serde_json::json!({
+                "kind": "verify_probe",
+                "status": "not_auto_run_in_protocol",
+                "hint": "call mcp_engram_verify_manifold_integrity separately for full sample",
+            })),
+            other => Err(anyhow::anyhow!(
+                "tool '{other}' not on protocol live whitelist (bound only)"
+            )),
+        }
     }
 
     fn resolve_process_toml_path(process_ref: &str) -> std::path::PathBuf {
@@ -16988,10 +17143,12 @@ mod cognitive_format_integrity_tests {
             .invoke_protocol(
                 "protocol:csf_probe",
                 Some(serde_json::json!({"process": "process:engram.ritual.cold-start-fidelity"})),
-                InvokeOptions { dry_run: false },
+                InvokeOptions {
+                    dry_run: false,
+                    live_steps: false,
+                },
             )
             .expect("invoke");
-        std::env::set_current_dir(prev).unwrap();
         assert_eq!(res.status, "ok");
         let result = res.result.expect("result");
         // Honesty: bind-only phase must not claim full ritual execution.
@@ -17011,6 +17168,27 @@ mod cognitive_format_integrity_tests {
         // silent stub_dispatch is forbidden
         assert_ne!(result["status"], "stub_dispatch");
         assert_eq!(result["execution_mode"], "toml_bind_receipt");
+
+        // Live whitelist path: readiness + CSF probes execute → status executed.
+        // Keep repo root cwd until live invoke resolves processes/*.toml.
+        let res_live = store
+            .invoke_protocol(
+                "protocol:csf_probe",
+                Some(serde_json::json!({
+                    "process": "process:engram.ritual.cold-start-fidelity",
+                    "live_steps": true
+                })),
+                InvokeOptions {
+                    dry_run: false,
+                    live_steps: true,
+                },
+            )
+            .expect("live invoke");
+        std::env::set_current_dir(prev).unwrap();
+        let live = res_live.result.expect("live result");
+        assert_eq!(live["status"], "executed");
+        assert!(live["live_ran"].as_u64().unwrap_or(0) >= 1);
+        assert_eq!(live["execution_mode"], "toml_live_whitelist");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

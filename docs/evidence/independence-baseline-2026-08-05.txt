@@ -1,0 +1,13 @@
+schema: independence_ladder_v1
+host: a-monad
+stage: 1
+csf_median_baseline: 0.9445
+leg_blocks: 101257
+recall_mode: full_bvh_gpu
+cufile_path_reason: taxonomy shipped (see readiness cufile_path_reason)
+protocol_live: whitelist executed status
+block_tier: permanent_logical_only
+data_factory: experience_pack_v1 export dry scaffold
+lora: dry_run receipt only
+online_optional: not_yet_measured
+ts: 2026-08-05T09:35:51-07:00
