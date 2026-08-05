@@ -35,10 +35,14 @@ pub mod cufile;
 pub mod metal_backend;
 #[cfg(engram_backend_cuda)]
 pub mod optix_pipeline;
+/// ROCm/HIP backend — runtime probe + CPU BVH; HIP FFI residual Phase 10.
+/// Always compiled (no HIP link required); kernels only when `engram_backend_rocm`.
+pub mod rocm_backend;
 
 pub use backend::CudaBackend;
 pub use bvh::{BvhManifold, Float3, LBVHNode};
 pub use metal_backend::MetalBackend;
+pub use rocm_backend::RocmBackend;
 pub mod quant;
 
 /// WebGPU INT8 Poincaré backend — available when no CUDA/Metal is detected (build.rs wgpu fallback).

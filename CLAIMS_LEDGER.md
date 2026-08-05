@@ -1,7 +1,7 @@
 # CLAIMS_LEDGER — Public claim → code → test map
 
 **Status:** living  
-**Last truth pass:** 2026-08-04 (cognitive substrate completion — format integrity + protocol)  
+**Last truth pass:** 2026-08-04 (cognitive residual closeout — CSF median + residual trackers)  
 **Purpose:** Every notable public claim maps to implementation status so agents and reviewers do not treat aspirational text as shipped fact.
 
 **Status values:** `implemented` | `partial` | `aspirational` | `removed`
@@ -57,15 +57,17 @@ When status is `implemented`, named tests should exist in-repo. Prefer **softeni
 
 | Lawfulness module extract (`lawfulness.rs`) | store/mcp narrow extract | implemented | `crates/engram-server/src/lawfulness.rs` (`summarize_block_lawfulness`, seal tally helpers); store wrappers | `lawfulness::tests`; `honest_lawfulness_integrity_tests` | Narrow extract only — not a full store/mcp split |
 | BVH quality path hint + QUALITY_MODE force | readiness / profile | implemented | `profile.rs` QUALITY_MODE forces DEFER_BVH=0; readiness `bvh_quality_path_hint` | profile quality_mode test; lawfulness bvh_quality_hint test | CPU agent still defers by default; no RAM bomb unless quality mode |
-| Protocol invoke MCP | mcp tool list | partial (experimental stub) | `invoke_protocol` → `stub_dispatch` | — | **Not product automation.** Description demoted to experimental |
-
-
+| Protocol invoke MCP | mcp tool list + store | partial (experimental bind) | `invoke_protocol` → 7-point gate + TOML load + tool bind + receipt; status=`tools_bound` | `protocol_invoke_runs_real_toml_and_emits_receipt` | Honest: **not** full ritual execution. Prefer `dry_run=true`. Child residual if live step runner ships |
 | Linguistic extract real parse | types.rs mint_linguistic | implemented | `Leg3Pointer::extract_linguistic_bundle` serde_json linguistic/v1 | `test_linguistic_block_mint_roundtrip_crs_preserve` | Preserves words/coeffs/patches/functor_metadata; q leading reals match coeffs |
 | ZEDOS tag uniqueness | types.rs registry | implemented | unique `ZEDOS_*` constants; FIBERED=0x5E | `zedos_tag_constants_are_unique` | NREM_CENTROID remains 0x4E |
 | Unit-phase unbind path | encode from_text_unit_phase | implemented | `from_text_unit_phase` + op_bind/unbind | `unit_phase_unbind_recovery_above_0_95` | Recovery >0.95; spiral free-text remains default remember |
 | Relation re-seal on endpoint update | store.rs | implemented | `reseal_relations_touching` after update | `relation_reseal_after_endpoint_update` | Recomputes merkle_sub_root for rel__a__b |
-| Protocol invoke real TOML | store invoke_protocol | implemented | loads `processes/*.toml`, binds tools, emits receipt | `protocol_invoke_runs_real_toml_and_emits_receipt` | Never returns success-only stub_dispatch |
+| Protocol invoke real TOML | store invoke_protocol | implemented (bind+receipt) | loads `processes/*.toml`, binds tools, emits receipt; `status=tools_bound` | `protocol_invoke_runs_real_toml_and_emits_receipt` | Never returns stub_dispatch or overclaim `executed` for declare-only steps |
 | Geosphere frame persistence | store set/restore | implemented | `geosphere:latest_frame` ZEDOS_GEOSPHERE; restore on warm_wake | geosphere frame tests + restore hook | Runtime SymplecticState + durable snapshot |
+| Cold-start fidelity median ≥0.90 (10 live wakes) | goal cognitive completion | implemented | live `mcp_engram_cold_start_fidelity` after each `session_end`+`session_start` boundary | SCRATCH/docs/evidence `csf-median-proof-2026-08-04.txt` median≈0.9445; **10 unique scores + 10 unique timestamps** (span ~306s) | Method requires live tool recompute (session_start alone may soft-stale-cache identical scores) |
+| BlockTier physical layouts (Small/Large distinct sizes) | types.rs BlockTier | partial (logical tags only) | `physical_byte_size` / `has_shipped_physical_layout`; Std only shipped | `block_tier_physical_layout_honest_baseline`; residual `residual_block_tier_physical_distinct_layouts` (ignored failer) | All tiers still `BLOCK_SIZE` on disk; residual goal:residual_block_tier_physical |
+| ROCm HIP query dispatch (Phase 10) | engram-gpu rocm_backend | partial (probe + CPU BVH) | `RocmBackend::probe_rocm` + BVH; `hip_query_dispatch_shipped()==false` | `rocm_hip_dispatch_honest_baseline`; residual `residual_rocm_hip_query_dispatch_shipped` (ignored failer) | HIP→Rust FFI not shipped; residual goal:residual_rocm_hip_dispatch |
+| OptiX RT-core product path on CI | engram-gpu OptiX | partial / aspirational on CI | local OptiX builds only | feature-gated local tests | Standard CI has no OptiX; capability-gated claim |
 
 ## Source index (files scanned this pass)
 

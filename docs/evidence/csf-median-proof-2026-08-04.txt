@@ -1,0 +1,11 @@
+scores [0.9432691931724548, 0.9405533075332642, 0.9586538076400757, 0.9438706040382385, 0.944038450717926, 0.945769190788269, 0.9443269371986389, 0.9460576772689819, 0.9462019205093384, 0.9447595477104187]
+count 10
+unique_scores 10
+unique_timestamps 10
+timestamp_span_sec 306
+median=0.9445432424545288
+mean=0.9457500636577606
+PASS_MEDIAN_GE_0.90=True
+method=session_start + live mcp_engram_cold_start_fidelity after each boundary session_end
+distinct_session_keys=['session_start_1785889429', 'session_start_1785889504', 'session_start_1785889537', 'session_start_1785889554', 'session_start_1785889581', 'session_start_1785889609', 'session_start_1785889647', 'session_start_1785889674', 'session_start_1785889699', 'session_start_1785889726']
+VERIFIED

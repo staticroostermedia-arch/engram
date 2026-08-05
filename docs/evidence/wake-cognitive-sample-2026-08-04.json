@@ -1,0 +1,133 @@
+{
+  "session_key": "session_start_1785889429",
+  "bundle_tier": "slim",
+  "primary_goal": "goal:engram_cognitive_substrate_completion_v1",
+  "cold_start_fidelity": {
+    "below_threshold": false,
+    "components": {
+      "bvh_ready": true,
+      "goal_restored": true,
+      "manifest_present": true,
+      "mean_hub_crs": 0.9016666412353516,
+      "nvme_recall_ready": true,
+      "trace_chain_present": true,
+      "trusted_tile_count": 6
+    },
+    "hub_crs_live_sample": true,
+    "low_threshold": 0.699999988079071,
+    "reasons": [],
+    "score": 0.9432691931724548,
+    "version": "cold_start_fidelity_v1",
+    "weights": {
+      "goal_restored": 0.25,
+      "manifest_tiles": 0.25,
+      "mean_hub_crs": 0.15000000596046448,
+      "nvme_bvh": 0.20000000298023224,
+      "trace_chain": 0.15000000596046448
+    }
+  },
+  "rehydration_manifest": {
+    "files_touched": [],
+    "hub_anchors": [
+      "primary_goal",
+      "helper:session_handoff_latest",
+      "trace:1785888932409_add-blocktier-physical-byte-size---has-shipped-p",
+      "compression_handoff_1785888648",
+      "trace:1785889090_session_end_boundary_auto",
+      "trace:1785889414_session_end_boundary_minimal",
+      "compression_handoff_1785889101",
+      "goal:residual_block_tier_physical",
+      "goal:residual_rocm_hip_dispatch",
+      "manifest:rehydration_1785889090",
+      "trace:1785888916_residual-closeout-strategy--csf-already-pass--fi",
+      "tile:session_boundary_1785889090",
+      "tile:session_boundary_1785888634"
+    ],
+    "hub_anchors_prefer_trusted_boundary": true,
+    "manifest_concept": "manifest:rehydration_1785889414",
+    "primary_goal": "goal:engram_cognitive_substrate_completion_v1",
+    "session_end_key": "session_end_1785889414",
+    "trace_chain_head": "trace:1785889414_session_end_boundary_minimal",
+    "trusted_tiles": [
+      {
+        "concept": "tile:session_boundary_1785889090",
+        "crs": 0.9100000262260436,
+        "tile_type": "session_boundary"
+      },
+      {
+        "concept": "tile:session_boundary_1785888634",
+        "crs": 0.9100000262260436,
+        "tile_type": "session_boundary"
+      },
+      {
+        "concept": "tile:verified_sequence_full-system-audit-autonomous-improvement-plan-v1",
+        "crs": 0.8799999952316284,
+        "tile_type": "verified_sequence"
+      },
+      {
+        "concept": "tile:verified_sequence_native-enram-mcp-ritual-stress-test---seamless-p",
+        "crs": 0.8799999952316284,
+        "tile_type": "verified_sequence"
+      },
+      {
+        "concept": "tile:formal_spec_rsi-cycle-14---scaffold-versioning",
+        "crs": 0.8799999952316284,
+        "tile_type": "formal_spec"
+      },
+      {
+        "concept": "tile:formal_spec_rsi-cycle-13---trajectory-meta-review",
+        "crs": 0.8799999952316284,
+        "tile_type": "formal_spec"
+      }
+    ],
+    "version": "rehydration_manifest_v1"
+  },
+  "trace_chain_head": "trace:1785889414_session_end_boundary_minimal",
+  "wake_digest": null,
+  "suggested_actions_count": 5,
+  "suggested_actions_tools": [
+    "mcp_engram_apply_capacity_hot_compress",
+    "mcp_engram_apply_capacity_hot_compress",
+    "mcp_engram_read_concept",
+    "mcp_engram_read_concept",
+    "mcp_engram_read_concept"
+  ],
+  "trust_surface": {
+    "bvh_ready": true,
+    "capacity_risk": "soft_elevated_hot_set",
+    "cold_start_fidelity": 0.9432691931724548,
+    "dual_gate": {
+      "continuity_ok": true,
+      "csf_floor": 0.7,
+      "lawfulness_ok": true
+    },
+    "hint": "UB dual-gate trust \u2014 trust_ok = continuity+lawfulness+backend+primary; still run verify_manifold for live VERIFY\u2080 sample",
+    "lawfulness_health": "healthy",
+    "lawfulness_issues_found": 0,
+    "lawfulness_pass": true,
+    "mean_hub_crs": 0.9016666412353516,
+    "missing": [],
+    "nvme_recall_ready": true,
+    "primary_goal_present": true,
+    "trust_ok": true,
+    "version": "ub_trust_surface_v1"
+  },
+  "injection_completeness": {
+    "missing": [],
+    "score": 1.0,
+    "slots_filled": 8,
+    "slots_total": 8
+  },
+  "mcp_health": {
+    "bvh_ready": true,
+    "cold_start_below_threshold": false,
+    "cold_start_fidelity": 0.9432691931724548,
+    "cufile_transfer_path": "unavailable",
+    "fully_initialized": true,
+    "gpu_compute_device": "1",
+    "gpu_hot_device": "0",
+    "lock_ok": true,
+    "recall_mode": "full_bvh_gpu"
+  },
+  "note": "redacted cognitive wake sample \u2014 no PII payloads"
+}

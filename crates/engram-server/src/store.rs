@@ -11191,8 +11191,9 @@ impl StoreHandle {
     }
 
     /// Invoke an executable Praxis Protocol (Item 3 **experimental** vertical slice).
-    /// Performs the full 7-point verification gate, then returns `stub_dispatch`
-    /// (no real protocol side effects). Not a product automation surface.
+    /// Performs the full 7-point verification gate, then `execute_protocol_dispatch`
+    /// (load `processes/*.toml`, bind tools, emit receipt). Not a full product
+    /// automation surface (tools are bound/declared, not live-executed as MCP graph).
     pub fn invoke_protocol(
         &mut self,
         key: &str,
@@ -11339,7 +11340,9 @@ impl StoreHandle {
             })
             .unwrap_or_default();
 
-        // Structured execution: validate tools exist in tool surface language; emit step receipt.
+        // Structured bind phase: load TOML, declare tools, assert invariants, emit receipt.
+        // Honesty: this is **not** live MCP tool graph execution — status is `tools_bound`
+        // (never claim "executed" for declare-only steps).
         let mut steps_run: Vec<serde_json::Value> = Vec::new();
         for (i, tool) in tools.iter().enumerate() {
             steps_run.push(serde_json::json!({
@@ -11375,7 +11378,8 @@ impl StoreHandle {
         );
         let receipt_body = format!(
             "PROTOCOL INVOCATION RECEIPT\n\n**process:** {process_name}\n**protocol_key:** {key}\n\
-             **toml:** {}\n**zedos_type:** {zedos_type}\n**steps:** {}\n**crs:** {:.3}\n",
+             **toml:** {}\n**zedos_type:** {zedos_type}\n**outcome:** tools_bound\n\
+             **steps:** {}\n**crs:** {:.3}\n",
             toml_path.display(),
             steps_run.len(),
             block.crs_score
@@ -11388,7 +11392,8 @@ impl StoreHandle {
         let _ = self.relate(&receipt_key, key, "documents");
 
         Ok(serde_json::json!({
-            "status": "executed",
+            "status": "tools_bound",
+            "execution_mode": "toml_bind_receipt",
             "process": process_name,
             "toml_path": toml_path.display().to_string(),
             "zedos_type": zedos_type,
@@ -11399,6 +11404,7 @@ impl StoreHandle {
             "receipt": receipt_key,
             "args": args,
             "crs": block.crs_score,
+            "note": "Tools declared and receipt stored; live MCP tool graph execution not claimed",
         }))
     }
 
@@ -16988,7 +16994,12 @@ mod cognitive_format_integrity_tests {
         std::env::set_current_dir(prev).unwrap();
         assert_eq!(res.status, "ok");
         let result = res.result.expect("result");
-        assert_eq!(result["status"], "executed");
+        // Honesty: bind-only phase must not claim full ritual execution.
+        assert_eq!(result["status"], "tools_bound");
+        assert_ne!(
+            result["status"], "executed",
+            "declare-only protocol path must not overclaim status=executed"
+        );
         assert!(result["receipt"]
             .as_str()
             .unwrap_or("")
@@ -16999,6 +17010,7 @@ mod cognitive_format_integrity_tests {
             .contains("cold-start"));
         // silent stub_dispatch is forbidden
         assert_ne!(result["status"], "stub_dispatch");
+        assert_eq!(result["execution_mode"], "toml_bind_receipt");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

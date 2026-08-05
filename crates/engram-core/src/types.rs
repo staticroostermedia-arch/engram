@@ -616,8 +616,12 @@ pub const ZEDOS_OPERATOR: u8 = 0x4F; // 'O' for Operator / VSA calculus instance
 // 2. Versioning + DSL for allowed_transforms (ver in [0], DSL bytes [1..], parser/validator here, mint default, enforce via store)
 // 3. SOA + arena (QSoA/PSoA + BlockArena w/ alloc_batch for batch/GPU; compat views/adapters for Leg3Pointer/Deref/HolographicBlock)
 
-/// Block tier enum (additive, default Std=262144 path unchanged; logical for future/payload use).
+/// Block tier enum (additive, default Std=262144 path unchanged).
+///
 /// Synergy with schema_ver: high byte for tier tag (mint sets (tier<<24 | base_ver)).
+/// **Physical layout:** only [`BlockTier::Std`] has a shipped on-disk size (`BLOCK_SIZE`).
+/// `Small` / `Large` are **logical schema tags** until residual goal
+/// `goal:residual_block_tier_physical` ships distinct physical byte layouts.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum BlockTier {
     Small = 1,
@@ -637,6 +641,25 @@ impl BlockTier {
             3 => BlockTier::Large,
             _ => BlockTier::Std,
         }
+    }
+
+    /// On-disk physical layout size in bytes.
+    ///
+    /// Today all tiers use [`BLOCK_SIZE`] (256 KiB). Small/Large do not yet allocate
+    /// distinct physical files — see [`Self::has_shipped_physical_layout`].
+    #[inline]
+    pub fn physical_byte_size(self) -> usize {
+        // Residual: when Small/Large ship, return tier-specific sizes.
+        BLOCK_SIZE
+    }
+
+    /// Whether this tier has a **shipped** physical layout (distinct storage path).
+    ///
+    /// - `Std` → true (canonical 256 KiB `.leg3`)
+    /// - `Small` / `Large` → false until residual physical-tier work lands
+    #[inline]
+    pub fn has_shipped_physical_layout(self) -> bool {
+        matches!(self, BlockTier::Std)
     }
 }
 
@@ -899,6 +922,49 @@ mod tests {
     #[test]
     fn leg3_pointer_is_pointer_sized() {
         assert_eq!(size_of::<Leg3Pointer>(), size_of::<usize>());
+    }
+
+    /// Honest baseline: only Std has a shipped physical layout; Small/Large are logical tags.
+    #[test]
+    fn block_tier_physical_layout_honest_baseline() {
+        assert_eq!(BlockTier::Std.physical_byte_size(), BLOCK_SIZE);
+        assert_eq!(BlockTier::Small.physical_byte_size(), BLOCK_SIZE);
+        assert_eq!(BlockTier::Large.physical_byte_size(), BLOCK_SIZE);
+        assert!(BlockTier::Std.has_shipped_physical_layout());
+        assert!(
+            !BlockTier::Small.has_shipped_physical_layout(),
+            "Small must remain logical-only until residual physical layout ships"
+        );
+        assert!(
+            !BlockTier::Large.has_shipped_physical_layout(),
+            "Large must remain logical-only until residual physical layout ships"
+        );
+    }
+
+    /// Residual failer (ignored in default CI). Un-ignore to drive
+    /// `goal:residual_block_tier_physical` — fails until Small/Large have
+    /// distinct physical sizes and `has_shipped_physical_layout() == true`.
+    #[test]
+    #[ignore = "residual goal:residual_block_tier_physical — un-ignore to fail until distinct physical layouts ship"]
+    fn residual_block_tier_physical_distinct_layouts() {
+        assert!(
+            BlockTier::Small.has_shipped_physical_layout(),
+            "residual: Small physical layout not shipped"
+        );
+        assert!(
+            BlockTier::Large.has_shipped_physical_layout(),
+            "residual: Large physical layout not shipped"
+        );
+        assert_ne!(
+            BlockTier::Small.physical_byte_size(),
+            BlockTier::Std.physical_byte_size(),
+            "residual: Small must use a distinct physical byte size"
+        );
+        assert_ne!(
+            BlockTier::Large.physical_byte_size(),
+            BlockTier::Std.physical_byte_size(),
+            "residual: Large must use a distinct physical byte size"
+        );
     }
 
     /// Freeze ZEDOS tag registry uniqueness (catches accidental aliasing).
