@@ -18,11 +18,27 @@ static CUFILE_INIT_SPAWNED: AtomicBool = AtomicBool::new(false);
 static LAST_TRANSFER_MODE: AtomicU8 = AtomicU8::new(3);
 static LAST_DMA_ATTEMPTED: AtomicBool = AtomicBool::new(false);
 static LAST_DMA_SUCCESS: AtomicBool = AtomicBool::new(false);
+/// Structured fail/success taxonomy for readiness honesty (C1).
+/// 0=unknown, 1=cufile_dma, 2=h2d_fallback, 3=hot_not_requested,
+/// 4=driver_probe_pending, 5=driver_not_detected, 6=init_in_flight,
+/// 7=init_failed, 8=dma_not_attempted, 9=lib_not_loadable
+static LAST_PATH_REASON: AtomicU8 = AtomicU8::new(0);
 
 const MODE_OFF: u8 = 0;
 const MODE_CUFILE_DMA: u8 = 1;
 const MODE_H2D_MEMCPY: u8 = 2;
 const MODE_UNAVAILABLE: u8 = 3;
+
+const REASON_UNKNOWN: u8 = 0;
+const REASON_CUFILE_DMA: u8 = 1;
+const REASON_H2D_FALLBACK: u8 = 2;
+const REASON_HOT_NOT_REQUESTED: u8 = 3;
+const REASON_DRIVER_PROBE_PENDING: u8 = 4;
+const REASON_DRIVER_NOT_DETECTED: u8 = 5;
+const REASON_INIT_IN_FLIGHT: u8 = 6;
+const REASON_INIT_FAILED: u8 = 7;
+const REASON_DMA_NOT_ATTEMPTED: u8 = 8;
+const REASON_LIB_NOT_LOADABLE: u8 = 9;
 
 /// User/env requests cuFile hot path (`ENGRAM_CUFILE_HOT=1`).
 pub fn cufile_hot_requested() -> bool {
@@ -82,11 +98,33 @@ pub fn cufile_probe_complete() -> bool {
 }
 
 pub fn cufile_transfer_path() -> &'static str {
+    // Refresh reason from live state when mode is still default-unavailable.
+    refresh_path_reason_from_state();
     match LAST_TRANSFER_MODE.load(Ordering::Relaxed) {
         MODE_CUFILE_DMA => "cufile_dma",
         MODE_H2D_MEMCPY => "h2d_memcpy",
         MODE_OFF => "off",
         _ => "unavailable",
+    }
+}
+
+/// Precise taxonomy for why `cufile_transfer_path` is not `cufile_dma`.
+///
+/// Never claim DMA success via labels alone — pair with
+/// [`cufile_last_dma_success`] / [`cufile_last_dma_attempted`].
+pub fn cufile_path_reason() -> &'static str {
+    refresh_path_reason_from_state();
+    match LAST_PATH_REASON.load(Ordering::Relaxed) {
+        REASON_CUFILE_DMA => "cufile_dma",
+        REASON_H2D_FALLBACK => "h2d_fallback",
+        REASON_HOT_NOT_REQUESTED => "hot_not_requested",
+        REASON_DRIVER_PROBE_PENDING => "driver_probe_pending",
+        REASON_DRIVER_NOT_DETECTED => "driver_not_detected",
+        REASON_INIT_IN_FLIGHT => "init_in_flight",
+        REASON_INIT_FAILED => "init_failed",
+        REASON_DMA_NOT_ATTEMPTED => "dma_not_attempted",
+        REASON_LIB_NOT_LOADABLE => "lib_not_loadable",
+        _ => "unknown",
     }
 }
 
@@ -102,6 +140,55 @@ pub fn cufile_last_dma_attempted() -> bool {
 
 fn set_transfer_mode(mode: u8) {
     LAST_TRANSFER_MODE.store(mode, Ordering::Relaxed);
+    match mode {
+        MODE_CUFILE_DMA => LAST_PATH_REASON.store(REASON_CUFILE_DMA, Ordering::Relaxed),
+        MODE_H2D_MEMCPY => LAST_PATH_REASON.store(REASON_H2D_FALLBACK, Ordering::Relaxed),
+        MODE_OFF => LAST_PATH_REASON.store(REASON_HOT_NOT_REQUESTED, Ordering::Relaxed),
+        _ => {}
+    }
+}
+
+fn set_path_reason(r: u8) {
+    LAST_PATH_REASON.store(r, Ordering::Relaxed);
+}
+
+/// Derive structured reason when no DMA attempt has stamped the mode yet.
+fn refresh_path_reason_from_state() {
+    let mode = LAST_TRANSFER_MODE.load(Ordering::Relaxed);
+    if mode == MODE_CUFILE_DMA || mode == MODE_H2D_MEMCPY {
+        return;
+    }
+    if !cufile_hot_requested() {
+        set_path_reason(REASON_HOT_NOT_REQUESTED);
+        if mode != MODE_OFF {
+            LAST_TRANSFER_MODE.store(MODE_OFF, Ordering::Relaxed);
+        }
+        return;
+    }
+    if !cufile_probe_complete() {
+        set_path_reason(REASON_DRIVER_PROBE_PENDING);
+        return;
+    }
+    if !CUFILE_DETECTED.load(Ordering::Relaxed) {
+        set_path_reason(REASON_DRIVER_NOT_DETECTED);
+        return;
+    }
+    #[cfg(target_os = "linux")]
+    {
+        if !CUFILE_INIT_TRIED.load(Ordering::Relaxed) {
+            set_path_reason(REASON_INIT_IN_FLIGHT);
+            return;
+        }
+        if !CUFILE_INIT_OK.load(Ordering::Relaxed) {
+            set_path_reason(REASON_INIT_FAILED);
+            return;
+        }
+    }
+    if !LAST_DMA_ATTEMPTED.load(Ordering::Relaxed) {
+        set_path_reason(REASON_DMA_NOT_ATTEMPTED);
+        return;
+    }
+    set_path_reason(REASON_UNKNOWN);
 }
 
 /// Hot NVMe→GPU path is active: requested, driver present, and cuFile driver open succeeded
@@ -114,15 +201,28 @@ fn set_transfer_mode(mode: u8) {
 pub fn cufile_hot_active() -> bool {
     if !cufile_hot_requested() {
         set_transfer_mode(MODE_OFF);
+        set_path_reason(REASON_HOT_NOT_REQUESTED);
         return false;
     }
     if !cufile_driver_detected() {
         set_transfer_mode(MODE_UNAVAILABLE);
+        if cufile_probe_complete() {
+            set_path_reason(REASON_DRIVER_NOT_DETECTED);
+        } else {
+            set_path_reason(REASON_DRIVER_PROBE_PENDING);
+        }
         return cfg!(engram_backend_cuda);
     }
     // Already finished (ok or failed).
     #[cfg(target_os = "linux")]
     if CUFILE_INIT_TRIED.load(Ordering::Relaxed) {
+        if !CUFILE_INIT_OK.load(Ordering::Relaxed) {
+            set_path_reason(REASON_INIT_FAILED);
+        } else if !LAST_DMA_ATTEMPTED.load(Ordering::Relaxed)
+            && LAST_TRANSFER_MODE.load(Ordering::Relaxed) == MODE_UNAVAILABLE
+        {
+            set_path_reason(REASON_DMA_NOT_ATTEMPTED);
+        }
         return CUFILE_INIT_OK.load(Ordering::Relaxed) || cfg!(engram_backend_cuda);
     }
     // Spawn async init once; do not block readiness/wake.
@@ -131,6 +231,7 @@ pub fn cufile_hot_active() -> bool {
             let _ = cufile_init();
         });
     }
+    set_path_reason(REASON_INIT_IN_FLIGHT);
     // Provisional: CUDA backend can serve hot residency while GDS open completes.
     cfg!(engram_backend_cuda)
 }
@@ -245,6 +346,7 @@ mod ffi {
         CUFILE_INIT_TRIED.store(true, Ordering::Relaxed);
         let Some(api) = load_api() else {
             tracing::debug!("[cufile] libcufile.so.0 not loadable");
+            set_path_reason(REASON_LIB_NOT_LOADABLE);
             return false;
         };
         let rc = unsafe { (api.driver_open)() };
@@ -252,8 +354,12 @@ mod ffi {
         CUFILE_INIT_OK.store(ok, Ordering::Relaxed);
         if ok {
             tracing::info!("[cufile] cuFileDriverOpen succeeded — GDS DMA path eligible");
+            if !LAST_DMA_ATTEMPTED.load(Ordering::Relaxed) {
+                set_path_reason(REASON_DMA_NOT_ATTEMPTED);
+            }
         } else {
             tracing::debug!("[cufile] cuFileDriverOpen returned {rc} — fallback to H2D memcpy");
+            set_path_reason(REASON_INIT_FAILED);
         }
         ok
     }
@@ -446,13 +552,32 @@ mod tests {
         let _guard = cufile_test_lock();
         set_transfer_mode(MODE_CUFILE_DMA);
         assert_eq!(cufile_transfer_path(), "cufile_dma");
+        assert_eq!(cufile_path_reason(), "cufile_dma");
         set_transfer_mode(MODE_H2D_MEMCPY);
         assert_eq!(cufile_transfer_path(), "h2d_memcpy");
+        assert_eq!(cufile_path_reason(), "h2d_fallback");
         cufile_note_h2d_fallback();
         std::env::set_var("ENGRAM_CUFILE_HOT", "1");
         cufile_note_h2d_fallback();
         assert_eq!(cufile_transfer_path(), "h2d_memcpy");
         std::env::remove_var("ENGRAM_CUFILE_HOT");
+    }
+
+    /// Structured taxonomy: hot-not-requested must not claim DMA or leave vague "unknown".
+    #[test]
+    fn cufile_path_reason_hot_not_requested() {
+        let _guard = cufile_test_lock();
+        std::env::remove_var("ENGRAM_CUFILE_HOT");
+        // Force mode unavailable then refresh via public API.
+        LAST_TRANSFER_MODE.store(MODE_UNAVAILABLE, Ordering::Relaxed);
+        LAST_PATH_REASON.store(REASON_UNKNOWN, Ordering::Relaxed);
+        let reason = cufile_path_reason();
+        assert_eq!(
+            reason, "hot_not_requested",
+            "without ENGRAM_CUFILE_HOT, reason must be precise"
+        );
+        assert_ne!(reason, "unavailable");
+        assert_ne!(cufile_path_reason(), "cufile_dma");
     }
 
     #[test]

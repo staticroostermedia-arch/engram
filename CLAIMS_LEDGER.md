@@ -1,7 +1,7 @@
 # CLAIMS_LEDGER — Public claim → code → test map
 
 **Status:** living  
-**Last truth pass:** 2026-08-04 (cognitive residual closeout — CSF median + residual trackers)  
+**Last truth pass:** 2026-08-05 (local-primary critical path — cuFile taxonomy, protocol live, BlockTier permanent logical)  
 **Purpose:** Every notable public claim maps to implementation status so agents and reviewers do not treat aspirational text as shipped fact.
 
 **Status values:** `implemented` | `partial` | `aspirational` | `removed`
@@ -57,7 +57,7 @@ When status is `implemented`, named tests should exist in-repo. Prefer **softeni
 
 | Lawfulness module extract (`lawfulness.rs`) | store/mcp narrow extract | implemented | `crates/engram-server/src/lawfulness.rs` (`summarize_block_lawfulness`, seal tally helpers); store wrappers | `lawfulness::tests`; `honest_lawfulness_integrity_tests` | Narrow extract only — not a full store/mcp split |
 | BVH quality path hint + QUALITY_MODE force | readiness / profile | implemented | `profile.rs` QUALITY_MODE forces DEFER_BVH=0; readiness `bvh_quality_path_hint` | profile quality_mode test; lawfulness bvh_quality_hint test | CPU agent still defers by default; no RAM bomb unless quality mode |
-| Protocol invoke MCP | mcp tool list + store | partial (experimental bind) | `invoke_protocol` → 7-point gate + TOML load + tool bind + receipt; status=`tools_bound` | `protocol_invoke_runs_real_toml_and_emits_receipt` | Honest: **not** full ritual execution. Prefer `dry_run=true`. Child residual if live step runner ships |
+| Protocol invoke MCP | mcp tool list + store | partial (live whitelist) | bind default `tools_bound`; `live_steps=true` runs readiness/CSF whitelist → `executed` | `protocol_invoke_runs_real_toml_and_emits_receipt` | Full MCP graph not executed; only whitelisted safe tools |
 | Linguistic extract real parse | types.rs mint_linguistic | implemented | `Leg3Pointer::extract_linguistic_bundle` serde_json linguistic/v1 | `test_linguistic_block_mint_roundtrip_crs_preserve` | Preserves words/coeffs/patches/functor_metadata; q leading reals match coeffs |
 | ZEDOS tag uniqueness | types.rs registry | implemented | unique `ZEDOS_*` constants; FIBERED=0x5E | `zedos_tag_constants_are_unique` | NREM_CENTROID remains 0x4E |
 | Unit-phase unbind path | encode from_text_unit_phase | implemented | `from_text_unit_phase` + op_bind/unbind | `unit_phase_unbind_recovery_above_0_95` | Recovery >0.95; spiral free-text remains default remember |
@@ -65,8 +65,17 @@ When status is `implemented`, named tests should exist in-repo. Prefer **softeni
 | Protocol invoke real TOML | store invoke_protocol | implemented (bind+receipt) | loads `processes/*.toml`, binds tools, emits receipt; `status=tools_bound` | `protocol_invoke_runs_real_toml_and_emits_receipt` | Never returns stub_dispatch or overclaim `executed` for declare-only steps |
 | Geosphere frame persistence | store set/restore | implemented | `geosphere:latest_frame` ZEDOS_GEOSPHERE; restore on warm_wake | geosphere frame tests + restore hook | Runtime SymplecticState + durable snapshot |
 | Cold-start fidelity median ≥0.90 (10 live wakes) | goal cognitive completion | implemented | live `mcp_engram_cold_start_fidelity` after each `session_end`+`session_start` boundary | SCRATCH/docs/evidence `csf-median-proof-2026-08-04.txt` median≈0.9445; **10 unique scores + 10 unique timestamps** (span ~306s) | Method requires live tool recompute (session_start alone may soft-stale-cache identical scores) |
-| BlockTier physical layouts (Small/Large distinct sizes) | types.rs BlockTier | partial (logical tags only) | `physical_byte_size` / `has_shipped_physical_layout`; Std only shipped | `block_tier_physical_layout_honest_baseline`; residual `residual_block_tier_physical_distinct_layouts` (ignored failer) | All tiers still `BLOCK_SIZE` on disk; residual goal:residual_block_tier_physical |
-| ROCm HIP query dispatch (Phase 10) | engram-gpu rocm_backend | partial (probe + CPU BVH) | `RocmBackend::probe_rocm` + BVH; `hip_query_dispatch_shipped()==false` | `rocm_hip_dispatch_honest_baseline`; residual `residual_rocm_hip_query_dispatch_shipped` (ignored failer) | HIP→Rust FFI not shipped; residual goal:residual_rocm_hip_dispatch |
+| BlockTier physical layouts (Small/Large distinct sizes) | types.rs BlockTier | aspirational (permanent logical-only) | `is_permanent_logical_only`; all tiers `BLOCK_SIZE` on disk | `block_tier_permanent_logical_only_policy` | Explicit 2026-08 decision: no alternate physical sizes on current 256KB stalk |
+| ROCm HIP query dispatch (Phase 10) | engram-gpu rocm_backend | partial / parked (no AMD on a-monad) | probe + CPU BVH; `hip_query_dispatch_shipped()==false` | `rocm_hip_dispatch_honest_baseline` | AMD-only when hardware present; not exercised on a-monad |
+| cuFile transfer path taxonomy | engram-gpu cufile | implemented (reason enum) | `cufile_path_reason` + readiness fields; DMA only if success | `cufile_path_reason_hot_not_requested`; transfer_path labels | Vague `unavailable` alone replaced by structured reason |
+| Hierarchy OS dual-GPU + hit rates | readiness | partial (labels + counters) | hierarchy_gpu0/1_role, hierarchy_hit_rates | `hierarchy_hit_rate_increments` | Policy documented; promote/demote still capacity-path driven |
+| Local large-payload IPC (mmap/UDS) | local_ipc.rs | implemented | path-token + LegView mmap; UDS one-shot token | `mmap_leg_preview_returns_token_not_full_body`; `uds_path_token_roundtrip` | Prefer tokens over multi-MB JSON on-box |
+| Agent suggested_actions cognitive bias | harness_injection ultra-lean | implemented | soft_elevated: dry_run p0, apply p2; agent pins recall/context_for_edit/quick_trace | `a3_agent_cognitive_bias_pins_in_ultra_lean_queue` | Hard elevated_hot_set still dry_run+apply at p0 |
+| Hierarchy hit rates on recall path | hierarchy_metrics + score_recall_candidates | implemented | hot/warm/cold on recall satisfaction; promote/demote counters | `hierarchy_hit_rates_on_recall_sequence` | Not recorded on pure is_hot probes |
+| Critical-path latency hooks (A1) | wake_digest + context_for_edit tests | implemented | build_wake_digest + context_for_edit timed hooks | `build_wake_digest_latency_hook`; `context_for_edit_hot_path_latency_hook` | Audit in docs/evidence/critical-path-audit-2026-08-05.md |
+| H2D empty-path measure (C2-b) | cuda_dispatch measure_h2d_q_stage_ms | implemented | real upload_hot_q_to_device timing | `measure_h2d_q_stage_reports_ms` | Requires device_residency + CUDA |
+| Experience pack export non-empty | scripts/export_experience_pack_v1.py | implemented | --bodies-json quality gates; refuses empty | docs/evidence/reference-pack-v1 (concept_count≥1) | Unfiltered stalk dump forbidden |
+| Independence ladder Stage 0–3 | docs/evidence/independence-ladder-v1.md | implemented (schema+baseline) | counters + Stage-1 a-monad baseline | independence-baseline-2026-08-05.txt | Stage-2 local-only % reserved |
 | OptiX RT-core product path on CI | engram-gpu OptiX | partial / aspirational on CI | local OptiX builds only | feature-gated local tests | Standard CI has no OptiX; capability-gated claim |
 
 ## Source index (files scanned this pass)

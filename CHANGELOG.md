@@ -36,6 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Unreleased
 
 ### Added
+- **Local-primary critical path (a-monad):** `cufile_path_reason` structured taxonomy in readiness; hierarchy dual-GPU role labels + hit-rate counters on **recall satisfaction** (not is_hot probes); protocol `live_steps` whitelist (status=`executed` when live steps run); BlockTier permanent logical-only policy; experience_pack_v1 export (non-empty quality-gated packs) + LoRA dry-run scripts; **A1** critical-path audit + latency hooks; **A2** `local_ipc` mmap path-tokens + UDS; **A3** agent cognitive bias on wake `suggested_actions`; **C2** real H2D measure via `measure_h2d_q_stage_ms`; independence ladder Stage 0–3 schema + Stage-1 baseline.
 - **CSF residual closeout:** 10-wake live cold-start fidelity series (median ≈0.9445 ≥ 0.90; **10 unique scores + timestamps** via live `cold_start_fidelity` after `session_end` boundaries); evidence under `docs/evidence/`; `wake-cognitive-sample` packet captured.
 - **Protocol honesty:** `invoke_protocol` returns `status=tools_bound` (TOML load + bind + receipt) — never overclaims `executed` for declare-only steps.
 - **BlockTier honesty API:** `physical_byte_size` / `has_shipped_physical_layout` (Std only shipped); residual `#[ignore]` failer for Small/Large physical layouts.

@@ -2565,7 +2565,7 @@ fn tool_list() -> Value {
             },
             {
                 "name": "mcp_engram_invoke_protocol",
-                "description": "EXPERIMENTAL: run 7-point PRAXIS gate (tag, CRS, contract, lawfulness), then load processes/*.toml, bind declared mcp_tools, and emit a receipt. Result status is tools_bound (not executed) — no live MCP tool graph run. Prefer dry_run=true. Use verify tools for audits.",
+                "description": "EXPERIMENTAL: 7-point PRAXIS gate then load processes/*.toml. Default: bind tools + receipt (status=tools_bound). Pass live_steps=true to run whitelisted safe tools (readiness/CSF probes) with status=executed when any step ran. Prefer dry_run=true first.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -9762,7 +9762,31 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
                 return json!({ "content": [{ "type": "text", "text": "Error: missing required 'key' string" }], "isError": true });
             }
 
-            let options = crate::store::InvokeOptions { dry_run };
+            let live_steps = args
+                .get("live_steps")
+                .and_then(|v| v.as_bool())
+                .or_else(|| {
+                    protocol_args
+                        .as_ref()
+                        .and_then(|a| a.get("live_steps"))
+                        .and_then(|v| v.as_bool())
+                })
+                .unwrap_or(false);
+            let options = crate::store::InvokeOptions {
+                dry_run,
+                live_steps,
+            };
+            // Merge live_steps into protocol args for dispatch.
+            let protocol_args = match (protocol_args, live_steps) {
+                (Some(mut v), true) => {
+                    if let Some(obj) = v.as_object_mut() {
+                        obj.insert("live_steps".into(), serde_json::json!(true));
+                    }
+                    Some(v)
+                }
+                (None, true) => Some(serde_json::json!({"live_steps": true})),
+                (other, _) => other,
+            };
 
             match store
                 .lock()

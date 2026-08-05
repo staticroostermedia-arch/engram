@@ -1,0 +1,5 @@
+decision: permanent_logical_only
+rationale: Preserve 256KB O_DIRECT Std stalk (~101k blocks); Small/Large remain schema tags only
+tests: block_tier_permanent_logical_only_policy, block_tier_physical_layout_honest_baseline
+CLAIMS: aspirational for distinct physical sizes; implemented for logical tags
+residual_failer: retired (replaced by permanent policy test)

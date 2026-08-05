@@ -1,0 +1,15 @@
+{
+  "schema_version": "experience_pack_v1",
+  "pack_hash": "4ca363030be1f115916ad7233228227d",
+  "created_at": 1785949010,
+  "filters": {
+    "min_crs": 0.74,
+    "unfiltered_forbidden": true,
+    "held_out_required": true,
+    "empty_bodies_forbidden": true
+  },
+  "concept_count": 11,
+  "reference_count": 11,
+  "trajectory_count": 0,
+  "doctrine": "Unfiltered self-train forbidden; receipt required for positives; held-out eval before promote"
+}

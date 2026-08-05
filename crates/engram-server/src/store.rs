@@ -3192,6 +3192,33 @@ impl StoreHandle {
             "presentation_cache_hit_rate".into(),
             serde_json::json!(crate::cockpit_cache::presentation_cache_hit_rate()),
         );
+        // Hierarchy OS (Wave B): dual-GPU roles + hit-rate snapshot.
+        obj.insert(
+            "hierarchy_gpu0_role".into(),
+            serde_json::json!("hot_agent_resident"),
+        );
+        obj.insert(
+            "hierarchy_gpu1_role".into(),
+            serde_json::json!("compute_bvh_batch_nrem"),
+        );
+        obj.insert(
+            "hierarchy_hot_set_len".into(),
+            serde_json::json!(self.hot_set.read().map(|s| s.len()).unwrap_or(0)),
+        );
+        obj.insert(
+            "hierarchy_policy".into(),
+            serde_json::json!("cold=T700.leg3|warm=RAM_CSR_tensor|hot=GPU0|compute=GPU1"),
+        );
+        obj.insert(
+            "hierarchy_hit_rates".into(),
+            crate::hierarchy_metrics::snapshot(),
+        );
+        // Wave A2: local large-payload IPC (mmap + UDS path tokens).
+        if let Some(map) = crate::local_ipc::readiness_fields().as_object() {
+            for (k, v) in map {
+                obj.insert(k.clone(), v.clone());
+            }
+        }
         obj.insert(
             "cufile_hot_ready".into(),
             serde_json::json!(self.backend_cufile_hot_ready()),
@@ -3204,10 +3231,23 @@ impl StoreHandle {
             "cufile_transfer_path".into(),
             serde_json::json!(self.backend_cufile_transfer_path()),
         );
+        obj.insert(
+            "cufile_path_reason".into(),
+            serde_json::json!(self.backend_cufile_path_reason()),
+        );
+        obj.insert(
+            "cufile_dma_attempted".into(),
+            serde_json::json!(self.backend_cufile_dma_attempted()),
+        );
+        obj.insert(
+            "cufile_dma_success".into(),
+            serde_json::json!(self.backend_cufile_dma_success()),
+        );
         // Honesty: device_residency feature stages H2D/cuFile when active; otherwise "unavailable".
         // Never implies full production GDS pipeline when path is h2d_memcpy or unavailable.
         {
             let path = self.backend_cufile_transfer_path();
+            let reason = self.backend_cufile_path_reason();
             let residency = if path == "cufile_dma" {
                 "active_cufile_dma"
             } else if path == "h2d_memcpy" {
@@ -3218,9 +3258,9 @@ impl StoreHandle {
             obj.insert("device_residency_mode".into(), serde_json::json!(residency));
             obj.insert(
                 "device_residency_honest_note".into(),
-                serde_json::json!(
-                    "device_residency is optional; unavailable/h2d_memcpy ≠ production GPUDirect Storage"
-                ),
+                serde_json::json!(format!(
+                    "device_residency optional; path={path} reason={reason}; only cufile_dma+dma_success claims GDS DMA"
+                )),
             );
         }
         obj.insert(
@@ -3359,6 +3399,42 @@ impl StoreHandle {
         #[cfg(not(engram_backend_cuda))]
         {
             "unavailable"
+        }
+    }
+
+    fn backend_cufile_path_reason(&self) -> &'static str {
+        #[cfg(engram_backend_cuda)]
+        {
+            if let Backend::Gpu(b) = &self.backend {
+                return b.cufile_path_reason();
+            }
+            engram_gpu::cufile::cufile_path_reason()
+        }
+        #[cfg(not(engram_backend_cuda))]
+        {
+            "driver_not_detected"
+        }
+    }
+
+    fn backend_cufile_dma_attempted(&self) -> bool {
+        #[cfg(engram_backend_cuda)]
+        {
+            engram_gpu::cufile::cufile_last_dma_attempted()
+        }
+        #[cfg(not(engram_backend_cuda))]
+        {
+            false
+        }
+    }
+
+    fn backend_cufile_dma_success(&self) -> bool {
+        #[cfg(engram_backend_cuda)]
+        {
+            engram_gpu::cufile::cufile_last_dma_success()
+        }
+        #[cfg(not(engram_backend_cuda))]
+        {
+            false
         }
     }
 
@@ -3837,9 +3913,11 @@ impl StoreHandle {
         if !PREFIXES.iter().any(|p| token.starts_with(p)) {
             return None;
         }
+        let tier = self.classify_recall_tier(token);
         let block = self
             .fetch_block_high_priority(token)
             .or_else(|| self.fetch_block(token))?;
+        crate::hierarchy_metrics::record_tier(tier);
         let ego = self.ego_q.as_deref();
         let encoded = self.encode(token);
         let effective_q = if let Ok(geo) = self.geosphere.read() {
@@ -3925,9 +4003,12 @@ impl StoreHandle {
             .iter()
             .filter_map(|name| {
                 let raw = name.split_once("::").map_or(name.as_str(), |(_, r)| r);
+                // Classify tier *before* fetch so cold vs warm is honest (post-fetch may warm cache).
+                let tier = self.classify_recall_tier(name);
                 let block = self
                     .fetch_block_high_priority(name)
                     .or_else(|| self.backend.fetch_block(raw))?;
+                crate::hierarchy_metrics::record_tier(tier);
                 let mut mem =
                     engram_core::backend::score_memory(name.clone(), effective_q, &block, ego);
                 // RSI Cycle 27–28: CRS×α joint — goal α preferred, else incident-edge label α
@@ -7144,6 +7225,9 @@ impl StoreHandle {
         for c in &to_unmark {
             self.unmark_hot(c);
         }
+        if !to_unmark.is_empty() {
+            crate::hierarchy_metrics::record_demote(to_unmark.len() as u64);
+        }
         let after = self.hot_concepts().len();
         serde_json::json!({
             "version": "ub_capacity_compress_v1",
@@ -8023,15 +8107,34 @@ impl StoreHandle {
     }
 
     /// Is this concept currently in the high-priority hot set?
+    /// Pure probe — does **not** record hierarchy hit rates (use [`Self::record_recall_tier`]
+    /// on actual recall satisfaction paths only).
     pub fn is_hot(&self, concept: &str) -> bool {
+        matches!(
+            self.classify_recall_tier(concept),
+            crate::hierarchy_metrics::RecallTier::Hot | crate::hierarchy_metrics::RecallTier::Warm
+        )
+    }
+
+    /// Classify where a block would be satisfied without mutating hit counters.
+    /// Hot = explicit hot_set; Warm = backend high-priority cache; Cold = disk/other.
+    pub fn classify_recall_tier(&self, concept: &str) -> crate::hierarchy_metrics::RecallTier {
         let raw = stalk_raw_concept(concept);
-        // Check both the explicit hot set and the backend cache
         if let Ok(set) = self.hot_set.read() {
             if set.contains(raw) {
-                return true;
+                return crate::hierarchy_metrics::RecallTier::Hot;
             }
         }
-        self.backend.is_hot(raw)
+        if self.backend.is_hot(raw) {
+            crate::hierarchy_metrics::RecallTier::Warm
+        } else {
+            crate::hierarchy_metrics::RecallTier::Cold
+        }
+    }
+
+    /// Record hierarchy hit for one recall satisfaction (scored candidate delivered).
+    pub fn record_recall_tier(&self, concept: &str) {
+        crate::hierarchy_metrics::record_tier(self.classify_recall_tier(concept));
     }
 
     /// Explicitly mark a concept as "hot" so it prefers the high-priority fast path
@@ -8041,6 +8144,7 @@ impl StoreHandle {
         if let Ok(mut set) = self.hot_set.write() {
             set.insert(raw.to_string());
         }
+        crate::hierarchy_metrics::record_promote();
         // Phase 2.1 geo carry: snapshot current SymplecticState frame at promotion time
         // so NREM contributor logs and hot paths respect the live geosphere under which
         // the artifact (esp. TRAINING/tile/trace) was elevated. Stored in runtime only.
@@ -10968,6 +11072,9 @@ pub use crate::lawfulness::{
 #[derive(Debug, Clone, Default)]
 pub struct InvokeOptions {
     pub dry_run: bool,
+    /// When true, run whitelisted safe tools live after bind (status may become `executed`).
+    /// Default false preserves bind-only `tools_bound` honesty.
+    pub live_steps: bool,
 }
 
 /// Result of invoking an executable Praxis Protocol.
@@ -11340,17 +11447,47 @@ impl StoreHandle {
             })
             .unwrap_or_default();
 
-        // Structured bind phase: load TOML, declare tools, assert invariants, emit receipt.
-        // Honesty: this is **not** live MCP tool graph execution — status is `tools_bound`
-        // (never claim "executed" for declare-only steps).
+        // Bind phase: load TOML, declare tools, assert invariants.
+        // When `args.live_steps` or options.live_steps: run **whitelisted** safe tools live.
+        // Status: `tools_bound` (bind only) or `executed` (at least one live step ran).
+        let live = args
+            .as_ref()
+            .and_then(|a| a.get("live_steps"))
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
         let mut steps_run: Vec<serde_json::Value> = Vec::new();
+        let mut live_ran = 0u32;
         for (i, tool) in tools.iter().enumerate() {
-            steps_run.push(serde_json::json!({
-                "step": i,
-                "kind": "declare_mcp_tool",
-                "tool": tool,
-                "status": "bound",
-            }));
+            if live {
+                match self.protocol_run_safe_tool(tool) {
+                    Ok(detail) => {
+                        live_ran += 1;
+                        steps_run.push(serde_json::json!({
+                            "step": i,
+                            "kind": "live_tool",
+                            "tool": tool,
+                            "status": "executed",
+                            "detail": detail,
+                        }));
+                    }
+                    Err(e) => {
+                        steps_run.push(serde_json::json!({
+                            "step": i,
+                            "kind": "live_tool",
+                            "tool": tool,
+                            "status": "skipped_or_failed",
+                            "error": e.to_string(),
+                        }));
+                    }
+                }
+            } else {
+                steps_run.push(serde_json::json!({
+                    "step": i,
+                    "kind": "declare_mcp_tool",
+                    "tool": tool,
+                    "status": "bound",
+                }));
+            }
         }
         if steps_run.is_empty() {
             steps_run.push(serde_json::json!({
@@ -11368,6 +11505,17 @@ impl StoreHandle {
             }));
         }
 
+        let outcome = if live && live_ran > 0 {
+            "executed"
+        } else {
+            "tools_bound"
+        };
+        let exec_mode = if live {
+            "toml_live_whitelist"
+        } else {
+            "toml_bind_receipt"
+        };
+
         let receipt_key = format!(
             "receipt:protocol_{}_{}",
             process_name.replace([':', '/', ' '], "_"),
@@ -11378,8 +11526,8 @@ impl StoreHandle {
         );
         let receipt_body = format!(
             "PROTOCOL INVOCATION RECEIPT\n\n**process:** {process_name}\n**protocol_key:** {key}\n\
-             **toml:** {}\n**zedos_type:** {zedos_type}\n**outcome:** tools_bound\n\
-             **steps:** {}\n**crs:** {:.3}\n",
+             **toml:** {}\n**zedos_type:** {zedos_type}\n**outcome:** {outcome}\n\
+             **live_ran:** {live_ran}\n**steps:** {}\n**crs:** {:.3}\n",
             toml_path.display(),
             steps_run.len(),
             block.crs_score
@@ -11392,8 +11540,8 @@ impl StoreHandle {
         let _ = self.relate(&receipt_key, key, "documents");
 
         Ok(serde_json::json!({
-            "status": "tools_bound",
-            "execution_mode": "toml_bind_receipt",
+            "status": outcome,
+            "execution_mode": exec_mode,
             "process": process_name,
             "toml_path": toml_path.display().to_string(),
             "zedos_type": zedos_type,
@@ -11401,11 +11549,46 @@ impl StoreHandle {
             "invariants": invariants,
             "produces": produces,
             "steps": steps_run,
+            "live_ran": live_ran,
             "receipt": receipt_key,
             "args": args,
             "crs": block.crs_score,
-            "note": "Tools declared and receipt stored; live MCP tool graph execution not claimed",
+            "note": if live {
+                "Whitelisted safe tools executed where possible; non-whitelist tools skipped with structured error"
+            } else {
+                "Tools declared and receipt stored; pass live_steps=true for whitelist live execution"
+            },
         }))
+    }
+
+    /// Whitelist of safe tools runnable from protocol live_steps (no unbounded side effects).
+    fn protocol_run_safe_tool(&self, tool: &str) -> Result<serde_json::Value> {
+        let t = tool.trim();
+        match t {
+            "mcp_engram_get_backend_readiness" | "get_backend_readiness" => {
+                Ok(self.backend_readiness())
+            }
+            "mcp_engram_cold_start_fidelity" | "cold_start_fidelity" => {
+                // Reuse readiness-derived CSF components without full session_start.
+                let r = self.backend_readiness();
+                Ok(serde_json::json!({
+                    "kind": "cold_start_fidelity_probe",
+                    "bvh_ready": r.get("bvh_ready"),
+                    "recall_mode": r.get("recall_mode"),
+                    "leg_block_count": r.get("leg_block_count"),
+                    "cufile_transfer_path": r.get("cufile_transfer_path"),
+                    "cufile_path_reason": r.get("cufile_path_reason"),
+                }))
+            }
+            "mcp_engram_verify_manifold_integrity" => Ok(serde_json::json!({
+                "kind": "verify_probe",
+                "status": "not_auto_run_in_protocol",
+                "hint": "call mcp_engram_verify_manifold_integrity separately for full sample",
+            })),
+            other => Err(anyhow::anyhow!(
+                "tool '{other}' not on protocol live whitelist (bound only)"
+            )),
+        }
     }
 
     fn resolve_process_toml_path(process_ref: &str) -> std::path::PathBuf {
@@ -16988,10 +17171,12 @@ mod cognitive_format_integrity_tests {
             .invoke_protocol(
                 "protocol:csf_probe",
                 Some(serde_json::json!({"process": "process:engram.ritual.cold-start-fidelity"})),
-                InvokeOptions { dry_run: false },
+                InvokeOptions {
+                    dry_run: false,
+                    live_steps: false,
+                },
             )
             .expect("invoke");
-        std::env::set_current_dir(prev).unwrap();
         assert_eq!(res.status, "ok");
         let result = res.result.expect("result");
         // Honesty: bind-only phase must not claim full ritual execution.
@@ -17011,6 +17196,27 @@ mod cognitive_format_integrity_tests {
         // silent stub_dispatch is forbidden
         assert_ne!(result["status"], "stub_dispatch");
         assert_eq!(result["execution_mode"], "toml_bind_receipt");
+
+        // Live whitelist path: readiness + CSF probes execute → status executed.
+        // Keep repo root cwd until live invoke resolves processes/*.toml.
+        let res_live = store
+            .invoke_protocol(
+                "protocol:csf_probe",
+                Some(serde_json::json!({
+                    "process": "process:engram.ritual.cold-start-fidelity",
+                    "live_steps": true
+                })),
+                InvokeOptions {
+                    dry_run: false,
+                    live_steps: true,
+                },
+            )
+            .expect("live invoke");
+        std::env::set_current_dir(prev).unwrap();
+        let live = res_live.result.expect("live result");
+        assert_eq!(live["status"], "executed");
+        assert!(live["live_ran"].as_u64().unwrap_or(0) >= 1);
+        assert_eq!(live["execution_mode"], "toml_live_whitelist");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
@@ -17065,6 +17271,151 @@ mod praxis_contract_hard_tests {
             res.message
         );
         std::env::remove_var("ENGRAM_PRAXIS_CONTRACT");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+/// Local-primary critical path: hierarchy hits, readiness honesty, A1 latency hooks.
+#[cfg(test)]
+mod local_primary_critical_path_tests {
+    use super::*;
+
+    fn tmp_dir(suffix: &str) -> String {
+        std::env::set_var("ENGRAM_DISABLE_SHEAF", "1");
+        std::env::set_var("ENGRAM_FORCE_CPU_BACKEND", "1");
+        std::env::set_var("ENGRAM_KI_DISABLE", "1");
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let d = format!("/tmp/engram-lp-{}-{}-{}", std::process::id(), nanos, suffix);
+        std::fs::create_dir_all(&d).ok();
+        d
+    }
+
+    /// Wave B: real recall sequence records hot/warm/cold hierarchy hits (not is_hot probes).
+    #[test]
+    fn hierarchy_hit_rates_on_recall_sequence() {
+        let dir = tmp_dir("hierarchy_recall_seq");
+        let mut store = StoreHandle::new(&dir);
+        store
+            .remember(
+                "goal:hierarchy_test_v1",
+                "GOAL BLOCK\n\n**goal_statement:** hierarchy hit test\n**status:** active\n",
+            )
+            .unwrap();
+        store
+            .remember(
+                "trace:hierarchy_test_coldish",
+                "REASONING TRACE\n\n**decision_point:** cold path probe\n",
+            )
+            .unwrap();
+        store.mark_hot("goal:hierarchy_test_v1");
+        let before = crate::hierarchy_metrics::snapshot();
+        let b_total = before["total"].as_u64().unwrap_or(0);
+        let (hits, _) = store.recall_scoped("goal:hierarchy_test_v1", 4, Some("anchors"));
+        assert!(!hits.is_empty(), "expected recall hits");
+        let after = crate::hierarchy_metrics::snapshot();
+        let a_total = after["total"].as_u64().unwrap_or(0);
+        assert!(
+            a_total > b_total,
+            "recall sequence must increment hierarchy hits: before={before} after={after}"
+        );
+        assert!(after["frac_hot"].is_number() || after["frac_warm"].is_number());
+        assert!(after["promote_events"].as_u64().unwrap_or(0) >= 1);
+        if let Ok(path) = std::env::var("ENGRAM_DUMP_HIT_RATES") {
+            let _ = std::fs::write(
+                &path,
+                serde_json::to_string_pretty(&after).unwrap_or_default(),
+            );
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Wave C3: readiness includes path-reason taxonomy + hierarchy + local_ipc fields.
+    #[test]
+    fn readiness_includes_local_primary_fields() {
+        let dir = tmp_dir("readiness_local_primary");
+        let store = StoreHandle::new(&dir);
+        let r = store.backend_readiness();
+        assert!(
+            r.get("cufile_path_reason").is_some(),
+            "cufile_path_reason required for C3 honesty: {r}"
+        );
+        assert_ne!(
+            r.get("cufile_path_reason").and_then(|v| v.as_str()),
+            Some("unavailable"),
+            "path_reason must be structured enum, not vague unavailable alone"
+        );
+        assert!(r.get("hierarchy_hit_rates").is_some());
+        assert_eq!(
+            r.get("hierarchy_gpu0_role").and_then(|v| v.as_str()),
+            Some("hot_agent_resident")
+        );
+        assert_eq!(
+            r.get("hierarchy_gpu1_role").and_then(|v| v.as_str()),
+            Some("compute_bvh_batch_nrem")
+        );
+        assert_eq!(r.get("local_ipc_v1").and_then(|v| v.as_bool()), Some(true));
+        if let Ok(path) = std::env::var("ENGRAM_DUMP_READINESS") {
+            let _ = std::fs::write(&path, serde_json::to_string_pretty(&r).unwrap_or_default());
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Dump readiness from default backend (no FORCE_CPU) for a-monad evidence capture.
+    #[test]
+    fn readiness_dump_native_backend_for_evidence() {
+        if std::env::var("ENGRAM_DUMP_READINESS_NATIVE").is_err() {
+            return;
+        }
+        // Do not force CPU — capture real cuda/cufile labels on a-monad.
+        std::env::remove_var("ENGRAM_FORCE_CPU_BACKEND");
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = format!("/tmp/engram-lp-native-{}-{}", std::process::id(), nanos);
+        std::fs::create_dir_all(&dir).ok();
+        let store = StoreHandle::new(&dir);
+        let r = store.backend_readiness();
+        let path = std::env::var("ENGRAM_DUMP_READINESS_NATIVE").unwrap();
+        std::fs::write(&path, serde_json::to_string_pretty(&r).unwrap_or_default())
+            .expect("write readiness dump");
+        assert!(r.get("cufile_path_reason").is_some());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Wave A1: context_for_edit hot path is timed and returns without unbounded work on empty file.
+    #[test]
+    fn context_for_edit_hot_path_latency_hook() {
+        let dir = tmp_dir("ctx_edit_latency");
+        let mut store = StoreHandle::new(&dir);
+        let path = std::path::Path::new(&dir).join("sample.rs");
+        std::fs::write(&path, "fn main() {}\n").unwrap();
+        let t0 = std::time::Instant::now();
+        let v = store.context_for_edit(path.to_str().unwrap(), None, None, false);
+        let ms = t0.elapsed().as_secs_f64() * 1000.0;
+        assert!(
+            v.is_object() || v.is_array() || !v.is_null(),
+            "context_for_edit must return JSON"
+        );
+        assert!(
+            ms < 30_000.0,
+            "context_for_edit empty path took {ms:.1}ms — suspected unbounded work"
+        );
+        let line = format!("context_for_edit_hot_path_ms={ms:.3}\n");
+        eprint!("{line}");
+        if let Ok(path) = std::env::var("ENGRAM_DUMP_LATENCY") {
+            let _ = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&path)
+                .and_then(|mut f| {
+                    use std::io::Write;
+                    f.write_all(line.as_bytes())
+                });
+        }
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

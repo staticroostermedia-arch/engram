@@ -208,6 +208,10 @@ impl CudaBackend {
         crate::cufile::cufile_transfer_path()
     }
 
+    pub fn cufile_path_reason(&self) -> &'static str {
+        crate::cufile::cufile_path_reason()
+    }
+
     /// True when a background or on-demand BVH build thread is running.
     pub fn bvh_build_in_progress(&self) -> bool {
         self.bvh_build.is_building()

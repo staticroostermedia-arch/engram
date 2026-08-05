@@ -1,0 +1,30 @@
+{
+  "schema_version": "independence_ladder_v1",
+  "stage": 1,
+  "host": "a-monad",
+  "counters": {
+    "local_only_session_success_pct": null,
+    "local_only_session_success_pct_note": "counter reserved \u2014 multi-session tracking not instrumented yet",
+    "residual_open_count": 3,
+    "csf_median": 0.948,
+    "csf_n": 5,
+    "hierarchy_hit_rates": {
+      "frac_hot": 1.0,
+      "frac_warm": 0.0,
+      "frac_cold": 0.0,
+      "total": 1,
+      "source": "hierarchy_hit_rates_on_recall_sequence"
+    },
+    "online_call_rate": null,
+    "online_call_rate_note": "not instrumented in MCP yet \u2014 counter reserved"
+  },
+  "residuals_named": [
+    "cufile_dma_success_pending",
+    "lora_weight_train_not_run",
+    "rocm_parked_no_amd"
+  ],
+  "baseline_captured_at": "2026-08-05",
+  "cufile_path_reason": "hot_not_requested",
+  "recall_mode_live_mcp": "full_bvh_gpu",
+  "backend_kind_native_dump": "cuda"
+}

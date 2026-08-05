@@ -1,0 +1,24 @@
+{
+  "schema": "lora_improvement_receipt_v1",
+  "pack_hash": "4ca363030be1f115916ad7233228227d",
+  "pack_path": "/home/a/Documents/Engram/docs/evidence/reference-pack-v1",
+  "concept_count": 11,
+  "adapter_id": "dry_run",
+  "before": {
+    "csf_median": 0.94,
+    "harness_pass": true
+  },
+  "after": {
+    "csf_median": 0.94,
+    "harness_pass": true
+  },
+  "decision": "hold_for_human",
+  "reason": "dry_run only \u2014 no weight update; pipeline structural pass",
+  "created_at": 1785949426,
+  "eval_harness": [
+    "agent-memory",
+    "format/encode",
+    "protocol_live",
+    "held_out_goal_replay"
+  ]
+}

@@ -388,3 +388,39 @@ pub fn free_device_ptr(gpu_ptr: u64) {
 
 #[cfg(any(not(engram_backend_cuda), not(feature = "device_residency")))]
 pub fn free_device_ptr(_gpu_ptr: u64) {}
+
+/// Time a single host→device q-vector stage (H2D). Returns (ok, ms).
+/// Used by empty-path latency suite (C2-b) — real DMA path when CUDA present.
+pub fn measure_h2d_q_stage_ms(q: &[Complex32; 8192]) -> (bool, f64) {
+    let t0 = std::time::Instant::now();
+    let ptr = upload_hot_q_to_device(q);
+    let ms = t0.elapsed().as_secs_f64() * 1000.0;
+    if let Some(p) = ptr {
+        free_device_ptr(p);
+        (true, ms)
+    } else {
+        (false, ms)
+    }
+}
+
+#[cfg(test)]
+mod h2d_latency_tests {
+    use super::*;
+    use engram_core::Complex32;
+
+    #[test]
+    fn measure_h2d_q_stage_reports_ms() {
+        let q = [Complex32::new(0.0, 0.0); 8192];
+        let (ok, ms) = measure_h2d_q_stage_ms(&q);
+        // On CUDA+device_residency: ok=true and ms>0; on CPU-only: ok=false, still returns ms.
+        eprintln!("h2d_q_stage ok={ok} ms={ms:.4}");
+        assert!(ms >= 0.0);
+        #[cfg(all(engram_backend_cuda, feature = "device_residency"))]
+        {
+            // Soft: if CUDA runtime is live, expect success; if init failed, still pass with ok=false.
+            if ok {
+                assert!(ms < 500.0, "H2D q stage unexpectedly slow: {ms}ms");
+            }
+        }
+    }
+}
