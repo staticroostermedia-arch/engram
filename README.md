@@ -163,7 +163,7 @@ flowchart LR
 - **Recall quality path:** GPU agent profile eager BVH when NVIDIA present; opt-in `ENGRAM_QUALITY_MODE=1` forces eager BVH + readiness flag (CPU stays deferred by default).
 - **Proof harness CI** + NREM dedicated stack / REST `scope=all` dogfood fixes (#209–#213).
 - **87 MCP tools** registered (`tool_list()` — 83 `mcp_engram_*` + 4 linguistic); lean default remains **8 essential**.
-- **Continuity spikes / tensor–tile / LEG Browser** remain available; hybrid wire is experimental stub only (not a product surface).
+- **Hybrid wire HBRD2** full fidelity transport (`to_hybrid_wire` / `from_hybrid_wire` restore q/p/CRS/footer; O_DIRECT `.leg3` remains primary on-disk). Continuity spikes / tensor–tile / LEG Browser remain available.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

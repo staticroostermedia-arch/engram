@@ -9,7 +9,7 @@
 | Criterion | Status | Evidence |
 |-----------|--------|----------|
 | Format/stub gaps finished (HBRD2, linguistic extract, ZEDOS unique, unit-phase, relation reseal, protocol TOML, geosphere) | **done** (PR #221) | master `13c16fed` |
-| CSF median ≥ 0.90 over 10 live `session_start` wakes | **PASS** | `docs/evidence/csf-median-proof-2026-08-04.txt` median=0.951923 |
+| CSF median ≥ 0.90 over 10 live cold wakes | **PASS** | `docs/evidence/csf-median-proof-2026-08-04.txt` median≈0.9445; 10 unique scores/timestamps via live `cold_start_fidelity` after session_end boundaries |
 | CLAIMS honesty for shipped vs residual | **this PR** | `CLAIMS_LEDGER.md` CSF + residual rows; protocol MCP description fixed |
 | Incompletes tracked with residual failers | **this PR** | `#[ignore]` residual tests + honesty baselines |
 

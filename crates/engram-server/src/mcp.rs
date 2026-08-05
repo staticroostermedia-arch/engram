@@ -2565,7 +2565,7 @@ fn tool_list() -> Value {
             },
             {
                 "name": "mcp_engram_invoke_protocol",
-                "description": "EXPERIMENTAL: run 7-point PRAXIS gate (tag, CRS, contract, lawfulness), then load processes/*.toml, bind declared mcp_tools, and emit a receipt concept. Prefer dry_run=true. Not full product automation (no live MCP tool execution graph); use verify tools for audits.",
+                "description": "EXPERIMENTAL: run 7-point PRAXIS gate (tag, CRS, contract, lawfulness), then load processes/*.toml, bind declared mcp_tools, and emit a receipt. Result status is tools_bound (not executed) — no live MCP tool graph run. Prefer dry_run=true. Use verify tools for audits.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
