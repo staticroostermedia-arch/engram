@@ -2692,7 +2692,7 @@ fn triadic_fork_suffix(
         reconcile,
         false,
     ) {
-        Some(w) if crate::continuity_spikes::triadic_fork_hard_enabled() => String::new(),
+        Some(_) if crate::continuity_spikes::triadic_fork_hard_enabled() => String::new(),
         Some(w) => format!(" | ⚠ {w}"),
         None => String::new(),
     }
