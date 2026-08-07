@@ -12298,13 +12298,24 @@ list = ["unit_hypersphere_unchanged"]
         /// E5: real mcp_engram_remember under lease held by another agent.
         #[test]
         fn lease_blocks_remember_via_handle_tool_call() {
+            let _guard = crate::lease_conflict::env_test_lock();
             let tmp = unique_tmp("lease-mcp-remember");
             let store = prep_store(&tmp);
-            let concept = format!("goal:lease_mcp_{}", std::process::id());
+            let concept = format!(
+                "goal:lease_mcp_{}_{}",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_nanos())
+                    .unwrap_or(0)
+            );
             std::env::set_var("ENGRAM_LEASE_ENFORCE", "1");
             std::env::set_var("ENGRAM_AGENT_ID", "writer_b");
             let acq = crate::lease_conflict::lease_acquire(&concept, "writer_a", 60_000);
             assert_eq!(acq["ok"], true, "{acq}");
+            // Sanity: enforce on + foreign holder must deny before MCP
+            let pre = crate::lease_conflict::check_write(&concept, "writer_b");
+            assert_eq!(pre["allowed"], false, "pre-check: {pre}");
 
             let resp = handle_tool_on_big_stack(
                 "mcp_engram_remember",
@@ -12346,9 +12357,17 @@ list = ["unit_hypersphere_unchanged"]
         /// E5: real mcp_engram_update under foreign lease.
         #[test]
         fn lease_blocks_update_via_handle_tool_call() {
+            let _guard = crate::lease_conflict::env_test_lock();
             let tmp = unique_tmp("lease-mcp-update");
             let store = prep_store(&tmp);
-            let concept = format!("goal:lease_upd_{}", std::process::id());
+            let concept = format!(
+                "goal:lease_upd_{}_{}",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_nanos())
+                    .unwrap_or(0)
+            );
             std::env::set_var("ENGRAM_CONSULT_BEFORE_WRITE", "off");
             std::env::set_var("ENGRAM_LEASE_ENFORCE", "0");
             let seed = handle_tool_on_big_stack(

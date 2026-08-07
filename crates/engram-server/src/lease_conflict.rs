@@ -95,6 +95,13 @@ pub fn lease_break(concept: &str) -> Value {
     })
 }
 
+/// Serialize tests that mutate `ENGRAM_LEASE_ENFORCE` / `ENGRAM_AGENT_ID`.
+#[cfg(test)]
+pub fn env_test_lock() -> std::sync::MutexGuard<'static, ()> {
+    static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    LOCK.lock().unwrap_or_else(|e| e.into_inner())
+}
+
 /// Agent id for write gates (`ENGRAM_AGENT_ID`, default `default_agent`).
 pub fn current_agent_id() -> String {
     std::env::var("ENGRAM_AGENT_ID").unwrap_or_else(|_| "default_agent".into())
