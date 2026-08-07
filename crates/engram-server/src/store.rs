@@ -3733,7 +3733,8 @@ impl StoreHandle {
     /// E3/E9: concepts hidden from default anchors (foreign unaccepted or other branch).
     pub fn concept_visible_in_anchors(concept: &str) -> bool {
         // Compose pure filters (keeps helpers live in product binary for clippy + reuse).
-        if crate::foreign_stratum::filter_anchors_default(&[concept.to_string()], false).is_empty() {
+        if crate::foreign_stratum::filter_anchors_default(&[concept.to_string()], false).is_empty()
+        {
             return false;
         }
         if crate::branch_memory::filter_mainline_anchors(&[concept.to_string()]).is_empty() {
@@ -17805,7 +17806,9 @@ mod local_primary_critical_path_tests {
             Some(bid.as_str())
         );
         crate::branch_memory::branch_checkout("main");
-        assert!(!StoreHandle::concept_visible_in_anchors("tile:only_on_branch"));
+        assert!(!StoreHandle::concept_visible_in_anchors(
+            "tile:only_on_branch"
+        ));
         let (hits, _) = store.recall_scoped("tile:only_on_branch", 5, Some("anchors"));
         assert!(
             hits.iter().all(|m| m.concept != "tile:only_on_branch"),
