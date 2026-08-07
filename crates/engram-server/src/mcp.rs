@@ -4147,7 +4147,8 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
                 Some(protected),
             );
             if dry_run {
-                let target = crate::store::StoreHandle::HOT_SET_SOFT_THRESHOLD;
+                // Must match apply path + host profile (ENGRAM_HOT_SET_SOFT may be 256).
+                let target = crate::store::StoreHandle::hot_set_soft_threshold();
                 let (would_unmark, protected_skipped) =
                     crate::store::StoreHandle::select_capacity_hot_compress_unmarks(
                         &hot, max_unmark, target,

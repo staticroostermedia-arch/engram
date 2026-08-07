@@ -8221,6 +8221,17 @@ impl StoreHandle {
         self.backend.promote_to_high_priority(raw, last)
     }
 
+    /// Explicit `hot_set` membership only (not backend Warm cache).
+    /// Use for promote policy `already_hot` so capacity unmark → re-promote works when
+    /// GPU high_priority_cache still holds the block as Warm.
+    pub fn in_explicit_hot_set(&self, concept: &str) -> bool {
+        let raw = stalk_raw_concept(concept);
+        self.hot_set
+            .read()
+            .map(|s| s.contains(raw))
+            .unwrap_or(false)
+    }
+
     /// Is this concept currently in the high-priority hot set?
     /// Pure probe — does **not** record hierarchy hit rates (use [`Self::record_recall_tier`]
     /// on actual recall satisfaction paths only).
@@ -8253,6 +8264,7 @@ impl StoreHandle {
     }
 
     /// Multi-signal promote decision (B1). Returns score + whether promote ran.
+    /// `already_hot` is **explicit hot_set only** (not Warm backend cache) so demote→re-promote works.
     pub fn promote_if_policy(
         &self,
         concept: &str,
@@ -8270,7 +8282,7 @@ impl StoreHandle {
             recency_secs,
             goal_distance,
             capacity_pressure,
-            already_hot: self.is_hot(concept),
+            already_hot: self.in_explicit_hot_set(concept),
         };
         let score = crate::hierarchy_policy::promote_score(&signals);
         let do_it = crate::hierarchy_policy::should_promote(&signals, min_score);
@@ -17603,6 +17615,110 @@ mod local_primary_critical_path_tests {
         assert_eq!(r2, "elevated_hot_set");
         std::env::remove_var("ENGRAM_HOT_SET_SOFT");
         std::env::remove_var("ENGRAM_HOT_SET_HARD");
+    }
+
+    /// Skeptic: dry_run unmark target must use live soft threshold (not const 1000).
+    #[test]
+    fn capacity_dry_run_target_matches_live_soft_threshold() {
+        std::env::set_var("ENGRAM_HOT_SET_SOFT", "256");
+        std::env::set_var("ENGRAM_HOT_SET_HARD", "512");
+        let soft = StoreHandle::hot_set_soft_threshold();
+        assert_eq!(soft, 256);
+        // Build synthetic hot list larger than soft; dry_run target = soft.
+        let mut hot: Vec<String> = (0..300).map(|i| format!("metric:noise_{i}")).collect();
+        hot.push("goal:keep".into());
+        let (would, _) = StoreHandle::select_capacity_hot_compress_unmarks(&hot, 64, soft);
+        assert!(
+            !would.is_empty(),
+            "dry_run under soft=256 must plan unmarks: would={would:?}"
+        );
+        // Wrong const target 1000 would yield need=0 when hot_len=301 < 1000.
+        let (wrong, _) = StoreHandle::select_capacity_hot_compress_unmarks(&hot, 64, 1000);
+        assert!(
+            wrong.is_empty(),
+            "const-1000 target incorrectly yields no unmarks when hot~300"
+        );
+        std::env::remove_var("ENGRAM_HOT_SET_SOFT");
+        std::env::remove_var("ENGRAM_HOT_SET_HARD");
+    }
+
+    /// Skeptic: already_hot for multi-signal is explicit hot_set only (not Warm).
+    /// After unmark_hot, re-promote must succeed even if is_hot still true via Warm.
+    #[test]
+    fn promote_if_policy_already_hot_is_hot_set_only() {
+        let dir = tmp_dir("promote_hot_set_only");
+        let mut store = StoreHandle::new(&dir);
+        store
+            .remember(
+                "metric:demoted_sample",
+                "METRIC\n\nnoise for demote cycle\n",
+            )
+            .unwrap();
+        // Force into explicit hot_set.
+        store.mark_hot("metric:demoted_sample");
+        assert!(store.in_explicit_hot_set("metric:demoted_sample"));
+        let d1 = store.promote_if_policy("metric:demoted_sample", 0.9, 0, 5, 0.45);
+        assert_eq!(
+            d1.get("promoted").and_then(|v| v.as_bool()),
+            Some(false),
+            "already in hot_set → decline re-promote: {d1}"
+        );
+        // Capacity demote: unmark explicit hot_set only.
+        store.unmark_hot("metric:demoted_sample");
+        assert!(!store.in_explicit_hot_set("metric:demoted_sample"));
+        // Simulate Warm residual via backend high_priority promote without hot_set.
+        // Policy already_hot must ignore Warm and allow re-promote.
+        let last = store.access_index.last_accessed("metric:demoted_sample");
+        let _ = store
+            .backend
+            .promote_to_high_priority("metric:demoted_sample", last);
+        // Re-promote with good signals must succeed (already_hot = hot_set only).
+        let d2 = store.promote_if_policy("metric:demoted_sample", 0.9, 10, 2, 0.45);
+        assert_eq!(
+            d2.get("promoted").and_then(|v| v.as_bool()),
+            Some(true),
+            "after unmark, re-promote must succeed: {d2}"
+        );
+        assert!(store.in_explicit_hot_set("metric:demoted_sample"));
+        // Full path after unmark: multi-signal must not treat Warm as already_hot.
+        store.unmark_hot("metric:demoted_sample");
+        let d3 = store.promote_if_policy("metric:demoted_sample", 0.95, 5, 1, 0.45);
+        assert_eq!(
+            d3.get("promoted").and_then(|v| v.as_bool()),
+            Some(true),
+            "Warm residual must not block promote_if_policy: {d3}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Skeptic: promote_tile force-anchors always mark hot; non-anchors may decline.
+    #[test]
+    fn promote_tile_respects_multi_signal_for_non_anchors() {
+        let dir = tmp_dir("promote_multi_signal");
+        let mut store = StoreHandle::new(&dir);
+        store
+            .remember("metric:low_value_noise", "METRIC\n\nlow value\n")
+            .unwrap();
+        // Very old + far + under pressure should decline.
+        // Fill hot_set past soft to create capacity_pressure.
+        let soft = StoreHandle::hot_set_soft_threshold();
+        for i in 0..(soft + 2) {
+            store.mark_hot(&format!("metric:pad_{i}"));
+        }
+        let d = store.promote_if_policy("metric:low_value_noise", 0.3, 86_400 * 7, 6, 0.45);
+        assert_eq!(
+            d.get("promoted").and_then(|v| v.as_bool()),
+            Some(false),
+            "low CRS + old + far under pressure must decline: {d}"
+        );
+        // Force-anchor still promotes.
+        store
+            .remember("primary_goal", "PRIMARY GOAL\n\n**goal:** goal:test\n")
+            .unwrap();
+        let t = store.promote_tile_to_high_priority("primary_goal");
+        assert!(t.is_some(), "force-anchor primary_goal must promote");
+        assert!(store.in_explicit_hot_set("primary_goal"));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// Wave A1: context_for_edit hot path is timed and returns without unbounded work on empty file.
