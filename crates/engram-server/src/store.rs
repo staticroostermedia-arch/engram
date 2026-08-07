@@ -17828,6 +17828,8 @@ mod local_primary_critical_path_tests {
     /// Skeptic E3: remember while branch checked out tags concept; anchors omit when main.
     #[test]
     fn branch_tag_write_and_anchors_isolation() {
+        let _branch = crate::branch_memory::env_test_lock();
+        crate::branch_memory::reset_for_tests();
         let dir = tmp_dir("branch_iso_product");
         let mut store = StoreHandle::new(&dir);
         let created = crate::branch_memory::branch_create("goal:root", "iso_product");
@@ -17881,6 +17883,8 @@ mod local_primary_critical_path_tests {
     /// Skeptic E3: StoreHandle::store (trace path) tags branch; mainline anchors omit.
     #[test]
     fn store_path_branch_tags_traces() {
+        let _branch = crate::branch_memory::env_test_lock();
+        crate::branch_memory::reset_for_tests();
         let dir = tmp_dir("branch_store_trace");
         let mut store = StoreHandle::new(&dir);
         let created = crate::branch_memory::branch_create("goal:root", "store_trace");

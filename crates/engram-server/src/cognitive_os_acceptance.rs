@@ -93,6 +93,8 @@ mod tests {
     /// E3: store(trace) + handle_tool_call(quick_trace) branch-tagged; main anchors omit.
     #[test]
     fn e3_branch_store_and_quick_trace_isolated() {
+        let _branch = crate::branch_memory::env_test_lock();
+        crate::branch_memory::reset_for_tests();
         let _consult = crate::consult_before_write_gate::env_test_lock();
         std::env::set_var("ENGRAM_CONSULT_BEFORE_WRITE", "off");
         std::env::set_var("ENGRAM_TOOL_TIER", "power");

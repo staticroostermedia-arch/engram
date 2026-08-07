@@ -187,12 +187,19 @@ pub fn branch_abandon(branch_id: &str) -> Value {
     })
 }
 
-/// Test helper: reset process-local state.
+/// Serialize tests that touch process-local BRANCHES/ACTIVE/BRANCH_TAGS.
+#[cfg(test)]
+pub fn env_test_lock() -> std::sync::MutexGuard<'static, ()> {
+    static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    LOCK.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// Test helper: reset process-local state (call under env_test_lock).
 #[cfg(test)]
 pub fn reset_for_tests() {
-    *BRANCHES.lock().unwrap() = Some(HashMap::new());
-    *ACTIVE.lock().unwrap() = None;
-    *BRANCH_TAGS.lock().unwrap() = Some(HashMap::new());
+    *BRANCHES.lock().unwrap_or_else(|e| e.into_inner()) = Some(HashMap::new());
+    *ACTIVE.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    *BRANCH_TAGS.lock().unwrap_or_else(|e| e.into_inner()) = Some(HashMap::new());
 }
 
 #[cfg(test)]
@@ -201,6 +208,8 @@ mod tests {
 
     #[test]
     fn isolation_and_merge() {
+        let _g = env_test_lock();
+        reset_for_tests();
         let label = format!("explore-{}", std::process::id());
         let tile = format!("tile:branch_only_{}", std::process::id());
         let c = branch_create("trace:root", &label);
@@ -219,6 +228,8 @@ mod tests {
 
     #[test]
     fn abandon_scars() {
+        let _g = env_test_lock();
+        reset_for_tests();
         let label = format!("dead-{}", std::process::id());
         let c = branch_create("goal:x", &label);
         let id = c["branch"]["id"].as_str().unwrap().to_string();
