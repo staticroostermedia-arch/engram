@@ -1,7 +1,7 @@
 # CLAIMS_LEDGER — Public claim → code → test map
 
 **Status:** living  
-**Last truth pass:** 2026-08-06 (host-adaptive + multi-signal promote/demote wired; Stage-2 counters on session_end)  
+**Last truth pass:** 2026-08-07 (cognitive OS E1–E9 extensions + host-adaptive baseline)  
 **Purpose:** Every notable public claim maps to implementation status so agents and reviewers do not treat aspirational text as shipped fact.
 
 **Status values:** `implemented` | `partial` | `aspirational` | `removed`
@@ -22,6 +22,15 @@ When status is `implemented`, named tests should exist in-repo. Prefer **softeni
 
 | Claim (short) | Source | Status | Primary code path(s) | Primary test(s) | Overstatement notes |
 |---|---|---|---|---|---|
+| Progressive / budgeted wake (`wake_budget`, expand_wake) | COGNITIVE_OS_EXTENSIONS E1 | implemented | `wake_budget.rs`; `mcp session_start` max_tokens; `mcp_engram_expand_wake` | `wake_budget::tests::*` | Omit budget → unlimited (beta.13 compatible) |
+| Skill auto-distillation drafts + promote/scar | COGNITIVE_OS_EXTENSIONS E2 | implemented | `skill_distill.rs`; `mcp_engram_distill_skills` / `promote_skill_draft` | `skill_distill::tests::*` | Auto-pin only with `ENGRAM_DISTILL_AUTO_PIN=1` |
+| Counterfactual branch memory | COGNITIVE_OS_EXTENSIONS E3 | implemented | `branch_memory.rs`; branch_* MCP tools | `branch_memory::tests::*` | Process-local registry v1 (not multi-host CRDT) |
+| Dream curriculum offline self-test | COGNITIVE_OS_EXTENSIONS E4 | implemented | `dream_curriculum.rs`; `mcp_engram_dream_run` | `dream_curriculum::tests::*` | Auto-schedule default off; forced off on minimal |
+| Multi-agent single-key leases + conflicts | COGNITIVE_OS_EXTENSIONS E5 | implemented | `lease_conflict.rs`; lease_* MCP | `lease_conflict::tests::*` | Single-key TTL only; no multi-lock |
+| Selective sync pack export/import quarantine | COGNITIVE_OS_EXTENSIONS E6 | implemented | `sync_pack.rs`; sync_export/import MCP | `sync_pack::tests::*` | Import CRS capped ≤0.6 under quarantine |
+| Manifold topology health (sample-capped) | COGNITIVE_OS_EXTENSIONS E7 | implemented | `topology_health.rs`; `mcp_engram_topology_health` | `topology_health::tests::*` | Never full O(N²); sample_limit required |
+| Structured query filters | COGNITIVE_OS_EXTENSIONS E8 | implemented | `structured_query.rs`; `mcp_engram_query_structured` | `structured_query::tests::*` | Additive; lean path still `recall(scope=anchors)` |
+| Foreign external knowledge stratum | COGNITIVE_OS_EXTENSIONS E9 | implemented | `foreign_stratum.rs`; ingest_external / accept_external | `foreign_stratum::tests::*` | Anchors omit foreign; URL fetch gated |
 | Persistent geometric memory for AI agents via MCP | README.md L10–18 | implemented | `crates/engram-server/src/mcp.rs` (`tool_list`, `session_start`); `scripts/engram-grok` | harness `--suite agent-memory`; MCP agent-memory CI job | — |
 | Fixed-size 256KB HolographicBlocks (.leg3) with 8192D q/p | README.md L131; MANIFESTO.md; types.rs layout | implemented | `crates/engram-core/src/types.rs` (`HolographicBlock`, `DIMENSION=8192`); `storage.rs` | `engram-core` layout / encode unit tests | Layout is real; not all product paths use O_DIRECT always |
 | CRS lawfulness gate (grounded ≈ 0.74) | README.md L57; encode.rs CRS init | implemented | `encode.rs` (default 0.74); `store.rs` update Lyapunov path; `verify_manifold_integrity` | manifold integrity tests in `store.rs`; encode CRS defaults | CRS is a **local thermodynamic score**, not external truth or crypto attestation of correctness |

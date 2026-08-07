@@ -5,6 +5,21 @@ All notable changes to Engram (geometric non-flat memory substrate).
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Cognitive OS extensions E1–E9** (`goal:engram_cognitive_os_extensions_v1`):
+  - **E1** Budgeted wake: `session_start(max_tokens|max_bytes|wake_priority)` → `wake_budget`; `mcp_engram_expand_wake`
+  - **E2** Skill distill: `mcp_engram_distill_skills` / `promote_skill_draft` (no auto-pin by default)
+  - **E3** Branches: create/checkout/merge/abandon + wake `active_branch`
+  - **E4** Dream curriculum: `mcp_engram_dream_run` → `metric:dream_*` (auto-schedule off on minimal)
+  - **E5** Leases: acquire/release/break + conflict mint (single-key TTL)
+  - **E6** Sync packs v1: export/import with quarantine CRS
+  - **E7** Topology health sample-capped diagnostics
+  - **E8** `mcp_engram_query_structured` (type/crs/related_to/limit)
+  - **E9** Foreign external ingest + accept path
+- Docs: `docs/COGNITIVE_OS_EXTENSIONS.md`; HARDWARE_FIT scale-down; AGENT_MEMORY_CONTRACT budgeted wake.
+
 ## [0.7.0-beta.13] - 2026-08-06
 
 ### Added

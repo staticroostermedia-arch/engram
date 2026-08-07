@@ -26,6 +26,17 @@ Engram **detects the host** and selects a **host profile** so a laptop and a dua
 - `host_facts` (CPU, RAM, GPUs, cuFile driver present)
 - `host_scaled` (defer BVH default, cuFile eligibility, dual-GPU roles)
 
+## Cognitive OS extensions (scale-down)
+
+See [COGNITIVE_OS_EXTENSIONS.md](COGNITIVE_OS_EXTENSIONS.md).
+
+| Extension | `minimal` | `cuda_dual` / a-monad |
+|-----------|-----------|------------------------|
+| E1 wake budget defaults | ~1200 tokens | ~8000 tokens |
+| E4 dream auto-schedule | **off** | off unless `ENGRAM_DREAM_AUTO=1` |
+| E7 topology sample | 256 | 4096 |
+| E2 distill / E6 sync | allowed, capped | allowed |
+
 ## What we never claim without probe
 
 - ROCm without AMD GPU  
