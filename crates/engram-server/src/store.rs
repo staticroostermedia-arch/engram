@@ -8690,6 +8690,42 @@ impl StoreHandle {
         }
         r
     }
+
+    /// E5 user-write choke: lease check before any agent-facing write.
+    /// On conflict, mints `conflict:*` via raw [`Self::store`] (no re-entrancy on leases)
+    /// and returns an MCP-ready error JSON. Call from MCP remember/update only.
+    /// Internal writers (metrics, handoff, conflict mint itself) use [`Self::store`] directly.
+    pub fn ensure_user_write_allowed(&mut self, concept: &str) -> Result<(), serde_json::Value> {
+        if !crate::lease_conflict::enforce_on_writes() {
+            return Ok(());
+        }
+        let agent = crate::lease_conflict::current_agent_id();
+        let lease = crate::lease_conflict::check_write(concept, &agent);
+        if lease.get("allowed").and_then(|v| v.as_bool()) != Some(false) {
+            return Ok(());
+        }
+        if let Some(c) = lease.get("conflict") {
+            let cid = c
+                .get("id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("conflict:unknown");
+            let body = format!(
+                "CONFLICT BLOCK\n\n{}\n",
+                serde_json::to_string_pretty(c).unwrap_or_default()
+            );
+            let mut blk = self.encode(&body);
+            blk.crs_score = 0.8;
+            let _ = self.store(cid, blk);
+        }
+        Err(serde_json::json!({
+            "content": [{ "type": "text", "text": format!(
+                "Error: lease_conflict — {}",
+                serde_json::to_string(&lease).unwrap_or_default()
+            )}],
+            "isError": true
+        }))
+    }
+
     pub fn verify_hypothesis(&self, concept: &str, success: bool) -> Result<()> {
         self.backend.verify_hypothesis(concept, success)
     }
