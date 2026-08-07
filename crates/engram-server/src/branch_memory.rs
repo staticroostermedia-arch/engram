@@ -118,6 +118,7 @@ pub fn concept_branch(concept: &str) -> Option<String> {
 }
 
 /// Mainline anchors omit branch-only concepts.
+#[allow(dead_code)] // used by tests + future wake anchor filter
 pub fn filter_mainline_anchors(concepts: &[String]) -> Vec<String> {
     let active = active_branch();
     with_tags(|tags| {

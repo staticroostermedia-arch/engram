@@ -10088,10 +10088,10 @@ mod tests {
             "cold_start_fidelity tool missing"
         );
         assert!(names.contains(&"mcp_engram_session_start"));
-        // Docs must mention live count. Sync: cognitive OS E1–E9 added 17 tools (was 87).
+        // Docs must mention live count. Sync: cognitive OS E1–E9 (+ lease_check_write).
         assert_eq!(
-            n, 104,
-            "tool_list length {n} != documented 104 — update docs/MCP_TOOLS_REFERENCE.md and AGENT_MEMORY_CONTRACT.md"
+            n, 105,
+            "tool_list length {n} != documented 105 — update docs/MCP_TOOLS_REFERENCE.md and AGENT_MEMORY_CONTRACT.md"
         );
         assert!(
             names.contains(&"mcp_engram_secure_context_provision"),

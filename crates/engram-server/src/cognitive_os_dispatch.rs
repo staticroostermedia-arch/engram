@@ -151,6 +151,18 @@ pub fn tool_schemas() -> Vec<Value> {
             }
         }),
         json!({
+            "name": "mcp_engram_lease_check_write",
+            "description": "E5: Check whether agent_id may write concept under current lease; mints conflict on deny.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "concept": {"type": "string"},
+                    "agent_id": {"type": "string"}
+                },
+                "required": ["concept", "agent_id"]
+            }
+        }),
+        json!({
             "name": "mcp_engram_ingest_external",
             "description": "E9: Ingest local file/text as foreign low-CRS external knowledge (excluded from anchors by default).",
             "inputSchema": {
@@ -292,6 +304,11 @@ pub fn handle(name: &str, args: &Value, store: &Store) -> Option<Value> {
         "mcp_engram_lease_break" => {
             let c = args.get("concept").and_then(|v| v.as_str()).unwrap_or("");
             ok_json(crate::lease_conflict::lease_break(c))
+        }
+        "mcp_engram_lease_check_write" => {
+            let c = args.get("concept").and_then(|v| v.as_str()).unwrap_or("");
+            let a = args.get("agent_id").and_then(|v| v.as_str()).unwrap_or("");
+            ok_json(crate::lease_conflict::check_write(c, a))
         }
         "mcp_engram_ingest_external" => ingest_external(args, store),
         "mcp_engram_accept_external" => {

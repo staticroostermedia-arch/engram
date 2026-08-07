@@ -69,11 +69,13 @@ pub fn accept_external(concept: &str) -> Value {
     })
 }
 
+#[allow(dead_code)] // tests + accept path
 pub fn is_accepted(concept: &str) -> bool {
     with_accepted(|s| s.contains(concept))
 }
 
 /// Anchors default: omit foreign unless accepted.
+#[allow(dead_code)] // tests + recall scoping integration
 pub fn filter_anchors_default(concepts: &[String], include_foreign: bool) -> Vec<String> {
     if include_foreign {
         return concepts.to_vec();

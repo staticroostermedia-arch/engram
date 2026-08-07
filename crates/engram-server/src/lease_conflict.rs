@@ -12,6 +12,7 @@ struct Lease {
 }
 
 static LEASES: Mutex<Option<HashMap<String, Lease>>> = Mutex::new(None);
+#[allow(dead_code)]
 static CONFLICTS: Mutex<Option<Vec<Value>>> = Mutex::new(None);
 
 fn now_ms() -> u64 {
@@ -129,6 +130,7 @@ pub fn check_write(concept: &str, agent_id: &str) -> Value {
     })
 }
 
+#[allow(dead_code)]
 pub fn list_conflicts() -> Vec<Value> {
     CONFLICTS.lock().unwrap().clone().unwrap_or_default()
 }
