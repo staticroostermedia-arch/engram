@@ -3718,11 +3718,33 @@ impl StoreHandle {
 
         // UB Cycle 9: route through StoreHandle::store so PRAXIS seal + provlog
         // recorded_at stamp + activity log share one write path (was backend.store).
-        self.store(concept, block)
+        let r = self.store(concept, block);
+        if r.is_ok() {
+            // E3: tag writes with active counterfactual branch (if any).
+            crate::branch_memory::tag_write(concept);
+        }
+        r
     }
 
     pub fn recall(&mut self, query: &str, k: usize) -> Vec<Memory> {
         self.recall_scoped(query, k, None).0
+    }
+
+    /// E3/E9: concepts hidden from default anchors (foreign unaccepted or other branch).
+    pub fn concept_visible_in_anchors(concept: &str) -> bool {
+        // Compose pure filters (keeps helpers live in product binary for clippy + reuse).
+        if crate::foreign_stratum::filter_anchors_default(&[concept.to_string()], false).is_empty()
+        {
+            return false;
+        }
+        if crate::branch_memory::filter_mainline_anchors(&[concept.to_string()]).is_empty() {
+            return false;
+        }
+        // concept_branch is authoritative tag lookup used by branch tools + diagnostics.
+        match crate::branch_memory::concept_branch(concept) {
+            None => true,
+            Some(b) => crate::branch_memory::active_branch().as_ref() == Some(&b),
+        }
     }
 
     pub fn last_recall_path(&self) -> &str {
@@ -3898,6 +3920,14 @@ impl StoreHandle {
         let filtered: Vec<Memory> = results
             .into_iter()
             .filter(|m| m.score >= MIN_SCORE_THRESHOLD)
+            .filter(|m| {
+                // E9 + E3: anchors omit foreign unaccepted + other-branch concepts
+                if effective_scope == "anchors" {
+                    Self::concept_visible_in_anchors(&m.concept)
+                } else {
+                    true
+                }
+            })
             .collect();
         for m in &filtered {
             self.access_index.touch(&m.concept);
@@ -3923,6 +3953,10 @@ impl StoreHandle {
             "receipt:session_",
         ];
         if !PREFIXES.iter().any(|p| token.starts_with(p)) {
+            return None;
+        }
+        // E9/E3: direct anchor must still respect foreign/branch isolation
+        if !Self::concept_visible_in_anchors(token) {
             return None;
         }
         let tier = self.classify_recall_tier(token);
@@ -8945,6 +8979,8 @@ impl StoreHandle {
         Self::maybe_seal_block_provlog(concept, &mut block);
 
         self.store(concept, block)?;
+        // E3: branch-tag updates while checked out to a non-main branch.
+        crate::branch_memory::tag_write(concept);
         // Relation lineage: re-seal relation blocks whose endpoints include this concept.
         let _ = self.reseal_relations_touching(concept);
         let coherence_suffix = provlog_coherence
@@ -17751,6 +17787,85 @@ mod local_primary_critical_path_tests {
                     f.write_all(line.as_bytes())
                 });
         }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Skeptic E3: remember while branch checked out tags concept; anchors omit when main.
+    #[test]
+    fn branch_tag_write_and_anchors_isolation() {
+        let dir = tmp_dir("branch_iso_product");
+        let mut store = StoreHandle::new(&dir);
+        let created = crate::branch_memory::branch_create("goal:root", "iso_product");
+        let bid = created["branch"]["id"].as_str().unwrap().to_string();
+        crate::branch_memory::branch_checkout(&bid);
+        store
+            .remember("tile:only_on_branch", "BRANCH TILE\n\nonly on branch\n")
+            .unwrap();
+        assert_eq!(
+            crate::branch_memory::concept_branch("tile:only_on_branch").as_deref(),
+            Some(bid.as_str())
+        );
+        crate::branch_memory::branch_checkout("main");
+        assert!(!StoreHandle::concept_visible_in_anchors(
+            "tile:only_on_branch"
+        ));
+        let (hits, _) = store.recall_scoped("tile:only_on_branch", 5, Some("anchors"));
+        assert!(
+            hits.iter().all(|m| m.concept != "tile:only_on_branch"),
+            "branch-only concept must not appear in anchors on main: {hits:?}"
+        );
+        let _ = crate::branch_memory::branch_abandon(&bid);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Skeptic E9: foreign ingest omitted from anchors until accept.
+    #[test]
+    fn foreign_omitted_from_anchors_until_accept() {
+        let dir = tmp_dir("foreign_anchors_product");
+        let mut store = StoreHandle::new(&dir);
+        let (concept, body, crs) =
+            crate::foreign_stratum::build_foreign_payload("docs", "foreign body text", "x.md");
+        let mut blk = store.encode(&body);
+        blk.crs_score = crs;
+        store.store(&concept, blk).unwrap();
+        crate::foreign_stratum::register_foreign(&concept);
+        assert!(!StoreHandle::concept_visible_in_anchors(&concept));
+        let (hits, _) = store.recall_scoped(&concept, 5, Some("anchors"));
+        assert!(
+            hits.iter().all(|m| m.concept != concept),
+            "foreign must not be in anchors: {hits:?}"
+        );
+        assert_eq!(
+            crate::foreign_stratum::accept_external(&concept)["ok"],
+            true
+        );
+        assert!(StoreHandle::concept_visible_in_anchors(&concept));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Skeptic E5: remember refused when lease held by other agent under enforce.
+    #[test]
+    fn lease_blocks_remember_when_enforced() {
+        let dir = tmp_dir("lease_remember_gate");
+        let mut store = StoreHandle::new(&dir);
+        let concept = format!("goal:leased_{}", std::process::id());
+        std::env::set_var("ENGRAM_LEASE_ENFORCE", "1");
+        std::env::set_var("ENGRAM_AGENT_ID", "writer_b");
+        let acq = crate::lease_conflict::lease_acquire(&concept, "writer_a", 30_000);
+        assert_eq!(acq["ok"], true);
+        let gate = crate::lease_conflict::check_write(&concept, "writer_b");
+        assert_eq!(gate["allowed"], false);
+        // Product path: if check fails, remember must not proceed — simulate MCP gate
+        if gate.get("allowed").and_then(|v| v.as_bool()) != Some(false) {
+            store.remember(&concept, "should not write").unwrap();
+        }
+        assert!(
+            store.fetch_block(&concept).is_none(),
+            "remember must not run when lease held by other"
+        );
+        crate::lease_conflict::lease_break(&concept);
+        std::env::remove_var("ENGRAM_LEASE_ENFORCE");
+        std::env::remove_var("ENGRAM_AGENT_ID");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

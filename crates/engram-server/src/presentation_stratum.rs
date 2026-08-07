@@ -543,6 +543,8 @@ pub fn navigable_concept_names(store: &mut StoreHandle, budget: usize) -> Vec<St
     gather_surface_ranked(store, budget, None, false)
         .into_iter()
         .map(|c| c.concept)
+        // E3/E9: anchors navigation omits foreign unaccepted + other-branch concepts
+        .filter(|c| StoreHandle::concept_visible_in_anchors(c))
         .collect()
 }
 

@@ -3519,6 +3519,33 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
                     })
                 }
             };
+            // E5: lease conflict gate on writes (agent profile / ENGRAM_LEASE_ENFORCE)
+            if crate::lease_conflict::enforce_on_writes() {
+                let agent = crate::lease_conflict::current_agent_id();
+                let lease = crate::lease_conflict::check_write(&concept, &agent);
+                if lease.get("allowed").and_then(|v| v.as_bool()) == Some(false) {
+                    if let Some(c) = lease.get("conflict") {
+                        let cid = c
+                            .get("id")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("conflict:unknown");
+                        let body = format!(
+                            "CONFLICT BLOCK\n\n{}\n",
+                            serde_json::to_string_pretty(c).unwrap_or_default()
+                        );
+                        let mut blk = s.encode(&body);
+                        blk.crs_score = 0.8;
+                        let _ = s.store(cid, blk);
+                    }
+                    return json!({
+                        "content": [{ "type": "text", "text": format!(
+                            "Error: lease_conflict — {}",
+                            serde_json::to_string(&lease).unwrap_or_default()
+                        )}],
+                        "isError": true
+                    });
+                }
+            }
             let gate = crate::consult_before_write_gate::check_write(
                 s.metamemory.recall_gate_open(),
                 "mcp_engram_remember",
@@ -8197,6 +8224,33 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
                 .filter(|s| !s.is_empty())
                 .map(|s| s.to_string());
             let mut lock = store.lock().unwrap();
+            // E5: lease conflict gate on updates
+            if crate::lease_conflict::enforce_on_writes() {
+                let agent = crate::lease_conflict::current_agent_id();
+                let lease = crate::lease_conflict::check_write(&concept, &agent);
+                if lease.get("allowed").and_then(|v| v.as_bool()) == Some(false) {
+                    if let Some(c) = lease.get("conflict") {
+                        let cid = c
+                            .get("id")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("conflict:unknown");
+                        let body = format!(
+                            "CONFLICT BLOCK\n\n{}\n",
+                            serde_json::to_string_pretty(c).unwrap_or_default()
+                        );
+                        let mut blk = lock.encode(&body);
+                        blk.crs_score = 0.8;
+                        let _ = lock.store(cid, blk);
+                    }
+                    return json!({
+                        "content": [{ "type": "text", "text": format!(
+                            "Error: lease_conflict — {}",
+                            serde_json::to_string(&lease).unwrap_or_default()
+                        )}],
+                        "isError": true
+                    });
+                }
+            }
             let gate = crate::consult_before_write_gate::check_write(
                 lock.metamemory.recall_gate_open(),
                 "mcp_engram_update",

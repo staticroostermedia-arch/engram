@@ -112,13 +112,11 @@ pub fn tag_write(concept: &str) {
     }
 }
 
-#[allow(dead_code)]
 pub fn concept_branch(concept: &str) -> Option<String> {
     with_tags(|t| t.get(concept).cloned())
 }
 
 /// Mainline anchors omit branch-only concepts.
-#[allow(dead_code)] // used by tests + future wake anchor filter
 pub fn filter_mainline_anchors(concepts: &[String]) -> Vec<String> {
     let active = active_branch();
     with_tags(|tags| {
