@@ -12,9 +12,9 @@
 2. **First call:** `mcp_engram_session_start(intent="<what you're doing>")`. Read `continuation` in the response (goals, suggested actions, last session preview). Pair with the wake skill once per restart.
 3. **Every session:** wake → work with the 8 tools / **preferred composites** below → `session_end(summary=…)`. That handoff is what makes the next wake feel continuous.
 4. **Do not at wake:** `watch_workspace`, `rebuild_bvh`, `summarize`, `list_concepts` — use `context_for_edit(path)` or **`safe_edit_and_verify`** per file instead.
-5. **Need more?** ~79 power tools exist (**87 total**); escalate deliberately via [TOOL_DECISION_MAP.md](TOOL_DECISION_MAP.md). Optional skills: [engram-working-memory.md](skills/engram-working-memory.md), [engram-session-end.md](skills/engram-session-end.md).
+5. **Need more?** ~96 power tools exist (**104 total**); escalate deliberately via [TOOL_DECISION_MAP.md](TOOL_DECISION_MAP.md). Optional skills: [engram-working-memory.md](skills/engram-working-memory.md), [engram-session-end.md](skills/engram-session-end.md). Cognitive OS: [COGNITIVE_OS_EXTENSIONS.md](COGNITIVE_OS_EXTENSIONS.md).
 
-> **79 more tools exist** (**87 total** — source: `tool_list()` in `mcp.rs`). Power tools (`update`, `ack_wake_queue`, `cold_start_fidelity`, `lexicon_mint_word`, `secure_context_provision`, `apply_capacity_hot_compress`, `evolution_at_locus`, `query_with_momentum`, `search_by_relation`, `remember_solution`, `scar`, `thought_tile_create`, …) remain available. This contract is the **Layer 0 highway** — not the full map.
+> **96 more tools exist** (**104 total** — source: `tool_list()` in `mcp.rs`, includes E1–E9 cognitive OS). Power tools (`update`, `ack_wake_queue`, `cold_start_fidelity`, `lexicon_mint_word`, `secure_context_provision`, `apply_capacity_hot_compress`, `expand_wake`, `query_structured`, `query_with_momentum`, `search_by_relation`, `remember_solution`, `scar`, `thought_tile_create`, …) remain available. This contract is the **Layer 0 highway** — not the full map.
 
 **Full decision map:** [TOOL_DECISION_MAP.md](TOOL_DECISION_MAP.md) — mermaid flows for the full surface, write path (`update` vs `remember`), read escalation, and Grok Build vs Cursor throttle. **JIT RSI:** [DEFORMATION_PLAYBOOKS.md](DEFORMATION_PLAYBOOKS.md).
 

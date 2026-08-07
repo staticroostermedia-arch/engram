@@ -165,7 +165,7 @@ flowchart LR
 - **Agent integrity defaults:** hard wake-queue gate, hard consult-before-write, **hard PRAXIS contract** (`ENGRAM_PRAXIS_CONTRACT=hard`) when profile is `agent` (override with soft).
 - **Recall quality path:** GPU agent profile eager BVH when NVIDIA present; opt-in `ENGRAM_QUALITY_MODE=1` forces eager BVH + readiness flag (CPU stays deferred by default).
 - **Proof harness CI** + NREM dedicated stack / REST `scope=all` dogfood fixes (#209–#213).
-- **87 MCP tools** registered (`tool_list()` — 83 `mcp_engram_*` + 4 linguistic); lean default remains **8 essential**.
+- **104 MCP tools** registered (`tool_list()` — 100 `mcp_engram_*` + 4 linguistic); lean default remains **8 essential**.
 - **Hybrid wire HBRD2** full fidelity transport (`to_hybrid_wire` / `from_hybrid_wire` restore q/p/CRS/footer; O_DIRECT `.leg3` remains primary on-disk). Continuity spikes / tensor–tile / LEG Browser remain available.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
@@ -214,7 +214,7 @@ Build against `target/debug/engram` during development.
 
 ## MCP tools
 
-**8 essential** for daily work — **87 registered** (83 `mcp_engram_*` + 4 linguistic; source: `tool_list()` in `mcp.rs`); full map: [docs/TOOL_DECISION_MAP.md](docs/TOOL_DECISION_MAP.md). Categorized reference: [docs/MCP_TOOLS_REFERENCE.md](docs/MCP_TOOLS_REFERENCE.md). Harness matrix: `tools/test-harness/python/mcp_tool_matrix.py`.
+**8 essential** for daily work — **104 registered** (100 `mcp_engram_*` + 4 linguistic; source: `tool_list()` in `mcp.rs`); full map: [docs/TOOL_DECISION_MAP.md](docs/TOOL_DECISION_MAP.md). Categorized reference: [docs/MCP_TOOLS_REFERENCE.md](docs/MCP_TOOLS_REFERENCE.md). Cognitive OS: [docs/COGNITIVE_OS_EXTENSIONS.md](docs/COGNITIVE_OS_EXTENSIONS.md). Harness matrix: `tools/test-harness/python/mcp_tool_matrix.py`.
 
 Grok plugin slash commands: [grok-plugin-engram/commands/](grok-plugin-engram/commands/).
 

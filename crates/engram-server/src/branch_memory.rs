@@ -202,16 +202,17 @@ mod tests {
 
     #[test]
     fn isolation_and_merge() {
-        reset_for_tests();
-        let c = branch_create("trace:root", "explore");
+        let label = format!("explore-{}", std::process::id());
+        let tile = format!("tile:branch_only_{}", std::process::id());
+        let c = branch_create("trace:root", &label);
         let id = c["branch"]["id"].as_str().unwrap().to_string();
         branch_checkout(&id);
-        tag_write("tile:branch_only");
+        tag_write(&tile);
         // mainline filter hides branch concept when checkout main
         branch_checkout("main");
-        let anchors = filter_mainline_anchors(&["goal:main".into(), "tile:branch_only".into()]);
+        let anchors = filter_mainline_anchors(&["goal:main".into(), tile.clone()]);
         assert!(anchors.contains(&"goal:main".into()));
-        assert!(!anchors.contains(&"tile:branch_only".into()));
+        assert!(!anchors.contains(&tile));
         let m = branch_merge(&id, "prefer_branch");
         assert_eq!(m["status"], "merged");
         assert!(m.get("receipt").is_some());
@@ -219,11 +220,11 @@ mod tests {
 
     #[test]
     fn abandon_scars() {
-        reset_for_tests();
-        let c = branch_create("goal:x", "dead");
+        let label = format!("dead-{}", std::process::id());
+        let c = branch_create("goal:x", &label);
         let id = c["branch"]["id"].as_str().unwrap().to_string();
         let a = branch_abandon(&id);
-        assert_eq!(a["status"], "abandoned");
+        assert_eq!(a["status"], "abandoned", "{a}");
         assert!(a["scar"].as_str().unwrap().starts_with("scar:"));
     }
 }
