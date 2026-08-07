@@ -12276,7 +12276,7 @@ list = ["unit_hypersphere_unchanged"]
             std::env::set_var("ENGRAM_DISABLE_SHEAF", "1");
             std::env::set_var("ENGRAM_FORCE_CPU_BACKEND", "1");
             std::env::set_var("ENGRAM_KI_DISABLE", "1");
-            std::env::set_var("ENGRAM_CONSULT_BEFORE_WRITE", "off");
+            // Caller must hold consult env_test_lock when changing CONSULT_BEFORE_WRITE.
             let store = open_store(tmp);
             store.lock().unwrap().mark_fully_initialized();
             store
@@ -12298,7 +12298,9 @@ list = ["unit_hypersphere_unchanged"]
         /// E5: real mcp_engram_remember under lease held by another agent.
         #[test]
         fn lease_blocks_remember_via_handle_tool_call() {
-            let _guard = crate::lease_conflict::env_test_lock();
+            let _consult = crate::consult_before_write_gate::env_test_lock();
+            let _lease = crate::lease_conflict::env_test_lock();
+            std::env::set_var("ENGRAM_CONSULT_BEFORE_WRITE", "off");
             let tmp = unique_tmp("lease-mcp-remember");
             let store = prep_store(&tmp);
             let concept = format!(
@@ -12351,13 +12353,16 @@ list = ["unit_hypersphere_unchanged"]
             crate::lease_conflict::lease_break(&concept);
             std::env::remove_var("ENGRAM_LEASE_ENFORCE");
             std::env::remove_var("ENGRAM_AGENT_ID");
+            std::env::remove_var("ENGRAM_CONSULT_BEFORE_WRITE");
             let _ = std::fs::remove_dir_all(&tmp);
         }
 
         /// E5: real mcp_engram_update under foreign lease.
         #[test]
         fn lease_blocks_update_via_handle_tool_call() {
-            let _guard = crate::lease_conflict::env_test_lock();
+            let _consult = crate::consult_before_write_gate::env_test_lock();
+            let _lease = crate::lease_conflict::env_test_lock();
+            std::env::set_var("ENGRAM_CONSULT_BEFORE_WRITE", "off");
             let tmp = unique_tmp("lease-mcp-update");
             let store = prep_store(&tmp);
             let concept = format!(
@@ -12401,12 +12406,15 @@ list = ["unit_hypersphere_unchanged"]
             crate::lease_conflict::lease_break(&concept);
             std::env::remove_var("ENGRAM_LEASE_ENFORCE");
             std::env::remove_var("ENGRAM_AGENT_ID");
+            std::env::remove_var("ENGRAM_CONSULT_BEFORE_WRITE");
             let _ = std::fs::remove_dir_all(&tmp);
         }
 
         /// E3: branch checkout → quick_trace → main → anchors omit that trace.
         #[test]
         fn branch_quick_trace_omitted_from_mainline_anchors() {
+            let _consult = crate::consult_before_write_gate::env_test_lock();
+            std::env::set_var("ENGRAM_CONSULT_BEFORE_WRITE", "off");
             let tmp = unique_tmp("branch-quick-trace");
             let store = prep_store(&tmp);
             std::env::set_var("ENGRAM_TOOL_TIER", "power");
@@ -12495,6 +12503,7 @@ list = ["unit_hypersphere_unchanged"]
                 &store,
             );
             std::env::remove_var("ENGRAM_TOOL_TIER");
+            std::env::remove_var("ENGRAM_CONSULT_BEFORE_WRITE");
             let _ = std::fs::remove_dir_all(&tmp);
         }
     }
