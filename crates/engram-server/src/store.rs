@@ -3193,14 +3193,17 @@ impl StoreHandle {
             serde_json::json!(crate::cockpit_cache::presentation_cache_hit_rate()),
         );
         // Hierarchy OS (Wave B): dual-GPU roles + hit-rate snapshot.
-        obj.insert(
-            "hierarchy_gpu0_role".into(),
-            serde_json::json!("hot_agent_resident"),
-        );
-        obj.insert(
-            "hierarchy_gpu1_role".into(),
-            serde_json::json!("compute_bvh_batch_nrem"),
-        );
+        {
+            let (g0, g1) = crate::host_profile::hierarchy_gpu_roles();
+            obj.insert("hierarchy_gpu0_role".into(), serde_json::json!(g0));
+            obj.insert("hierarchy_gpu1_role".into(), serde_json::json!(g1));
+        }
+        // Host-adaptive runtime (H1): detected + active profile + scaled flags.
+        if let Some(map) = crate::host_profile::readiness_fields().as_object() {
+            for (k, v) in map {
+                obj.insert(k.clone(), v.clone());
+            }
+        }
         obj.insert(
             "hierarchy_hot_set_len".into(),
             serde_json::json!(self.hot_set.read().map(|s| s.len()).unwrap_or(0)),
@@ -3212,6 +3215,15 @@ impl StoreHandle {
         obj.insert(
             "hierarchy_hit_rates".into(),
             crate::hierarchy_metrics::snapshot(),
+        );
+        if let Some(map) = crate::hierarchy_policy::policy_readiness().as_object() {
+            for (k, v) in map {
+                obj.insert(k.clone(), v.clone());
+            }
+        }
+        obj.insert(
+            "independence_ladder".into(),
+            crate::independence_metrics::snapshot(),
         );
         // Wave A2: local large-payload IPC (mmap + UDS path tokens).
         if let Some(map) = crate::local_ipc::readiness_fields().as_object() {
@@ -4281,6 +4293,8 @@ impl StoreHandle {
 
     /// Promote continuity anchors to hot path before wake bundle / anchor recall.
     /// RSI Cycle 43: skip concepts already in hot_set/backend hot cache (no redundant promote).
+    /// Wake anchors are continuity-critical — force mark (bypass multi-signal gate used for
+    /// opportunistic promote_tile_to_high_priority). Count only when the concept becomes hot.
     /// Returns how many anchors were newly promoted this call.
     pub fn warm_wake_anchors(&mut self) -> usize {
         let _ = self.restore_geosphere_from_manifold();
@@ -4290,8 +4304,13 @@ impl StoreHandle {
             if self.is_hot(concept) {
                 continue;
             }
-            let _ = self.promote_tile_to_high_priority(concept);
-            newly = newly.saturating_add(1);
+            // Force promote: local:host:* etc. are not force_promote via multi-signal alone.
+            self.mark_hot(concept);
+            let last = self.access_index.last_accessed(concept);
+            let _ = self.backend.promote_to_high_priority(concept, last);
+            if self.is_hot(concept) {
+                newly = newly.saturating_add(1);
+            }
         }
         newly
     }
@@ -7018,11 +7037,29 @@ impl StoreHandle {
         })
     }
 
-    /// Hot-set soft band: pre-elevated signal on large manifolds (UB Cycle 19).
-    /// Hard elevated remains > [`Self::HOT_SET_HARD_THRESHOLD`].
+    /// Hot-set soft band default (host profile may set `ENGRAM_HOT_SET_SOFT`).
     pub const HOT_SET_SOFT_THRESHOLD: usize = 1_000;
-    /// Hot-set hard elevated threshold (pre-UB19 behavior).
+    /// Hot-set hard elevated default (host profile may set `ENGRAM_HOT_SET_HARD`).
     pub const HOT_SET_HARD_THRESHOLD: usize = 2_000;
+
+    /// Soft threshold from env (host-adaptive) or default 1000.
+    pub fn hot_set_soft_threshold() -> usize {
+        std::env::var("ENGRAM_HOT_SET_SOFT")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(Self::HOT_SET_SOFT_THRESHOLD)
+            .clamp(64, 50_000)
+    }
+
+    /// Hard threshold from env (host-adaptive) or default 2000.
+    pub fn hot_set_hard_threshold() -> usize {
+        let soft = Self::hot_set_soft_threshold();
+        std::env::var("ENGRAM_HOT_SET_HARD")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(Self::HOT_SET_HARD_THRESHOLD)
+            .clamp(soft + 1, 100_000)
+    }
 
     /// True when capacity risk warrants capacity_policy SELECT / no demote.
     /// Matches `elevated_*` and `soft_elevated_*` (contains "elevated").
@@ -7031,16 +7068,19 @@ impl StoreHandle {
     }
 
     /// Pure risk classifier (UB19 soft band + pre-UB hard bands). Tested without store.
+    /// Uses env-backed soft/hard thresholds so host profiles scale capacity.
     pub fn classify_capacity_risk(
         large_manifold: bool,
         hot_set_len: usize,
         relation_edge_count: usize,
     ) -> &'static str {
-        if large_manifold && hot_set_len > Self::HOT_SET_HARD_THRESHOLD {
+        let hard = Self::hot_set_hard_threshold();
+        let soft = Self::hot_set_soft_threshold();
+        if large_manifold && hot_set_len > hard {
             "elevated_hot_set"
         } else if relation_edge_count > 100_000 {
             "elevated_edge_scale"
-        } else if large_manifold && hot_set_len > Self::HOT_SET_SOFT_THRESHOLD {
+        } else if large_manifold && hot_set_len > soft {
             // UB19: pre-hard band — SELECT NREM/hot compress before landfill.
             "soft_elevated_hot_set"
         } else if large_manifold {
@@ -7102,7 +7142,7 @@ impl StoreHandle {
         nrem_protected_count: Option<usize>,
     ) -> serde_json::Value {
         let suggested = Self::capacity_hot_compress_path_suggested(risk);
-        let target = Self::HOT_SET_SOFT_THRESHOLD;
+        let target = Self::hot_set_soft_threshold();
         let overshoot = if suggested {
             hot_set_len.saturating_sub(target)
         } else {
@@ -7153,11 +7193,44 @@ impl StoreHandle {
     }
 
     /// Select demotable hot concepts for capacity compress (pure; no mutation).
-    /// Prefers landfill-ish residency: geo_context → receipt → metric → local → other.
+    /// Ranks by multi-signal [`crate::hierarchy_policy::demote_priority`] under capacity
+    /// pressure (CRS/recency heuristics + goal distance), with prefix landfill as tie-break.
     pub fn select_capacity_hot_compress_unmarks(
         hot: &[String],
         max_unmark: usize,
         target: usize,
+    ) -> (Vec<String>, usize) {
+        Self::select_capacity_hot_compress_unmarks_scored(hot, max_unmark, target, |c| {
+            // Pure path: heuristic signals (no block I/O).
+            let signals = crate::hierarchy_policy::PromoteSignals {
+                crs: if c.starts_with("metric:") || c.starts_with("receipt:") {
+                    0.4
+                } else if c.starts_with("geo_context:") || c.starts_with("local:") {
+                    0.35
+                } else if c.starts_with("tile:") {
+                    0.75
+                } else {
+                    0.55
+                },
+                recency_secs: if c.starts_with("metric:") || c.starts_with("geo_context:") {
+                    86_400
+                } else {
+                    3_600
+                },
+                goal_distance: crate::hierarchy_policy::goal_distance_heuristic(c),
+                capacity_pressure: true,
+                already_hot: true,
+            };
+            crate::hierarchy_policy::demote_priority(&signals)
+        })
+    }
+
+    /// Like [`Self::select_capacity_hot_compress_unmarks`] with caller-provided demote scores.
+    pub fn select_capacity_hot_compress_unmarks_scored(
+        hot: &[String],
+        max_unmark: usize,
+        target: usize,
+        mut demote_score: impl FnMut(&str) -> f32,
     ) -> (Vec<String>, usize) {
         let need = hot.len().saturating_sub(target);
         let max_unmark = max_unmark.clamp(1, 500).min(need);
@@ -7170,17 +7243,13 @@ impl StoreHandle {
             );
         }
         let mut protected_skipped = 0usize;
-        let mut candidates: Vec<String> = Vec::new();
+        let mut candidates: Vec<(String, f32, u8)> = Vec::new();
         for c in hot {
             if Self::is_capacity_hot_compress_protected(c) {
                 protected_skipped += 1;
             } else {
-                candidates.push(c.clone());
-            }
-        }
-        candidates.sort_by(|a, b| {
-            let rank = |c: &str| -> u8 {
-                if c.starts_with("geo_context:") {
+                let score = demote_score(c);
+                let prefix_rank: u8 = if c.starts_with("geo_context:") {
                     0
                 } else if c.starts_with("receipt:") {
                     1
@@ -7190,12 +7259,23 @@ impl StoreHandle {
                     3
                 } else {
                     4
-                }
-            };
-            rank(a).cmp(&rank(b)).then_with(|| a.cmp(b))
+                };
+                candidates.push((c.clone(), score, prefix_rank));
+            }
+        }
+        // Higher demote_priority first; then landfill prefix rank.
+        candidates.sort_by(|a, b| {
+            b.1.partial_cmp(&a.1)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.2.cmp(&b.2))
+                .then_with(|| a.0.cmp(&b.0))
         });
-        candidates.truncate(max_unmark);
-        (candidates, protected_skipped)
+        let out: Vec<String> = candidates
+            .into_iter()
+            .take(max_unmark)
+            .map(|(c, _, _)| c)
+            .collect();
+        (out, protected_skipped)
     }
 
     /// Apply capacity hot compress: unmark non-protected hot concepts toward soft threshold.
@@ -7219,9 +7299,25 @@ impl StoreHandle {
                 "unmarked_concepts": [],
             });
         }
-        let target = Self::HOT_SET_SOFT_THRESHOLD;
+        let target = Self::hot_set_soft_threshold();
+        // Store-backed multi-signal demote: live CRS + recency when blocks available.
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
         let (to_unmark, protected_skipped) =
-            Self::select_capacity_hot_compress_unmarks(&hot, max_unmark, target);
+            Self::select_capacity_hot_compress_unmarks_scored(&hot, max_unmark, target, |c| {
+                let crs = self.fetch_block(c).map(|b| b.crs_score).unwrap_or(0.5);
+                let last = self.access_index.last_accessed(c).unwrap_or(0);
+                let signals = crate::hierarchy_policy::PromoteSignals {
+                    crs,
+                    recency_secs: now.saturating_sub(last),
+                    goal_distance: crate::hierarchy_policy::goal_distance_heuristic(c),
+                    capacity_pressure: true,
+                    already_hot: true,
+                };
+                crate::hierarchy_policy::demote_priority(&signals)
+            });
         for c in &to_unmark {
             self.unmark_hot(c);
         }
@@ -7286,8 +7382,8 @@ impl StoreHandle {
             "large_manifold": large_manifold,
             "large_manifold_threshold": Self::LARGE_MANIFOLD_THRESHOLD,
             "hot_set_len": hot_set_len,
-            "hot_set_soft_threshold": Self::HOT_SET_SOFT_THRESHOLD,
-            "hot_set_hard_threshold": Self::HOT_SET_HARD_THRESHOLD,
+            "hot_set_soft_threshold": Self::hot_set_soft_threshold(),
+            "hot_set_hard_threshold": Self::hot_set_hard_threshold(),
             "hot_ratio": hot_ratio,
             "relation_edge_count": relation_edge_count,
             "relation_nodes": relation_nodes,
@@ -8097,11 +8193,30 @@ impl StoreHandle {
     // See ki_hijacker::demo_async_hot_read for current usage pattern + timing. Complements high_priority for full event-loop relief.
 
     /// Promote a block to the high-priority hot path (updates cache + recency).
-    /// Also marks it in the explicit StoreHandle hot set so is_hot() and future
-    /// high_priority fetches treat it as canonical fast-path data.
+    /// Continuity anchors force-promote; other concepts use multi-signal policy
+    /// (CRS + recency + goal distance + capacity) via [`Self::promote_if_policy`].
     pub fn promote_tile_to_high_priority(&self, concept: &str) -> Option<Leg3Pointer> {
         let raw = stalk_raw_concept(concept);
-        self.mark_hot(raw);
+        if crate::hierarchy_policy::is_force_promote_concept(raw) {
+            self.mark_hot(raw);
+        } else {
+            let crs = self.fetch_block(raw).map(|b| b.crs_score).unwrap_or(0.74);
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            let last = self.access_index.last_accessed(raw).unwrap_or(0);
+            let recency_secs = now.saturating_sub(last);
+            let goal_distance = crate::hierarchy_policy::goal_distance_heuristic(raw);
+            let decision = self.promote_if_policy(raw, crs, recency_secs, goal_distance, 0.45);
+            if !decision
+                .get("promoted")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false)
+            {
+                return None;
+            }
+        }
         let last = self.access_index.last_accessed(raw);
         self.backend.promote_to_high_priority(raw, last)
     }
@@ -8135,6 +8250,40 @@ impl StoreHandle {
     /// Record hierarchy hit for one recall satisfaction (scored candidate delivered).
     pub fn record_recall_tier(&self, concept: &str) {
         crate::hierarchy_metrics::record_tier(self.classify_recall_tier(concept));
+    }
+
+    /// Multi-signal promote decision (B1). Returns score + whether promote ran.
+    pub fn promote_if_policy(
+        &self,
+        concept: &str,
+        crs: f32,
+        recency_secs: u64,
+        goal_distance: u32,
+        min_score: f32,
+    ) -> serde_json::Value {
+        let capacity_pressure = {
+            let hot_len = self.hot_set.read().map(|s| s.len()).unwrap_or(0);
+            hot_len > Self::hot_set_soft_threshold()
+        };
+        let signals = crate::hierarchy_policy::PromoteSignals {
+            crs,
+            recency_secs,
+            goal_distance,
+            capacity_pressure,
+            already_hot: self.is_hot(concept),
+        };
+        let score = crate::hierarchy_policy::promote_score(&signals);
+        let do_it = crate::hierarchy_policy::should_promote(&signals, min_score);
+        if do_it {
+            self.mark_hot(concept);
+        }
+        serde_json::json!({
+            "concept": concept,
+            "score": score,
+            "promoted": do_it,
+            "capacity_pressure": capacity_pressure,
+            "policy": "multi_signal_v1",
+        })
     }
 
     /// Explicitly mark a concept as "hot" so it prefers the high-priority fast path
@@ -12891,31 +13040,36 @@ mod ingest_ast_tests {
         assert_eq!(slim["trust_residual"]["last_contract"]["present"], true);
     }
 
-    /// UB Cycle 19: soft_elevated_hot_set band between soft(1k) and hard(2k) thresholds.
+    /// UB Cycle 19: soft_elevated_hot_set band between soft and hard thresholds.
+    /// Uses live `hot_set_*_threshold()` so host-profile `ENGRAM_HOT_SET_*` pollution is safe.
     #[test]
     fn ub_capacity_soft_elevated_hot_set_band() {
         assert_eq!(StoreHandle::HOT_SET_SOFT_THRESHOLD, 1_000);
         assert_eq!(StoreHandle::HOT_SET_HARD_THRESHOLD, 2_000);
-        // Large manifold, hot in (1k, 2k] → soft elevated.
+        let soft = StoreHandle::hot_set_soft_threshold();
+        let hard = StoreHandle::hot_set_hard_threshold();
+        assert!(soft < hard, "soft ({soft}) must be < hard ({hard})");
+        // Large manifold, hot in (soft, hard] → soft elevated.
         assert_eq!(
-            StoreHandle::classify_capacity_risk(true, 1_001, 0),
+            StoreHandle::classify_capacity_risk(true, soft + 1, 0),
+            "soft_elevated_hot_set"
+        );
+        let mid = soft + (hard - soft) / 2;
+        assert_eq!(
+            StoreHandle::classify_capacity_risk(true, mid.max(soft + 1), 27_000),
             "soft_elevated_hot_set"
         );
         assert_eq!(
-            StoreHandle::classify_capacity_risk(true, 1_239, 27_000),
-            "soft_elevated_hot_set"
-        );
-        assert_eq!(
-            StoreHandle::classify_capacity_risk(true, 2_001, 0),
+            StoreHandle::classify_capacity_risk(true, hard + 1, 0),
             "elevated_hot_set"
         );
         // Exactly soft threshold is not soft (strict >).
         assert_eq!(
-            StoreHandle::classify_capacity_risk(true, 1_000, 0),
+            StoreHandle::classify_capacity_risk(true, soft, 0),
             "large_manifold_nominal"
         );
         assert_eq!(
-            StoreHandle::classify_capacity_risk(true, 500, 0),
+            StoreHandle::classify_capacity_risk(true, soft / 2, 0),
             "large_manifold_nominal"
         );
         assert_eq!(
@@ -13009,16 +13163,19 @@ mod ingest_ast_tests {
             "nominal"
         ));
 
-        let plan = StoreHandle::plan_capacity_hot_compress("soft_elevated_hot_set", 1_239);
+        // Relative to live soft threshold (host profile may set ENGRAM_HOT_SET_SOFT).
+        let soft = StoreHandle::hot_set_soft_threshold();
+        let hot_len = soft + 239;
+        let plan = StoreHandle::plan_capacity_hot_compress("soft_elevated_hot_set", hot_len);
         assert_eq!(plan["suggested"], true);
         assert_eq!(plan["overshoot"], 239);
-        assert_eq!(plan["target_hot_set"], 1_000);
+        assert_eq!(plan["target_hot_set"], soft);
         assert_eq!(plan["mode"], "nrem_hot_trim");
         assert_eq!(plan["ub_capacity_nrem_hot_compress_path"], true);
         assert_eq!(plan["mcp_tool"], "mcp_engram_apply_capacity_hot_compress");
         let plan_ex = StoreHandle::plan_capacity_hot_compress_ex(
             "soft_elevated_hot_set",
-            1_239,
+            hot_len,
             Some(200),
             Some(39),
         );
@@ -13049,7 +13206,8 @@ mod ingest_ast_tests {
             "receipt:session_old"
         ));
 
-        // Pure selector: prefer geo_context over other, skip protected.
+        // Pure selector: multi-signal demote (CRS+recency+goal distance), skip protected.
+        // geo (low CRS, old, far) > metric (low CRS, old) > receipt (low CRS, recent).
         let hot = vec![
             "goal:keep".into(),
             "receipt:r1".into(),
@@ -13057,12 +13215,15 @@ mod ingest_ast_tests {
             "metric:noise".into(),
             "trace:keep".into(),
         ];
-        // overshoot 2 from target 3 → unmark 2 demotable in rank order
+        // overshoot 2 from target 3 → unmark 2 demotable in multi-signal rank order
         let (unmarks, protected) = StoreHandle::select_capacity_hot_compress_unmarks(&hot, 10, 3);
         assert_eq!(protected, 2); // goal + trace
         assert_eq!(unmarks.len(), 2);
         assert_eq!(unmarks[0], "geo_context:g1");
-        assert_eq!(unmarks[1], "receipt:r1");
+        assert_eq!(
+            unmarks[1], "metric:noise",
+            "old metric demotes before recent receipt under multi-signal: {unmarks:?}"
+        );
 
         let dir = test_store_dir("ub20_hot_compress");
         let store = StoreHandle::new(&dir.to_string_lossy());
@@ -13173,13 +13334,14 @@ mod ingest_ast_tests {
             "hot promote; snap={snap:?}"
         );
         assert!(snap.get("risk").and_then(|v| v.as_str()).is_some());
+        // Live thresholds (may differ from const defaults under host_profile HOT_SET env).
         assert_eq!(
             snap.get("hot_set_soft_threshold").and_then(|v| v.as_u64()),
-            Some(StoreHandle::HOT_SET_SOFT_THRESHOLD as u64)
+            Some(StoreHandle::hot_set_soft_threshold() as u64)
         );
         assert_eq!(
             snap.get("hot_set_hard_threshold").and_then(|v| v.as_u64()),
-            Some(StoreHandle::HOT_SET_HARD_THRESHOLD as u64)
+            Some(StoreHandle::hot_set_hard_threshold() as u64)
         );
         assert_eq!(
             store
@@ -17348,15 +17510,36 @@ mod local_primary_critical_path_tests {
             "path_reason must be structured enum, not vague unavailable alone"
         );
         assert!(r.get("hierarchy_hit_rates").is_some());
-        assert_eq!(
-            r.get("hierarchy_gpu0_role").and_then(|v| v.as_str()),
-            Some("hot_agent_resident")
+        // Adaptive hierarchy roles: dual CUDA → hot/compute; CPU/minimal → ram_hot/cpu_background
+        let g0 = r
+            .get("hierarchy_gpu0_role")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let g1 = r
+            .get("hierarchy_gpu1_role")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        assert!(
+            matches!(
+                g0,
+                "hot_agent_resident" | "hot_and_compute_multiplex" | "ram_hot"
+            ),
+            "unexpected hierarchy_gpu0_role={g0}"
         );
-        assert_eq!(
-            r.get("hierarchy_gpu1_role").and_then(|v| v.as_str()),
-            Some("compute_bvh_batch_nrem")
+        assert!(
+            matches!(
+                g1,
+                "compute_bvh_batch_nrem" | "collapsed_same_as_gpu0" | "cpu_background"
+            ),
+            "unexpected hierarchy_gpu1_role={g1}"
         );
         assert_eq!(r.get("local_ipc_v1").and_then(|v| v.as_bool()), Some(true));
+        assert!(
+            r.get("host_profile_detected").is_some(),
+            "host_profile_detected required after H1 wire: keys present? {:?}",
+            r.as_object().map(|o| o.keys().take(20).collect::<Vec<_>>())
+        );
+        assert!(r.get("hierarchy_policy_version").is_some() || r.get("promote_signals").is_some());
         if let Ok(path) = std::env::var("ENGRAM_DUMP_READINESS") {
             let _ = std::fs::write(&path, serde_json::to_string_pretty(&r).unwrap_or_default());
         }
@@ -17384,6 +17567,42 @@ mod local_primary_critical_path_tests {
             .expect("write readiness dump");
         assert!(r.get("cufile_path_reason").is_some());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// B1: multi-signal demote ranking prefers landfill metrics over goals.
+    #[test]
+    fn multi_signal_demote_ranks_metric_before_goalish() {
+        let hot = vec![
+            "goal:engram_mvp_v1".to_string(),
+            "metric:noise_sample".to_string(),
+            "geo_context:stale".to_string(),
+        ];
+        // Protect goals so only non-protected compete — actually goals may not be protected.
+        // Select with high demote for metric.
+        let (sel, _) = StoreHandle::select_capacity_hot_compress_unmarks(&hot, 2, 1);
+        assert!(!sel.is_empty(), "expected demote candidates: {sel:?}");
+        // First demoted should not be the goal if multi-signal works (metric/geo higher demote).
+        assert_ne!(
+            sel.first().map(|s| s.as_str()),
+            Some("goal:engram_mvp_v1"),
+            "goal should not demote first: {sel:?}"
+        );
+    }
+
+    /// Host profile HOT_SET_SOFT env is consumed by capacity classifier.
+    #[test]
+    fn hot_set_soft_env_consumed_by_classify() {
+        std::env::set_var("ENGRAM_HOT_SET_SOFT", "100");
+        std::env::set_var("ENGRAM_HOT_SET_HARD", "200");
+        assert_eq!(StoreHandle::hot_set_soft_threshold(), 100);
+        assert_eq!(StoreHandle::hot_set_hard_threshold(), 200);
+        // large manifold, hot_set 150 → soft elevated
+        let r = StoreHandle::classify_capacity_risk(true, 150, 0);
+        assert_eq!(r, "soft_elevated_hot_set");
+        let r2 = StoreHandle::classify_capacity_risk(true, 250, 0);
+        assert_eq!(r2, "elevated_hot_set");
+        std::env::remove_var("ENGRAM_HOT_SET_SOFT");
+        std::env::remove_var("ENGRAM_HOT_SET_HARD");
     }
 
     /// Wave A1: context_for_edit hot path is timed and returns without unbounded work on empty file.

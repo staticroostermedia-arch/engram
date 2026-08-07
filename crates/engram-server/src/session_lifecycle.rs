@@ -27,6 +27,8 @@ pub fn on_mcp_session_end_committed() {
     if let Ok(mut s) = LIFECYCLE.lock() {
         s.session_end_committed = true;
     }
+    // I1: full session_end path also increments local-only counter.
+    crate::independence_metrics::record_local_only_session(true);
 }
 
 pub fn should_auto_handoff() -> bool {

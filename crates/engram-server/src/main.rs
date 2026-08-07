@@ -41,6 +41,9 @@ mod fidelity_few_shots;
 mod goal_hygiene;
 mod harness_injection;
 mod hierarchy_metrics;
+mod hierarchy_policy;
+mod host_profile;
+mod independence_metrics;
 mod injection_priority;
 pub mod ki_hijacker;
 mod lawfulness;
@@ -193,6 +196,7 @@ fn main() -> anyhow::Result<()> {
             use std::time::Duration;
 
             profile::EngramProfile::from_env().apply();
+            host_profile::apply_host_adaptive_at_startup();
             maybe_defer_bvh_for_large_store(&cli.store);
 
             tracing::info!(
@@ -246,6 +250,7 @@ fn main() -> anyhow::Result<()> {
         }
         Commands::Mcp { no_genesis } => {
             profile::EngramProfile::from_env().apply();
+            host_profile::apply_host_adaptive_at_startup();
             let _mcp_lock = mcp_lock::McpStoreLock::acquire(&cli.store)?;
 
             // === Early MCP Ready Path ===
@@ -349,6 +354,7 @@ fn main() -> anyhow::Result<()> {
                 tracing::info!("[SERVE] --light: ui profile (CPU-only, fast leg-browser).");
             } else if std::env::var("ENGRAM_PROFILE").is_ok() {
                 profile::EngramProfile::from_env().apply();
+                host_profile::apply_host_adaptive_at_startup();
             }
 
             // Serve mode (HTTP) can afford the full heavy initialization (unless light).

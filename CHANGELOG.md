@@ -5,6 +5,20 @@ All notable changes to Engram (geometric non-flat memory substrate).
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0-beta.13] - 2026-08-06
+
+### Added
+- **Host-adaptive runtime v1:** `ENGRAM_HOST_PROFILE=auto|minimal|cpu_large|metal|cuda_single|cuda_dual|cuda_low_vram` — detect CPU/RAM/GPU/cuFile signals → profile defaults (BVH defer, cuFile attempt eligibility, dual-GPU roles collapse/expand, hot-set caps). Readiness: `host_profile_detected`, `host_profile_active`, `host_facts`, `host_scaled`. User env overrides always win. Orthogonal to ritual `ENGRAM_PROFILE=agent|deep|ui`.
+- **Hierarchy multi-signal policy:** promote/demote scoring uses CRS + recency + goal-graph distance + capacity pressure (not capacity-only); readiness `hierarchy_policy_version=multi_signal_v1`.
+- **Independence Stage-2 counters:** `independence_ladder` in readiness with local_only session success/total/pct scaffolding + online_call_count.
+- **Local-primary (from Unreleased / #223):** cuFile path_reason taxonomy; hierarchy hit rates on recall; protocol live whitelist; BlockTier permanent logical-only; experience_pack + LoRA dry-run; local_ipc; agent cognitive wake bias; H2D measure.
+
+### Fixed
+- **Honesty:** Protocol remains whitelist-only (product decision); LoRA weight train not claimed without metrics; ROCm/OptiX/physical tiers parked with CLAIMS.
+
+### Changed
+- **Release hygiene:** collapsed Unreleased into beta.13; Cargo workspace `0.7.0-beta.13`.
+
 ## [0.7.0-beta.12] - 2026-08-03
 
 ### Added
@@ -36,18 +50,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Unreleased
 
 ### Added
-- **Local-primary critical path (a-monad):** `cufile_path_reason` structured taxonomy in readiness; hierarchy dual-GPU role labels + hit-rate counters on **recall satisfaction** (not is_hot probes); protocol `live_steps` whitelist (status=`executed` when live steps run); BlockTier permanent logical-only policy; experience_pack_v1 export (non-empty quality-gated packs) + LoRA dry-run scripts; **A1** critical-path audit + latency hooks; **A2** `local_ipc` mmap path-tokens + UDS; **A3** agent cognitive bias on wake `suggested_actions`; **C2** real H2D measure via `measure_h2d_q_stage_ms`; independence ladder Stage 0–3 schema + Stage-1 baseline.
-- **CSF residual closeout:** 10-wake live cold-start fidelity series (median ≈0.9445 ≥ 0.90; **10 unique scores + timestamps** via live `cold_start_fidelity` after `session_end` boundaries); evidence under `docs/evidence/`; `wake-cognitive-sample` packet captured.
-- **Protocol honesty:** `invoke_protocol` returns `status=tools_bound` (TOML load + bind + receipt) — never overclaims `executed` for declare-only steps.
-- **BlockTier honesty API:** `physical_byte_size` / `has_shipped_physical_layout` (Std only shipped); residual `#[ignore]` failer for Small/Large physical layouts.
-- **ROCm honesty API:** `RocmBackend::hip_query_dispatch_shipped()` (false until Phase 10); residual `#[ignore]` failer; module wired into `engram-gpu` lib.
-- **README:** hybrid wire HBRD2 full fidelity (no longer demoted as experimental stub).
-- **Hybrid wire HBRD2 full fidelity** decode/encode (q/p/CRS/schema/footer/payload roundtrip).
-- **Linguistic real extract** (`extract_linguistic_bundle` parses linguistic/v1 JSON).
-- **Multi-slot Merkle chain advance** on update/scar (`advance_merkle_chain_slots`); relation re-seal after endpoint update.
-- **Protocol invoke** executes real `processes/*.toml` + receipt (no silent stub_dispatch success).
-- **Geosphere durable snapshot** `geosphere:latest_frame` + restore on warm wake.
-- **ZEDOS_FIBERED** unique tag 0x5E; uniqueness test freezes registry.
+- **CSF residual closeout:** 10-wake live cold-start fidelity series (median ≈0.9445 ≥ 0.90; **10 unique scores + timestamps** via live `cold_start_fidelity` after `session_end` boundaries); evidence under `docs/evidence/`.
+- **Hybrid wire HBRD2 full fidelity** decode/encode; linguistic real extract; multi-slot Merkle; geosphere durable snapshot; ZEDOS_FIBERED 0x5E.
 
 ### Changed
 - Transform attestation is public name; `generate_zk_proof` is deprecated alias (not a SNARK).
