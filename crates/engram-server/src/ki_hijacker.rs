@@ -345,11 +345,10 @@ async fn bake_ki(store: &SharedStore, ki_dir: &PathBuf) -> anyhow::Result<()> {
             top_crs
         };
 
-        // Promote the highest-CRS results to the hot path so they benefit from
-        // LegView + CudaBackend cache on subsequent bakes and post-compression wake-ups.
+        // Promote via multi-signal policy (force-anchors only inside promote_tile).
+        // Do NOT unconditional mark_hot — that nullifies B1 declines on low-value recalls.
         for mem in top_crs.iter().take(8) {
             let _ = s.promote_tile_to_high_priority(&mem.concept);
-            s.mark_hot(&mem.concept); // explicit StoreHandle hot set for canonical fast path
         }
 
         // Deduplicate by concept name, exclude genesis concepts (already shown), sort by CRS desc
@@ -403,7 +402,6 @@ async fn bake_ki(store: &SharedStore, ki_dir: &PathBuf) -> anyhow::Result<()> {
                 || mem.crs >= 0.85
             {
                 let _ = s.promote_tile_to_high_priority(&mem.concept);
-                s.mark_hot(&mem.concept);
             }
         }
 
@@ -517,40 +515,33 @@ async fn bake_ki(store: &SharedStore, ki_dir: &PathBuf) -> anyhow::Result<()> {
         )
     };
 
-    // Explicit hot promotion for high-CRS Tiles and other high-value recall results.
-    // This ensures the Gold Layer / high-CRS Tiles ride the LegView + Cuda hot cache
-    // for fast post-compression re-hydration (completing the ki_hijacker expansion).
+    // Multi-signal promote for high-CRS results (B1). Anchors force inside promote_tile;
+    // low-value concepts may decline — never force mark_hot after a decline.
     {
         let mut s = store.lock().unwrap();
         for mem in &top_crs {
             let _ = s.promote_tile_to_high_priority(&mem.concept);
-            s.mark_hot(&mem.concept);
         }
         // Phase 2 fruits bias hot-path: promote high-fruit items extra (makes selection visible in canvas + future NREM)
         for mem in &recent_reasoning_traces {
             let f = compute_fruits_score(&mem.provlog, &mem.concept);
             if f > 0.72 {
                 let _ = s.promote_tile_to_high_priority(&mem.concept);
-                s.mark_hot(&mem.concept);
             }
         }
-        // Also promote high-CRS ritual anchors and recent compression intents if they look like Tiles
+        // Ritual anchors force-promote via is_force_promote_concept; tiles use multi-signal.
         for mem in &living_ritual_anchors {
             if mem.concept.starts_with("tile:") || mem.concept.starts_with("ritual:") {
                 let _ = s.promote_tile_to_high_priority(&mem.concept);
-                s.mark_hot(&mem.concept);
             }
         }
         for mem in &recent_compression_intents {
             if mem.concept.contains("tile") || mem.concept.contains("structured") {
                 let _ = s.promote_tile_to_high_priority(&mem.concept);
-                s.mark_hot(&mem.concept);
             }
         }
-        // Compression Tracking System v1: when compression signals present, aggressively
-        // promote the measurement scaffolding itself + dual-lens traces + hydration cache
-        // + pilot decision references so they survive the window with highest fidelity.
-        // This is the executable half of the ritual update in working-memory SKILL (65% inflection lesson).
+        // Compression Tracking System v1: when compression signals present, promote
+        // measurement scaffolding via multi-signal / force-anchor policy (B1).
         if !recent_compression_intents.is_empty() {
             for proto in [
                 "helper:next_compression_measurement_protocol_v1",
@@ -559,15 +550,13 @@ async fn bake_ki(store: &SharedStore, ki_dir: &PathBuf) -> anyhow::Result<()> {
                 "item2_thought_tiles_state",
             ] {
                 let _ = s.promote_tile_to_high_priority(proto);
-                s.mark_hot(proto);
             }
-            // Also hot the known dual-lens trace artifacts from prior autonomous captures
+            // Also promote known dual-lens trace artifacts from prior autonomous captures
             for t in [
                 "trace:1780003748_autonomously-added-capture-dual-lens-snapshot-an",
                 "trace:1780003542_added-timed-fetch-block-high-priority-helper-on-",
             ] {
                 let _ = s.promote_tile_to_high_priority(t);
-                s.mark_hot(t);
             }
         }
 
@@ -616,10 +605,9 @@ async fn bake_ki(store: &SharedStore, ki_dir: &PathBuf) -> anyhow::Result<()> {
         for mem in &recent_reasoning_traces {
             if mem.crs >= 0.78 || mem.concept.starts_with("trace:") {
                 let _ = s.promote_tile_to_high_priority(&mem.concept);
-                s.mark_hot(&mem.concept);
             }
         }
-        // Agent tool fidelity: hot-promote tensor edit/update patterns for wake re-hydration.
+        // Agent tool fidelity: multi-signal promote tensor edit/update patterns.
         for mem in s
             .recall_scoped("tensor edit_pattern edit_fidelity", 8, Some("hot"))
             .0
@@ -628,7 +616,6 @@ async fn bake_ki(store: &SharedStore, ki_dir: &PathBuf) -> anyhow::Result<()> {
                 || mem.concept.starts_with("tensor:update_pattern_")
             {
                 let _ = s.promote_tile_to_high_priority(&mem.concept);
-                s.mark_hot(&mem.concept);
             }
         }
     }
