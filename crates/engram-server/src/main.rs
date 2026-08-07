@@ -28,6 +28,7 @@
 
 mod branch_memory;
 mod cockpit_cache;
+mod cognitive_os_acceptance;
 mod cognitive_os_dispatch;
 mod coherence;
 mod cold_start_fidelity;
