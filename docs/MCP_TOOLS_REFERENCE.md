@@ -1,8 +1,8 @@
 # MCP Tools Reference
 
-Engram exposes **87 MCP tools** (83 `mcp_engram_*` + 4 linguistic) as of the `tool_list()` source of truth in `crates/engram-server/src/mcp.rs` (includes `mcp_engram_lexicon_mint_word` + `mcp_engram_secure_context_provision` + `mcp_engram_apply_capacity_hot_compress`). Most agents should use **8** — see [`AGENT_MEMORY_CONTRACT.md`](AGENT_MEMORY_CONTRACT.md). For edit/update fidelity, prefer **safe composites** (Tier 2): `mcp_engram_safe_edit_and_verify`, `mcp_engram_update_with_tensor_bond`.
+Engram exposes **105 MCP tools** (101 `mcp_engram_*` + 4 linguistic) as of the `tool_list()` source of truth in `crates/engram-server/src/mcp.rs` (includes cognitive OS E1–E9: expand_wake, query_structured, topology_health, branches, leases, sync, distill, dream, foreign ingest). Most agents should use **8** — see [`AGENT_MEMORY_CONTRACT.md`](AGENT_MEMORY_CONTRACT.md). For edit/update fidelity, prefer **safe composites** (Tier 2): `mcp_engram_safe_edit_and_verify`, `mcp_engram_update_with_tensor_bond`.
 
-**Decision map:** [`TOOL_DECISION_MAP.md`](TOOL_DECISION_MAP.md) — when to escalate to `update`, `query_with_momentum`, `search_by_relation`, goals, tiles, linguistic tools. **JIT deformation:** [`DEFORMATION_PLAYBOOKS.md`](DEFORMATION_PLAYBOOKS.md). **Count single source:** `fn tool_list()` in `mcp.rs` (counted 2026-07-16: 87 names).
+**Decision map:** [`TOOL_DECISION_MAP.md`](TOOL_DECISION_MAP.md) — when to escalate to `update`, `query_with_momentum`, `search_by_relation`, goals, tiles, linguistic tools. **JIT deformation:** [`DEFORMATION_PLAYBOOKS.md`](DEFORMATION_PLAYBOOKS.md). **Count single source:** `fn tool_list()` in `mcp.rs` (counted 2026-08-07: 105 names).
 
 Tools are grouped by tier:
 
@@ -43,7 +43,7 @@ With `ENGRAM_PROFILE=agent`, wake gate defaults to **hard** — `ack_wake_queue`
 | `ENGRAM_TOOL_TIER=lean` | yes (if unset) | Soft-warn power tools in response meta (`tool_tier_warning`); hard-block `rebuild_bvh` / `force_spatial_ingest` unless deep mode |
 | `ENGRAM_TOOL_TIER=power` / `all` | — | No gate |
 
-Does **not** change the 87-tool list; only response discipline. Implementation: `tool_tier.rs` + early gate in `handle_tool_call`.
+Does **not** change the 104-tool list; only response discipline. Implementation: `tool_tier.rs` + early gate in `handle_tool_call`.
 
 ---
 

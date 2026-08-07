@@ -26,7 +26,9 @@
 //!   --light     : Force CPU backend (ENGRAM_FORCE_CPU_BACKEND), skips CUDA/Metal/BVH heavy init for fast non-GPU startup during UI testing.
 //!   --no-scout  : Skip scout_daemon supervisor (avoids port 8088 contention/spam when only using /api/* for dynamic views).
 
+mod branch_memory;
 mod cockpit_cache;
+mod cognitive_os_dispatch;
 mod coherence;
 mod cold_start_fidelity;
 mod consult_before_write_gate;
@@ -34,10 +36,12 @@ mod context_var;
 mod continuity_spikes;
 mod crs_dynamical;
 pub mod daemon;
+mod dream_curriculum;
 mod edit_arc_gate;
 mod edit_fidelity;
 mod evolution_at_locus;
 mod fidelity_few_shots;
+mod foreign_stratum;
 mod goal_hygiene;
 mod harness_injection;
 mod hierarchy_metrics;
@@ -47,6 +51,7 @@ mod independence_metrics;
 mod injection_priority;
 pub mod ki_hijacker;
 mod lawfulness;
+mod lease_conflict;
 mod leg_corpus;
 mod lexicon;
 mod linguistic_reference_frame;
@@ -67,12 +72,17 @@ mod secure_context;
 mod serve;
 mod session_lifecycle;
 mod session_packet;
+mod skill_distill;
 mod solid_state_tensor;
 mod store;
+mod structured_query;
+mod sync_pack;
 mod tensor_tile_bridge;
 mod tile_draft;
 mod tool_tier;
+mod topology_health;
 mod turn_extract;
+mod wake_budget;
 mod wake_bundle;
 mod wake_digest;
 mod wake_queue_gate;

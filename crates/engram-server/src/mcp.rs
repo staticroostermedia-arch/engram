@@ -736,7 +736,7 @@ impl Response {
 // ── MCP tool definitions ──────────────────────────────────────────────────────
 
 fn tool_list() -> Value {
-    json!({
+    let mut base = json!({
         "tools": [
             {
                 "name": "mcp_engram_read_concept",
@@ -1072,7 +1072,7 @@ fn tool_list() -> Value {
             },
             {
                 "name": "mcp_engram_session_start",
-                "description": "MANDATORY first MCP call every session. Default ENGRAM_WAKE_BUNDLE=slim: primary_goal, top 5 suggested_actions, trace_chain head, slim ego_snapshot, presentation_stratum previews, and trust_residual (last human–agent handoff contract + open scars with local CRS verify). Full harness via mcp_engram_get_continuation_bundle. Execute suggested_actions BEFORE edits; ack with mcp_engram_ack_wake_queue. Lean default — do NOT call watch_workspace at wake. See docs/HARNESS_INJECTION.md + docs/AGENT_MEMORY_CONTRACT.md.",
+                "description": "MANDATORY first MCP call every session. Default ENGRAM_WAKE_BUNDLE=slim: primary_goal, top 5 suggested_actions, trace_chain head, slim ego_snapshot, presentation_stratum previews, and trust_residual (last human–agent handoff contract + open scars with local CRS verify). Full harness via mcp_engram_get_continuation_bundle. Execute suggested_actions BEFORE edits; ack with mcp_engram_ack_wake_queue. Lean default — do NOT call watch_workspace at wake. E1: optional max_tokens/max_bytes/wake_priority for budgeted wake (omit = beta.13 unlimited). See docs/AGENT_MEMORY_CONTRACT.md + docs/COGNITIVE_OS_EXTENSIONS.md.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -1084,6 +1084,18 @@ fn tool_list() -> Value {
                         "spatial_max_files": {
                             "type": "integer",
                             "description": "Max files for inline incremental spatial ingest when include_spatial=true (default 5)"
+                        },
+                        "max_tokens": {
+                            "type": "integer",
+                            "description": "E1 optional approximate token budget for continuation slots (omit = unlimited / beta.13)"
+                        },
+                        "max_bytes": {
+                            "type": "integer",
+                            "description": "E1 optional byte budget (converted to tokens as bytes/4)"
+                        },
+                        "wake_priority": {
+                            "type": "string",
+                            "description": "E1 slot fill policy: anchors_first (default) | intent_shaped | minimal"
                         }
                     },
                     "required": ["intent"]
@@ -2643,7 +2655,14 @@ fn tool_list() -> Value {
                 "inputSchema": { "type": "object", "properties": {} }
             }
         ]
-    })
+    });
+    // E1–E9 cognitive OS extensions (additive tools).
+    if let Some(tools) = base.get_mut("tools").and_then(|t| t.as_array_mut()) {
+        for t in crate::cognitive_os_dispatch::tool_schemas() {
+            tools.push(t);
+        }
+    }
+    base
 }
 
 // ── WS-3: optional process_context → realized_by edge ──
@@ -3474,6 +3493,10 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
             "crs": crs,
             "result": { "bundle_id": result_bundle.bundle_id, "functor_metadata": result_bundle.functor_metadata, "word_count": result_bundle.words.len() }
         });
+    }
+
+    if let Some(cog) = crate::cognitive_os_dispatch::handle(name, args, store) {
+        return cog;
     }
 
     let result = match name {
@@ -4573,6 +4596,14 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
                 .get("spatial_max_files")
                 .and_then(|v| v.as_u64())
                 .unwrap_or(5) as usize;
+            // E1 budgeted wake (optional)
+            let wake_max_tokens_arg = args.get("max_tokens").and_then(|v| v.as_u64());
+            let wake_max_bytes_arg = args.get("max_bytes").and_then(|v| v.as_u64());
+            let wake_priority = args
+                .get("wake_priority")
+                .and_then(|v| v.as_str())
+                .unwrap_or("anchors_first")
+                .to_string();
 
             let t_start = std::time::Instant::now();
             // RSI Cycle 45: per-phase wake latency (ms) for next cut targeting.
@@ -4819,6 +4850,33 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
                 }
                 crate::wake_bundle::WakeBundleTier::Full => continuation,
             };
+            // E1: apply optional wake budget to continuation slots
+            let host_for_budget = readiness
+                .get("host_profile_active")
+                .and_then(|v| v.as_str())
+                .or_else(|| {
+                    readiness
+                        .get("host_profile_detected")
+                        .and_then(|v| v.as_str())
+                })
+                .unwrap_or("auto");
+            let budget_tokens = crate::wake_budget::resolve_max_tokens(
+                wake_max_tokens_arg,
+                wake_max_bytes_arg,
+                host_for_budget,
+            );
+            let (continuation_out, wake_budget_meta) = crate::wake_budget::apply_wake_budget(
+                &continuation_out,
+                budget_tokens,
+                &wake_priority,
+            );
+            // Surface active branch when not mainline (E3)
+            let mut continuation_out = continuation_out;
+            if let Some(ab) = crate::branch_memory::active_branch() {
+                if let Some(obj) = continuation_out.as_object_mut() {
+                    obj.insert("active_branch".into(), json!(ab));
+                }
+            }
             mark_phase(&mut phase_ms, "packet_ms", t_phase);
 
             let elapsed = t_start.elapsed().as_secs_f32();
@@ -4833,6 +4891,7 @@ fn handle_tool_call_inner(name: &str, args: &Value, store: &SharedStore) -> Valu
                 "bundle_tier": bundle_tier.as_str(),
                 "readiness": readiness,
                 "continuation": continuation_out,
+                "wake_budget": wake_budget_meta,
                 "mcp_health": mcp_health,
                 "wake_queue_gate": wake_gate,
                 "edit_arc_gate": edit_arc_gate,
@@ -10029,11 +10088,10 @@ mod tests {
             "cold_start_fidelity tool missing"
         );
         assert!(names.contains(&"mcp_engram_session_start"));
-        // Docs must mention live count (parse first **N** / "N total" / "N tools" claims).
-        // Hard-code sync: if this fails, update docs to match `n` (currently 87 = 83 mcp + 4 linguistic).
+        // Docs must mention live count. Sync: cognitive OS E1–E9 (+ lease_check_write).
         assert_eq!(
-            n, 87,
-            "tool_list length {n} != documented 87 — update docs/MCP_TOOLS_REFERENCE.md and AGENT_MEMORY_CONTRACT.md"
+            n, 105,
+            "tool_list length {n} != documented 105 — update docs/MCP_TOOLS_REFERENCE.md and AGENT_MEMORY_CONTRACT.md"
         );
         assert!(
             names.contains(&"mcp_engram_secure_context_provision"),
