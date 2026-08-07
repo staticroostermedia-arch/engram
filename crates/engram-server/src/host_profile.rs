@@ -571,15 +571,31 @@ mod tests {
     fn apply_minimal_sets_defer_when_unset() {
         std::env::remove_var("ENGRAM_DEFER_BVH");
         std::env::remove_var("ENGRAM_CUFILE_HOT");
+        // Isolate capacity thresholds: set_default would leave HOT_SET_* process-wide
+        // and race other tests that assert absolute soft/hard bands.
+        let prev_soft = std::env::var("ENGRAM_HOT_SET_SOFT").ok();
+        let prev_hard = std::env::var("ENGRAM_HOT_SET_HARD").ok();
+        std::env::remove_var("ENGRAM_HOT_SET_SOFT");
+        std::env::remove_var("ENGRAM_HOT_SET_HARD");
         apply_host_profile_defaults(HostProfileId::Minimal);
         assert_eq!(std::env::var("ENGRAM_DEFER_BVH").unwrap(), "1");
         assert_eq!(std::env::var("ENGRAM_CUFILE_HOT").unwrap(), "0");
+        assert_eq!(std::env::var("ENGRAM_HOT_SET_SOFT").unwrap(), "256");
         // User override wins
         std::env::set_var("ENGRAM_DEFER_BVH", "0");
         apply_host_profile_defaults(HostProfileId::Minimal);
         assert_eq!(std::env::var("ENGRAM_DEFER_BVH").unwrap(), "0");
         std::env::remove_var("ENGRAM_DEFER_BVH");
         std::env::remove_var("ENGRAM_CUFILE_HOT");
+        // Restore HOT_SET so capacity suite is not polluted.
+        std::env::remove_var("ENGRAM_HOT_SET_SOFT");
+        std::env::remove_var("ENGRAM_HOT_SET_HARD");
+        if let Some(v) = prev_soft {
+            std::env::set_var("ENGRAM_HOT_SET_SOFT", v);
+        }
+        if let Some(v) = prev_hard {
+            std::env::set_var("ENGRAM_HOT_SET_HARD", v);
+        }
     }
 
     /// Live a-monad (or any dual NVIDIA): probe should classify cuda_dual when ≥2 devices.

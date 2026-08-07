@@ -4293,6 +4293,8 @@ impl StoreHandle {
 
     /// Promote continuity anchors to hot path before wake bundle / anchor recall.
     /// RSI Cycle 43: skip concepts already in hot_set/backend hot cache (no redundant promote).
+    /// Wake anchors are continuity-critical — force mark (bypass multi-signal gate used for
+    /// opportunistic promote_tile_to_high_priority). Count only when the concept becomes hot.
     /// Returns how many anchors were newly promoted this call.
     pub fn warm_wake_anchors(&mut self) -> usize {
         let _ = self.restore_geosphere_from_manifold();
@@ -4302,8 +4304,13 @@ impl StoreHandle {
             if self.is_hot(concept) {
                 continue;
             }
-            let _ = self.promote_tile_to_high_priority(concept);
-            newly = newly.saturating_add(1);
+            // Force promote: local:host:* etc. are not force_promote via multi-signal alone.
+            self.mark_hot(concept);
+            let last = self.access_index.last_accessed(concept);
+            let _ = self.backend.promote_to_high_priority(concept, last);
+            if self.is_hot(concept) {
+                newly = newly.saturating_add(1);
+            }
         }
         newly
     }
@@ -13033,31 +13040,39 @@ mod ingest_ast_tests {
         assert_eq!(slim["trust_residual"]["last_contract"]["present"], true);
     }
 
-    /// UB Cycle 19: soft_elevated_hot_set band between soft(1k) and hard(2k) thresholds.
+    /// UB Cycle 19: soft_elevated_hot_set band between soft and hard thresholds.
+    /// Uses live `hot_set_*_threshold()` so host-profile `ENGRAM_HOT_SET_*` pollution is safe.
     #[test]
     fn ub_capacity_soft_elevated_hot_set_band() {
         assert_eq!(StoreHandle::HOT_SET_SOFT_THRESHOLD, 1_000);
         assert_eq!(StoreHandle::HOT_SET_HARD_THRESHOLD, 2_000);
-        // Large manifold, hot in (1k, 2k] → soft elevated.
+        let soft = StoreHandle::hot_set_soft_threshold();
+        let hard = StoreHandle::hot_set_hard_threshold();
+        assert!(
+            soft < hard,
+            "soft ({soft}) must be < hard ({hard})"
+        );
+        // Large manifold, hot in (soft, hard] → soft elevated.
         assert_eq!(
-            StoreHandle::classify_capacity_risk(true, 1_001, 0),
+            StoreHandle::classify_capacity_risk(true, soft + 1, 0),
+            "soft_elevated_hot_set"
+        );
+        let mid = soft + (hard - soft) / 2;
+        assert_eq!(
+            StoreHandle::classify_capacity_risk(true, mid.max(soft + 1), 27_000),
             "soft_elevated_hot_set"
         );
         assert_eq!(
-            StoreHandle::classify_capacity_risk(true, 1_239, 27_000),
-            "soft_elevated_hot_set"
-        );
-        assert_eq!(
-            StoreHandle::classify_capacity_risk(true, 2_001, 0),
+            StoreHandle::classify_capacity_risk(true, hard + 1, 0),
             "elevated_hot_set"
         );
         // Exactly soft threshold is not soft (strict >).
         assert_eq!(
-            StoreHandle::classify_capacity_risk(true, 1_000, 0),
+            StoreHandle::classify_capacity_risk(true, soft, 0),
             "large_manifold_nominal"
         );
         assert_eq!(
-            StoreHandle::classify_capacity_risk(true, 500, 0),
+            StoreHandle::classify_capacity_risk(true, soft / 2, 0),
             "large_manifold_nominal"
         );
         assert_eq!(
@@ -13151,16 +13166,19 @@ mod ingest_ast_tests {
             "nominal"
         ));
 
-        let plan = StoreHandle::plan_capacity_hot_compress("soft_elevated_hot_set", 1_239);
+        // Relative to live soft threshold (host profile may set ENGRAM_HOT_SET_SOFT).
+        let soft = StoreHandle::hot_set_soft_threshold();
+        let hot_len = soft + 239;
+        let plan = StoreHandle::plan_capacity_hot_compress("soft_elevated_hot_set", hot_len);
         assert_eq!(plan["suggested"], true);
         assert_eq!(plan["overshoot"], 239);
-        assert_eq!(plan["target_hot_set"], 1_000);
+        assert_eq!(plan["target_hot_set"], soft);
         assert_eq!(plan["mode"], "nrem_hot_trim");
         assert_eq!(plan["ub_capacity_nrem_hot_compress_path"], true);
         assert_eq!(plan["mcp_tool"], "mcp_engram_apply_capacity_hot_compress");
         let plan_ex = StoreHandle::plan_capacity_hot_compress_ex(
             "soft_elevated_hot_set",
-            1_239,
+            hot_len,
             Some(200),
             Some(39),
         );
@@ -13191,7 +13209,8 @@ mod ingest_ast_tests {
             "receipt:session_old"
         ));
 
-        // Pure selector: prefer geo_context over other, skip protected.
+        // Pure selector: multi-signal demote (CRS+recency+goal distance), skip protected.
+        // geo (low CRS, old, far) > metric (low CRS, old) > receipt (low CRS, recent).
         let hot = vec![
             "goal:keep".into(),
             "receipt:r1".into(),
@@ -13199,12 +13218,15 @@ mod ingest_ast_tests {
             "metric:noise".into(),
             "trace:keep".into(),
         ];
-        // overshoot 2 from target 3 → unmark 2 demotable in rank order
+        // overshoot 2 from target 3 → unmark 2 demotable in multi-signal rank order
         let (unmarks, protected) = StoreHandle::select_capacity_hot_compress_unmarks(&hot, 10, 3);
         assert_eq!(protected, 2); // goal + trace
         assert_eq!(unmarks.len(), 2);
         assert_eq!(unmarks[0], "geo_context:g1");
-        assert_eq!(unmarks[1], "receipt:r1");
+        assert_eq!(
+            unmarks[1], "metric:noise",
+            "old metric demotes before recent receipt under multi-signal: {unmarks:?}"
+        );
 
         let dir = test_store_dir("ub20_hot_compress");
         let store = StoreHandle::new(&dir.to_string_lossy());
@@ -13315,13 +13337,14 @@ mod ingest_ast_tests {
             "hot promote; snap={snap:?}"
         );
         assert!(snap.get("risk").and_then(|v| v.as_str()).is_some());
+        // Live thresholds (may differ from const defaults under host_profile HOT_SET env).
         assert_eq!(
             snap.get("hot_set_soft_threshold").and_then(|v| v.as_u64()),
-            Some(StoreHandle::HOT_SET_SOFT_THRESHOLD as u64)
+            Some(StoreHandle::hot_set_soft_threshold() as u64)
         );
         assert_eq!(
             snap.get("hot_set_hard_threshold").and_then(|v| v.as_u64()),
-            Some(StoreHandle::HOT_SET_HARD_THRESHOLD as u64)
+            Some(StoreHandle::hot_set_hard_threshold() as u64)
         );
         assert_eq!(
             store
