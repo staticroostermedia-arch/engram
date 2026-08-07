@@ -95,6 +95,26 @@ pub fn lease_break(concept: &str) -> Value {
     })
 }
 
+/// Agent id for write gates (`ENGRAM_AGENT_ID`, default `default_agent`).
+pub fn current_agent_id() -> String {
+    std::env::var("ENGRAM_AGENT_ID").unwrap_or_else(|_| "default_agent".into())
+}
+
+/// True when lease enforcement is active: always if any lease exists on concept,
+/// or when `ENGRAM_LEASE_ENFORCE=1`, or agent profile with any held leases globally.
+pub fn enforce_on_writes() -> bool {
+    if std::env::var("ENGRAM_LEASE_ENFORCE").as_deref() == Ok("0") {
+        return false;
+    }
+    if std::env::var("ENGRAM_LEASE_ENFORCE").as_deref() == Ok("1") {
+        return true;
+    }
+    // Default: enforce when agent profile (ENGRAM_PROFILE=agent) so multi-agent MCP is safe
+    std::env::var("ENGRAM_PROFILE")
+        .map(|p| p.eq_ignore_ascii_case("agent"))
+        .unwrap_or(false)
+}
+
 /// Check write permission; mint conflict if held by other.
 /// Policy from ENGRAM_CONFLICT: refuse | mint_and_refuse (default).
 pub fn check_write(concept: &str, agent_id: &str) -> Value {

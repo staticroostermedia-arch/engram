@@ -318,17 +318,51 @@ pub fn handle(name: &str, args: &Value, store: &Store) -> Option<Value> {
         "mcp_engram_sync_export" => sync_export(args, store),
         "mcp_engram_sync_import" => sync_import(args, store),
         "mcp_engram_distill_skills" => distill_skills(args, store),
-        "mcp_engram_promote_skill_draft" => {
-            let id = args.get("id").and_then(|v| v.as_str()).unwrap_or("");
-            let pass = args
-                .get("harness_pass")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(true);
-            ok_json(crate::skill_distill::promote_draft(id, pass))
-        }
+        "mcp_engram_promote_skill_draft" => promote_skill_draft(args, store),
         "mcp_engram_dream_run" => dream_run(args, store),
         _ => return None,
     })
+}
+
+fn promote_skill_draft(args: &Value, store: &Store) -> Value {
+    let id = args.get("id").and_then(|v| v.as_str()).unwrap_or("");
+    let pass = args
+        .get("harness_pass")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true);
+    if id.is_empty() {
+        return err_text("id required");
+    }
+    let out = crate::skill_distill::promote_draft(id, pass);
+    let mut lock = match lock_store(store) {
+        Ok(l) => l,
+        Err(e) => return e,
+    };
+    // Persist receipt or scar into the manifold (not JSON-only theater).
+    if out.get("ok").and_then(|v| v.as_bool()) == Some(true) {
+        if let Some(receipt) = out.get("receipt").and_then(|v| v.as_str()) {
+            let body = format!(
+                "SKILL PROMOTE RECEIPT\n\n**draft:** {id}\n**status:** promoted\n\n{}\n",
+                serde_json::to_string_pretty(&out).unwrap_or_default()
+            );
+            let mut blk = lock.encode(&body);
+            blk.crs_score = 0.88;
+            let _ = lock.store(receipt, blk);
+            let _ = lock.relate(receipt, id, "documents");
+        }
+    } else if out.get("scarred").and_then(|v| v.as_bool()) == Some(true) {
+        if let Some(scar) = out.get("scar").and_then(|v| v.as_str()) {
+            let body = format!(
+                "RESEARCH SCAR (ruled-out approach)\n\n**ruled_out:** skill draft promote {id}\n**why:** harness_checklist_failed\n\n{}\n",
+                serde_json::to_string_pretty(&out).unwrap_or_default()
+            );
+            let mut blk = lock.encode(&body);
+            blk.crs_score = 0.78;
+            let _ = lock.store(scar, blk);
+            let _ = lock.relate(scar, id, "documents");
+        }
+    }
+    ok_json(out)
 }
 
 fn expand_wake(args: &Value, store: &Store) -> Value {
