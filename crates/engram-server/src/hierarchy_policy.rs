@@ -19,6 +19,41 @@ pub struct PromoteSignals {
     pub already_hot: bool,
 }
 
+/// Heuristic goal-graph distance when full walk is unavailable (prefix classes).
+pub fn goal_distance_heuristic(concept: &str) -> u32 {
+    let c = concept;
+    if c == "primary_goal" || c.starts_with("goal:") {
+        0
+    } else if c.starts_with("helper:session_")
+        || c.starts_with("process:engram.")
+        || c.starts_with("ritual:")
+        || c.starts_with("trace:")
+        || c.starts_with("manifest:")
+        || c.starts_with("tile:session_boundary")
+    {
+        1
+    } else if c.starts_with("tile:") || c.starts_with("scar:") {
+        2
+    } else if c.starts_with("metric:") || c.starts_with("receipt:") {
+        5
+    } else if c.starts_with("local:") || c.starts_with("geo_context:") {
+        6
+    } else {
+        3
+    }
+}
+
+/// Continuity anchors always force-promote (skip multi-signal gate).
+pub fn is_force_promote_concept(concept: &str) -> bool {
+    concept == "primary_goal"
+        || concept.starts_with("helper:session_")
+        || concept.starts_with("ritual:")
+        || concept.starts_with("process:engram.")
+        || concept.starts_with("tile:session_boundary")
+        || concept.starts_with("goal:")
+        || concept.starts_with("manifest:rehydration_")
+}
+
 /// Pure promote score in [0, 1+] — higher means prefer promote / retain.
 pub fn promote_score(s: &PromoteSignals) -> f32 {
     if s.already_hot {
@@ -51,7 +86,6 @@ pub fn should_promote(s: &PromoteSignals, min_score: f32) -> bool {
 
 /// Demote priority: higher = demote first under capacity pressure.
 /// Low CRS + old + far from goal demotes first; capacity_pressure required for demote.
-#[allow(dead_code)] // used by capacity compress ranking + tests; wired for callers
 pub fn demote_priority(s: &PromoteSignals) -> f32 {
     if !s.capacity_pressure {
         return 0.0;
@@ -132,5 +166,29 @@ mod tests {
             promote_score(&weak) < 0.45,
             "capacity pressure must not alone elevate weak concepts"
         );
+    }
+
+    #[test]
+    fn demote_priority_ranks_landfill_above_goal() {
+        let landfill = PromoteSignals {
+            crs: 0.35,
+            recency_secs: 90_000,
+            goal_distance: goal_distance_heuristic("metric:cold_start_fidelity_x"),
+            capacity_pressure: true,
+            already_hot: true,
+        };
+        let goalish = PromoteSignals {
+            crs: 0.9,
+            recency_secs: 60,
+            goal_distance: goal_distance_heuristic("goal:engram_mvp_v1"),
+            capacity_pressure: true,
+            already_hot: true,
+        };
+        assert!(
+            demote_priority(&landfill) > demote_priority(&goalish),
+            "metrics should demote before goals under pressure"
+        );
+        assert!(is_force_promote_concept("primary_goal"));
+        assert!(!is_force_promote_concept("metric:foo"));
     }
 }

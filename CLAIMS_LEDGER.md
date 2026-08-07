@@ -1,7 +1,7 @@
 # CLAIMS_LEDGER — Public claim → code → test map
 
 **Status:** living  
-**Last truth pass:** 2026-08-05 (local-primary critical path — cuFile taxonomy, protocol live, BlockTier permanent logical)  
+**Last truth pass:** 2026-08-06 (host-adaptive + multi-signal promote/demote wired; Stage-2 counters on session_end)  
 **Purpose:** Every notable public claim maps to implementation status so agents and reviewers do not treat aspirational text as shipped fact.
 
 **Status values:** `implemented` | `partial` | `aspirational` | `removed`
@@ -68,7 +68,7 @@ When status is `implemented`, named tests should exist in-repo. Prefer **softeni
 | BlockTier physical layouts (Small/Large distinct sizes) | types.rs BlockTier | aspirational (permanent logical-only) | `is_permanent_logical_only`; all tiers `BLOCK_SIZE` on disk | `block_tier_permanent_logical_only_policy` | Explicit 2026-08 decision: no alternate physical sizes on current 256KB stalk |
 | ROCm HIP query dispatch (Phase 10) | engram-gpu rocm_backend | partial / parked (no AMD on a-monad) | probe + CPU BVH; `hip_query_dispatch_shipped()==false` | `rocm_hip_dispatch_honest_baseline` | AMD-only when hardware present; not exercised on a-monad |
 | cuFile transfer path taxonomy | engram-gpu cufile | implemented (reason enum) | `cufile_path_reason` + readiness fields; DMA only if success | `cufile_path_reason_hot_not_requested`; transfer_path labels | Vague `unavailable` alone replaced by structured reason |
-| Hierarchy OS dual-GPU + hit rates | readiness | implemented (labels + counters + multi-signal policy) | hierarchy_gpu0/1_role (host-adaptive collapse), hierarchy_hit_rates, multi_signal_v1 | `hierarchy_hit_rate_increments`; `hierarchy_policy::tests` | Promote uses CRS+recency+goal distance+capacity |
+| Hierarchy OS dual-GPU + hit rates | readiness + store promote/demote | implemented | hierarchy_gpu0/1_role (adaptive), hit rates, multi_signal_v1; `promote_tile_to_high_priority` uses policy; demote ranks via `demote_priority` | `hierarchy_policy::tests`; `hierarchy_hit_rates_on_recall_sequence` | Force-promote for session/goal anchors only |
 | Host-adaptive runtime v1 | host_profile.rs | implemented | detect→profile→scale; readiness host_profile_* | `host_profile::tests` (minimal, cuda_dual, override) | Orthogonal to ENGRAM_PROFILE agent/deep/ui |
 | Independence Stage-2 counters | independence_metrics.rs | implemented (instrument) | local_only success/total/pct scaffolding | `stage2_counters_increment` | Stage-3 longitudinal reserved |
 | Protocol full MCP graph live | invoke_protocol | aspirational / product whitelist-only | safe tools only | protocol live whitelist tests | X5: destructive full-graph not product stance |
