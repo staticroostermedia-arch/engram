@@ -3718,12 +3718,8 @@ impl StoreHandle {
 
         // UB Cycle 9: route through StoreHandle::store so PRAXIS seal + provlog
         // recorded_at stamp + activity log share one write path (was backend.store).
-        let r = self.store(concept, block);
-        if r.is_ok() {
-            // E3: tag writes with active counterfactual branch (if any).
-            crate::branch_memory::tag_write(concept);
-        }
-        r
+        // E3 branch tagging is inside `store()` so all write paths inherit it.
+        self.store(concept, block)
     }
 
     pub fn recall(&mut self, query: &str, k: usize) -> Vec<Memory> {
@@ -8675,6 +8671,10 @@ impl StoreHandle {
         if r.is_ok() {
             self.invalidate_leg_block_count();
             self.access_index.touch(concept);
+            // E3: tag ALL successful writes (remember/update/trace/store paths) when
+            // a counterfactual branch is checked out — single choke point so
+            // quick_trace / record_reasoning_trace cannot pollute mainline anchors.
+            crate::branch_memory::tag_write(concept);
             if concept.starts_with("trace:") {
                 self.log_activity(concept, "trace_fork", trace_fork_detail.as_deref());
             } else {
@@ -8978,9 +8978,8 @@ impl StoreHandle {
         // RSI Cycle 34: reseal after splice when encrypt-at-rest on
         Self::maybe_seal_block_provlog(concept, &mut block);
 
+        // E3 branch tagging is inside `store()` (covers update + remember + traces).
         self.store(concept, block)?;
-        // E3: branch-tag updates while checked out to a non-main branch.
-        crate::branch_memory::tag_write(concept);
         // Relation lineage: re-seal relation blocks whose endpoints include this concept.
         let _ = self.reseal_relations_touching(concept);
         let coherence_suffix = provlog_coherence
@@ -17843,29 +17842,31 @@ mod local_primary_critical_path_tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// Skeptic E5: remember refused when lease held by other agent under enforce.
+    /// Skeptic E3: StoreHandle::store (trace path) tags branch; mainline anchors omit.
     #[test]
-    fn lease_blocks_remember_when_enforced() {
-        let dir = tmp_dir("lease_remember_gate");
+    fn store_path_branch_tags_traces() {
+        let dir = tmp_dir("branch_store_trace");
         let mut store = StoreHandle::new(&dir);
-        let concept = format!("goal:leased_{}", std::process::id());
-        std::env::set_var("ENGRAM_LEASE_ENFORCE", "1");
-        std::env::set_var("ENGRAM_AGENT_ID", "writer_b");
-        let acq = crate::lease_conflict::lease_acquire(&concept, "writer_a", 30_000);
-        assert_eq!(acq["ok"], true);
-        let gate = crate::lease_conflict::check_write(&concept, "writer_b");
-        assert_eq!(gate["allowed"], false);
-        // Product path: if check fails, remember must not proceed — simulate MCP gate
-        if gate.get("allowed").and_then(|v| v.as_bool()) != Some(false) {
-            store.remember(&concept, "should not write").unwrap();
-        }
-        assert!(
-            store.fetch_block(&concept).is_none(),
-            "remember must not run when lease held by other"
+        let created = crate::branch_memory::branch_create("goal:root", "store_trace");
+        let bid = created["branch"]["id"].as_str().unwrap().to_string();
+        crate::branch_memory::branch_checkout(&bid);
+        let concept = format!("trace:branch_store_{}", std::process::id());
+        let mut blk = store.encode("TRACE\n\n**decision:** branch store path\n");
+        blk.crs_score = 0.9;
+        store.store(&concept, blk).unwrap();
+        assert_eq!(
+            crate::branch_memory::concept_branch(&concept).as_deref(),
+            Some(bid.as_str()),
+            "store() must tag_write when branch active"
         );
-        crate::lease_conflict::lease_break(&concept);
-        std::env::remove_var("ENGRAM_LEASE_ENFORCE");
-        std::env::remove_var("ENGRAM_AGENT_ID");
+        crate::branch_memory::branch_checkout("main");
+        assert!(!StoreHandle::concept_visible_in_anchors(&concept));
+        let (hits, _) = store.recall_scoped(&concept, 5, Some("anchors"));
+        assert!(
+            hits.iter().all(|m| m.concept != concept),
+            "branch-tagged trace must not appear in mainline anchors: {hits:?}"
+        );
+        let _ = crate::branch_memory::branch_abandon(&bid);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

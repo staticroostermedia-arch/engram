@@ -12250,6 +12250,263 @@ list = ["unit_hypersphere_unchanged"]
             let _ = std::fs::remove_dir_all(&tmp);
         }
     }
+
+    /// Cognitive OS E3/E5: real handle_tool_call paths (not reimplemented gates).
+    mod cognitive_os_handle_tool {
+        use super::*;
+        use std::sync::Arc;
+
+        fn handle_tool_on_big_stack(
+            name: &str,
+            args: &serde_json::Value,
+            store: &SharedStore,
+        ) -> serde_json::Value {
+            let name = name.to_string();
+            let args = args.clone();
+            let store = Arc::clone(store);
+            std::thread::Builder::new()
+                .stack_size(32 * 1024 * 1024)
+                .spawn(move || handle_tool_call(&name, &args, &store))
+                .expect("spawn big-stack MCP thread")
+                .join()
+                .expect("join big-stack MCP thread")
+        }
+
+        fn prep_store(tmp: &str) -> SharedStore {
+            std::env::set_var("ENGRAM_DISABLE_SHEAF", "1");
+            std::env::set_var("ENGRAM_FORCE_CPU_BACKEND", "1");
+            std::env::set_var("ENGRAM_KI_DISABLE", "1");
+            // Caller must hold consult env_test_lock when changing CONSULT_BEFORE_WRITE.
+            let store = open_store(tmp);
+            store.lock().unwrap().mark_fully_initialized();
+            store
+        }
+
+        fn resp_is_error(resp: &serde_json::Value) -> bool {
+            resp.get("isError")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false)
+        }
+
+        fn resp_text(resp: &serde_json::Value) -> String {
+            resp.pointer("/content/0/text")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string()
+        }
+
+        /// E5: real mcp_engram_remember under lease held by another agent.
+        #[test]
+        fn lease_blocks_remember_via_handle_tool_call() {
+            let _consult = crate::consult_before_write_gate::env_test_lock();
+            let _lease = crate::lease_conflict::env_test_lock();
+            std::env::set_var("ENGRAM_CONSULT_BEFORE_WRITE", "off");
+            let tmp = unique_tmp("lease-mcp-remember");
+            let store = prep_store(&tmp);
+            let concept = format!(
+                "goal:lease_mcp_{}_{}",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_nanos())
+                    .unwrap_or(0)
+            );
+            std::env::set_var("ENGRAM_LEASE_ENFORCE", "1");
+            std::env::set_var("ENGRAM_AGENT_ID", "writer_b");
+            let acq = crate::lease_conflict::lease_acquire(&concept, "writer_a", 60_000);
+            assert_eq!(acq["ok"], true, "{acq}");
+            // Sanity: enforce on + foreign holder must deny before MCP
+            let pre = crate::lease_conflict::check_write(&concept, "writer_b");
+            assert_eq!(pre["allowed"], false, "pre-check: {pre}");
+
+            let resp = handle_tool_on_big_stack(
+                "mcp_engram_remember",
+                &json!({"concept": concept, "text": "must not write under foreign lease"}),
+                &store,
+            );
+            assert!(
+                resp_is_error(&resp),
+                "remember must isError under foreign lease: {resp}"
+            );
+            let text = resp_text(&resp);
+            assert!(
+                text.contains("lease_conflict") || text.contains("lease"),
+                "error must mention lease: {text}"
+            );
+            assert!(
+                store.lock().unwrap().fetch_block(&concept).is_none(),
+                "concept must not be stored"
+            );
+            // Conflict block should be minted on manifold
+            let conflicts: Vec<String> = store
+                .lock()
+                .unwrap()
+                .list()
+                .into_iter()
+                .filter(|c| c.starts_with("conflict:"))
+                .collect();
+            assert!(
+                !conflicts.is_empty(),
+                "expected conflict:* block stored, list={conflicts:?}"
+            );
+
+            crate::lease_conflict::lease_break(&concept);
+            std::env::remove_var("ENGRAM_LEASE_ENFORCE");
+            std::env::remove_var("ENGRAM_AGENT_ID");
+            std::env::remove_var("ENGRAM_CONSULT_BEFORE_WRITE");
+            let _ = std::fs::remove_dir_all(&tmp);
+        }
+
+        /// E5: real mcp_engram_update under foreign lease.
+        #[test]
+        fn lease_blocks_update_via_handle_tool_call() {
+            let _consult = crate::consult_before_write_gate::env_test_lock();
+            let _lease = crate::lease_conflict::env_test_lock();
+            std::env::set_var("ENGRAM_CONSULT_BEFORE_WRITE", "off");
+            let tmp = unique_tmp("lease-mcp-update");
+            let store = prep_store(&tmp);
+            let concept = format!(
+                "goal:lease_upd_{}_{}",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_nanos())
+                    .unwrap_or(0)
+            );
+            std::env::set_var("ENGRAM_CONSULT_BEFORE_WRITE", "off");
+            std::env::set_var("ENGRAM_LEASE_ENFORCE", "0");
+            let seed = handle_tool_on_big_stack(
+                "mcp_engram_remember",
+                &json!({"concept": concept, "text": "seed before lease"}),
+                &store,
+            );
+            assert!(!resp_is_error(&seed), "seed: {seed}");
+            std::env::set_var("ENGRAM_LEASE_ENFORCE", "1");
+            std::env::set_var("ENGRAM_AGENT_ID", "writer_b");
+            let acq = crate::lease_conflict::lease_acquire(&concept, "writer_a", 60_000);
+            assert_eq!(acq["ok"], true);
+
+            let resp = handle_tool_on_big_stack(
+                "mcp_engram_update",
+                &json!({"concept": concept, "new_text": "hijack attempt"}),
+                &store,
+            );
+            assert!(resp_is_error(&resp), "update must isError: {resp}");
+            let body = store
+                .lock()
+                .unwrap()
+                .fetch_block(&concept)
+                .map(|b| String::from_utf8_lossy(&b.payload).to_string())
+                .unwrap_or_default();
+            assert!(
+                !body.contains("hijack attempt"),
+                "update must not mutate block under foreign lease"
+            );
+
+            crate::lease_conflict::lease_break(&concept);
+            std::env::remove_var("ENGRAM_LEASE_ENFORCE");
+            std::env::remove_var("ENGRAM_AGENT_ID");
+            std::env::remove_var("ENGRAM_CONSULT_BEFORE_WRITE");
+            let _ = std::fs::remove_dir_all(&tmp);
+        }
+
+        /// E3: branch checkout → quick_trace → main → anchors omit that trace.
+        #[test]
+        fn branch_quick_trace_omitted_from_mainline_anchors() {
+            let _consult = crate::consult_before_write_gate::env_test_lock();
+            std::env::set_var("ENGRAM_CONSULT_BEFORE_WRITE", "off");
+            let tmp = unique_tmp("branch-quick-trace");
+            let store = prep_store(&tmp);
+            std::env::set_var("ENGRAM_TOOL_TIER", "power");
+            let created = handle_tool_on_big_stack(
+                "mcp_engram_branch_create",
+                &json!({"from_goal": "goal:root", "label": "qt_branch"}),
+                &store,
+            );
+            assert!(!resp_is_error(&created), "branch_create: {created}");
+            // MCP wraps JSON body in content[0].text (may append tool_tier warning after \n\n)
+            let raw = resp_text(&created);
+            let json_part = raw.split("\n\n").next().unwrap_or(&raw);
+            let created_json: serde_json::Value =
+                serde_json::from_str(json_part).unwrap_or(json!({}));
+            let branch_id = created_json
+                .pointer("/branch/id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            assert!(
+                branch_id.starts_with("branch:"),
+                "branch id missing from {raw}"
+            );
+            let co = handle_tool_on_big_stack(
+                "mcp_engram_branch_checkout",
+                &json!({"branch_id": branch_id}),
+                &store,
+            );
+            assert!(!resp_is_error(&co), "checkout: {co}");
+
+            let before: std::collections::HashSet<String> = store
+                .lock()
+                .unwrap()
+                .list()
+                .into_iter()
+                .filter(|c| c.starts_with("trace:"))
+                .collect();
+            let tr = handle_tool_on_big_stack(
+                "mcp_engram_quick_trace",
+                &json!({
+                    "decision": "branch-only decision for isolation test",
+                    "why": "prove store() tags traces under active branch"
+                }),
+                &store,
+            );
+            assert!(!resp_is_error(&tr), "quick_trace: {tr}");
+            let after: Vec<String> = store
+                .lock()
+                .unwrap()
+                .list()
+                .into_iter()
+                .filter(|c| c.starts_with("trace:") && !before.contains(c))
+                .collect();
+            assert!(
+                !after.is_empty(),
+                "quick_trace must mint a new trace:* concept; resp={}",
+                resp_text(&tr)
+            );
+            let trace_id = after[0].clone();
+            assert!(
+                crate::branch_memory::concept_branch(&trace_id).is_some(),
+                "trace must be branch-tagged via store(): {trace_id}"
+            );
+
+            let main = handle_tool_on_big_stack(
+                "mcp_engram_branch_checkout",
+                &json!({"branch_id": "main"}),
+                &store,
+            );
+            assert!(!resp_is_error(&main), "checkout main: {main}");
+            assert!(!crate::store::StoreHandle::concept_visible_in_anchors(
+                &trace_id
+            ));
+            let (hits, _) = store
+                .lock()
+                .unwrap()
+                .recall_scoped(&trace_id, 5, Some("anchors"));
+            assert!(
+                hits.iter().all(|m| m.concept != trace_id),
+                "branch-tagged trace must not be in mainline anchors: {hits:?}"
+            );
+
+            let _ = handle_tool_on_big_stack(
+                "mcp_engram_branch_abandon",
+                &json!({"branch_id": branch_id}),
+                &store,
+            );
+            std::env::remove_var("ENGRAM_TOOL_TIER");
+            std::env::remove_var("ENGRAM_CONSULT_BEFORE_WRITE");
+            let _ = std::fs::remove_dir_all(&tmp);
+        }
+    }
 }
 
 #[cfg(test)]

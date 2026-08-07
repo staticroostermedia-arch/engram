@@ -114,7 +114,8 @@ pub fn check_write(recall_gate_open: bool, tool: &str) -> GateCheck {
 #[cfg(test)]
 pub(crate) fn env_test_lock() -> std::sync::MutexGuard<'static, ()> {
     static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-    ENV_LOCK.lock().unwrap()
+    // Recover from poison so one flaky test cannot cascade-fail the suite.
+    ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner())
 }
 
 #[cfg(test)]
