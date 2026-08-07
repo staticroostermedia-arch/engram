@@ -13048,10 +13048,7 @@ mod ingest_ast_tests {
         assert_eq!(StoreHandle::HOT_SET_HARD_THRESHOLD, 2_000);
         let soft = StoreHandle::hot_set_soft_threshold();
         let hard = StoreHandle::hot_set_hard_threshold();
-        assert!(
-            soft < hard,
-            "soft ({soft}) must be < hard ({hard})"
-        );
+        assert!(soft < hard, "soft ({soft}) must be < hard ({hard})");
         // Large manifold, hot in (soft, hard] → soft elevated.
         assert_eq!(
             StoreHandle::classify_capacity_risk(true, soft + 1, 0),
