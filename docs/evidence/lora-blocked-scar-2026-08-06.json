@@ -1,0 +1,17 @@
+{
+  "schema": "lora_improvement_receipt_v1",
+  "decision": "scar",
+  "adapter_id": null,
+  "pack_hash": "4ca363030be1f115916ad7233228227d",
+  "concept_count": 11,
+  "reason": "real weight train blocked on a-monad this session: no LoRA trainer dependency/harness wired for production promote; dry-run pipeline remains valid structural path",
+  "blocked": true,
+  "dry_run_available": true,
+  "dry_run_receipt": "docs/evidence/lora-receipt-dry-run-2026-08-05.json",
+  "metrics": {
+    "weight_update": false,
+    "held_out_eval_run": false
+  },
+  "created_at": "2026-08-06",
+  "goal": "goal:engram_closeout_and_host_adaptive_runtime_v1"
+}

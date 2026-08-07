@@ -3193,14 +3193,17 @@ impl StoreHandle {
             serde_json::json!(crate::cockpit_cache::presentation_cache_hit_rate()),
         );
         // Hierarchy OS (Wave B): dual-GPU roles + hit-rate snapshot.
-        obj.insert(
-            "hierarchy_gpu0_role".into(),
-            serde_json::json!("hot_agent_resident"),
-        );
-        obj.insert(
-            "hierarchy_gpu1_role".into(),
-            serde_json::json!("compute_bvh_batch_nrem"),
-        );
+        {
+            let (g0, g1) = crate::host_profile::hierarchy_gpu_roles();
+            obj.insert("hierarchy_gpu0_role".into(), serde_json::json!(g0));
+            obj.insert("hierarchy_gpu1_role".into(), serde_json::json!(g1));
+        }
+        // Host-adaptive runtime (H1): detected + active profile + scaled flags.
+        if let Some(map) = crate::host_profile::readiness_fields().as_object() {
+            for (k, v) in map {
+                obj.insert(k.clone(), v.clone());
+            }
+        }
         obj.insert(
             "hierarchy_hot_set_len".into(),
             serde_json::json!(self.hot_set.read().map(|s| s.len()).unwrap_or(0)),
@@ -3212,6 +3215,15 @@ impl StoreHandle {
         obj.insert(
             "hierarchy_hit_rates".into(),
             crate::hierarchy_metrics::snapshot(),
+        );
+        if let Some(map) = crate::hierarchy_policy::policy_readiness().as_object() {
+            for (k, v) in map {
+                obj.insert(k.clone(), v.clone());
+            }
+        }
+        obj.insert(
+            "independence_ladder".into(),
+            crate::independence_metrics::snapshot(),
         );
         // Wave A2: local large-payload IPC (mmap + UDS path tokens).
         if let Some(map) = crate::local_ipc::readiness_fields().as_object() {
@@ -8135,6 +8147,40 @@ impl StoreHandle {
     /// Record hierarchy hit for one recall satisfaction (scored candidate delivered).
     pub fn record_recall_tier(&self, concept: &str) {
         crate::hierarchy_metrics::record_tier(self.classify_recall_tier(concept));
+    }
+
+    /// Multi-signal promote decision (B1). Returns score + whether promote ran.
+    pub fn promote_if_policy(
+        &self,
+        concept: &str,
+        crs: f32,
+        recency_secs: u64,
+        goal_distance: u32,
+        min_score: f32,
+    ) -> serde_json::Value {
+        let capacity_pressure = {
+            let hot_len = self.hot_set.read().map(|s| s.len()).unwrap_or(0);
+            hot_len > Self::HOT_SET_SOFT_THRESHOLD
+        };
+        let signals = crate::hierarchy_policy::PromoteSignals {
+            crs,
+            recency_secs,
+            goal_distance,
+            capacity_pressure,
+            already_hot: self.is_hot(concept),
+        };
+        let score = crate::hierarchy_policy::promote_score(&signals);
+        let do_it = crate::hierarchy_policy::should_promote(&signals, min_score);
+        if do_it {
+            self.mark_hot(concept);
+        }
+        serde_json::json!({
+            "concept": concept,
+            "score": score,
+            "promoted": do_it,
+            "capacity_pressure": capacity_pressure,
+            "policy": "multi_signal_v1",
+        })
     }
 
     /// Explicitly mark a concept as "hot" so it prefers the high-priority fast path
