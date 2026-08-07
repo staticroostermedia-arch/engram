@@ -148,7 +148,7 @@ pub fn filter_rows(rows: &[QueryRow], q: &StructuredQuery) -> Vec<QueryRow> {
         .collect();
 
     match q.order_by.as_str() {
-        "recency" => out.sort_by(|a, b| b.recency.cmp(&a.recency)),
+        "recency" => out.sort_by_key(|r| std::cmp::Reverse(r.recency)),
         _ => out.sort_by(|a, b| {
             b.crs
                 .partial_cmp(&a.crs)
