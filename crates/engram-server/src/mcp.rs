@@ -12367,6 +12367,8 @@ list = ["unit_hypersphere_unchanged"]
         /// E3: branch checkout → quick_trace → main → anchors omit that trace.
         #[test]
         fn branch_quick_trace_omitted_from_mainline_anchors() {
+            let _branch = crate::branch_memory::env_test_lock();
+            crate::branch_memory::reset_for_tests();
             let _consult = crate::consult_before_write_gate::env_test_lock();
             std::env::set_var("ENGRAM_CONSULT_BEFORE_WRITE", "off");
             let tmp = unique_tmp("branch-quick-trace");
